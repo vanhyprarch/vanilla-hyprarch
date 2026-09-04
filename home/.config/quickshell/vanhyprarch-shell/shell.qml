@@ -3,8 +3,8 @@ import Quickshell
 
 ShellRoot {
     property int dockWidth: 56
-    property int borderThickness: 6
-    property int cornerRadius: 18
+    property int borderThickness: 10
+    property int cornerRadius: 22
     property color dockColor: "#FFF8F5"
     property color borderColor: "#FFF8F5"
     property color cornerMaskColor: "#FFF8F5"
