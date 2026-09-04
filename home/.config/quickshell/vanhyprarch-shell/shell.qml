@@ -2,8 +2,8 @@ import QtQuick
 import Quickshell
 
 ShellRoot {
-    property int dockWidth: 48
-    property int borderThickness: 2
+    property int dockWidth: 56
+    property int borderThickness: 6
     property int cornerRadius: 18
     property color dockColor: "#FFF8F5"
     property color borderColor: "#FFF8F5"
@@ -23,10 +23,6 @@ ShellRoot {
         Rectangle {
             anchors.fill: parent
             color: dockColor
-            topLeftRadius: cornerRadius
-            bottomLeftRadius: cornerRadius
-            topRightRadius: 0
-            bottomRightRadius: 0
         }
     }
 
@@ -43,11 +39,45 @@ ShellRoot {
         focusable: false
         mask: Region {}
 
+        Rectangle {
+            height: borderThickness
+            anchors {
+                top: parent.top
+                left: parent.left
+                right: parent.right
+                leftMargin: dockWidth
+            }
+            color: borderColor
+        }
+
+        Rectangle {
+            height: borderThickness
+            anchors {
+                bottom: parent.bottom
+                left: parent.left
+                right: parent.right
+                leftMargin: dockWidth
+            }
+            color: borderColor
+        }
+
+        Rectangle {
+            width: borderThickness
+            anchors {
+                top: parent.top
+                bottom: parent.bottom
+                right: parent.right
+            }
+            color: borderColor
+        }
+
         Canvas {
             width: cornerRadius
             height: cornerRadius
             anchors.top: parent.top
+            anchors.topMargin: borderThickness
             anchors.left: parent.left
+            anchors.leftMargin: dockWidth
 
             onPaint: {
                 const context = getContext("2d")
@@ -66,7 +96,9 @@ ShellRoot {
             width: cornerRadius
             height: cornerRadius
             anchors.top: parent.top
+            anchors.topMargin: borderThickness
             anchors.right: parent.right
+            anchors.rightMargin: borderThickness
 
             onPaint: {
                 const context = getContext("2d")
@@ -86,7 +118,9 @@ ShellRoot {
             width: cornerRadius
             height: cornerRadius
             anchors.bottom: parent.bottom
+            anchors.bottomMargin: borderThickness
             anchors.left: parent.left
+            anchors.leftMargin: dockWidth
 
             onPaint: {
                 const context = getContext("2d")
@@ -106,7 +140,9 @@ ShellRoot {
             width: cornerRadius
             height: cornerRadius
             anchors.bottom: parent.bottom
+            anchors.bottomMargin: borderThickness
             anchors.right: parent.right
+            anchors.rightMargin: borderThickness
 
             onPaint: {
                 const context = getContext("2d")
@@ -120,14 +156,6 @@ ShellRoot {
                 context.closePath()
                 context.fill()
             }
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            color: "transparent"
-            border.width: borderThickness
-            border.color: borderColor
-            radius: cornerRadius
         }
     }
 }
