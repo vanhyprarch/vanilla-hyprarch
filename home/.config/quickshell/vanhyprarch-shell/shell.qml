@@ -2,21 +2,17 @@ import QtQuick
 import Quickshell
 
 ShellRoot {
+    property int dockWidth: 48
+
     PanelWindow {
         anchors {
             top: true
+            bottom: true
             left: true
-            right: true
         }
 
-        implicitHeight: 40
-        exclusiveZone: 40
+        implicitWidth: dockWidth
+        exclusiveZone: dockWidth
         color: "#1e1e1e"
-
-        Text {
-            anchors.centerIn: parent
-            text: "Vanilla HyprArch Quickshell Test"
-            color: "#ffffff"
-        }
     }
 }
