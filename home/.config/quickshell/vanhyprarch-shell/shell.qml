@@ -9,11 +9,13 @@ ShellRoot {
     property color dockColor: "#FFF8F5"
     property color borderColor: "#FFF8F5"
     property color cornerMaskColor: "#FFF8F5"
-    property color innerShadow1Color: "#50707070"
-    property color innerShadow2Color: "#40808080"
-    property color innerShadow3Color: "#30909090"
-    property color innerShadow4Color: "#20A0A0A0"
-    property color innerShadow5Color: "#10B0B0B0"
+    property color innerShadow1Color: "#50000000"
+    property color innerShadow2Color: "#3A000000"
+    property color innerShadow3Color: "#28000000"
+    property color innerShadow4Color: "#18000000"
+    property color innerShadow5Color: "#0C000000"
+    property color innerShadow6Color: "#06000000"
+    property color innerShadow7Color: "#03000000"
 
     PanelWindow {
         anchors {
@@ -217,6 +219,28 @@ ShellRoot {
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow5Color
+        }
+
+        Rectangle {
+            x: dockWidth + (innerShadowLayerWidth * 5)
+            y: borderThickness + (innerShadowLayerWidth * 5)
+            width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 10)
+            height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 10)
+            radius: cornerRadius - (innerShadowLayerWidth * 5)
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow6Color
+        }
+
+        Rectangle {
+            x: dockWidth + (innerShadowLayerWidth * 6)
+            y: borderThickness + (innerShadowLayerWidth * 6)
+            width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 12)
+            height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 12)
+            radius: cornerRadius - (innerShadowLayerWidth * 6)
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow7Color
         }
     }
 }
