@@ -5,9 +5,15 @@ ShellRoot {
     property int dockWidth: 56
     property int borderThickness: 10
     property int cornerRadius: 22
+    property int innerShadowLayerWidth: 2
     property color dockColor: "#FFF8F5"
     property color borderColor: "#FFF8F5"
     property color cornerMaskColor: "#FFF8F5"
+    property color innerShadow1Color: "#50707070"
+    property color innerShadow2Color: "#40808080"
+    property color innerShadow3Color: "#30909090"
+    property color innerShadow4Color: "#20A0A0A0"
+    property color innerShadow5Color: "#10B0B0B0"
 
     PanelWindow {
         anchors {
@@ -156,6 +162,61 @@ ShellRoot {
                 context.closePath()
                 context.fill()
             }
+        }
+
+        Rectangle {
+            x: dockWidth
+            y: borderThickness
+            width: parent.width - dockWidth - borderThickness
+            height: parent.height - (borderThickness * 2)
+            radius: cornerRadius
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow1Color
+        }
+
+        Rectangle {
+            x: dockWidth + innerShadowLayerWidth
+            y: borderThickness + innerShadowLayerWidth
+            width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 2)
+            height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 2)
+            radius: cornerRadius - innerShadowLayerWidth
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow2Color
+        }
+
+        Rectangle {
+            x: dockWidth + (innerShadowLayerWidth * 2)
+            y: borderThickness + (innerShadowLayerWidth * 2)
+            width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 4)
+            height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 4)
+            radius: cornerRadius - (innerShadowLayerWidth * 2)
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow3Color
+        }
+
+        Rectangle {
+            x: dockWidth + (innerShadowLayerWidth * 3)
+            y: borderThickness + (innerShadowLayerWidth * 3)
+            width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 6)
+            height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 6)
+            radius: cornerRadius - (innerShadowLayerWidth * 3)
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow4Color
+        }
+
+        Rectangle {
+            x: dockWidth + (innerShadowLayerWidth * 4)
+            y: borderThickness + (innerShadowLayerWidth * 4)
+            width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 8)
+            height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 8)
+            radius: cornerRadius - (innerShadowLayerWidth * 4)
+            color: "transparent"
+            border.width: innerShadowLayerWidth
+            border.color: innerShadow5Color
         }
     }
 }
