@@ -5,8 +5,9 @@ ShellRoot {
     property int dockWidth: 48
     property int borderThickness: 2
     property int cornerRadius: 18
-    property color borderColor: "#4a4a4a"
-    property color cornerMaskColor: "#000000"
+    property color dockColor: "#FFF8F5"
+    property color borderColor: "#FFF8F5"
+    property color cornerMaskColor: "#FFF8F5"
 
     PanelWindow {
         anchors {
@@ -21,7 +22,7 @@ ShellRoot {
 
         Rectangle {
             anchors.fill: parent
-            color: "#1e1e1e"
+            color: dockColor
             topLeftRadius: cornerRadius
             bottomLeftRadius: cornerRadius
             topRightRadius: 0
