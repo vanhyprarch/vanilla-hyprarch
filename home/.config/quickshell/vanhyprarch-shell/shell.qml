@@ -6,6 +6,9 @@ ShellRoot {
     property int borderThickness: 10
     property int cornerRadius: 22
     property int innerShadowLayerWidth: 2
+    property url logoSource: Qt.resolvedUrl("assets/logo.svg")
+    property int logoSize: 40
+    property int logoTopMargin: 12
     property color dockColor: "#FFF8F5"
     property color borderColor: "#FFF8F5"
     property color cornerMaskColor: "#FFF8F5"
@@ -31,6 +34,19 @@ ShellRoot {
         Rectangle {
             anchors.fill: parent
             color: dockColor
+        }
+
+        Image {
+            anchors {
+                top: parent.top
+                horizontalCenter: parent.horizontalCenter
+                topMargin: logoTopMargin
+            }
+            source: logoSource
+            width: logoSize
+            height: logoSize
+            fillMode: Image.PreserveAspectFit
+            smooth: true
         }
     }
 
