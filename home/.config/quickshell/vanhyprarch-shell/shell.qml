@@ -1,3 +1,5 @@
+//@ pragma IconTheme Papirus
+
 import QtQuick
 import Quickshell
 import "components"
@@ -60,6 +62,11 @@ ShellRoot {
                 topMargin: dockWorkspaces.logoGap
                 horizontalCenter: parent.horizontalCenter
             }
+        }
+
+        Launchers {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.horizontalCenter: parent.horizontalCenter
         }
 
         PowerMenu {
