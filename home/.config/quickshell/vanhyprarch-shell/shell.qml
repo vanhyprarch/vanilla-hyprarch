@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import "components"
 
 ShellRoot {
     property int dockWidth: 56
@@ -47,6 +48,13 @@ ShellRoot {
             height: logoSize
             fillMode: Image.PreserveAspectFit
             smooth: true
+        }
+
+        PowerMenu {
+            anchors {
+                bottom: parent.bottom
+                horizontalCenter: parent.horizontalCenter
+            }
         }
     }
 
