@@ -38,6 +38,8 @@ ShellRoot {
         }
 
         Image {
+            id: dockLogo
+
             anchors {
                 top: parent.top
                 horizontalCenter: parent.horizontalCenter
@@ -48,6 +50,16 @@ ShellRoot {
             height: logoSize
             fillMode: Image.PreserveAspectFit
             smooth: true
+        }
+
+        Workspaces {
+            id: dockWorkspaces
+
+            anchors {
+                top: dockLogo.bottom
+                topMargin: dockWorkspaces.logoGap
+                horizontalCenter: parent.horizontalCenter
+            }
         }
 
         PowerMenu {
