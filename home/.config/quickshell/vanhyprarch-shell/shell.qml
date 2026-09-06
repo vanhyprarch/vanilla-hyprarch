@@ -51,8 +51,21 @@ ShellRoot {
         }
 
         PowerMenu {
+            id: powerMenu
+
             anchors {
                 bottom: parent.bottom
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
+        Clock {
+            id: dockClock
+            popupAnchorItem: powerMenu
+
+            anchors {
+                bottom: powerMenu.top
+                bottomMargin: dockClock.powerButtonGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
