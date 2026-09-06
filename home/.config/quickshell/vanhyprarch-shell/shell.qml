@@ -1,3 +1,4 @@
+//@ pragma UseQApplication
 //@ pragma IconTheme Papirus
 
 import QtQuick
@@ -94,6 +95,16 @@ ShellRoot {
             anchors {
                 bottom: powerMenu.top
                 bottomMargin: dockClock.powerButtonGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
+        SystemTray {
+            id: dockSystemTray
+
+            anchors {
+                bottom: dockClock.top
+                bottomMargin: dockSystemTray.clockGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
