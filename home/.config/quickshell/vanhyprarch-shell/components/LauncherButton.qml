@@ -9,6 +9,7 @@ Item {
     property int iconSize: 28
     property var workspaceIds: []
 
+    signal activationRequested()
     signal contextMenuRequested()
 
     implicitWidth: buttonSize
@@ -72,7 +73,7 @@ Item {
         cursorShape: Qt.PointingHandCursor
         onClicked: mouse => {
             if (mouse.button === Qt.LeftButton)
-                root.desktopEntry.execute()
+                root.activationRequested()
             else if (mouse.button === Qt.RightButton)
                 root.contextMenuRequested()
         }
