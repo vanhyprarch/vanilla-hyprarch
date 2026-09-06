@@ -7,13 +7,40 @@ Item {
     required property DesktopEntry desktopEntry
     property int buttonSize: 40
     property int iconSize: 28
+    property var workspaceIds: []
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize
     width: implicitWidth
     height: implicitHeight
+    clip: true
 
     onDesktopEntryChanged: iconImage.failed = false
+
+    Column {
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: 6
+        spacing: -1
+
+        Repeater {
+            model: root.workspaceIds
+
+            Text {
+                required property var modelData
+
+                width: 6
+                height: 8
+                text: modelData
+                color: "#8D4C2B"
+                font.pixelSize: 8
+                font.weight: Font.Normal
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.NoWrap
+            }
+        }
+    }
 
     // Keep the icon separate from the full click target, leaving room at the left.
     Image {

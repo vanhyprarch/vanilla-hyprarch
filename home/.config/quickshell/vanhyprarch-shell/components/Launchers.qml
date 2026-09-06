@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 
 Item {
     id: root
@@ -19,6 +20,50 @@ Item {
             config: launcher,
             desktopEntry: DesktopEntries.byId(launcher.desktopId)
         })).filter(launcher => launcher.desktopEntry !== null)
+    }
+
+    function workspaceIdsForDesktopEntry(desktopEntry: DesktopEntry): var {
+        if (!desktopEntry)
+            return []
+
+        const normalize = value => value === null || value === undefined
+            ? "" : String(value).trim().toLowerCase()
+
+        const candidates = []
+        const startupClass = normalize(desktopEntry.startupClass)
+        const desktopId = normalize(desktopEntry.id)
+        const desktopIdWithoutSuffix = desktopId.endsWith(".desktop")
+            ? desktopId.slice(0, -8) : desktopId
+
+        for (const candidate of [startupClass, desktopId, desktopIdWithoutSuffix]) {
+            if (candidate !== "" && !candidates.includes(candidate))
+                candidates.push(candidate)
+        }
+
+        const workspaceIds = []
+        for (const workspace of Hyprland.workspaces.values) {
+            if (!workspace || workspace.id <= 0 || !workspace.toplevels)
+                continue
+
+            const matches = workspace.toplevels.values.some(toplevel => {
+                if (!toplevel)
+                    return false
+
+                const ipcObject = toplevel.lastIpcObject
+                const wayland = toplevel.wayland
+                const runtimeIdentifiers = [
+                    normalize(ipcObject ? ipcObject["class"] : ""),
+                    normalize(wayland ? wayland.appId : "")
+                ]
+                return runtimeIdentifiers.some(identifier =>
+                    identifier !== "" && candidates.includes(identifier))
+            })
+
+            if (matches && !workspaceIds.includes(workspace.id))
+                workspaceIds.push(workspace.id)
+        }
+
+        return workspaceIds.sort((left, right) => left - right)
     }
 
     implicitWidth: contentWidth
@@ -46,6 +91,7 @@ Item {
                 desktopEntry: modelData.desktopEntry
                 buttonSize: root.buttonSize
                 iconSize: root.iconSize
+                workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
             }
         }
 
