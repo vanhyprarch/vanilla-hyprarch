@@ -23,6 +23,15 @@ Scope {
         return true
     }
 
+    function removeLauncher(desktopId: string): bool {
+        if (!ready || !contains(desktopId))
+            return false
+
+        state.launchers = launchers.filter(launcher => launcher.desktopId !== desktopId)
+        persist()
+        return true
+    }
+
     function persist(): void {
         // FileView can replay a completed write into its adapter. Keep live state separate.
         jsonData.launchers = state.launchers

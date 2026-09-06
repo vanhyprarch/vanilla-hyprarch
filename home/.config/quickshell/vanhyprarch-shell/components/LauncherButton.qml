@@ -9,6 +9,8 @@ Item {
     property int iconSize: 28
     property var workspaceIds: []
 
+    signal contextMenuRequested()
+
     implicitWidth: buttonSize
     implicitHeight: buttonSize
     width: implicitWidth
@@ -65,8 +67,14 @@ Item {
     MouseArea {
         anchors.fill: parent
         enabled: root.desktopEntry !== null
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.desktopEntry.execute()
+        onClicked: mouse => {
+            if (mouse.button === Qt.LeftButton)
+                root.desktopEntry.execute()
+            else if (mouse.button === Qt.RightButton)
+                root.contextMenuRequested()
+        }
     }
 }

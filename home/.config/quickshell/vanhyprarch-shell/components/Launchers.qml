@@ -85,13 +85,21 @@ Item {
             model: root.resolvedLaunchers
 
             LauncherButton {
+                id: launcherButton
+
                 required property var modelData
 
-                anchors.horizontalCenter: parent.horizontalCenter
+                x: (root.width - width) / 2
                 desktopEntry: modelData.desktopEntry
                 buttonSize: root.buttonSize
                 iconSize: root.iconSize
                 workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
+                onContextMenuRequested: {
+                    launcherContextMenu.visible = false
+                    launcherContextMenu.desktopId = modelData.desktopEntry.id
+                    launcherContextMenu.popupAnchorItem = launcherButton
+                    launcherContextMenu.visible = true
+                }
             }
         }
 
@@ -121,6 +129,11 @@ Item {
     AppPicker {
         id: appPicker
         anchor.item: addButton
+        launcherStore: store
+    }
+
+    LauncherContextMenu {
+        id: launcherContextMenu
         launcherStore: store
     }
 }
