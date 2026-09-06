@@ -32,6 +32,22 @@ Scope {
         return true
     }
 
+    function moveLauncher(desktopId: string, targetIndex: int): bool {
+        if (!ready || targetIndex < 0 || targetIndex >= launchers.length)
+            return false
+
+        const sourceIndex = launchers.findIndex(launcher => launcher.desktopId === desktopId)
+        if (sourceIndex < 0 || sourceIndex === targetIndex)
+            return false
+
+        const nextLaunchers = launchers.slice()
+        const launcher = nextLaunchers.splice(sourceIndex, 1)[0]
+        nextLaunchers.splice(targetIndex, 0, launcher)
+        state.launchers = nextLaunchers
+        persist()
+        return true
+    }
+
     function persist(): void {
         // FileView can replay a completed write into its adapter. Keep live state separate.
         jsonData.launchers = state.launchers

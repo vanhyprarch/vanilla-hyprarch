@@ -14,6 +14,11 @@ Item {
     required property int popupRadius
     property color textColor: "#5A3525"
     property var runtimeOrder: []
+    property string activeDragDesktopId: ""
+    property int pendingDropIndex: -1
+    property color dragIndicatorColor: "#8D4C2B"
+    property int dragIndicatorWidth: 24
+    property int dragIndicatorHeight: 2
 
     readonly property var resolvedLaunchers: {
         // Re-resolve saved IDs when the installed application index changes.
@@ -218,6 +223,103 @@ Item {
         }
     }
 
+    function beginPinnedDrag(desktopId: string): void {
+        if (!store.contains(desktopId))
+            return
+
+        launcherContextMenu.visible = false
+        activeDragDesktopId = desktopId
+        pendingDropIndex = -1
+    }
+
+    function finishPinnedDrag(desktopId: string): void {
+        if (activeDragDesktopId !== desktopId)
+            return
+
+        activeDragDesktopId = ""
+        pendingDropIndex = -1
+    }
+
+    function isPinnedDragSource(source): bool {
+        return source && source.draggable && source.dragDesktopId
+            && store.contains(source.dragDesktopId)
+    }
+
+    function insertionTargetY(insertionIndex: int): real {
+        if (insertionIndex === 0)
+            return 0
+        return (insertionIndex - 1) * (buttonSize + spacing) + buttonSize / 2
+    }
+
+    function insertionTargetHeight(insertionIndex: int): real {
+        if (insertionIndex === 0)
+            return buttonSize / 2
+        if (insertionIndex === resolvedLaunchers.length)
+            return buttonSize / 2 + spacing
+        return buttonSize + spacing
+    }
+
+    function insertionIndicatorY(insertionIndex: int): real {
+        if (insertionIndex === 0)
+            return 0
+        return insertionIndex * (buttonSize + spacing) - spacing / 2
+            - dragIndicatorHeight / 2
+    }
+
+    function storeTargetIndexForInsertion(desktopId: string, insertionIndex: int): int {
+        const visibleIds = resolvedLaunchers.map(launcher => launcher.desktopEntry.id)
+        const sourceVisibleIndex = visibleIds.indexOf(desktopId)
+        const sourceStoreIndex = store.launchers.findIndex(launcher =>
+            launcher.desktopId === desktopId)
+        if (sourceVisibleIndex < 0 || sourceStoreIndex < 0
+                || insertionIndex < 0 || insertionIndex > visibleIds.length)
+            return -1
+
+        // The slots immediately before and after the source both represent its
+        // existing final position.
+        if (insertionIndex === sourceVisibleIndex
+                || insertionIndex === sourceVisibleIndex + 1)
+            return sourceStoreIndex
+
+        const finalVisibleIndex = insertionIndex > sourceVisibleIndex
+            ? insertionIndex - 1 : insertionIndex
+        const remainingLaunchers = store.launchers.filter(launcher =>
+            launcher.desktopId !== desktopId)
+        const remainingVisibleIds = visibleIds.filter(id => id !== desktopId)
+
+        if (finalVisibleIndex < remainingVisibleIds.length) {
+            const targetDesktopId = remainingVisibleIds[finalVisibleIndex]
+            return remainingLaunchers.findIndex(launcher =>
+                launcher.desktopId === targetDesktopId)
+        }
+
+        if (remainingVisibleIds.length === 0)
+            return sourceStoreIndex
+
+        const lastVisibleId = remainingVisibleIds[remainingVisibleIds.length - 1]
+        const lastVisibleStoreIndex = remainingLaunchers.findIndex(launcher =>
+            launcher.desktopId === lastVisibleId)
+        return lastVisibleStoreIndex < 0 ? -1 : lastVisibleStoreIndex + 1
+    }
+
+    function dropPinnedLauncher(drop, insertionIndex: int): void {
+        const source = drop.source
+        if (!isPinnedDragSource(source))
+            return
+
+        const desktopId = source.dragDesktopId
+        const sourceIndex = store.launchers.findIndex(launcher =>
+            launcher.desktopId === desktopId)
+        const targetIndex = storeTargetIndexForInsertion(desktopId, insertionIndex)
+        if (sourceIndex < 0 || targetIndex < 0)
+            return
+
+        drop.acceptProposedAction()
+        pendingDropIndex = -1
+        if (sourceIndex !== targetIndex)
+            Qt.callLater(() => store.moveLauncher(desktopId, targetIndex))
+    }
+
     function openContextMenu(desktopEntry: DesktopEntry, anchorItem: Item,
             pinned: bool, running: bool): void {
         launcherContextMenu.visible = false
@@ -258,10 +360,13 @@ Item {
                 desktopEntry: modelData.desktopEntry
                 buttonSize: root.buttonSize
                 iconSize: root.iconSize
+                draggable: true
                 workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
                 onActivationRequested: root.activateOrLaunch(modelData.desktopEntry)
                 onContextMenuRequested: root.openContextMenu(modelData.desktopEntry,
                     launcherButton, true, root.isDesktopEntryRunning(modelData.desktopEntry))
+                onDragStarted: root.beginPinnedDrag(modelData.desktopEntry.id)
+                onDragFinished: root.finishPinnedDrag(modelData.desktopEntry.id)
             }
         }
 
@@ -299,12 +404,49 @@ Item {
                 desktopEntry: modelData
                 buttonSize: root.buttonSize
                 iconSize: root.iconSize
+                draggable: false
                 workspaceIds: root.workspaceIdsForDesktopEntry(modelData)
                 onActivationRequested: root.activateOrLaunch(modelData)
                 onContextMenuRequested: root.openContextMenu(modelData,
                     runtimeLauncherButton, false, root.isDesktopEntryRunning(modelData))
             }
         }
+    }
+
+    Repeater {
+        model: root.resolvedLaunchers.length + 1
+
+        DropArea {
+            required property int index
+
+            x: (root.width - root.buttonSize) / 2
+            y: root.insertionTargetY(index)
+            width: root.buttonSize
+            height: root.insertionTargetHeight(index)
+            z: 10
+            keys: ["pinned-launcher"]
+
+            onEntered: drag => {
+                if (root.isPinnedDragSource(drag.source))
+                    root.pendingDropIndex = index
+            }
+            onExited: {
+                if (root.pendingDropIndex === index)
+                    root.pendingDropIndex = -1
+            }
+            onDropped: drop => root.dropPinnedLauncher(drop, index)
+        }
+    }
+
+    Rectangle {
+        x: (root.width - width) / 2
+        y: root.insertionIndicatorY(root.pendingDropIndex)
+        width: root.dragIndicatorWidth
+        height: root.dragIndicatorHeight
+        z: 11
+        radius: height / 2
+        color: root.dragIndicatorColor
+        visible: root.activeDragDesktopId !== "" && root.pendingDropIndex >= 0
     }
 
     AppPicker {
