@@ -11,10 +11,10 @@ PopupWindow {
     property Item popupAnchorItem
     property bool pinned: true
     property bool running: false
+    required property int popupRadius
     property int panelWidth: 150
     property int panelPadding: 6
     property int rowHeight: 36
-    property int popupRadius: 14
     property int popupHorizontalOffset: 8
     property int popupVerticalOffset: 4
     property color backgroundColor: "#FFF8F5"
@@ -93,7 +93,7 @@ PopupWindow {
                 width: parent.width
                 height: root.rowHeight
                 visible: root.running
-                radius: 6
+                radius: root.popupRadius
                 color: newWindowMouse.containsMouse ? root.hoverColor : "transparent"
 
                 Text {
@@ -123,7 +123,7 @@ PopupWindow {
             Rectangle {
                 width: parent.width
                 height: root.rowHeight
-                radius: 6
+                radius: root.popupRadius
                 color: removeMouse.containsMouse ? root.hoverColor : "transparent"
 
                 Text {
@@ -157,7 +157,7 @@ PopupWindow {
                 width: parent.width
                 height: root.rowHeight
                 visible: root.running
-                radius: 6
+                radius: root.popupRadius
                 color: closeAllMouse.containsMouse ? root.hoverColor : "transparent"
 
                 Text {

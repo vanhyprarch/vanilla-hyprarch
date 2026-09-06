@@ -11,7 +11,7 @@ PopupWindow {
     property int panelHeight: 360
     property int panelPadding: 8
     property int rowHeight: 40
-    property int popupRadius: 14
+    required property int popupRadius
     property int popupHorizontalOffset: 8
     property int popupVerticalOffset: 0
     property color backgroundColor: "#FFF8F5"
@@ -63,7 +63,7 @@ PopupWindow {
 
                 width: applicationsView.width
                 height: root.rowHeight
-                radius: 6
+                radius: root.popupRadius
                 color: rowMouse.containsMouse && canAdd ? root.hoverColor : "transparent"
                 opacity: canAdd ? 1 : 0.45
 

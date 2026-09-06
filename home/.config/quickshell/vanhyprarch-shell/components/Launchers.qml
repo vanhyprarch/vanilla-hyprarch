@@ -11,6 +11,7 @@ Item {
     property int buttonSize: 40
     property int iconSize: 28
     property int spacing: 4
+    required property int popupRadius
     property color textColor: "#5A3525"
     property var runtimeOrder: []
 
@@ -310,11 +311,13 @@ Item {
         id: appPicker
         anchor.item: addButton
         launcherStore: store
+        popupRadius: root.popupRadius
     }
 
     LauncherContextMenu {
         id: launcherContextMenu
         launcherStore: store
+        popupRadius: root.popupRadius
         onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)
     }
 }

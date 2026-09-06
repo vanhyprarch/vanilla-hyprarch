@@ -14,7 +14,7 @@ Item {
     property color popupColor: "#FFF8F5"
     property color textColor: "#5A3525"
     property int popupWidth: 150
-    property int popupRadius: 14
+    required property int popupRadius
     property int popupHorizontalGap: -16
     property int popupVerticalOffset: -2
 
@@ -87,7 +87,7 @@ Item {
 
         width: root.popupWidth - 16
         height: 36
-        radius: 8
+        radius: root.popupRadius
         color: rowMouse.containsMouse ? root.buttonHoverColor : "transparent"
 
         Text {

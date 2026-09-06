@@ -12,7 +12,7 @@ PopupWindow {
     property int panelWidth: 252
     property int panelPadding: 12
     property int cellSize: 30
-    property int popupRadius: 14
+    required property int popupRadius
     property color backgroundColor: "#FFF8F5"
     property color textColor: "#5A3525"
     property color accentColor: "#8D4C2B"

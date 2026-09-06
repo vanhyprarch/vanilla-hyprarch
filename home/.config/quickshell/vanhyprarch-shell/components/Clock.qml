@@ -11,6 +11,7 @@ Item {
     property int iconSize: 22
     property int itemSpacing: 4
     property int powerButtonGap: 8
+    required property int popupRadius
     property int weekdayFontSize: 11
     property int dateFontSize: 13
     property int timeFontSize: 13
@@ -31,6 +32,7 @@ Item {
         id: monthCalendar
         currentDate: clock.date
         popupAnchorItem: root.popupAnchorItem
+        popupRadius: root.popupRadius
     }
 
     Column {

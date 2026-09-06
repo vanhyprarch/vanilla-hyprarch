@@ -5,9 +5,11 @@ import Quickshell
 import "components"
 
 ShellRoot {
+    id: root
+
     property int dockWidth: 56
     property int borderThickness: 10
-    property int cornerRadius: 22
+    property int cornerRadius: 10
     property int innerShadowLayerWidth: 2
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
     property int logoSize: 40
@@ -22,6 +24,10 @@ ShellRoot {
     property color innerShadow5Color: "#0C000000"
     property color innerShadow6Color: "#06000000"
     property color innerShadow7Color: "#03000000"
+
+    function shadowRadius(layerIndex: int): int {
+        return Math.max(0, cornerRadius - innerShadowLayerWidth * layerIndex)
+    }
 
     PanelWindow {
         anchors {
@@ -65,12 +71,14 @@ ShellRoot {
         }
 
         Launchers {
+            popupRadius: root.cornerRadius
             anchors.verticalCenter: parent.verticalCenter
             anchors.horizontalCenter: parent.horizontalCenter
         }
 
         PowerMenu {
             id: powerMenu
+            popupRadius: root.cornerRadius
 
             anchors {
                 bottom: parent.bottom
@@ -81,6 +89,7 @@ ShellRoot {
         Clock {
             id: dockClock
             popupAnchorItem: powerMenu
+            popupRadius: root.cornerRadius
 
             anchors {
                 bottom: powerMenu.top
@@ -227,7 +236,7 @@ ShellRoot {
             y: borderThickness
             width: parent.width - dockWidth - borderThickness
             height: parent.height - (borderThickness * 2)
-            radius: cornerRadius
+            radius: shadowRadius(0)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow1Color
@@ -238,7 +247,7 @@ ShellRoot {
             y: borderThickness + innerShadowLayerWidth
             width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 2)
             height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 2)
-            radius: cornerRadius - innerShadowLayerWidth
+            radius: shadowRadius(1)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow2Color
@@ -249,7 +258,7 @@ ShellRoot {
             y: borderThickness + (innerShadowLayerWidth * 2)
             width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 4)
             height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 4)
-            radius: cornerRadius - (innerShadowLayerWidth * 2)
+            radius: shadowRadius(2)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow3Color
@@ -260,7 +269,7 @@ ShellRoot {
             y: borderThickness + (innerShadowLayerWidth * 3)
             width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 6)
             height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 6)
-            radius: cornerRadius - (innerShadowLayerWidth * 3)
+            radius: shadowRadius(3)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow4Color
@@ -271,7 +280,7 @@ ShellRoot {
             y: borderThickness + (innerShadowLayerWidth * 4)
             width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 8)
             height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 8)
-            radius: cornerRadius - (innerShadowLayerWidth * 4)
+            radius: shadowRadius(4)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow5Color
@@ -282,7 +291,7 @@ ShellRoot {
             y: borderThickness + (innerShadowLayerWidth * 5)
             width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 10)
             height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 10)
-            radius: cornerRadius - (innerShadowLayerWidth * 5)
+            radius: shadowRadius(5)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow6Color
@@ -293,7 +302,7 @@ ShellRoot {
             y: borderThickness + (innerShadowLayerWidth * 6)
             width: parent.width - dockWidth - borderThickness - (innerShadowLayerWidth * 12)
             height: parent.height - (borderThickness * 2) - (innerShadowLayerWidth * 12)
-            radius: cornerRadius - (innerShadowLayerWidth * 6)
+            radius: shadowRadius(6)
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: innerShadow7Color
