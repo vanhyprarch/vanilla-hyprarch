@@ -7,6 +7,7 @@ PopupWindow {
     id: root
 
     property date currentDate
+    property int monthOffset: 0
     property Item popupAnchorItem
     property int panelWidth: 252
     property int panelPadding: 12
@@ -23,10 +24,11 @@ PopupWindow {
     readonly property var monthNames: ["January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"]
     readonly property var weekdayNames: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    readonly property int currentYear: currentDate.getFullYear()
-    readonly property int currentMonth: currentDate.getMonth()
-    readonly property int daysInMonth: new Date(currentYear, currentMonth + 1, 0).getDate()
-    readonly property date firstDay: new Date(currentYear, currentMonth, 1)
+    readonly property date displayedDate: new Date(currentDate.getFullYear(), currentDate.getMonth() + monthOffset, 1)
+    readonly property int displayedYear: displayedDate.getFullYear()
+    readonly property int displayedMonth: displayedDate.getMonth()
+    readonly property int daysInMonth: new Date(displayedYear, displayedMonth + 1, 0).getDate()
+    readonly property date firstDay: new Date(displayedYear, displayedMonth, 1)
     readonly property int firstDayOffset: (firstDay.getDay() + 6) % 7
     readonly property real columnSpacing: Math.max(0, (panelWidth - panelPadding * 2 - cellSize * 7) / 6)
 
@@ -43,6 +45,11 @@ PopupWindow {
     grabFocus: true
     color: "transparent"
     visible: false
+
+    onVisibleChanged: {
+        if (visible)
+            root.monthOffset = 0
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -61,16 +68,73 @@ PopupWindow {
             width: root.panelWidth - root.panelPadding * 2
             spacing: 6
 
-            Text {
+            Item {
                 width: parent.width
                 height: 24
-                text: root.monthNames[root.currentMonth] + " " + root.currentYear
-                color: root.textColor
-                font.pixelSize: 14
-                font.weight: Font.Medium
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                wrapMode: Text.NoWrap
+
+                Item {
+                    id: previousMonth
+
+                    anchors.left: parent.left
+                    width: 30
+                    height: parent.height
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "‹"
+                        color: previousMouse.containsMouse ? root.accentColor : root.textColor
+                        font.pixelSize: 24
+                    }
+
+                    MouseArea {
+                        id: previousMouse
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.monthOffset -= 1
+                    }
+                }
+
+                Text {
+                    anchors {
+                        left: previousMonth.right
+                        right: nextMonth.left
+                        top: parent.top
+                        bottom: parent.bottom
+                    }
+                    text: root.monthNames[root.displayedMonth] + " " + root.displayedYear
+                    color: root.textColor
+                    font.pixelSize: 14
+                    font.weight: Font.Medium
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.NoWrap
+                }
+
+                Item {
+                    id: nextMonth
+
+                    anchors.right: parent.right
+                    width: 30
+                    height: parent.height
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "›"
+                        color: nextMouse.containsMouse ? root.accentColor : root.textColor
+                        font.pixelSize: 24
+                    }
+
+                    MouseArea {
+                        id: nextMouse
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.monthOffset += 1
+                    }
+                }
             }
 
             Row {
@@ -108,7 +172,10 @@ PopupWindow {
                         required property int index
                         readonly property int dayNumber: index - root.firstDayOffset + 1
                         readonly property bool inMonth: dayNumber >= 1 && dayNumber <= root.daysInMonth
-                        readonly property bool isToday: inMonth && dayNumber === root.currentDate.getDate()
+                        readonly property bool isToday: inMonth
+                            && root.displayedYear === root.currentDate.getFullYear()
+                            && root.displayedMonth === root.currentDate.getMonth()
+                            && dayNumber === root.currentDate.getDate()
 
                         width: root.cellSize
                         height: root.cellSize
