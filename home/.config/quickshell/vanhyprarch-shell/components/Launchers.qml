@@ -206,6 +206,17 @@ Item {
             desktopEntry.execute()
     }
 
+    function closeAllWindows(desktopEntry: DesktopEntry): void {
+        // Snapshot the matches before close requests mutate the workspace models.
+        const matches = matchingToplevelsForDesktopEntry(desktopEntry).slice()
+        for (const match of matches) {
+            const toplevel = match ? match.toplevel : null
+            const handle = toplevel ? (toplevel.wayland || toplevel.handle) : null
+            if (handle)
+                handle.close()
+        }
+    }
+
     function openContextMenu(desktopEntry: DesktopEntry, anchorItem: Item,
             pinned: bool, running: bool): void {
         launcherContextMenu.visible = false
@@ -304,5 +315,6 @@ Item {
     LauncherContextMenu {
         id: launcherContextMenu
         launcherStore: store
+        onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)
     }
 }

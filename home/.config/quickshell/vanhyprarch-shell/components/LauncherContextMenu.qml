@@ -21,6 +21,8 @@ PopupWindow {
     property color textColor: "#5A3525"
     property color hoverColor: "#F3D8CC"
 
+    signal closeAllRequested()
+
     anchor {
         item: root.popupAnchorItem
         edges: Edges.Right | Edges.Top
@@ -98,7 +100,7 @@ PopupWindow {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Open New Window"
+                    text: "Open new window"
                     color: root.textColor
                     font.pixelSize: 13
                     wrapMode: Text.NoWrap
@@ -146,6 +148,37 @@ PopupWindow {
                             root.launcherStore.removeLauncher(root.desktopEntry.id)
                         else
                             root.launcherStore.addLauncher(root.desktopEntry.id)
+                        root.visible = false
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: root.rowHeight
+                visible: root.running
+                radius: 6
+                color: closeAllMouse.containsMouse ? root.hoverColor : "transparent"
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Close all windows"
+                    color: root.textColor
+                    font.pixelSize: 13
+                    wrapMode: Text.NoWrap
+                }
+
+                MouseArea {
+                    id: closeAllMouse
+
+                    anchors.fill: parent
+                    enabled: root.desktopEntry !== null
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        root.closeAllRequested()
                         root.visible = false
                     }
                 }
