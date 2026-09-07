@@ -33,7 +33,17 @@ ShellRoot {
         return Math.max(0, cornerRadius - innerShadowLayerWidth * layerIndex)
     }
 
+    Variants {
+        model: Quickshell.screens
+
+        delegate: Scope {
+            id: screenScope
+
+            required property var modelData
+
     PanelWindow {
+        screen: screenScope.modelData
+
         anchors {
             top: true
             bottom: true
@@ -166,6 +176,8 @@ ShellRoot {
     }
 
     PanelWindow {
+        screen: screenScope.modelData
+
         anchors {
             top: true
             bottom: true
@@ -391,6 +403,8 @@ ShellRoot {
             color: "transparent"
             border.width: innerShadowLayerWidth
             border.color: shellTheme.innerShadowLightest
+        }
+    }
         }
     }
 }
