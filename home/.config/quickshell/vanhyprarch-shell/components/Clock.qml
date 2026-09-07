@@ -5,10 +5,9 @@ Item {
     id: root
 
     property Item popupAnchorItem
-    property color iconColor: "#8D4C2B"
     property color textColor: "#5A3525"
     property int contentWidth: 48
-    property int iconSize: 22
+    property int iconSize: 28
     property int itemSpacing: 4
     property int powerButtonGap: 8
     required property int popupRadius
@@ -48,39 +47,11 @@ Item {
             height: root.iconSize
             anchors.horizontalCenter: parent.horizontalCenter
 
-            Rectangle {
-                x: 1
-                y: 3
-                width: parent.width - 2
-                height: parent.height - 3
-                radius: 3
-                color: "transparent"
-                border.width: 1
-                border.color: root.iconColor
-            }
-
-            Rectangle {
-                x: 1
-                y: 8
-                width: parent.width - 2
-                height: 1
-                color: root.iconColor
-            }
-
-            Rectangle {
-                x: 5
-                width: 2
-                height: 6
-                radius: 1
-                color: root.iconColor
-            }
-
-            Rectangle {
-                x: parent.width - 7
-                width: 2
-                height: 6
-                radius: 1
-                color: root.iconColor
+            Image {
+                anchors.fill: parent
+                source: "file:///usr/share/icons/Papirus/22x22/apps/calendar.svg"
+                sourceSize: Qt.size(root.iconSize, root.iconSize)
+                fillMode: Image.PreserveAspectFit
             }
 
             MouseArea {
