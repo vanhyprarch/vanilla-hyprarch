@@ -36,7 +36,7 @@ bind(mainMod .. " + SHIFT + UP", "Window", "Swap up", hl.dsp.window.swap({ direc
 bind(mainMod .. " + SHIFT + DOWN", "Window", "Swap down", hl.dsp.window.swap({ direction = "d" }))
 
 -- Workspaces
-for workspace = 1, 10 do
+for workspace = 1, 5 do
     local key = workspace % 10
     bind(mainMod .. " + " .. key, "Workspace", "Workspace " .. workspace,
         hl.dsp.focus({ workspace = tostring(workspace) }))
