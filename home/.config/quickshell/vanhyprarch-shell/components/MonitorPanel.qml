@@ -31,6 +31,32 @@ PopupWindow {
     property bool componentReady: false
     property bool startupWarmupPending: true
     property int brightnessWriteRetriesRemaining: 0
+    readonly property var scalePresets: ["1.00", "1.25", "1.50", "2.00"]
+    readonly property string scaleEditScript: [
+        "set -eu",
+        "target=\"$HOME/.config/hypr/hyprland.lua\"",
+        "value=\"$1\"",
+        "case \"$value\" in",
+        "    1.00|1.25|1.50|2.00) ;;",
+        "    *) exit 64 ;;",
+        "esac",
+        "[ -f \"$target\" ] || exit 66",
+        "pattern='^[[:space:]]*local[[:space:]]+dp1Scale[[:space:]]*=[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*$'",
+        "grepStatus=0",
+        "count=$(grep -Ec \"$pattern\" \"$target\") || grepStatus=$?",
+        "[ \"$grepStatus\" -le 1 ] || exit \"$grepStatus\"",
+        "[ \"$count\" -eq 1 ] || exit 65",
+        "tmp=$(mktemp \"${target}.tmp.XXXXXX\")",
+        "trap 'rm -f -- \"$tmp\"' EXIT HUP INT TERM",
+        "sed -E \"s|$pattern|local dp1Scale = $value|\" \"$target\" > \"$tmp\"",
+        "verifyStatus=0",
+        "count=$(grep -Fxc \"local dp1Scale = $value\" \"$tmp\") || verifyStatus=$?",
+        "[ \"$verifyStatus\" -le 1 ] || exit \"$verifyStatus\"",
+        "[ \"$count\" -eq 1 ] || exit 67",
+        "chmod --reference=\"$target\" \"$tmp\"",
+        "mv -- \"$tmp\" \"$target\"",
+        "trap - EXIT HUP INT TERM"
+    ].join("\n")
 
     readonly property var monitor: Hyprland.focusedMonitor
     readonly property var monitorData: monitor ? monitor.lastIpcObject : null
@@ -387,6 +413,32 @@ PopupWindow {
         return isFinite(scale) && scale > 0 ? root.formatNumber(scale, 2) + "×" : "—"
     }
 
+    function scaleMatches(preset: real): bool {
+        if (!root.monitor)
+            return false
+
+        const currentScale = Number(root.monitor.scale)
+        return isFinite(currentScale) && Math.abs(currentScale - preset) < 0.01
+    }
+
+    function requestScalePreset(preset: string) {
+        if (root.scalePresets.indexOf(preset) === -1) {
+            console.warn("Rejected invalid monitor scale preset: " + preset)
+            return
+        }
+        if (root.connectorName !== "DP-1") {
+            console.warn("Monitor scale presets are only configured for DP-1")
+            return
+        }
+        if (scaleWriteProcess.running || root.scaleMatches(Number(preset)))
+            return
+
+        scaleWriteProcess.requestedScale = preset
+        scaleWriteProcess.command = ["sh", "-c", root.scaleEditScript,
+            "quickshell-scale-edit", preset]
+        scaleWriteProcess.running = true
+    }
+
     anchor {
         item: root.popupAnchorItem
         edges: Edges.Right | Edges.Bottom
@@ -498,6 +550,19 @@ PopupWindow {
         }
     }
 
+    Process {
+        id: scaleWriteProcess
+
+        property string requestedScale: ""
+
+        onExited: function(exitCode, exitStatus) {
+            if (exitCode !== 0) {
+                console.warn("Monitor scale update failed for "
+                    + scaleWriteProcess.requestedScale + "× (exit " + exitCode + ")")
+            }
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.backgroundColor
@@ -552,6 +617,53 @@ PopupWindow {
             InfoRow {
                 label: "Scale"
                 value: root.scaleText()
+            }
+
+            Row {
+                id: scalePresetsRow
+
+                width: parent.width
+                height: 24
+                spacing: 4
+
+                Repeater {
+                    model: root.scalePresets
+
+                    Rectangle {
+                        id: scalePresetButton
+
+                        required property string modelData
+                        readonly property string preset: modelData
+                        readonly property bool selected: root.scaleMatches(Number(preset))
+
+                        width: (scalePresetsRow.width
+                            - scalePresetsRow.spacing * (root.scalePresets.length - 1))
+                            / root.scalePresets.length
+                        height: scalePresetsRow.height
+                        radius: root.popupRadius / 2
+                        color: selected ? root.accentColor : root.secondaryColor
+
+                        Text {
+                            anchors.fill: parent
+                            text: String(Number(scalePresetButton.preset))
+                            color: scalePresetButton.selected
+                                ? root.backgroundColor : root.textColor
+                            font.pixelSize: 12
+                            font.weight: scalePresetButton.selected
+                                ? Font.Medium : Font.Normal
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.NoWrap
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !scaleWriteProcess.running
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: root.requestScalePreset(scalePresetButton.preset)
+                        }
+                    }
+                }
             }
 
             InfoRow {
