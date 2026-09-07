@@ -20,10 +20,12 @@ PopupWindow {
         Math.min(900, screenWidth - dockWidth - 48))
     property int panelHeight: Math.max(280,
         Math.min(900, screenHeight - 64))
-    property int panelPadding: 18
-    property int searchHeight: 44
-    property int rowHeight: 48
-    property int categoryHeight: 28
+    property int panelPadding: 22
+    property int searchHeight: 52
+    property int rowHeight: 56
+    property int categoryHeight: 36
+    property int columnHeaderHeight: 32
+    property real actionColumnRatio: 0.43
 
     function syncVisibility(): void {
         const shouldShow = controller.isOpen && activeForScreen
@@ -33,12 +35,8 @@ PopupWindow {
 
     anchor {
         item: root.anchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0,
-            ((root.anchorItem.parent ? root.anchorItem.parent.width : root.anchorItem.width)
-                - root.anchorItem.width) / 2) - 8
-        margins.bottom: -16
+        edges: Edges.None
+        gravity: Edges.None
     }
     implicitWidth: panelWidth
     implicitHeight: panelHeight
@@ -89,11 +87,11 @@ PopupWindow {
                 leftMargin: root.panelPadding
                 rightMargin: 12
             }
-            height: 28
+            height: 34
             text: "Keyboard shortcuts"
             textFormat: Text.PlainText
             color: root.theme.text
-            font.pixelSize: 20
+            font.pixelSize: 24
             font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
         }
@@ -111,7 +109,7 @@ PopupWindow {
             textFormat: Text.PlainText
             color: root.theme.text
             opacity: 0.65
-            font.pixelSize: 12
+            font.pixelSize: 14
             verticalAlignment: Text.AlignVCenter
         }
 
@@ -122,7 +120,7 @@ PopupWindow {
                 top: titleText.bottom
                 left: parent.left
                 right: parent.right
-                topMargin: 14
+                topMargin: 16
                 leftMargin: root.panelPadding
                 rightMargin: root.panelPadding
             }
@@ -135,7 +133,7 @@ PopupWindow {
             Text {
                 anchors {
                     left: parent.left
-                    leftMargin: 14
+                    leftMargin: 16
                     verticalCenter: parent.verticalCenter
                 }
                 visible: searchInput.text.length === 0
@@ -143,7 +141,7 @@ PopupWindow {
                 textFormat: Text.PlainText
                 color: root.theme.text
                 opacity: 0.55
-                font.pixelSize: 14
+                font.pixelSize: 17
             }
 
             TextInput {
@@ -151,13 +149,13 @@ PopupWindow {
 
                 anchors {
                     fill: parent
-                    leftMargin: 14
-                    rightMargin: 14
+                    leftMargin: 16
+                    rightMargin: 16
                 }
                 color: root.theme.text
                 selectionColor: root.theme.accent
                 selectedTextColor: root.theme.background
-                font.pixelSize: 14
+                font.pixelSize: 17
                 verticalAlignment: TextInput.AlignVCenter
                 clip: true
                 Keys.priority: Keys.BeforeItem
@@ -190,6 +188,76 @@ PopupWindow {
             }
         }
 
+        Item {
+            id: columnHeader
+
+            anchors {
+                top: searchBox.bottom
+                left: parent.left
+                right: parent.right
+                topMargin: 10
+                leftMargin: root.panelPadding
+                rightMargin: root.panelPadding
+            }
+            height: root.columnHeaderHeight
+
+            Text {
+                anchors {
+                    left: parent.left
+                    right: headerDivider.left
+                    leftMargin: 14
+                    rightMargin: 14
+                    verticalCenter: parent.verticalCenter
+                }
+                text: "Action"
+                textFormat: Text.PlainText
+                color: root.theme.text
+                opacity: 0.58
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            Rectangle {
+                id: headerDivider
+
+                x: Math.round(parent.width * root.actionColumnRatio)
+                y: 6
+                width: 1
+                height: parent.height - 12
+                color: root.theme.text
+                opacity: 0.16
+            }
+
+            Text {
+                anchors {
+                    left: headerDivider.right
+                    right: parent.right
+                    leftMargin: 16
+                    rightMargin: 14
+                    verticalCenter: parent.verticalCenter
+                }
+                text: "Shortcut"
+                textFormat: Text.PlainText
+                color: root.theme.text
+                opacity: 0.58
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            Rectangle {
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    bottom: parent.bottom
+                }
+                height: 1
+                color: root.theme.text
+                opacity: 0.12
+            }
+        }
+
         ListView {
             id: shortcutsView
 
@@ -206,11 +274,11 @@ PopupWindow {
             }
 
             anchors {
-                top: searchBox.bottom
+                top: columnHeader.bottom
                 bottom: resultCount.top
                 left: parent.left
                 right: parent.right
-                topMargin: 12
+                topMargin: 2
                 bottomMargin: 8
                 leftMargin: root.panelPadding
                 rightMargin: root.panelPadding
@@ -240,12 +308,13 @@ PopupWindow {
 
                 Text {
                     visible: shortcutDelegate.modelData.showCategory
-                    width: parent.width
+                    x: 4
+                    width: parent.width - 8
                     height: root.categoryHeight
                     text: shortcutDelegate.modelData.category
                     textFormat: Text.PlainText
                     color: root.theme.accent
-                    font.pixelSize: 13
+                    font.pixelSize: 16
                     font.weight: Font.DemiBold
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -264,18 +333,29 @@ PopupWindow {
                         || rowMouse.containsMouse
                         ? root.theme.hover : "transparent"
 
+                    Rectangle {
+                        id: rowDivider
+
+                        x: Math.round(parent.width * root.actionColumnRatio)
+                        y: 10
+                        width: 1
+                        height: parent.height - 20
+                        color: root.theme.text
+                        opacity: 0.14
+                    }
+
                     Text {
                         anchors {
                             left: parent.left
-                            right: chordText.left
-                            leftMargin: 12
-                            rightMargin: 16
+                            right: rowDivider.left
+                            leftMargin: 14
+                            rightMargin: 14
                             verticalCenter: parent.verticalCenter
                         }
                         text: shortcutDelegate.modelData.action
                         textFormat: Text.PlainText
                         color: root.theme.text
-                        font.pixelSize: 14
+                        font.pixelSize: 17
                         font.weight: Font.Medium
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
@@ -285,19 +365,33 @@ PopupWindow {
                         id: chordText
 
                         anchors {
+                            left: rowDivider.right
                             right: parent.right
-                            rightMargin: 12
+                            leftMargin: 16
+                            rightMargin: 14
                             verticalCenter: parent.verticalCenter
                         }
-                        width: Math.min(430, shortcutRow.width * 0.56)
                         text: shortcutDelegate.modelData.chords.join("   •   ")
                         textFormat: Text.PlainText
                         color: root.theme.text
                         opacity: 0.82
-                        font.pixelSize: 13
-                        horizontalAlignment: Text.AlignRight
-                        elide: Text.ElideLeft
+                        font.pixelSize: 16
+                        horizontalAlignment: Text.AlignLeft
+                        elide: Text.ElideRight
                         wrapMode: Text.NoWrap
+                    }
+
+                    Rectangle {
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            bottom: parent.bottom
+                            leftMargin: 8
+                            rightMargin: 8
+                        }
+                        height: 1
+                        color: root.theme.text
+                        opacity: 0.09
                     }
 
                     MouseArea {
@@ -326,7 +420,7 @@ PopupWindow {
             textFormat: Text.PlainText
             color: root.theme.text
             opacity: 0.72
-            font.pixelSize: 14
+            font.pixelSize: 17
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.WordWrap
@@ -339,17 +433,17 @@ PopupWindow {
                 bottom: parent.bottom
                 left: parent.left
                 right: parent.right
-                bottomMargin: 10
+                bottomMargin: 12
                 leftMargin: root.panelPadding
                 rightMargin: root.panelPadding
             }
-            height: 20
+            height: 22
             text: root.controller.loading ? ""
                 : root.controller.filteredEntries.length + " shortcuts"
             textFormat: Text.PlainText
             color: root.theme.text
             opacity: 0.55
-            font.pixelSize: 11
+            font.pixelSize: 13
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter
         }

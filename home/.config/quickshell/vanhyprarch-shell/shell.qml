@@ -182,7 +182,7 @@ ShellRoot {
     ShortcutsPanel {
         controller: shortcuts
         theme: shellTheme
-        anchorItem: powerMenu
+        anchorItem: shortcutsAnchor
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
@@ -204,6 +204,12 @@ ShellRoot {
         exclusionMode: ExclusionMode.Ignore
         focusable: false
         mask: Region {}
+
+        Item {
+            id: shortcutsAnchor
+
+            anchors.fill: parent
+        }
 
         Rectangle {
             height: borderThickness
