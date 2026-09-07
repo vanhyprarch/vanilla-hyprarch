@@ -30,7 +30,7 @@ PopupWindow {
     property string cachedDdcBus: ""
     property bool componentReady: false
     property bool startupWarmupPending: true
-    property bool writeFailedDuringGesture: false
+    property int brightnessWriteRetriesRemaining: 0
 
     readonly property var monitor: Hyprland.focusedMonitor
     readonly property var monitorData: monitor ? monitor.lastIpcObject : null
@@ -80,7 +80,7 @@ PopupWindow {
         } else {
             brightnessDebounce.stop()
             root.brightnessWritePending = false
-            root.writeFailedDuringGesture = false
+            root.brightnessWriteRetriesRemaining = 0
             if (ddcProcess.completionPending && ddcProcess.phase === "write") {
                 ddcProcess.cancelled = true
                 if (ddcProcess.running)
@@ -95,7 +95,7 @@ PopupWindow {
         root.confirmedBrightnessPercent = 0
         root.brightnessRawCurrent = 0
         root.brightnessRawMaximum = 0
-        root.writeFailedDuringGesture = false
+        root.brightnessWriteRetriesRemaining = 0
     }
 
     function connectorMatches(candidate: string, connector: string): bool {
@@ -166,20 +166,20 @@ PopupWindow {
             return
 
         const percent = root.clampBrightness(value)
-        root.writeFailedDuringGesture = false
+        brightnessDebounce.stop()
         root.brightnessPercent = percent
         root.pendingBrightnessPercent = percent
         root.brightnessWritePending = true
-        brightnessDebounce.restart()
+        root.brightnessWriteRetriesRemaining = 1
     }
 
     function debouncePendingBrightness() {
-        if (root.visible && root.brightnessWritePending)
+        if (root.visible && root.brightnessWritePending && !sliderMouse.pressed)
             brightnessDebounce.restart()
     }
 
     function processPendingBrightness() {
-        if (!root.visible || !root.brightnessWritePending)
+        if (!root.visible || sliderMouse.pressed || !root.brightnessWritePending)
             return
         if (ddcProcess.running || ddcProcess.completionPending)
             return
@@ -248,7 +248,7 @@ PopupWindow {
     }
 
     function startBrightnessWrite(percent: int, bus: string, connector: string) {
-        if (!root.visible || connector !== root.connectorName
+        if (!root.visible || sliderMouse.pressed || connector !== root.connectorName
                 || ddcProcess.running || ddcProcess.completionPending)
             return
 
@@ -259,7 +259,6 @@ PopupWindow {
         const rawValue = Math.max(0, Math.min(maximum,
             Math.round(root.clampBrightness(percent) * maximum / 100)))
         ddcProcess.phase = "write"
-        root.writeFailedDuringGesture = false
         ddcProcess.queryConnector = connector
         ddcProcess.requestedPercent = root.clampBrightness(percent)
         ddcProcess.requestedRawValue = rawValue
@@ -283,10 +282,11 @@ PopupWindow {
             if (exitCode !== 0) {
                 const bus = root.cachedDdcBus
                 brightnessDebounce.stop()
-                if (sliderMouse.pressed) {
-                    root.writeFailedDuringGesture = !root.brightnessWritePending
-                } else if (!root.brightnessWritePending) {
-                    root.brightnessPercent = root.confirmedBrightnessPercent
+                if (!root.brightnessWritePending
+                        && root.brightnessWriteRetriesRemaining > 0) {
+                    root.pendingBrightnessPercent = requestedPercent
+                    root.brightnessWritePending = true
+                    root.brightnessWriteRetriesRemaining = 0
                 }
                 if (/^\d+$/.test(bus)) {
                     Qt.callLater(function() { root.startBrightnessRead(bus, connector, true) })
@@ -301,7 +301,8 @@ PopupWindow {
             root.brightnessRawCurrent = requestedRawValue
             root.confirmedBrightnessPercent = requestedPercent
             root.brightnessAvailable = true
-            root.writeFailedDuringGesture = false
+            if (!root.brightnessWritePending)
+                root.brightnessWriteRetriesRemaining = 0
             if (!root.brightnessWritePending)
                 root.brightnessPercent = requestedPercent
             root.debouncePendingBrightness()
@@ -343,7 +344,7 @@ PopupWindow {
         root.brightnessRawCurrent = reading.current
         root.brightnessRawMaximum = reading.maximum
         root.confirmedBrightnessPercent = reading.percent
-        if (!sliderMouse.pressed) {
+        if (!root.visible || !sliderMouse.pressed) {
             root.brightnessPercent = root.brightnessWritePending
                 ? root.pendingBrightnessPercent : reading.percent
         }
@@ -434,7 +435,7 @@ PopupWindow {
     Timer {
         id: brightnessDebounce
 
-        interval: 180
+        interval: 500
         repeat: false
         onTriggered: root.processPendingBrightness()
     }
@@ -638,12 +639,11 @@ PopupWindow {
                                 root.previewBrightness(percentFromX(mouse.x))
                         }
                         onReleased: {
-                            if (root.writeFailedDuringGesture && root.visible
-                                    && root.brightnessAvailable) {
-                                root.writeFailedDuringGesture = false
+                            if (root.visible && root.brightnessAvailable) {
                                 root.pendingBrightnessPercent = root.clampBrightness(
                                     root.brightnessPercent)
                                 root.brightnessWritePending = true
+                                root.brightnessWriteRetriesRemaining = 1
                                 brightnessDebounce.restart()
                             }
                         }
