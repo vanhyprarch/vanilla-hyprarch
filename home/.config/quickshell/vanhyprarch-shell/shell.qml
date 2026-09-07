@@ -94,7 +94,18 @@ ShellRoot {
 
             anchors {
                 bottom: powerMenu.top
-                bottomMargin: dockClock.powerButtonGap
+                bottomMargin: dockClock.systemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
+        Monitor {
+            id: dockMonitor
+            popupRadius: root.cornerRadius
+
+            anchors {
+                bottom: dockClock.top
+                bottomMargin: dockClock.systemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -103,7 +114,7 @@ ShellRoot {
             id: dockSystemTray
 
             anchors {
-                bottom: dockClock.top
+                bottom: dockMonitor.top
                 bottomMargin: dockSystemTray.clockGap
                 horizontalCenter: parent.horizontalCenter
             }

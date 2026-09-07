@@ -9,7 +9,7 @@ Item {
     property int contentWidth: 48
     property int iconSize: 28
     property int itemSpacing: 4
-    property int powerButtonGap: 8
+    property int systemControlGap: 8
     required property int popupRadius
     property int weekdayFontSize: 11
     property int dateFontSize: 13
