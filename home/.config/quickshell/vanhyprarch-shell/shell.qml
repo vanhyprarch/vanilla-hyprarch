@@ -132,12 +132,24 @@ ShellRoot {
             }
         }
 
+        Network {
+            id: dockNetwork
+            theme: shellTheme
+            popupRadius: root.cornerRadius
+
+            anchors {
+                bottom: dockAudio.top
+                bottomMargin: dockClock.systemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
         SystemTray {
             id: dockSystemTray
             theme: shellTheme
 
             anchors {
-                bottom: dockAudio.top
+                bottom: dockNetwork.top
                 bottomMargin: dockSystemTray.clockGap
                 horizontalCenter: parent.horizontalCenter
             }
