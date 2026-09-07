@@ -97,13 +97,24 @@ ShellRoot {
             }
         }
 
+        ThemeToggle {
+            id: dockThemeToggle
+            theme: shellTheme
+
+            anchors {
+                bottom: dockClock.top
+                bottomMargin: dockClock.systemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
         Monitor {
             id: dockMonitor
             theme: shellTheme
             popupRadius: root.cornerRadius
 
             anchors {
-                bottom: dockClock.top
+                bottom: dockThemeToggle.top
                 bottomMargin: dockClock.systemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
@@ -166,7 +177,20 @@ ShellRoot {
             color: shellTheme.background
         }
 
+        Connections {
+            target: shellTheme
+
+            function onBackgroundChanged(): void {
+                topLeftCorner.requestPaint()
+                topRightCorner.requestPaint()
+                bottomLeftCorner.requestPaint()
+                bottomRightCorner.requestPaint()
+            }
+        }
+
         Canvas {
+            id: topLeftCorner
+
             width: cornerRadius
             height: cornerRadius
             anchors.top: parent.top
@@ -188,6 +212,8 @@ ShellRoot {
         }
 
         Canvas {
+            id: topRightCorner
+
             width: cornerRadius
             height: cornerRadius
             anchors.top: parent.top
@@ -210,6 +236,8 @@ ShellRoot {
         }
 
         Canvas {
+            id: bottomLeftCorner
+
             width: cornerRadius
             height: cornerRadius
             anchors.bottom: parent.bottom
@@ -232,6 +260,8 @@ ShellRoot {
         }
 
         Canvas {
+            id: bottomRightCorner
+
             width: cornerRadius
             height: cornerRadius
             anchors.bottom: parent.bottom

@@ -69,7 +69,7 @@ Item {
                 width: 6
                 height: 8
                 text: modelData
-                color: root.theme.accent
+                color: root.theme.text
                 font.pixelSize: 8
                 font.weight: Font.Normal
                 horizontalAlignment: Text.AlignHCenter
