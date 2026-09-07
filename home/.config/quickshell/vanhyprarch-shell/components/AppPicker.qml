@@ -6,6 +6,7 @@ import Quickshell
 PopupWindow {
     id: root
 
+    required property var theme
     required property LauncherStore launcherStore
     property int panelWidth: 300
     property int panelHeight: 360
@@ -14,9 +15,9 @@ PopupWindow {
     required property int popupRadius
     property int popupHorizontalOffset: 8
     property int popupVerticalOffset: 0
-    property color backgroundColor: "#FFF8F5"
-    property color textColor: "#5A3525"
-    property color hoverColor: "#FAEAE3"
+    property color backgroundColor: root.theme.background
+    property color textColor: root.theme.text
+    property color hoverColor: root.theme.surface
 
     anchor {
         edges: Edges.Right | Edges.Bottom

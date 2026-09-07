@@ -7,16 +7,17 @@ import Quickshell.Hyprland
 Item {
     id: root
 
+    required property var theme
     property int contentWidth: 48
     property int buttonSize: 40
     property int iconSize: 28
     property int spacing: 4
     required property int popupRadius
-    property color textColor: "#5A3525"
+    property color textColor: root.theme.text
     property var runtimeOrder: []
     property string activeDragDesktopId: ""
     property int pendingDropIndex: -1
-    property color dragIndicatorColor: "#8D4C2B"
+    property color dragIndicatorColor: root.theme.accent
     property int dragIndicatorWidth: 24
     property int dragIndicatorHeight: 2
 
@@ -356,6 +357,7 @@ Item {
 
                 required property var modelData
 
+                theme: root.theme
                 x: (root.width - width) / 2
                 desktopEntry: modelData.desktopEntry
                 buttonSize: root.buttonSize
@@ -400,6 +402,7 @@ Item {
 
                 required property DesktopEntry modelData
 
+                theme: root.theme
                 x: (root.width - width) / 2
                 desktopEntry: modelData
                 buttonSize: root.buttonSize
@@ -451,6 +454,7 @@ Item {
 
     AppPicker {
         id: appPicker
+        theme: root.theme
         anchor.item: addButton
         launcherStore: store
         popupRadius: root.popupRadius
@@ -458,6 +462,7 @@ Item {
 
     LauncherContextMenu {
         id: launcherContextMenu
+        theme: root.theme
         launcherStore: store
         popupRadius: root.popupRadius
         onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)

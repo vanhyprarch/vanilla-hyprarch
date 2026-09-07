@@ -6,12 +6,13 @@ import Quickshell.Hyprland
 Item {
     id: root
 
+    required property var theme
     property int contentWidth: 40
     property int buttonHeight: 28
     property int spacing: 1
     property int logoGap: 13
     property int fontSize: 13
-    property color textColor: "#5A3525"
+    property color textColor: root.theme.text
 
     implicitWidth: contentWidth
     implicitHeight: content.implicitHeight

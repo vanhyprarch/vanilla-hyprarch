@@ -8,6 +8,10 @@ import "components"
 ShellRoot {
     id: root
 
+    Theme {
+        id: shellTheme
+    }
+
     property int dockWidth: 56
     property int borderThickness: 10
     property int cornerRadius: 10
@@ -15,16 +19,6 @@ ShellRoot {
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
     property int logoSize: 40
     property int logoTopMargin: 12
-    property color dockColor: "#FFF8F5"
-    property color borderColor: "#FFF8F5"
-    property color cornerMaskColor: "#FFF8F5"
-    property color innerShadow1Color: "#50000000"
-    property color innerShadow2Color: "#3A000000"
-    property color innerShadow3Color: "#28000000"
-    property color innerShadow4Color: "#18000000"
-    property color innerShadow5Color: "#0C000000"
-    property color innerShadow6Color: "#06000000"
-    property color innerShadow7Color: "#03000000"
 
     function shadowRadius(layerIndex: int): int {
         return Math.max(0, cornerRadius - innerShadowLayerWidth * layerIndex)
@@ -43,7 +37,7 @@ ShellRoot {
 
         Rectangle {
             anchors.fill: parent
-            color: dockColor
+            color: shellTheme.background
         }
 
         Image {
@@ -63,6 +57,7 @@ ShellRoot {
 
         Workspaces {
             id: dockWorkspaces
+            theme: shellTheme
 
             anchors {
                 top: dockLogo.bottom
@@ -72,6 +67,7 @@ ShellRoot {
         }
 
         Launchers {
+            theme: shellTheme
             popupRadius: root.cornerRadius
             anchors.verticalCenter: parent.verticalCenter
             anchors.horizontalCenter: parent.horizontalCenter
@@ -79,6 +75,7 @@ ShellRoot {
 
         PowerMenu {
             id: powerMenu
+            theme: shellTheme
             popupRadius: root.cornerRadius
 
             anchors {
@@ -89,6 +86,7 @@ ShellRoot {
 
         Clock {
             id: dockClock
+            theme: shellTheme
             popupAnchorItem: powerMenu
             popupRadius: root.cornerRadius
 
@@ -101,6 +99,7 @@ ShellRoot {
 
         Monitor {
             id: dockMonitor
+            theme: shellTheme
             popupRadius: root.cornerRadius
 
             anchors {
@@ -112,6 +111,7 @@ ShellRoot {
 
         SystemTray {
             id: dockSystemTray
+            theme: shellTheme
 
             anchors {
                 bottom: dockMonitor.top
@@ -142,7 +142,7 @@ ShellRoot {
                 right: parent.right
                 leftMargin: dockWidth
             }
-            color: borderColor
+            color: shellTheme.background
         }
 
         Rectangle {
@@ -153,7 +153,7 @@ ShellRoot {
                 right: parent.right
                 leftMargin: dockWidth
             }
-            color: borderColor
+            color: shellTheme.background
         }
 
         Rectangle {
@@ -163,7 +163,7 @@ ShellRoot {
                 bottom: parent.bottom
                 right: parent.right
             }
-            color: borderColor
+            color: shellTheme.background
         }
 
         Canvas {
@@ -177,7 +177,7 @@ ShellRoot {
             onPaint: {
                 const context = getContext("2d")
                 context.clearRect(0, 0, width, height)
-                context.fillStyle = cornerMaskColor
+                context.fillStyle = shellTheme.background
                 context.beginPath()
                 context.moveTo(0, 0)
                 context.lineTo(width, 0)
@@ -198,7 +198,7 @@ ShellRoot {
             onPaint: {
                 const context = getContext("2d")
                 context.clearRect(0, 0, width, height)
-                context.fillStyle = cornerMaskColor
+                context.fillStyle = shellTheme.background
                 context.beginPath()
                 context.moveTo(0, 0)
                 context.lineTo(width, 0)
@@ -220,7 +220,7 @@ ShellRoot {
             onPaint: {
                 const context = getContext("2d")
                 context.clearRect(0, 0, width, height)
-                context.fillStyle = cornerMaskColor
+                context.fillStyle = shellTheme.background
                 context.beginPath()
                 context.moveTo(0, 0)
                 context.lineTo(0, height)
@@ -242,7 +242,7 @@ ShellRoot {
             onPaint: {
                 const context = getContext("2d")
                 context.clearRect(0, 0, width, height)
-                context.fillStyle = cornerMaskColor
+                context.fillStyle = shellTheme.background
                 context.beginPath()
                 context.moveTo(width, 0)
                 context.lineTo(width, height)
@@ -261,7 +261,7 @@ ShellRoot {
             radius: shadowRadius(0)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow1Color
+            border.color: shellTheme.innerShadowDarkest
         }
 
         Rectangle {
@@ -272,7 +272,7 @@ ShellRoot {
             radius: shadowRadius(1)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow2Color
+            border.color: shellTheme.innerShadowDarker
         }
 
         Rectangle {
@@ -283,7 +283,7 @@ ShellRoot {
             radius: shadowRadius(2)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow3Color
+            border.color: shellTheme.innerShadowDark
         }
 
         Rectangle {
@@ -294,7 +294,7 @@ ShellRoot {
             radius: shadowRadius(3)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow4Color
+            border.color: shellTheme.innerShadowMedium
         }
 
         Rectangle {
@@ -305,7 +305,7 @@ ShellRoot {
             radius: shadowRadius(4)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow5Color
+            border.color: shellTheme.innerShadowLight
         }
 
         Rectangle {
@@ -316,7 +316,7 @@ ShellRoot {
             radius: shadowRadius(5)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow6Color
+            border.color: shellTheme.innerShadowLighter
         }
 
         Rectangle {
@@ -327,7 +327,7 @@ ShellRoot {
             radius: shadowRadius(6)
             color: "transparent"
             border.width: innerShadowLayerWidth
-            border.color: innerShadow7Color
+            border.color: shellTheme.innerShadowLightest
         }
     }
 }

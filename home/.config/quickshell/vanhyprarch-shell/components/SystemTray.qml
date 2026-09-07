@@ -8,12 +8,13 @@ import Quickshell.Services.SystemTray as TrayService
 Item {
     id: root
 
+    required property var theme
     property int contentWidth: 48
     property int buttonSize: 32
     property int iconSize: 22
     property int spacing: 2
     property int clockGap: 8
-    property color iconColor: "#8D4C2B"
+    property color iconColor: root.theme.accent
 
     implicitWidth: contentWidth
     implicitHeight: trayColumn.implicitHeight

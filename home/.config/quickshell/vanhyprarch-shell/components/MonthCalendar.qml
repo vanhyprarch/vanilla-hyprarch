@@ -6,6 +6,7 @@ import Quickshell
 PopupWindow {
     id: root
 
+    required property var theme
     property date currentDate
     property int monthOffset: 0
     property Item popupAnchorItem
@@ -13,10 +14,10 @@ PopupWindow {
     property int panelPadding: 12
     property int cellSize: 30
     required property int popupRadius
-    property color backgroundColor: "#FFF8F5"
-    property color textColor: "#5A3525"
-    property color accentColor: "#8D4C2B"
-    property color todayColor: "#FAEAE3"
+    property color backgroundColor: root.theme.background
+    property color textColor: root.theme.text
+    property color accentColor: root.theme.accent
+    property color todayColor: root.theme.surface
 
     property int popupHorizontalGap: -16
     property int popupVerticalOffset: -2

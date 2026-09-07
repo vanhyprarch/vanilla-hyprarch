@@ -4,8 +4,9 @@ import Quickshell
 Item {
     id: root
 
+    required property var theme
     property Item popupAnchorItem
-    property color textColor: "#5A3525"
+    property color textColor: root.theme.text
     property int contentWidth: 48
     property int iconSize: 28
     property int itemSpacing: 4
@@ -29,6 +30,7 @@ Item {
 
     MonthCalendar {
         id: monthCalendar
+        theme: root.theme
         currentDate: clock.date
         popupAnchorItem: root.popupAnchorItem
         popupRadius: root.popupRadius

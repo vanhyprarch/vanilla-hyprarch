@@ -6,13 +6,14 @@ import Quickshell
 Item {
     id: root
 
+    required property var theme
     property int buttonSize: 40
     property int bottomMargin: 12
-    property color buttonColor: "#FAEAE3"
-    property color buttonHoverColor: "#F3D8CC"
-    property color iconColor: "#8D4C2B"
-    property color popupColor: "#FFF8F5"
-    property color textColor: "#5A3525"
+    property color buttonColor: root.theme.surface
+    property color buttonHoverColor: root.theme.hover
+    property color iconColor: root.theme.accent
+    property color popupColor: root.theme.background
+    property color textColor: root.theme.text
     property int popupWidth: 150
     required property int popupRadius
     property int popupHorizontalGap: -16

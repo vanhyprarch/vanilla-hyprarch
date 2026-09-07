@@ -4,6 +4,7 @@ import Quickshell
 Item {
     id: root
 
+    required property var theme
     required property DesktopEntry desktopEntry
     property int buttonSize: 40
     property int iconSize: 28
@@ -68,7 +69,7 @@ Item {
                 width: 6
                 height: 8
                 text: modelData
-                color: "#8D4C2B"
+                color: root.theme.accent
                 font.pixelSize: 8
                 font.weight: Font.Normal
                 horizontalAlignment: Text.AlignHCenter

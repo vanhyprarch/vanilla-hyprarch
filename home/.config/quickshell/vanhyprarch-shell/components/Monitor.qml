@@ -4,6 +4,7 @@ import Quickshell
 Item {
     id: root
 
+    required property var theme
     property int buttonSize: 40
     property int iconSize: 28
     required property int popupRadius
@@ -34,6 +35,7 @@ Item {
     MonitorPanel {
         id: monitorPanel
 
+        theme: root.theme
         popupAnchorItem: root
         popupRadius: root.popupRadius
     }

@@ -8,6 +8,7 @@ import Quickshell.Io
 PopupWindow {
     id: root
 
+    required property var theme
     required property Item popupAnchorItem
     required property int popupRadius
     property int panelWidth: 260
@@ -15,10 +16,10 @@ PopupWindow {
     property int rowHeight: 32
     property int popupHorizontalGap: -16
     property int popupVerticalOffset: -2
-    property color backgroundColor: "#FFF8F5"
-    property color textColor: "#5A3525"
-    property color secondaryColor: "#FAEAE3"
-    property color accentColor: "#8D4C2B"
+    property color backgroundColor: root.theme.background
+    property color textColor: root.theme.text
+    property color secondaryColor: root.theme.surface
+    property color accentColor: root.theme.accent
     property bool brightnessAvailable: false
     property int brightnessPercent: 0
     property int confirmedBrightnessPercent: 0
