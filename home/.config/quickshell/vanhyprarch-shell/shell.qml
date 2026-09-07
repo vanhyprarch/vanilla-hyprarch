@@ -3,10 +3,19 @@
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import "components"
 
 ShellRoot {
     id: root
+
+    IpcHandler {
+        target: "vanhyprarch.shell"
+
+        function ping(): string {
+            return "pong"
+        }
+    }
 
     Theme {
         id: shellTheme
