@@ -19,9 +19,13 @@ PopupWindow {
     property color textColor: root.theme.text
     property color secondaryColor: root.theme.surface
     property color accentColor: root.theme.accent
+    property color hoverColor: root.theme.hover
 
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property var source: Pipewire.defaultAudioSource
+    readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
+    readonly property var outputDevices: root.nodes.filter(node => root.isAudioOutput(node))
+    readonly property var inputDevices: root.nodes.filter(node => root.isAudioInput(node))
     readonly property var outputAudio: root.sink && root.sink.audio
         ? root.sink.audio : null
     readonly property var inputAudio: root.source && root.source.audio
@@ -40,8 +44,44 @@ PopupWindow {
         return fallback
     }
 
+    function hasNodeType(node, type): bool {
+        const nodeType = Number(node.type)
+        const typeMask = Number(type)
+        return (nodeType & typeMask) === typeMask
+    }
+
+    function isAudioOutput(node): bool {
+        return Boolean(node && node.isSink && !node.isStream
+            && (root.hasNodeType(node, PwNodeType.AudioSink)
+                || root.hasNodeType(node, PwNodeType.AudioDuplex)))
+    }
+
+    function isAudioInput(node): bool {
+        return Boolean(node && !node.isStream
+            && (root.hasNodeType(node, PwNodeType.AudioSource)
+                || root.hasNodeType(node, PwNodeType.AudioDuplex)))
+    }
+
+    function isDefaultNode(node, defaultNode): bool {
+        return Boolean(node && defaultNode && Number(node.id) === Number(defaultNode.id))
+    }
+
+    function selectOutput(node): void {
+        if (node)
+            Pipewire.preferredDefaultAudioSink = node
+    }
+
+    function selectInput(node): void {
+        if (node)
+            Pipewire.preferredDefaultAudioSource = node
+    }
+
     PwObjectTracker {
         objects: [root.sink, root.source].filter(node => node !== null)
+    }
+
+    PwObjectTracker {
+        objects: root.outputDevices.concat(root.inputDevices)
     }
 
     anchor {
@@ -65,6 +105,9 @@ PopupWindow {
 
         required property string title
         required property string deviceLabel
+        required property var devices
+        required property var defaultNode
+        required property bool outputSection
         required property var audio
         readonly property bool available: audio !== null
         readonly property real volume: {
@@ -118,15 +161,70 @@ PopupWindow {
             }
         }
 
-        Text {
+        Column {
             width: parent.width
-            height: 18
-            text: volumeSection.deviceLabel
-            color: root.textColor
-            font.pixelSize: 12
-            elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.NoWrap
+            spacing: 4
+
+            Repeater {
+                model: volumeSection.devices
+
+                Rectangle {
+                    id: deviceRow
+
+                    required property var modelData
+                    readonly property bool selected: root.isDefaultNode(
+                        modelData, volumeSection.defaultNode)
+
+                    width: volumeSection.width
+                    height: root.rowHeight
+                    radius: root.popupRadius / 2
+                    color: selected ? root.accentColor
+                        : (deviceMouse.containsMouse ? root.hoverColor : root.secondaryColor)
+
+                    Text {
+                        anchors {
+                            fill: parent
+                            leftMargin: 8
+                            rightMargin: 8
+                        }
+                        text: root.nodeLabel(deviceRow.modelData, "Unknown device")
+                        color: deviceRow.selected
+                            ? root.backgroundColor : root.textColor
+                        font.pixelSize: 12
+                        font.weight: deviceRow.selected
+                            ? Font.Medium : Font.Normal
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.NoWrap
+                    }
+
+                    MouseArea {
+                        id: deviceMouse
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (volumeSection.outputSection)
+                                root.selectOutput(deviceRow.modelData)
+                            else
+                                root.selectInput(deviceRow.modelData)
+                        }
+                    }
+                }
+            }
+
+            Text {
+                visible: volumeSection.devices.length === 0
+                width: parent.width
+                height: visible ? 18 : 0
+                text: volumeSection.deviceLabel
+                color: root.textColor
+                font.pixelSize: 12
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.NoWrap
+            }
         }
 
         Item {
@@ -264,6 +362,9 @@ PopupWindow {
             VolumeSection {
                 title: "Output"
                 deviceLabel: root.nodeLabel(root.sink, "No output")
+                devices: root.outputDevices
+                defaultNode: root.sink
+                outputSection: true
                 audio: root.outputAudio
             }
 
@@ -276,6 +377,9 @@ PopupWindow {
             VolumeSection {
                 title: "Input"
                 deviceLabel: root.nodeLabel(root.source, "No input")
+                devices: root.inputDevices
+                defaultNode: root.source
+                outputSection: false
                 audio: root.inputAudio
             }
         }
