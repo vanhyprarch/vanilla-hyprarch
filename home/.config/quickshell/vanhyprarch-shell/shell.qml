@@ -120,12 +120,24 @@ ShellRoot {
             }
         }
 
+        Audio {
+            id: dockAudio
+            theme: shellTheme
+            popupRadius: root.cornerRadius
+
+            anchors {
+                bottom: dockMonitor.top
+                bottomMargin: dockClock.systemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
         SystemTray {
             id: dockSystemTray
             theme: shellTheme
 
             anchors {
-                bottom: dockMonitor.top
+                bottom: dockAudio.top
                 bottomMargin: dockSystemTray.clockGap
                 horizontalCenter: parent.horizontalCenter
             }
