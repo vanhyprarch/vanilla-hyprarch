@@ -21,6 +21,10 @@ ShellRoot {
         id: shellTheme
     }
 
+    Shortcuts {
+        id: shortcuts
+    }
+
     property int dockWidth: 56
     property int borderThickness: 10
     property int cornerRadius: 10
@@ -173,6 +177,17 @@ ShellRoot {
                 horizontalCenter: parent.horizontalCenter
             }
         }
+    }
+
+    ShortcutsPanel {
+        controller: shortcuts
+        theme: shellTheme
+        anchorItem: powerMenu
+        screenName: screenScope.modelData.name
+        screenWidth: screenScope.modelData.width
+        screenHeight: screenScope.modelData.height
+        dockWidth: root.dockWidth
+        popupRadius: root.cornerRadius
     }
 
     PanelWindow {

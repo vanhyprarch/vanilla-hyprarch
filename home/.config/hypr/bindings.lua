@@ -12,6 +12,10 @@ bind(mainMod .. " + SHIFT + RETURN", "Apps", "Browser", hl.dsp.exec_cmd("firefox
 bind(mainMod .. " + SHIFT + B", "Apps", "Browser", hl.dsp.exec_cmd("firefox"))
 bind(mainMod .. " + SHIFT + F", "Apps", "File manager", hl.dsp.exec_cmd("thunar"))
 
+-- Shell
+bind(mainMod .. " + K", "Shell", "Show shortcuts",
+    hl.dsp.exec_cmd("qs ipc -c vanhyprarch-shell call vanhyprarch.shortcuts toggle"))
+
 -- Window state
 bind(mainMod .. " + W", "Window", "Close window", hl.dsp.window.close())
 bind(mainMod .. " + Q", "Window", "Close window", hl.dsp.window.close())
