@@ -230,7 +230,8 @@ implementation.
 
 **Status:** Provisional
 **Date:** 2026-09-08
-**Implementation:** Isolated PoC tested; production integration not started
+**Implementation:** Isolated PoC and Phase 1 controller implemented; idle
+integration not started
 
 Ly's `colormix` animation is the preferred screensaver candidate, but it is not
 accepted as the production screensaver yet. An isolated proof of concept has
@@ -247,6 +248,12 @@ requirement.
 Production lifecycle, input exit, fullscreen presentation, and process cleanup
 must still be designed and validated in their integrated context. No hypridle
 or Quickshell integration has been implemented.
+
+The provisional lifecycle boundary is a single
+`vanhyprarch-screensaver start|stop|status` interface. Its controller owns only
+a dedicated Foot process, validates ephemeral XDG runtime state against Linux
+process identity before signalling, and leaves the command API open to future
+multi-output ownership.
 
 ## ADR-017: Respect third-party licenses
 

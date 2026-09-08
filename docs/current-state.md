@@ -142,8 +142,16 @@ at 16 milliseconds (approximately 60 fps), roughly halving the combined CPU
 cost. These measurements are observations, not universal performance claims.
 
 The PoC is not a production screensaver. There is no hypridle listener for it
-and no Quickshell integration. The candidate remains Provisional until its
-production lifecycle and integration are implemented and validated.
+and no Quickshell integration. Phase 1 of lifecycle work provides the tracked
+`bin/vanhyprarch-screensaver` controller with idempotent `start`, `stop`, and
+`status` commands, XDG runtime ownership state, and process-identity validation.
+The controller has passed static and stopped/stale-state tests; fullscreen
+lifecycle behavior still requires manual testing.
+
+The candidate remains Provisional until its production lifecycle and
+integration are implemented and validated. Current lifecycle design and the
+intended future hypridle semantics are recorded in
+`docs/screensaver-lifecycle.md`; no listeners or timeouts have been changed.
 
 ## Known open work
 
@@ -167,8 +175,8 @@ production lifecycle and integration are implemented and validated.
 
 ### PROVISIONAL
 
-- Evaluate production lifecycle and Foot presentation before promoting the
-  tested colormix PoC beyond Provisional status.
+- Manually test the Phase 1 controller and evaluate multi-output coverage and
+  Foot presentation before promoting the colormix work beyond Provisional.
 - Finalize hypridle configuration generation, restart/rollback behavior, and
   single-process ownership after screensaver validation.
 

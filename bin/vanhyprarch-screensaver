@@ -1,0 +1,357 @@
+#!/bin/sh
+
+set -fu
+
+program_name=${0##*/}
+app_id=vanhyprarch-screensaver
+runtime_subdir=vanhyprarch
+state_name=screensaver.state
+lock_name=screensaver.lock
+log_name=screensaver.log
+start_attempts=20
+stop_attempts=30
+poll_delay=0.05
+
+usage()
+{
+    printf 'Usage: %s {start|stop|status}\n' "$program_name" >&2
+}
+
+fail()
+{
+    printf '%s: %s\n' "$program_name" "$*" >&2
+    exit 1
+}
+
+is_unsigned_integer()
+{
+    case ${1-} in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+prepare_runtime()
+{
+    [ -n "${XDG_RUNTIME_DIR:-}" ] ||
+        fail 'XDG_RUNTIME_DIR is not set'
+    case $XDG_RUNTIME_DIR in
+        /*) ;;
+        *) fail 'XDG_RUNTIME_DIR must be an absolute path' ;;
+    esac
+    [ -d "$XDG_RUNTIME_DIR" ] ||
+        fail 'XDG_RUNTIME_DIR is not a directory'
+
+    runtime_dir=$XDG_RUNTIME_DIR/$runtime_subdir
+    umask 077
+
+    if [ -L "$runtime_dir" ]; then
+        fail "$runtime_dir must not be a symbolic link"
+    fi
+    if [ ! -d "$runtime_dir" ]; then
+        mkdir -m 700 -- "$runtime_dir" ||
+            fail "could not create $runtime_dir"
+    fi
+
+    runtime_owner=$(stat -c '%u' -- "$runtime_dir") ||
+        fail "could not inspect $runtime_dir"
+    current_uid=$(id -u) || fail 'could not determine the current user ID'
+    [ "$runtime_owner" = "$current_uid" ] ||
+        fail "$runtime_dir is not owned by the current user"
+    chmod 700 -- "$runtime_dir" ||
+        fail "could not secure $runtime_dir"
+
+    state_file=$runtime_dir/$state_name
+    lock_file=$runtime_dir/$lock_name
+    log_file=$runtime_dir/$log_name
+
+    exec 9>"$lock_file" || fail "could not open $lock_file"
+    flock -x 9 || fail "could not lock $lock_file"
+}
+
+state_path_exists()
+{
+    [ -e "$state_file" ] || [ -L "$state_file" ]
+}
+
+remove_state()
+{
+    if [ -d "$state_file" ] && [ ! -L "$state_file" ]; then
+        fail "$state_file is unexpectedly a directory"
+    fi
+    rm -f -- "$state_file" || fail "could not remove $state_file"
+}
+
+load_state()
+{
+    [ -f "$state_file" ] || return 1
+    [ ! -L "$state_file" ] || return 1
+
+    state_pid=
+    state_start_time=
+    state_pgid=
+    state_sid=
+    state_extra=
+    IFS=' ' read -r \
+        state_pid state_start_time state_pgid state_sid state_extra \
+        < "$state_file" || return 1
+
+    [ -z "$state_extra" ] || return 1
+    is_unsigned_integer "$state_pid" || return 1
+    is_unsigned_integer "$state_start_time" || return 1
+    is_unsigned_integer "$state_pgid" || return 1
+    is_unsigned_integer "$state_sid" || return 1
+    [ "$state_pid" -gt 1 ] || return 1
+    [ "$state_pid" = "$state_pgid" ] || return 1
+    [ "$state_pid" = "$state_sid" ] || return 1
+}
+
+read_process_snapshot()
+{
+    snapshot_pid=$1
+    [ -r "/proc/$snapshot_pid/stat" ] || return 1
+    IFS= read -r process_stat < "/proc/$snapshot_pid/stat" || return 1
+    process_tail=${process_stat##*) }
+    [ "$process_tail" != "$process_stat" ] || return 1
+
+    set -- $process_tail
+    [ "$#" -ge 20 ] || return 1
+    snapshot_state=$1
+    snapshot_pgid=$3
+    snapshot_sid=$4
+    snapshot_start_time=${20}
+
+    case $snapshot_state in
+        Z|X|x) return 1 ;;
+    esac
+    is_unsigned_integer "$snapshot_pgid" || return 1
+    is_unsigned_integer "$snapshot_sid" || return 1
+    is_unsigned_integer "$snapshot_start_time" || return 1
+}
+
+process_has_argument()
+{
+    argument_pid=$1
+    argument_value=$2
+    [ -r "/proc/$argument_pid/cmdline" ] || return 1
+    tr '\000' '\n' < "/proc/$argument_pid/cmdline" 2>/dev/null |
+        grep -Fqx -- "$argument_value"
+}
+
+is_screensaver_foot()
+{
+    identity_pid=$1
+    identity_executable=$(readlink "/proc/$identity_pid/exe" 2>/dev/null) ||
+        return 1
+    [ "${identity_executable##*/}" = foot ] || return 1
+    process_has_argument "$identity_pid" "--app-id=$app_id" || return 1
+    process_has_argument "$identity_pid" '--fullscreen' || return 1
+}
+
+owned_process_is_running()
+{
+    load_state || return 1
+    read_process_snapshot "$state_pid" || return 1
+    [ "$snapshot_start_time" = "$state_start_time" ] || return 1
+    [ "$snapshot_pgid" = "$state_pgid" ] || return 1
+    [ "$snapshot_sid" = "$state_sid" ] || return 1
+    is_screensaver_foot "$state_pid" || return 1
+}
+
+resolve_renderer()
+{
+    script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) ||
+        fail 'could not resolve the controller directory'
+
+    renderer_candidate=$script_dir/vanhyprarch-colormix
+    if [ -x "$renderer_candidate" ]; then
+        renderer=$renderer_candidate
+        return
+    fi
+
+    renderer_candidate=$script_dir/../experiments/colormix/colormix
+    if [ -x "$renderer_candidate" ]; then
+        renderer=$renderer_candidate
+        return
+    fi
+
+    renderer=$(command -v vanhyprarch-colormix 2>/dev/null) ||
+        fail 'renderer not found; build the PoC or install vanhyprarch-colormix'
+}
+
+write_state()
+{
+    state_temporary=$runtime_dir/$state_name.$$
+    rm -f -- "$state_temporary" || return 1
+    printf '%s %s %s %s\n' \
+        "$launch_pid" \
+        "$snapshot_start_time" \
+        "$snapshot_pgid" \
+        "$snapshot_sid" > "$state_temporary" || return 1
+    chmod 600 -- "$state_temporary" || return 1
+    mv -f -- "$state_temporary" "$state_file" || return 1
+}
+
+terminate_failed_launch()
+{
+    if read_process_snapshot "$launch_pid" &&
+        [ "$snapshot_pgid" = "$launch_pid" ] &&
+        [ "$snapshot_sid" = "$launch_pid" ]; then
+        kill -TERM -- "-$launch_pid" 2>/dev/null || true
+    else
+        kill -TERM "$launch_pid" 2>/dev/null || true
+    fi
+    wait "$launch_pid" 2>/dev/null || true
+}
+
+start_screensaver()
+{
+    prepare_runtime
+
+    if state_path_exists; then
+        if owned_process_is_running; then
+            printf 'running (pid %s); start is idempotent\n' "$state_pid"
+            return 0
+        fi
+        remove_state
+    fi
+
+    resolve_renderer
+    foot_executable=$(command -v foot 2>/dev/null) ||
+        fail 'foot is not installed or not on PATH'
+    setsid_executable=$(command -v setsid 2>/dev/null) ||
+        fail 'setsid is not installed or not on PATH'
+
+    : > "$log_file" || fail "could not create $log_file"
+    chmod 600 -- "$log_file" || fail "could not secure $log_file"
+
+    (
+        exec 9>&-
+        exec "$setsid_executable" \
+            "$foot_executable" \
+            --app-id="$app_id" \
+            --title='Vanilla HyprArch - screensaver' \
+            --fullscreen \
+            -- "$renderer"
+    ) </dev/null >> "$log_file" 2>&1 &
+    launch_pid=$!
+
+    launch_attempt=0
+    launch_ready=false
+    while [ "$launch_attempt" -lt "$start_attempts" ]; do
+        if read_process_snapshot "$launch_pid" &&
+            [ "$snapshot_pgid" = "$launch_pid" ] &&
+            [ "$snapshot_sid" = "$launch_pid" ] &&
+            is_screensaver_foot "$launch_pid"; then
+            launch_ready=true
+            break
+        fi
+        if ! kill -0 "$launch_pid" 2>/dev/null; then
+            break
+        fi
+        sleep "$poll_delay"
+        launch_attempt=$((launch_attempt + 1))
+    done
+
+    if [ "$launch_ready" != true ]; then
+        terminate_failed_launch
+        fail "Foot did not start; inspect $log_file"
+    fi
+
+    if ! write_state; then
+        terminate_failed_launch
+        rm -f -- "$runtime_dir/$state_name.$$"
+        fail 'could not record runtime ownership'
+    fi
+
+    sleep 0.10
+    if ! owned_process_is_running; then
+        remove_state
+        wait "$launch_pid" 2>/dev/null || true
+        fail "screensaver exited during startup; inspect $log_file"
+    fi
+
+    printf 'started (pid %s)\n' "$state_pid"
+}
+
+wait_for_owned_process_to_stop()
+{
+    wait_attempt=0
+    while [ "$wait_attempt" -lt "$stop_attempts" ]; do
+        owned_process_is_running || return 0
+        sleep 0.10
+        wait_attempt=$((wait_attempt + 1))
+    done
+    return 1
+}
+
+stop_screensaver()
+{
+    prepare_runtime
+
+    if ! state_path_exists; then
+        printf 'stopped; stop is idempotent\n'
+        return 0
+    fi
+    if ! owned_process_is_running; then
+        remove_state
+        printf 'stopped; removed stale ownership state\n'
+        return 0
+    fi
+
+    owned_pid=$state_pid
+    owned_pgid=$state_pgid
+    kill -TERM -- "-$owned_pgid" 2>/dev/null || true
+
+    if wait_for_owned_process_to_stop; then
+        remove_state
+        rm -f -- "$log_file"
+        printf 'stopped (pid %s)\n' "$owned_pid"
+        return 0
+    fi
+
+    if owned_process_is_running; then
+        kill -KILL -- "-$state_pgid" 2>/dev/null || true
+    fi
+    if wait_for_owned_process_to_stop; then
+        remove_state
+        rm -f -- "$log_file"
+        printf 'stopped forcibly after graceful timeout (pid %s)\n' \
+            "$owned_pid"
+        return 0
+    fi
+
+    fail "owned screensaver process $owned_pid did not stop"
+}
+
+status_screensaver()
+{
+    prepare_runtime
+
+    if ! state_path_exists; then
+        printf 'stopped\n'
+        return 1
+    fi
+    if ! owned_process_is_running; then
+        remove_state
+        printf 'stopped; removed stale ownership state\n'
+        return 1
+    fi
+
+    printf 'running (pid %s, process group %s)\n' "$state_pid" "$state_pgid"
+}
+
+[ "$#" -eq 1 ] || {
+    usage
+    exit 2
+}
+
+case $1 in
+    start) start_screensaver ;;
+    stop) stop_screensaver ;;
+    status) status_screensaver ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac
