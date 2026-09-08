@@ -1,8 +1,10 @@
 # Screensaver lifecycle
 
 This document describes the provisional lifecycle contract for the Vanilla
-HyprArch colormix screensaver. Phase 1 provides the controller only. It does not
-add hypridle listeners, Quickshell controls, or production timeouts.
+HyprArch colormix screensaver. Phase 1 provides the controller. Phase 2B tests
+an isolated, temporary two-listener hypridle design for manual lifecycle
+validation. It does not add Quickshell controls, locking, or production
+timeouts.
 
 ## Controller
 
@@ -93,9 +95,75 @@ ownership across multiple outputs remain production requirements. The stable
 `start`/`stop`/`status` API can later manage multiple validated processes
 without changing callers.
 
+## Phase 2B hypridle test
+
+The canonical main configuration is
+`home/.config/hypr/hypridle.conf`. It retains the existing lock command and
+before-sleep safety command, then uses hypridle's supported relative include:
+
+```text
+source = ./vanhyprarch-idle.conf
+```
+
+Hyprland v0.56.2 performs an idle-inhibitor recheck whenever a window maps. Even
+when no inhibitor exists, that recheck updates inhibitor-aware idle
+notifications. If such a notification is already idled, Hyprland sends a false
+resume event. The original single listener therefore started Foot and then
+immediately stopped it when the new fullscreen window mapped. Foot itself did
+not request an idle inhibitor, and the lifecycle controller behaved correctly.
+
+Phase 2B separates the inhibitor-aware action from genuine-input dismissal.
+The sibling `home/.config/hypr/vanhyprarch-idle.conf` contains exactly these two
+test listeners:
+
+```text
+listener {
+    timeout = 10
+    on-timeout = vanhyprarch-screensaver start
+}
+
+listener {
+    timeout = 9
+    ignore_inhibit = true
+    on-timeout = /usr/bin/true
+    on-resume = vanhyprarch-screensaver stop
+}
+```
+
+The 10-second start listener remains inhibitor-aware and has no resume action.
+Legitimate inhibitors can therefore prevent the screensaver from starting.
+The 9-second dismiss listener uses an input-only notification, becomes idled
+first, and performs only `/usr/bin/true` at timeout. Its resume action stops the
+owned screensaver on subsequent genuine input. `ignore_inhibit` is intentional
+only on this harmless input/dismiss listener; it must not be copied to the
+screensaver action listener.
+
+The false resume delivered to the start listener when Foot maps is harmless
+because that listener has no resume command. The input-only dismiss listener is
+not updated by inhibitor rechecks and should remain idled until real input.
+
+This design validates only `hypridle -> screensaver start/stop`. It never
+requests a session lock. Nine and ten seconds are deliberately short for manual
+testing and are not Vanilla HyprArch defaults. The intended production
+migration state remains Screen saver `Never`, Turn off display `Never`, and
+Suspend `Never` until the future UI records user choices.
+
+Hyprland remains the daemon owner during this test; the packaged systemd user
+service stays disabled. The development session exposes the controller and
+renderer through executable symlinks in `~/.local/bin`, and the test hypridle
+process receives that directory in PATH. A future installer will deploy both
+executables into the user's PATH independently of the Git checkout.
+
+To roll back the test, stop the screensaver, restore the pre-test static main
+configuration, remove the live listener fragment, and replace only the one
+Hyprland-owned hypridle process. The result must again be one hypridle daemon
+with zero listeners. Repository test files can remain available for review
+until the Phase 2B result is accepted or revised.
+
 ## Intended hypridle semantics
 
-These are design notes for the next phase, not active listeners.
+These are future production design notes, not active Phase 2B listener
+semantics.
 
 ### Lock stage: Screen saver
 

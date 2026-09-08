@@ -212,11 +212,14 @@ toggles.
 
 **Status:** Provisional
 **Date:** 2026-09-08
-**Implementation:** Pending
+**Implementation:** Static source structure and Phase 2B test fragment prepared;
+production generation pending
 
 The preferred direction is a mostly static `hypridle.conf` that sources a
 generated `vanhyprarch-idle.conf`. The generated fragment, not parallel JSON,
-would be the source of truth for selected listeners.
+would be the source of truth for selected listeners. Phase 2B uses this
+structure with temporary 9- and 10-second, no-lock listeners only to validate
+hypridle lifecycle calls; it does not establish production defaults.
 
 Updates must be atomic and followed by restart and verification, with rollback
 on failure. A systemd user service is the preferred candidate for making one
@@ -230,8 +233,8 @@ implementation.
 
 **Status:** Provisional
 **Date:** 2026-09-08
-**Implementation:** Isolated PoC and Phase 1 controller implemented; idle
-integration not started
+**Implementation:** Isolated PoC and Phase 1 controller implemented; Phase 2B
+test integration prepared
 
 Ly's `colormix` animation is the preferred screensaver candidate, but it is not
 accepted as the production screensaver yet. An isolated proof of concept has
@@ -246,8 +249,9 @@ reference. This is a measured PoC choice, not an immutable architectural
 requirement.
 
 Production lifecycle, input exit, fullscreen presentation, and process cleanup
-must still be designed and validated in their integrated context. No hypridle
-or Quickshell integration has been implemented.
+must still be validated in their integrated context. The Phase 2B hypridle
+listeners are temporary, have no locking behavior, and are not a production
+integration. No Quickshell integration has been implemented.
 
 The provisional lifecycle boundary is a single
 `vanhyprarch-screensaver start|stop|status` interface. Its controller owns only
