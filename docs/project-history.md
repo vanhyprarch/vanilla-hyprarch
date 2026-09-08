@@ -95,8 +95,13 @@ behavior passed manual visual review.
 A harmless 10/20/30-second marker diagnostic then confirmed a separate
 Hyprland 0.56.2 limitation: mapping the screensaver Foot window rearms pending
 inhibitor-aware clocks, producing an approximately 10/30/40-second effective
-timeline. A correction is under design and has not been implemented; the
-evidence is maintained in the [compatibility register](compatibility.md).
+timeline. A genuine Quickshell layer-shell proof of concept retained 10/20/30
+twice with no false resume. Production subsequently moved to a separate
+controller-owned Quickshell config with per-output overlay surfaces and a
+native Qt Quick colormix port. Two production-path marker cycles repeated the
+absolute timeline, leaving the S-1 dismissal workaround in place pending a
+separate simplification decision. The evidence is maintained in the
+[compatibility register](compatibility.md).
 
 ## Project maintenance contract
 
@@ -113,6 +118,8 @@ silently become permanent architecture.
 - Shell-driven `nmcli` polling was superseded by native Quickshell networking.
 - Restarting Quickshell after resume was rejected once screen lifecycle was
   fixed structurally.
+- Fullscreen Foot was superseded as the screensaver presentation after its
+  xdg-toplevel mapping was proven to rearm later inhibitor-aware idle clocks.
 - A parallel JSON representation of hypridle settings was rejected. A strict
   project preference file is the durable source, and the hypridle fragment is
   generated from it.

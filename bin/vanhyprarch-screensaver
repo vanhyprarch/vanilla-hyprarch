@@ -3,7 +3,8 @@
 set -fu
 
 program_name=${0##*/}
-app_id=vanhyprarch-screensaver
+config_name=vanhyprarch-screensaver
+layer_namespace=vanhyprarch-screensaver
 runtime_subdir=vanhyprarch
 state_name=screensaver.state
 cursor_state_name=screensaver.cursor
@@ -107,9 +108,12 @@ load_state()
     state_start_time=
     state_pgid=
     state_sid=
+    state_instance_id=
+    state_shell_id=
     state_extra=
     IFS=' ' read -r \
-        state_pid state_start_time state_pgid state_sid state_extra \
+        state_pid state_start_time state_pgid state_sid \
+        state_instance_id state_shell_id state_extra \
         < "$state_file" || return 1
 
     [ -z "$state_extra" ] || return 1
@@ -120,6 +124,12 @@ load_state()
     [ "$state_pid" -gt 1 ] || return 1
     [ "$state_pid" = "$state_pgid" ] || return 1
     [ "$state_pid" = "$state_sid" ] || return 1
+    case $state_instance_id in
+        ''|*[!a-z0-9]*) return 1 ;;
+    esac
+    case $state_shell_id in
+        ''|*[!a-f0-9]*) return 1 ;;
+    esac
 }
 
 load_cursor_state()
@@ -175,45 +185,130 @@ process_has_argument()
         grep -Fqx -- "$argument_value"
 }
 
-is_screensaver_foot()
+is_screensaver_quickshell()
 {
     identity_pid=$1
     identity_executable=$(readlink "/proc/$identity_pid/exe" 2>/dev/null) ||
         return 1
-    [ "${identity_executable##*/}" = foot ] || return 1
-    process_has_argument "$identity_pid" "--app-id=$app_id" || return 1
-    process_has_argument "$identity_pid" '--fullscreen' || return 1
+    [ "${identity_executable##*/}" = quickshell ] || return 1
+    process_has_argument "$identity_pid" '-n' || return 1
+    process_has_argument "$identity_pid" '-c' || return 1
+    process_has_argument "$identity_pid" "$config_name" || return 1
 }
 
-owned_process_is_running()
+owned_process_identity_is_running()
 {
     load_state || return 1
     read_process_snapshot "$state_pid" || return 1
     [ "$snapshot_start_time" = "$state_start_time" ] || return 1
     [ "$snapshot_pgid" = "$state_pgid" ] || return 1
     [ "$snapshot_sid" = "$state_sid" ] || return 1
-    is_screensaver_foot "$state_pid" || return 1
+    is_screensaver_quickshell "$state_pid" || return 1
 }
 
-resolve_renderer()
+resolve_quickshell()
 {
-    script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) ||
-        fail 'could not resolve the controller directory'
+    qs_executable=$(command -v qs 2>/dev/null) ||
+        fail 'qs is not installed or not on PATH'
+    config_root=${XDG_CONFIG_HOME:-$HOME/.config}
+    config_file=$config_root/quickshell/$config_name/shell.qml
+    [ -f "$config_file" ] ||
+        fail "named Quickshell config not found at $config_file"
+}
 
-    renderer_candidate=$script_dir/vanhyprarch-colormix
-    if [ -x "$renderer_candidate" ]; then
-        renderer=$renderer_candidate
-        return
-    fi
+registration_for_pid()
+{
+    registration_pid=$1
+    "$qs_executable" list --all --json 2>/dev/null |
+        awk -v wanted_pid="$registration_pid" '
+            function json_value(line) {
+                sub(/^[^:]*:[[:space:]]*/, "", line)
+                sub(/,$/, "", line)
+                sub(/^"/, "", line)
+                sub(/"$/, "", line)
+                return line
+            }
+            /"config_path"[[:space:]]*:/ { config_path = json_value($0) }
+            /"id"[[:space:]]*:/ { instance_id = json_value($0) }
+            /"pid"[[:space:]]*:/ { pid = json_value($0) }
+            /"shell_id"[[:space:]]*:/ { shell_id = json_value($0) }
+            /^[[:space:]]*}/ {
+                if (pid == wanted_pid) {
+                    print instance_id, shell_id, config_path
+                    found = 1
+                }
+                config_path = instance_id = pid = shell_id = ""
+            }
+            END { if (!found) exit 1 }
+        '
+}
 
-    renderer_candidate=$script_dir/../experiments/colormix/colormix
-    if [ -x "$renderer_candidate" ]; then
-        renderer=$renderer_candidate
-        return
-    fi
+registration_for_config()
+{
+    "$qs_executable" list --all --json 2>/dev/null |
+        awk -v wanted_path="$config_file" '
+            function json_value(line) {
+                sub(/^[^:]*:[[:space:]]*/, "", line)
+                sub(/,$/, "", line)
+                sub(/^"/, "", line)
+                sub(/"$/, "", line)
+                return line
+            }
+            /"config_path"[[:space:]]*:/ { config_path = json_value($0) }
+            /"pid"[[:space:]]*:/ { pid = json_value($0) }
+            /^[[:space:]]*}/ {
+                if (config_path == wanted_path) {
+                    print pid
+                    found = 1
+                }
+                config_path = pid = ""
+            }
+            END { if (!found) exit 1 }
+        '
+}
 
-    renderer=$(command -v vanhyprarch-colormix 2>/dev/null) ||
-        fail 'renderer not found; build the PoC or install vanhyprarch-colormix'
+quickshell_registration_matches()
+{
+    registration=$(registration_for_pid "$state_pid") || return 1
+    IFS=' ' read -r observed_instance_id observed_shell_id \
+        observed_config_path observed_extra <<EOF
+$registration
+EOF
+    [ -z "$observed_extra" ] || return 1
+    [ "$observed_instance_id" = "$state_instance_id" ] || return 1
+    [ "$observed_shell_id" = "$state_shell_id" ] || return 1
+    [ "$observed_config_path" = "$config_file" ] || return 1
+}
+
+owned_process_is_running()
+{
+    owned_process_identity_is_running || return 1
+    quickshell_registration_matches || return 1
+}
+
+layer_surface_count()
+{
+    layer_pid=$1
+    "$hyprctl_executable" layers 2>/dev/null |
+        awk -v wanted_namespace="$layer_namespace" -v wanted_pid="$layer_pid" '
+            index($0, "namespace: " wanted_namespace ",") &&
+                    index($0, "pid: " wanted_pid) { count += 1 }
+            END { print count + 0 }
+        '
+}
+
+monitor_count()
+{
+    "$hyprctl_executable" monitors 2>/dev/null |
+        awk '/^Monitor / { count += 1 } END { print count + 0 }'
+}
+
+all_layer_surfaces_are_ready()
+{
+    expected_surfaces=$(monitor_count) || return 1
+    observed_surfaces=$(layer_surface_count "$state_pid") || return 1
+    [ "$expected_surfaces" -gt 0 ] || return 1
+    [ "$observed_surfaces" = "$expected_surfaces" ]
 }
 
 resolve_hyprctl()
@@ -273,11 +368,13 @@ write_state()
 {
     state_temporary=$runtime_dir/$state_name.$$
     rm -f -- "$state_temporary" || return 1
-    printf '%s %s %s %s\n' \
+    printf '%s %s %s %s %s %s\n' \
         "$launch_pid" \
         "$snapshot_start_time" \
         "$snapshot_pgid" \
-        "$snapshot_sid" > "$state_temporary" || return 1
+        "$snapshot_sid" \
+        "$launch_instance_id" \
+        "$launch_shell_id" > "$state_temporary" || return 1
     chmod 600 -- "$state_temporary" || return 1
     mv -f -- "$state_temporary" "$state_file" || return 1
 }
@@ -286,10 +383,9 @@ terminate_failed_launch()
 {
     if read_process_snapshot "$launch_pid" &&
         [ "$snapshot_pgid" = "$launch_pid" ] &&
-        [ "$snapshot_sid" = "$launch_pid" ]; then
+        [ "$snapshot_sid" = "$launch_pid" ] &&
+        is_screensaver_quickshell "$launch_pid"; then
         kill -TERM -- "-$launch_pid" 2>/dev/null || true
-    else
-        kill -TERM "$launch_pid" 2>/dev/null || true
     fi
     wait "$launch_pid" 2>/dev/null || true
 }
@@ -322,22 +418,30 @@ start_screensaver()
     prepare_runtime
 
     if state_path_exists; then
-        if owned_process_is_running; then
+        resolve_quickshell
+        if ! load_state; then
+            restore_cursor_state
+            remove_state
+        elif owned_process_identity_is_running; then
+            quickshell_registration_matches ||
+                fail 'owned process registration could not be validated'
             printf 'running (pid %s); start is idempotent\n' "$state_pid"
             return 0
+        else
+            restore_cursor_state
+            remove_state
         fi
-        restore_cursor_state
-        remove_state
     fi
     restore_cursor_state
 
-    resolve_renderer
-    foot_executable=$(command -v foot 2>/dev/null) ||
-        fail 'foot is not installed or not on PATH'
+    resolve_quickshell
     setsid_executable=$(command -v setsid 2>/dev/null) ||
         fail 'setsid is not installed or not on PATH'
     resolve_hyprctl || fail 'hyprctl is not installed or not on PATH'
     read_cursor_invisible || fail 'could not read cursor:invisible'
+    if registration_for_config >/dev/null 2>&1; then
+        fail "an unowned $config_name Quickshell instance is already running"
+    fi
 
     cursor_cleanup_required=false
     launch_pid=
@@ -356,23 +460,32 @@ start_screensaver()
     (
         exec 9>&-
         exec "$setsid_executable" \
-            "$foot_executable" \
-            --app-id="$app_id" \
-            --title='Vanilla HyprArch - screensaver' \
-            --fullscreen \
-            -- "$renderer"
+            "$qs_executable" -n -c "$config_name"
     ) </dev/null >> "$log_file" 2>&1 &
     launch_pid=$!
 
     launch_attempt=0
     launch_ready=false
+    launch_instance_id=
+    launch_shell_id=
     while [ "$launch_attempt" -lt "$start_attempts" ]; do
         if read_process_snapshot "$launch_pid" &&
             [ "$snapshot_pgid" = "$launch_pid" ] &&
             [ "$snapshot_sid" = "$launch_pid" ] &&
-            is_screensaver_foot "$launch_pid"; then
-            launch_ready=true
-            break
+            is_screensaver_quickshell "$launch_pid"; then
+            launch_registration=$(registration_for_pid "$launch_pid" 2>/dev/null) ||
+                launch_registration=
+            if [ -n "$launch_registration" ]; then
+                IFS=' ' read -r launch_instance_id launch_shell_id \
+                    launch_config_path launch_extra <<EOF
+$launch_registration
+EOF
+                if [ -z "$launch_extra" ] &&
+                    [ "$launch_config_path" = "$config_file" ]; then
+                    launch_ready=true
+                    break
+                fi
+            fi
         fi
         if ! kill -0 "$launch_pid" 2>/dev/null; then
             break
@@ -382,19 +495,26 @@ start_screensaver()
     done
 
     if [ "$launch_ready" != true ]; then
-        fail "Foot did not start; inspect $log_file"
+        fail "Quickshell screensaver did not start; inspect $log_file"
     fi
 
     if ! write_state; then
         fail 'could not record runtime ownership'
     fi
 
-    sleep 0.10
-    if ! owned_process_is_running; then
+    surface_attempt=0
+    surfaces_ready=false
+    while [ "$surface_attempt" -lt "$start_attempts" ]; do
+        if owned_process_is_running && all_layer_surfaces_are_ready; then
+            surfaces_ready=true
+            break
+        fi
+        sleep "$poll_delay"
+        surface_attempt=$((surface_attempt + 1))
+    done
+    if [ "$surfaces_ready" != true ]; then
         remove_state
-        wait "$launch_pid" 2>/dev/null || true
-        launch_pid=
-        fail "screensaver exited during startup; inspect $log_file"
+        fail "screensaver layer surfaces did not become ready; inspect $log_file"
     fi
 
     trap - 0 HUP INT TERM
@@ -405,7 +525,7 @@ wait_for_owned_process_to_stop()
 {
     wait_attempt=0
     while [ "$wait_attempt" -lt "$stop_attempts" ]; do
-        owned_process_is_running || return 0
+        owned_process_identity_is_running || return 0
         sleep 0.10
         wait_attempt=$((wait_attempt + 1))
     done
@@ -426,13 +546,23 @@ stop_screensaver()
         printf 'stopped; stop is idempotent\n'
         return 0
     fi
-    if ! owned_process_is_running; then
+    if ! load_state; then
+        restore_cursor_state
+        remove_state
+        rm -f -- "$log_file"
+        printf 'stopped; removed invalid ownership state\n'
+        return 0
+    fi
+    if ! owned_process_identity_is_running; then
         restore_cursor_state
         remove_state
         rm -f -- "$log_file"
         printf 'stopped; removed stale ownership state\n'
         return 0
     fi
+    resolve_quickshell
+    quickshell_registration_matches ||
+        fail 'owned process registration could not be validated'
 
     owned_pid=$state_pid
     owned_pgid=$state_pgid
@@ -446,7 +576,7 @@ stop_screensaver()
         return 0
     fi
 
-    if owned_process_is_running; then
+    if owned_process_identity_is_running; then
         kill -KILL -- "-$state_pgid" 2>/dev/null || true
     fi
     if wait_for_owned_process_to_stop; then
@@ -466,21 +596,28 @@ status_screensaver()
 
     if ! state_path_exists; then
         if cursor_state_path_exists; then
-            restore_cursor_state
-            printf 'stopped; restored stale cursor state\n'
+            printf 'stopped; cursor recovery is pending (run stop)\n'
             return 1
         fi
         printf 'stopped\n'
         return 1
     fi
-    if ! owned_process_is_running; then
-        restore_cursor_state
-        remove_state
-        printf 'stopped; removed stale ownership state\n'
+    if ! load_state; then
+        printf 'stopped; invalid ownership state (run stop)\n'
+        return 1
+    fi
+    if ! owned_process_identity_is_running; then
+        printf 'stopped; stale ownership state (run stop)\n'
+        return 1
+    fi
+    resolve_quickshell
+    if ! quickshell_registration_matches; then
+        printf 'stopped; process registration is not valid (run stop)\n'
         return 1
     fi
 
-    printf 'running (pid %s, process group %s)\n' "$state_pid" "$state_pgid"
+    printf 'running (pid %s, process group %s, instance %s)\n' \
+        "$state_pid" "$state_pgid" "$state_instance_id"
 }
 
 [ "$#" -eq 1 ] || {

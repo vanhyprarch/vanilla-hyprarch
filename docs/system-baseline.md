@@ -44,12 +44,18 @@ unresolved choices are maintained in the canonical
 | Role | Packages | Ownership |
 | --- | --- | --- |
 | Compositor and window manager | `hyprland` | Hyprland owns composition, windows, input, bindings, and session autostart. |
-| Project shell | `quickshell`, `qt6-svg` | Quickshell owns the dock, frame, popups, launchers, system controls, and shell IPC. |
+| Project shell | `quickshell`, `qt6-svg` | Quickshell owns the main shell and the independently launched layer-shell screensaver presentation. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream
 desktop distribution layer.
+
+The bootstrap must deploy both named Quickshell configurations:
+`vanhyprarch` for the main shell and `vanhyprarch-screensaver` for the separate
+on-demand screensaver. It must also install `vanhyprarch-screensaver` from
+`bin/` into PATH; production does not depend on Foot or the experimental C
+renderer for screensaver presentation.
 
 ## Keyboard and session defaults
 
@@ -152,8 +158,9 @@ icon theme and uses it for project UI controls.
 disabled rollback artifact on the current machine and is not part of the
 Vanilla HyprArch package manifest.
 
-The current Ly configuration uses its `colormix` login animation. This is
-separate from the provisional user-session screensaver proof of concept.
+The current Ly configuration uses its `colormix` login animation. The user-
+session screensaver uses a separately attributed native Qt Quick port of the
+visual algorithm; Ly itself is not run inside the graphical session.
 
 ## Locking and idle
 

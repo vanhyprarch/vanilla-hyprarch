@@ -1,15 +1,17 @@
 # Ly colormix proof of concept
 
-This directory contains a provisional experiment, not an accepted Vanilla
-HyprArch screensaver. It translates Ly's `ColorMix` animation into a small
-standalone C renderer and presents it through Foot:
+This directory contains the retained native-renderer experiment that informed
+the Vanilla HyprArch screensaver. It translates Ly's `ColorMix` animation into
+a small standalone C renderer and presents it through Foot:
 
 ```text
 standalone renderer -> Foot -> Wayland/Hyprland
 ```
 
-There is no hypridle integration, Quickshell integration, automatic launch, or
-production lifecycle handling yet.
+The experiment itself has no hypridle or Quickshell integration. Production
+now uses a separate Quickshell layer-shell configuration and a native Qt Quick
+port; this directory remains the algorithm, fidelity, and performance reference
+for the superseded Foot presentation.
 
 ## Provenance and fidelity
 

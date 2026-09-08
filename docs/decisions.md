@@ -250,16 +250,16 @@ Version-specific limitations affecting generated listener timing are tracked
 in the [compatibility register](compatibility.md) and must be retested when
 Hyprland or hypridle changes.
 
-## ADR-016: Prototype Ly colormix as the screensaver
+## ADR-016: Use Ly colormix as the screensaver visual
 
 **Status:** Provisional
 **Date:** 2026-09-08
-**Implementation:** Isolated PoC and Phase 1 controller implemented; Phase 2B
-lifecycle manually validated; production integration remains provisional
+**Implementation:** Native renderer PoC retained as reference; native Qt Quick
+visual port and lifecycle controller implemented, integrated power actions
+pending
 
-Ly's `colormix` animation is the preferred screensaver candidate, but it is not
-accepted as the production screensaver yet. An isolated proof of concept has
-validated this candidate architecture:
+Ly's `colormix` animation is the preferred screensaver visual. An isolated
+proof of concept validated the original candidate architecture:
 
 `Hyprland -> fullscreen Foot window -> lightweight standalone colormix renderer`
 
@@ -270,15 +270,15 @@ reference. This is a measured PoC choice, not an immutable architectural
 requirement.
 
 Fullscreen lifecycle, input dismissal, cursor ownership, and process cleanup
-have been manually validated. Production lock, DPMS, suspend, multi-output, and
-Quickshell integration still require validation; the screensaver therefore
-remains Provisional.
+were manually validated. The Foot presentation has since been superseded by
+ADR-020 because its xdg-toplevel mapping rearms pending inhibitor-aware idle
+clocks on the validated stack. Production lock, DPMS, suspend, and final visual
+acceptance still require validation; the visual decision therefore remains
+Provisional.
 
-The provisional lifecycle boundary is a single
-`vanhyprarch-screensaver start|stop|status` interface. Its controller owns only
-a dedicated Foot process, validates ephemeral XDG runtime state against Linux
-process identity before signalling, and leaves the command API open to future
-multi-output ownership.
+The lifecycle boundary remains a single
+`vanhyprarch-screensaver start|stop|status` interface. Process presentation and
+ownership are decided separately in ADR-020.
 
 ## ADR-017: Respect third-party licenses
 
@@ -321,3 +321,27 @@ Caffeine does not disable manual locking or other explicit power actions. Only
 the input/dismiss half of the screensaver workaround may ignore inhibitors;
 listeners that perform screensaver, display, lock, or suspend actions remain
 inhibitor-aware.
+
+## ADR-020: Present the screensaver as a separate Quickshell layer-shell process
+
+**Status:** Accepted
+**Date:** 2026-09-08
+**Implementation:** Controller lifecycle and absolute-timer regression
+validated; integrated lock, DPMS, and suspend testing pending
+
+`vanhyprarch-screensaver` owns a separate minimal Quickshell configuration
+that creates genuine overlay layer-shell surfaces. It does not present the
+saver through Foot and does not host it inside the main desktop-shell process.
+
+A marker-only experiment on Hyprland 0.56.2, hypridle 0.1.8, and Quickshell
+0.3.1 retained the intended 10/20/30-second absolute idle timeline twice. The
+former Foot xdg-toplevel path produced approximately 10/30/40 because mapping
+it triggered an inhibitor-notification recheck. Canonical measurements and
+the upgrade retest condition are in the
+[compatibility register](compatibility.md).
+
+The separate process preserves an independent `start|stop|status` API, exact
+controller ownership, cursor lifecycle, and isolation from main-shell reloads
+or crashes. Its surfaces follow `Quickshell.screens` through per-screen
+`Variants` scopes so hotplug and suspend/resume output recreation are handled
+structurally. Stock upstream packages remain unmodified.

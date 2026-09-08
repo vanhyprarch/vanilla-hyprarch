@@ -44,7 +44,9 @@ The shared bootstrap will eventually:
 - install the explicit `yay` exception declared by `packages/aur.txt`, without
   treating it as permission to add other AUR dependencies;
 - deploy tracked home and system configuration without personal paths;
-- install project commands in an appropriate user or system PATH;
+- deploy both the main and dedicated screensaver named Quickshell configs;
+- install project commands, including the screensaver lifecycle controller, in
+  an appropriate user or system PATH;
 - establish required symlinks and enable or disable documented services;
 - preserve the documented startup owner for each session process;
 - create safe initial state, including Power & Idle at all `Never`, automatic

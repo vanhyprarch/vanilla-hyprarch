@@ -29,6 +29,7 @@ Repository-managed sources:
 - `home/.config/hypr/hypridle.conf`
 - `home/.config/hypr/vanhyprarch-idle.conf`
 - `home/.config/quickshell/vanhyprarch/`
+- `home/.config/quickshell/vanhyprarch-screensaver/`
 
 Live paths:
 
@@ -37,10 +38,15 @@ Live paths:
 - `~/.config/hypr/hypridle.conf`
 - `~/.config/hypr/vanhyprarch-idle.conf`
 - `~/.config/quickshell/vanhyprarch`
+- `~/.config/quickshell/vanhyprarch-screensaver`
 
 The live Quickshell path is a symlink to:
 
 `$HOME/Projects/vanilla-hyprarch/home/.config/quickshell/vanhyprarch`
+
+The dedicated screensaver named config uses the same development deployment
+model and points to the tracked `vanhyprarch-screensaver` directory. It starts
+only on demand and is not part of session autostart.
 
 The two live Hyprland Lua files were byte-identical to their repository copies
 when this snapshot was prepared.
@@ -167,13 +173,13 @@ timeout presentation, error-only feedback, and passive-refresh behavior have
 passed manual visual review. Integrated screensaver, lock, DPMS, and suspend
 actions still require controlled manual validation.
 
-## Screensaver — PROVISIONAL
+## Screensaver — IMPLEMENTED PRESENTATION, INTEGRATED ACTION TESTING PENDING
 
-Ly's `colormix` animation has been investigated and is the preferred candidate.
-An isolated proof-of-concept renderer is implemented and manually tested at
-`experiments/colormix/` with this candidate architecture:
+Ly's `colormix` animation remains the provisional visual. The isolated native
+renderer and former Foot presentation remain at `experiments/colormix/` as
+historical and algorithm references. Production now uses:
 
-`Hyprland -> fullscreen Foot window -> lightweight standalone colormix renderer`
+`vanhyprarch-screensaver -> separate Quickshell process -> layer-shell overlays`
 
 Visual testing confirms that its 5, 16, and 33 millisecond render cadences now
 retain approximately the same movement speed by normalizing animation time to
@@ -183,30 +189,42 @@ about 23.9% of one logical CPU across Foot and the renderer, versus about 42.4%
 at 16 milliseconds (approximately 60 fps), roughly halving the combined CPU
 cost. These measurements are observations, not universal performance claims.
 
-The PoC is not a production screensaver and has no Quickshell integration.
-Phase 1 of lifecycle work provides the tracked
-`bin/vanhyprarch-screensaver` controller with idempotent `start`, `stop`, and
-`status` commands, XDG runtime ownership state, and process-identity validation.
-Manual testing validated start, status, repeated-start idempotency, stop,
-repeated-stop idempotency, and isolation from ordinary Foot terminals.
-The controller also saves the current Hyprland `cursor:invisible` boolean in a
-separate runtime-only record, hides the cursor before launching Foot, and
-restores the exact prior value after stop, stale-process cleanup, or failed and
-interrupted startup. Static and non-GUI mock-process validation has passed;
-fullscreen lifecycle, genuine-input dismissal, cursor hiding, immediate exact
-cursor restoration, and isolation from ordinary Foot processes were also
-manually validated.
+The dedicated config creates one full-output overlay surface per live
+`Quickshell.screens` entry. A native Canvas port retains the transform,
+12-entry color structure, randomized offsets, 33-millisecond cadence, and
+Ly-equivalent 5-millisecond motion reference without Foot, ANSI, or a compiled
+production renderer.
 
-The candidate remains Provisional until its production lifecycle and
-integration are implemented and validated. Current lifecycle design and the
-generated hypridle semantics are recorded in
+`bin/vanhyprarch-screensaver` retains idempotent `start`, `stop`, and `status`.
+Its runtime record now combines PID/start-time/PGID/SID checks with the exact
+Quickshell instance ID, shell ID, named-config path, arguments, and startup
+layer namespace. Cursor preservation and immediate stop-time restoration are
+unchanged. Lifecycle, exact prior-cursor restoration, controlled crash
+recovery, main-shell isolation, and one-layer-per-current-output startup have
+passed runtime validation.
+
+The presentation architecture is Accepted, while final visual acceptance and
+real lock/DPMS/suspend integration remain Provisional. Current lifecycle design
+and generated hypridle semantics are recorded in
 `docs/screensaver-lifecycle.md`.
 
-A harmless marker diagnostic confirmed that, on Hyprland 0.56.2 with hypridle
-0.1.8, mapping the screensaver Foot window rearms later inhibitor-aware idle
-clocks: an intended 10/20/30-second timeline became approximately 10/30/40.
-The correction is under design and is not implemented. Evidence and retest
-conditions are recorded in the [compatibility register](compatibility.md).
+On Hyprland 0.56.2 with hypridle 0.1.8, the former Foot mapping changed an
+intended 10/20/30-second marker timeline to approximately 10/30/40. The
+Quickshell layer-shell proof of concept retained 10/20/30 twice, and the real
+production controller path subsequently did so twice more without false
+resume or timer rearm. Evidence and retest conditions are in the
+[compatibility register](compatibility.md).
+
+The first Canvas version used a coarse 96-by-36 sample grid on the development
+output and appeared visibly zoomed compared with the Foot+C reference. The
+corrected grid uses the reference terminal's measured logical cell pitch,
+yielding approximately 320 by 77 samples on that output. An eight-second
+offscreen Qt software-rendering check painted 242 frames, sustaining the
+33-millisecond target at about 75% of one logical CPU and 74 MiB RSS for the
+standalone `qmlscene` test process. Those figures are a deliberately
+non-disruptive estimate, not a production Quickshell fullscreen measurement.
+The corrected visual scale and production-process resource use still require
+bounded manual validation.
 
 ## Known open work
 
@@ -229,15 +247,14 @@ conditions are recorded in the [compatibility register](compatibility.md).
 
 ### PROVISIONAL
 
-- Evaluate multi-output coverage and Foot presentation before promoting the
-  colormix work beyond Provisional.
+- Manually review the native layer-shell colormix appearance and resource
+  tradeoff, including real multi-output and suspend/resume behavior.
 - Manually validate production lock, DPMS, suspend, and Caffeine lifecycle
   combinations without turning test timings into defaults.
-- Design and validate a correction for screensaver window mapping rearming
-  later inhibitor-aware idle clocks.
+- Reassess whether the retained S-1 dismissal workaround can be simplified
+  after a separate inhibitor and input-lifecycle regression.
 
 ### NOT IMPLEMENTED
 
-- Production screensaver
 - Bluetooth panel
 - Shared bootstrap and optional archinstall integration

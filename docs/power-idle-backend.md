@@ -73,14 +73,16 @@ Hyprland 0.56.2:
   stops the saver.
 
 The one-second lead is independent of the chosen timeout and guarantees the
-dismiss notification is already idle before Foot maps. Consequently the
-screensaver timeout must be at least two seconds. The action listener never
+dismiss notification is already idle before the screensaver maps. Consequently
+the screensaver timeout must be at least two seconds. The action listener never
 ignores legitimate inhibitors.
 
-On the validated Hyprland 0.56.2 and hypridle 0.1.8 baseline, Foot mapping also
-rearms later pending inhibitor-aware clocks. The resulting absolute-stage
-timing limitation is confirmed but not yet corrected; consult the
-[compatibility register](compatibility.md) before changing listener generation.
+On the validated Hyprland 0.56.2, hypridle 0.1.8, and Quickshell 0.3.1 stack,
+the separate production layer-shell saver removes the deterministic pending-
+clock rearm caused by the former Foot xdg-toplevel. Two production-path marker
+cycles retained absolute 10/20/30 timing. The two-listener generation remains
+unchanged pending a separate simplification test; consult the
+[compatibility register](compatibility.md) before changing it.
 
 An enabled display stage uses Hyprland's native 0.56 Lua dispatcher:
 

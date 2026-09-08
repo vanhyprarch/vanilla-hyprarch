@@ -38,9 +38,10 @@ Do not copy whole sections between documents or rewrite unrelated records.
   packaged `hypridle.service` remains disabled and inactive.
 - Caffeine is XDG runtime state. It suppresses automatic actions without
   overwriting saved Power & Idle preferences.
-- `vanhyprarch-screensaver` owns only its dedicated Foot process group and the
-  cursor state it changed. Never kill Foot by name or weaken the existing PID,
-  start-time, process-group, session, executable, or argument validation.
+- `vanhyprarch-screensaver` owns only its separate named Quickshell process and
+  the cursor state it changed. Never signal Quickshell by name or weaken the
+  PID, start-time, process-group, session, executable, argument, instance, or
+  config-path validation. The main shell must remain independent.
 - Do not put personal names or absolute `/home/USERNAME` paths in tracked
   content. Use `$HOME`, `~`, XDG paths, or installer-resolved locations.
 - Do not add `jq` merely for convenience. Official Arch repositories are the
