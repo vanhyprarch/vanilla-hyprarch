@@ -4,6 +4,9 @@ This file contains durable architectural and product decisions. It is not a
 development diary; implementation status belongs in `current-state.md` and
 historical milestones belong in `project-history.md`.
 
+Validated upstream-version quirks and removable workarounds are registered in
+the [compatibility register](compatibility.md) rather than duplicated in ADRs.
+
 Statuses used here:
 
 - **Accepted**: current project decision.
@@ -31,9 +34,11 @@ installation, not a separate distribution. It uses upstream Hyprland without a
 distribution-specific framework and follows normal Arch packaging, systemd,
 updates, and documentation.
 
-Official Arch packages are preferred. AUR packages are acceptable only when a
-required capability has no suitable official package and the reason is
-documented.
+Official Arch packages are the default. AUR packages are acceptable only when
+indispensable, no reasonable official alternative exists, and the reason and
+maintenance burden are documented. `yay` is the explicit current exception and
+is required in the final system/bootstrap; that exception does not grant broad
+permission to add other AUR dependencies.
 
 ## ADR-003: Quickshell is the desktop UI layer
 
@@ -67,13 +72,26 @@ upgrade or rollback guidance. Mutable user state remains outside Git.
 **Status:** Accepted
 **Date:** 2026-09-08
 
-The project will provide an understandable, auditable bootstrap path from a
-fresh minimal Arch installation. The future installer should install the
-declared packages, deploy project configuration, enable only required services,
-and validate the resulting Hyprland session.
+The project will provide one understandable, auditable bootstrap with two
+supported entry points: integration during archinstall so the first reboot can
+enter a configured Vanilla HyprArch system, and independent execution after a
+fresh minimal Arch installation with working Internet access.
+
+Archinstall is a thin integration layer, not a second implementation. Both
+entry points must invoke the same bootstrap logic for packages, configuration,
+commands, services, defaults, and validation. Changes to archinstall must not
+require rewriting the core bootstrap.
 
 The installer must account for hardware-dependent choices rather than copying
 development-machine monitor or GPU settings blindly.
+
+The documented baseline is the installer's operational specification. A
+feature is not fully integrated when it works only on the development machine;
+its installation and migration requirements must also be represented in the
+repository. Installation should be idempotent where practical and fail closed
+when validation or deployment fails. The detailed design and unresolved
+installation choices are maintained in the canonical
+[installation strategy](installation-strategy.md).
 
 ## ADR-006: Use the `vanhyprarch` namespace
 
@@ -176,10 +194,10 @@ reintroduce hibernate as an idle stage or menu action without a new decision.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend and first Quickshell UI implemented; manual visual
-review pending
+**Implementation:** Backend and Quickshell UI implemented and visually
+reviewed; integrated idle-action testing pending
 
-The future Power & Idle control has three independently selectable stages:
+The Power & Idle control has three independently selectable stages:
 
 1. Screen saver
 2. Turn off display
@@ -228,12 +246,16 @@ on failure. Hyprland remains the single direct owner of hypridle; the packaged
 systemd user service stays disabled and inactive. The backend validates this
 ownership before replacing the daemon.
 
+Version-specific limitations affecting generated listener timing are tracked
+in the [compatibility register](compatibility.md) and must be retested when
+Hyprland or hypridle changes.
+
 ## ADR-016: Prototype Ly colormix as the screensaver
 
 **Status:** Provisional
 **Date:** 2026-09-08
 **Implementation:** Isolated PoC and Phase 1 controller implemented; Phase 2B
-test integration prepared
+lifecycle manually validated; production integration remains provisional
 
 Ly's `colormix` animation is the preferred screensaver candidate, but it is not
 accepted as the production screensaver yet. An isolated proof of concept has
@@ -287,8 +309,8 @@ validation criteria have been met.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend and Quickshell control implemented; manual visual
-review pending
+**Implementation:** Backend and Quickshell control implemented and manually
+reviewed; integrated idle-action testing pending
 
 Caffeine temporarily suppresses every automatic Power & Idle action without
 altering the user's stored timeouts or lock point. Its marker is session-scoped

@@ -3,8 +3,12 @@
 This document describes the provisional lifecycle contract for the Vanilla
 HyprArch colormix screensaver. The controller and two-listener hypridle
 lifecycle have passed manual testing. Production timeout generation now exists,
-but locking, multi-output behavior, and the future Quickshell controls still
-require integrated validation.
+but locking, multi-output behavior, and the generated DPMS and suspend paths
+still require integrated validation.
+
+The [compatibility register](compatibility.md) is the canonical record of
+version-specific upstream behavior, including the confirmed rearming of later
+idle clocks.
 
 ## Controller
 
@@ -19,7 +23,7 @@ vanhyprarch-screensaver status
 `start` launches one standalone, fullscreen Foot process with app ID
 `vanhyprarch-screensaver`. Foot runs the existing colormix renderer at its
 33-millisecond default cadence. A dedicated session and process group detach it
-from the caller, allowing a future hypridle timeout command to return promptly.
+from the caller, allowing the hypridle timeout command to return promptly.
 Before launching Foot, the controller records the current Hyprland
 `cursor:invisible` value and hides the cursor through Hyprland's native Lua
 runtime API. Repeated starts are idempotent and do not overwrite that original
@@ -165,7 +169,7 @@ Vanilla HyprArch defaults. The production backend preserves the same relation
 at arbitrary configured timeouts: the input-only listener arms exactly one
 second before the inhibitor-aware start listener. The migration state remains
 Screen saver `Never`, Turn off display `Never`, and Suspend `Never` until the
-future UI records user choices.
+user records other choices through the Power & Idle UI.
 
 Hyprland remains the daemon owner; the packaged systemd user service stays
 disabled. The development session exposes project commands through executable

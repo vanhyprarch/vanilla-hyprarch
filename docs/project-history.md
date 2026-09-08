@@ -89,8 +89,22 @@ arms one second earlier and owns genuine-input dismissal.
 The subsequent Power & Idle backend implemented strict persistent preferences,
 runtime-only Caffeine state, ordered-stage and lock-point validation, generated
 hypridle configuration, and transactional restart/rollback. Migration defaults
-remain zero listeners. The Quickshell panel is the next phase and was not part
-of the backend implementation.
+remain zero listeners. The later Quickshell panel and its passive synchronization
+behavior passed manual visual review.
+
+A harmless 10/20/30-second marker diagnostic then confirmed a separate
+Hyprland 0.56.2 limitation: mapping the screensaver Foot window rearms pending
+inhibitor-aware clocks, producing an approximately 10/30/40-second effective
+timeline. A correction is under design and has not been implemented; the
+evidence is maintained in the [compatibility register](compatibility.md).
+
+## Project maintenance contract
+
+A concise root `AGENTS.md` now directs future coding agents to the appropriate
+canonical documents and preserves operational invariants. The compatibility
+register centralizes validated component versions, upstream evidence, local
+mitigations, and explicit retest/removal conditions so workarounds do not
+silently become permanent architecture.
 
 ## Architecturally relevant abandoned approaches
 

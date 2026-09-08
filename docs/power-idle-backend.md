@@ -77,6 +77,11 @@ dismiss notification is already idle before Foot maps. Consequently the
 screensaver timeout must be at least two seconds. The action listener never
 ignores legitimate inhibitors.
 
+On the validated Hyprland 0.56.2 and hypridle 0.1.8 baseline, Foot mapping also
+rearms later pending inhibitor-aware clocks. The resulting absolute-stage
+timing limitation is confirmed but not yet corrected; consult the
+[compatibility register](compatibility.md) before changing listener generation.
+
 An enabled display stage uses Hyprland's native 0.56 Lua dispatcher:
 
 ```text
@@ -135,4 +140,5 @@ popups follow the existing `Quickshell.screens` delegate lifecycle.
 
 Installed Papirus provides exact icons named `preferences-system-power` and
 `caffeine`. Use the former normally and the latter while Caffeine is active.
-The implementation is awaiting manual visual review.
+The panel and passive synchronization behavior have passed manual visual
+review; integrated idle actions remain pending.

@@ -16,12 +16,28 @@ baseline packages from official Arch repositories. Pacman resolves their
 transitive dependencies; the manifest is not a lockfile or an export of the
 entire installed system.
 
-`packages/aur.txt` is reserved for unavoidable foreign/AUR runtime packages. It
-is currently empty. Prefer official Arch packages and introduce an AUR package
-only with a documented requirement and maintenance rationale.
+`packages/aur.txt` lists foreign/AUR packages deliberately required by the
+project or its bootstrap. Official Arch packages remain the default, and an AUR
+package must not be introduced for convenience when a reasonable official
+alternative exists. Every AUR entry requires an explicit requirement and
+maintenance rationale.
+
+`yay` is the sole current exception. It is intentionally required in the final
+Vanilla HyprArch system and bootstrap, even though it is not a desktop runtime
+dependency. Its inclusion does not authorize the installer or future agents to
+select other AUR packages freely.
 
 All packages in the current official manifest were verified as installed and
 available from Arch's `extra` repository on 2026-09-08.
+
+## Installation reproducibility
+
+One future bootstrap will consume this baseline, the package manifests, and
+tracked configuration. It must support both an archinstall-time entry point and
+independent execution after a fresh minimal Arch installation. The installer
+does not exist yet. Its responsibilities, public-preset boundaries, and
+unresolved choices are maintained in the canonical
+[installation strategy](installation-strategy.md).
 
 ## Graphical and shell stack
 
@@ -178,7 +194,4 @@ discovery.
   inspection; Python's standard library is adequate for development checks.
 - `less` is not installed and is intentionally outside the desired workflow;
   use non-paginated commands such as `git --no-pager`.
-- `yay` is the only foreign package currently installed, but it is a local AUR
-  helper rather than a Vanilla HyprArch runtime dependency. It is therefore not
-  listed in `packages/aur.txt`.
 - Omarchy is a design reference, not a runtime or package dependency.

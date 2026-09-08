@@ -5,6 +5,9 @@ Snapshot date: 2026-09-08.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
+Validated upstream-version behavior and workaround removal conditions are
+tracked in the [compatibility register](compatibility.md).
+
 ## Repository and runtime identity — IMPLEMENTED
 
 - Public name: **Vanilla HyprArch**
@@ -106,7 +109,7 @@ The current Quickshell UI includes:
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent. No Bluetooth panel is implemented.
 
-## Power and idle — IMPLEMENTED, MANUAL UI REVIEW PENDING
+## Power and idle — IMPLEMENTED, INTEGRATED ACTION TESTING PENDING
 
 `bin/vanhyprarch-idle` owns persistent preferences, validation, managed
 hypridle generation, runtime Caffeine state, and transactional daemon restart.
@@ -121,7 +124,7 @@ Preferences use a strict `key=value` file at
 session-only marker under `${XDG_RUNTIME_DIR}/vanhyprarch/`; enabling it
 generates no automatic actions without changing stored preferences. The CLI
 provides deterministic status output and atomic configure, set, apply, and
-Caffeine operations for the future Quickshell UI.
+Caffeine operations for the Quickshell UI.
 
 ## hypridle — PRODUCTION BACKEND, ZERO LISTENERS
 
@@ -159,9 +162,10 @@ disables choices that would violate stage ordering, clears automatic lock to
 without retaining failed optimistic state. The dock icon changes between
 Papirus `preferences-system-power` and `caffeine`.
 
-The QML loads in the live named configuration and external Caffeine on/off
-synchronization has been exercised with zero listeners. Click behavior,
-presentation, and the complete control flow still require manual visual review.
+The QML loads in the live named configuration. The panel, its Caffeine state,
+timeout presentation, error-only feedback, and passive-refresh behavior have
+passed manual visual review. Integrated screensaver, lock, DPMS, and suspend
+actions still require controlled manual validation.
 
 ## Screensaver — PROVISIONAL
 
@@ -195,8 +199,14 @@ manually validated.
 
 The candidate remains Provisional until its production lifecycle and
 integration are implemented and validated. Current lifecycle design and the
-intended future hypridle semantics are recorded in
+generated hypridle semantics are recorded in
 `docs/screensaver-lifecycle.md`.
+
+A harmless marker diagnostic confirmed that, on Hyprland 0.56.2 with hypridle
+0.1.8, mapping the screensaver Foot window rearms later inhibitor-aware idle
+clocks: an intended 10/20/30-second timeline became approximately 10/30/40.
+The correction is under design and is not implemented. Evidence and retest
+conditions are recorded in the [compatibility register](compatibility.md).
 
 ## Known open work
 
@@ -204,8 +214,9 @@ intended future hypridle semantics are recorded in
 
 - Bring the required hyprlock and hyprpaper configuration into the repository
   in portable form.
-- Build an auditable installer from the package manifests and documented
-  service ownership.
+- Build the shared bootstrap and thin optional archinstall integration defined
+  in the [installation strategy](installation-strategy.md), supporting both a
+  configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Design future Bluetooth UX without presuming `blueman`; BlueZ remains the
@@ -222,9 +233,11 @@ intended future hypridle semantics are recorded in
   colormix work beyond Provisional.
 - Manually validate production lock, DPMS, suspend, and Caffeine lifecycle
   combinations without turning test timings into defaults.
+- Design and validate a correction for screensaver window mapping rearming
+  later inhibitor-aware idle clocks.
 
 ### NOT IMPLEMENTED
 
 - Production screensaver
 - Bluetooth panel
-- Reproducible installer
+- Shared bootstrap and optional archinstall integration
