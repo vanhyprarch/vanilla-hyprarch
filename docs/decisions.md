@@ -176,7 +176,7 @@ reintroduce hibernate as an idle stage or menu action without a new decision.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Pending
+**Implementation:** Backend implemented; Quickshell UI pending
 
 The future Power & Idle control has three independently selectable stages:
 
@@ -196,7 +196,8 @@ screen-bound UI.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Pending
+**Implementation:** Backend implemented; integrated lock behavior awaits manual
+validation
 
 One radio-style selection associates automatic session locking with the screen
 saver, display-off, or suspend stage. A stage set to `Never` cannot own locking.
@@ -210,24 +211,21 @@ toggles.
 
 ## ADR-015: Generate a managed hypridle fragment
 
-**Status:** Provisional
+**Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Static source structure and Phase 2B test fragment prepared;
-production generation pending
+**Implementation:** Backend and production generation implemented; Quickshell UI
+pending
 
-The preferred direction is a mostly static `hypridle.conf` that sources a
-generated `vanhyprarch-idle.conf`. The generated fragment, not parallel JSON,
-would be the source of truth for selected listeners. Phase 2B uses this
-structure with temporary 9- and 10-second, no-lock listeners only to validate
-hypridle lifecycle calls; it does not establish production defaults.
+Use a mostly static `hypridle.conf` that sources a generated
+`vanhyprarch-idle.conf`. A strict project-owned preference file is the durable
+source of truth; the fragment is its generated runtime projection. The
+temporary Phase 2B 9/10-second test validated the required two-listener
+screensaver lifecycle but did not establish production defaults.
 
 Updates must be atomic and followed by restart and verification, with rollback
-on failure. A systemd user service is the preferred candidate for making one
-process the unambiguous owner of hypridle.
-
-This remains provisional because the complete listener model must be reviewed
-against the final lock semantics and the real screensaver lifecycle before
-implementation.
+on failure. Hyprland remains the single direct owner of hypridle; the packaged
+systemd user service stays disabled and inactive. The backend validates this
+ownership before replacing the daemon.
 
 ## ADR-016: Prototype Ly colormix as the screensaver
 
@@ -248,10 +246,10 @@ approximately 30 fps, with animation movement normalized to Ly's 5-millisecond
 reference. This is a measured PoC choice, not an immutable architectural
 requirement.
 
-Production lifecycle, input exit, fullscreen presentation, and process cleanup
-must still be validated in their integrated context. The Phase 2B hypridle
-listeners are temporary, have no locking behavior, and are not a production
-integration. No Quickshell integration has been implemented.
+Fullscreen lifecycle, input dismissal, cursor ownership, and process cleanup
+have been manually validated. Production lock, DPMS, suspend, multi-output, and
+Quickshell integration still require validation; the screensaver therefore
+remains Provisional.
 
 The provisional lifecycle boundary is a single
 `vanhyprarch-screensaver start|stop|status` interface. Its controller owns only
@@ -283,3 +281,19 @@ identifiers are private migration inputs and must not be tracked or published.
 When a direction changes, mark the old decision Superseded rather than silently
 rewriting history. Promote a Provisional decision to Accepted only after its
 validation criteria have been met.
+
+## ADR-019: Caffeine is a runtime override
+
+**Status:** Accepted
+**Date:** 2026-09-08
+**Implementation:** Backend implemented; Quickshell control pending
+
+Caffeine temporarily suppresses every automatic Power & Idle action without
+altering the user's stored timeouts or lock point. Its marker is session-scoped
+under `XDG_RUNTIME_DIR`, is absent after login or reboot, and can be reconciled
+idempotently by reapplying either state.
+
+Caffeine does not disable manual locking or other explicit power actions. Only
+the input/dismiss half of the screensaver workaround may ignore inhibitors;
+listeners that perform screensaver, display, lock, or suspend actions remain
+inhibitor-aware.

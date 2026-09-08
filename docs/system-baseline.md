@@ -145,10 +145,11 @@ separate from the provisional user-session screensaver proof of concept.
 - `hypridle` provides idle and pre-sleep event handling.
 
 Hyprland currently starts hypridle directly. The packaged `hypridle.service`
-user unit is disabled and inactive. The live hypridle configuration has a
-`pidof hyprlock || hyprlock` lock command and locks the session before sleep,
-but has no idle listeners. The planned generated-fragment architecture is not
-part of the current baseline yet.
+user unit is disabled and inactive. The static configuration has a
+`pidof hyprlock || hyprlock` lock command, delegates conditional pre-sleep
+locking to `vanhyprarch-idle`, and sources the project-generated listener
+fragment. The migration defaults produce zero listeners: Screen saver, display
+off, and suspend are `Never`, automatic lock is `None`, and Caffeine is off.
 
 ## Monitor control utilities
 

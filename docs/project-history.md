@@ -74,15 +74,23 @@ The public identity is now Vanilla HyprArch, the future GitHub slug is
 `vanilla-hyprarch`, and tracked project configuration contains no personal
 namespace.
 
-## Current design phase
+## Screensaver lifecycle and Power & Idle backend
 
-The next major subsystem is Power & Idle. Its three-stage model and single lock
-stage are decided, but no UI or generated hypridle configuration exists.
+The Ly `colormix` direction advanced from exploration to an isolated native
+renderer presented by fullscreen Foot. The renderer, owned-process controller,
+input dismissal, and cursor lifecycle passed manual testing while the overall
+screensaver decision remained Provisional.
 
-The historical screensaver exploration compared text-oriented approaches and
-Ly animations. The direction later advanced to a provisional isolated proof of
-concept: a fullscreen Foot window running a lightweight standalone renderer of
-Ly's `colormix` animation. It has not been implemented or integrated.
+A Hyprland v0.56.2 false resume on fullscreen window mapping invalidated the
+original single-listener approach. Phase 2B validated a two-listener design:
+the inhibitor-aware listener starts the saver, while an input-only listener
+arms one second earlier and owns genuine-input dismissal.
+
+The subsequent Power & Idle backend implemented strict persistent preferences,
+runtime-only Caffeine state, ordered-stage and lock-point validation, generated
+hypridle configuration, and transactional restart/rollback. Migration defaults
+remain zero listeners. The Quickshell panel is the next phase and was not part
+of the backend implementation.
 
 ## Architecturally relevant abandoned approaches
 
@@ -91,8 +99,9 @@ Ly's `colormix` animation. It has not been implemented or integrated.
 - Shell-driven `nmcli` polling was superseded by native Quickshell networking.
 - Restarting Quickshell after resume was rejected once screen lifecycle was
   fixed structurally.
-- A parallel JSON settings store for hypridle was rejected in favor of a future
-  generated configuration fragment as the prospective source of truth.
+- A parallel JSON representation of hypridle settings was rejected. A strict
+  project preference file is the durable source, and the hypridle fragment is
+  generated from it.
 - A separate lock timeout and multiple independent lock toggles were superseded
   by one selectable lock-owning idle stage.
 - Inferring Lua-backed binding commands from opaque `hyprctl -j binds` arguments

@@ -1,10 +1,10 @@
 # Screensaver lifecycle
 
 This document describes the provisional lifecycle contract for the Vanilla
-HyprArch colormix screensaver. Phase 1 provides the controller. Phase 2B tests
-an isolated, temporary two-listener hypridle design for manual lifecycle
-validation. It does not add Quickshell controls, locking, or production
-timeouts.
+HyprArch colormix screensaver. The controller and two-listener hypridle
+lifecycle have passed manual testing. Production timeout generation now exists,
+but locking, multi-output behavior, and the future Quickshell controls still
+require integrated validation.
 
 ## Controller
 
@@ -110,11 +110,10 @@ ownership across multiple outputs remain production requirements. The stable
 `start`/`stop`/`status` API can later manage multiple validated processes
 without changing callers.
 
-## Phase 2B hypridle test
+## Two-listener hypridle architecture
 
-The canonical main configuration is
-`home/.config/hypr/hypridle.conf`. It retains the existing lock command and
-before-sleep safety command, then uses hypridle's supported relative include:
+The canonical main configuration is `home/.config/hypr/hypridle.conf`. It uses
+hypridle's supported relative include:
 
 ```text
 source = ./vanhyprarch-idle.conf
@@ -127,9 +126,8 @@ resume event. The original single listener therefore started Foot and then
 immediately stopped it when the new fullscreen window mapped. Foot itself did
 not request an idle inhibitor, and the lifecycle controller behaved correctly.
 
-Phase 2B separates the inhibitor-aware action from genuine-input dismissal.
-The sibling `home/.config/hypr/vanhyprarch-idle.conf` contains exactly these two
-test listeners:
+Phase 2B separated the inhibitor-aware action from genuine-input dismissal.
+Its successful manual test used exactly these listeners:
 
 ```text
 listener {
@@ -160,31 +158,27 @@ not updated by inhibitor rechecks and should remain idled until real input.
 Two complete manual cycles confirmed that the screensaver starts, remains
 visible without genuine input, and is dismissed immediately by mouse input.
 No hyprlock appeared, and exactly one Hyprland-owned hypridle remained running.
-Cursor hiding and restoration are an additional controller-owned lifecycle
-step and require their own visual confirmation.
+Cursor hiding and exact restoration were subsequently validated manually.
 
-This design validates only `hypridle -> screensaver start/stop`. It never
-requests a session lock. Nine and ten seconds are deliberately short for manual
-testing and are not Vanilla HyprArch defaults. The intended production
-migration state remains Screen saver `Never`, Turn off display `Never`, and
-Suspend `Never` until the future UI records user choices.
+Nine and ten seconds were deliberately short manual-test values and are not
+Vanilla HyprArch defaults. The production backend preserves the same relation
+at arbitrary configured timeouts: the input-only listener arms exactly one
+second before the inhibitor-aware start listener. The migration state remains
+Screen saver `Never`, Turn off display `Never`, and Suspend `Never` until the
+future UI records user choices.
 
-Hyprland remains the daemon owner during this test; the packaged systemd user
-service stays disabled. The development session exposes the controller and
-renderer through executable symlinks in `~/.local/bin`, and the test hypridle
-process receives that directory in PATH. A future installer will deploy both
-executables into the user's PATH independently of the Git checkout.
+Hyprland remains the daemon owner; the packaged systemd user service stays
+disabled. The development session exposes project commands through executable
+symlinks in `~/.local/bin`, and hypridle receives that directory in PATH. A
+future installer will deploy the executables independently of the Git checkout.
 
-To roll back the test, stop the screensaver, restore the pre-test static main
-configuration, remove the live listener fragment, and replace only the one
-Hyprland-owned hypridle process. The result must again be one hypridle daemon
-with zero listeners. Repository test files can remain available for review
-until the Phase 2B result is accepted or revised.
+The generated production semantics, stored state, and transactional restart
+procedure are documented in `power-idle-backend.md`.
 
 ## Intended hypridle semantics
 
-These are future production design notes, not active Phase 2B listener
-semantics.
+These are the backend's generated semantics. All stages currently default to
+`Never`, so they remain inactive until the user stores valid timeouts.
 
 ### Lock stage: Screen saver
 
@@ -207,5 +201,6 @@ activity, turn DPMS on; hyprlock should already own the locked session.
 
 ### Lock stage: Suspend
 
-The existing `before_sleep_cmd = loginctl lock-session` remains the safety
-mechanism before actual sleep.
+`before_sleep_cmd = vanhyprarch-idle before-sleep` conditionally requests
+`loginctl lock-session` immediately before sleep. It locks when an automatic
+lock point is selected, but not with Lock `None` or Caffeine active.

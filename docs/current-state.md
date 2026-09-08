@@ -104,42 +104,51 @@ The current Quickshell UI includes:
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent. No Bluetooth panel is implemented.
 
-## Power and idle — PLANNED
+## Power and idle backend — IMPLEMENTED
 
-The existing power menu is implemented, but the Power & Idle settings UI and
-controller do not exist. The accepted design has ordered Screen saver, Turn off
-display, and Suspend stages, plus one selectable stage that owns automatic
-locking. Initial values remain effectively `Never / Never / Never` until the
-user makes a choice.
+`bin/vanhyprarch-idle` owns persistent preferences, validation, managed
+hypridle generation, runtime Caffeine state, and transactional daemon restart.
+The accepted model has ordered Screen saver, Turn off display, and Suspend
+stages plus one selectable stage that owns automatic locking. The current
+stored/default state is `Never / Never / Never`, Lock `None`, and Caffeine off,
+so the production fragment contains zero listeners and introduces no idle
+behavior.
 
-## hypridle — PHASE 2B TEST INTEGRATION
+Preferences use a strict `key=value` file at
+`${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/power-idle.conf`. Caffeine is a
+session-only marker under `${XDG_RUNTIME_DIR}/vanhyprarch/`; enabling it
+generates no automatic actions without changing stored preferences. The CLI
+provides deterministic status output and atomic configure, set, apply, and
+Caffeine operations for the future Quickshell UI.
 
-The canonical static `hypridle.conf` preserves:
+## hypridle — PRODUCTION BACKEND, ZERO LISTENERS
 
-- `lock_cmd = pidof hyprlock || hyprlock`
-- `before_sleep_cmd = loginctl lock-session`
+The canonical static `hypridle.conf` retains
+`lock_cmd = pidof hyprlock || hyprlock`, delegates conditional pre-sleep locking
+to `vanhyprarch-idle before-sleep`, stops an owned saver after unlock, and
+sources the generated `vanhyprarch-idle.conf`.
 
-It sources `vanhyprarch-idle.conf`. The original single-listener Phase 2 test
-exposed a Hyprland v0.56.2 false-resume behavior when the new fullscreen Foot
-window mapped. The controller, renderer, and Foot idle-inhibitor behavior were
-verified as correct.
+When Screen saver is enabled, generation preserves the manually validated
+Hyprland 0.56.2 workaround: an inhibitor-aware start listener has no resume
+action, while an input-only dismiss listener arms one second earlier and uses
+`ignore_inhibit = true` only for a harmless timeout plus genuine-input resume.
+The earlier 9/10-second values were test-only; they are not production
+defaults.
 
-Phase 2B provisionally separates the test into an inhibitor-aware 10-second
-screensaver start listener with no resume action, and a 9-second input-only
-dismiss listener. The latter uses `ignore_inhibit = true`, performs only
-`/usr/bin/true` on timeout, and stops the owned screensaver on genuine resumed
-input. The start listener deliberately does not ignore legitimate inhibitors.
-The test performs no automatic lock. There are no display-off or suspend
-listeners. Two complete manual cycles validated automatic startup, persistence
-without real input, immediate mouse dismissal, absence of hyprlock, and
-single-daemon ownership.
+Display-off generation uses Hyprland's native Lua DPMS dispatcher. Suspend uses
+`systemctl suspend`; conditional `before-sleep` locking preserves the selected
+lock point while allowing Lock `None` and Caffeine to suppress automatic lock.
+These generated non-default paths have passed parser and backend tests but
+still require integrated manual validation before the Power & Idle work is
+considered complete.
 
-Hyprland continues to start hypridle directly; the packaged systemd user
-service remains disabled and inactive. This is a test integration, not the
-production Power & Idle configuration. The intended migration state remains
-`Never / Never / Never` after the temporary listener is removed. User-selected
-timeout persistence, fragment generation, atomic updates, and production
-restart/rollback handling are not implemented.
+Hyprland continues to own exactly one direct hypridle daemon. The backend
+validates that ownership and requires the packaged systemd user service to
+remain disabled and inactive. It parses a candidate configuration before an
+atomic replacement and verifies exact listener counts after restart, restoring
+the previous fragment and daemon on failure.
+
+The Power & Idle Quickshell panel and user-configurable UI are NOT IMPLEMENTED.
 
 ## Screensaver — PROVISIONAL
 
@@ -167,11 +176,9 @@ The controller also saves the current Hyprland `cursor:invisible` boolean in a
 separate runtime-only record, hides the cursor before launching Foot, and
 restores the exact prior value after stop, stale-process cleanup, or failed and
 interrupted startup. Static and non-GUI mock-process validation has passed;
-cursor behavior over the real fullscreen screensaver awaits manual visual
-confirmation.
-
-Phase 2B adds only the temporary two-listener hypridle structure for manual
-idle-cycle testing. It does not add locking or establish production timeouts.
+fullscreen lifecycle, genuine-input dismissal, cursor hiding, immediate exact
+cursor restoration, and isolation from ordinary Foot processes were also
+manually validated.
 
 The candidate remains Provisional until its production lifecycle and
 integration are implemented and validated. Current lifecycle design and the
@@ -182,8 +189,7 @@ intended future hypridle semantics are recorded in
 
 ### PLANNED
 
-- Build the Power & Idle controller and per-screen UI after its backend design
-  is finalized.
+- Build the per-screen Power & Idle Quickshell UI on the backend CLI.
 - Bring the required hyprlock and hyprpaper configuration into the repository
   in portable form.
 - Build an auditable installer from the package manifests and documented
@@ -200,17 +206,14 @@ intended future hypridle semantics are recorded in
 
 ### PROVISIONAL
 
-- Manually validate cursor hiding and exact restoration across two fullscreen
-  Phase 2B cycles, then remove both temporary listeners when testing is complete.
 - Evaluate multi-output coverage and Foot presentation before promoting the
   colormix work beyond Provisional.
-- Finalize hypridle fragment generation, restart/rollback behavior, and
-  long-term single-process ownership after screensaver validation.
+- Manually validate production lock, DPMS, suspend, and Caffeine lifecycle
+  combinations without turning test timings into defaults.
 
 ### NOT IMPLEMENTED
 
 - Power & Idle settings UI
-- User-generated `vanhyprarch-idle.conf` and timeout persistence
 - Production screensaver
 - Bluetooth panel
 - Reproducible installer

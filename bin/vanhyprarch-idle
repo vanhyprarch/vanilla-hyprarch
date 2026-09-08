@@ -1,0 +1,931 @@
+#!/bin/sh
+
+set -fu
+
+program_name=${0##*/}
+runtime_subdir=vanhyprarch
+preferences_name=power-idle.conf
+caffeine_name=caffeine
+lock_name=idle.lock
+managed_fragment_name=vanhyprarch-idle.conf
+hypridle_log_name=hypridle-managed.log
+validation_dir_name=idle-validation
+maximum_timeout=2147483647
+
+usage()
+{
+    cat >&2 <<EOF
+Usage:
+  $program_name status
+  $program_name apply
+  $program_name configure <screensaver> <display> <suspend> <lock>
+  $program_name set <screensaver|display|suspend|lock> <value>
+  $program_name caffeine <on|off>
+  $program_name validate <screensaver> <display> <suspend> <lock>
+  $program_name render <screensaver> <display> <suspend> <lock> [on|off]
+
+Timeouts are integer seconds or "never". Lock is one of:
+none, screensaver, display, suspend.
+EOF
+}
+
+fail()
+{
+    printf '%s: %s\n' "$program_name" "$*" >&2
+    exit 1
+}
+
+is_unsigned_integer()
+{
+    case ${1-} in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+prepare_paths()
+{
+    [ -n "${HOME:-}" ] || fail 'HOME is not set'
+    case $HOME in
+        /*) ;;
+        *) fail 'HOME must be an absolute path' ;;
+    esac
+
+    config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+    case $config_home in
+        /*) ;;
+        *) fail 'XDG_CONFIG_HOME must be an absolute path' ;;
+    esac
+
+    [ -n "${XDG_RUNTIME_DIR:-}" ] || fail 'XDG_RUNTIME_DIR is not set'
+    case $XDG_RUNTIME_DIR in
+        /*) ;;
+        *) fail 'XDG_RUNTIME_DIR must be an absolute path' ;;
+    esac
+    [ -d "$XDG_RUNTIME_DIR" ] ||
+        fail 'XDG_RUNTIME_DIR is not a directory'
+
+    runtime_dir=$XDG_RUNTIME_DIR/$runtime_subdir
+    preferences_dir=$config_home/$runtime_subdir
+    preferences_file=$preferences_dir/$preferences_name
+    hypr_dir=$config_home/hypr
+    hypridle_main=$hypr_dir/hypridle.conf
+    managed_fragment=$hypr_dir/$managed_fragment_name
+    caffeine_file=$runtime_dir/$caffeine_name
+    backend_lock=$runtime_dir/$lock_name
+    hypridle_log=$runtime_dir/$hypridle_log_name
+    validation_dir=$runtime_dir/$validation_dir_name.$$
+
+    umask 077
+    if [ -L "$runtime_dir" ]; then
+        fail "$runtime_dir must not be a symbolic link"
+    fi
+    if [ ! -d "$runtime_dir" ]; then
+        mkdir -m 700 -- "$runtime_dir" ||
+            fail "could not create $runtime_dir"
+    fi
+    runtime_owner=$(stat -c '%u' -- "$runtime_dir") ||
+        fail "could not inspect $runtime_dir"
+    current_uid=$(id -u) || fail 'could not determine the current user ID'
+    [ "$runtime_owner" = "$current_uid" ] ||
+        fail "$runtime_dir is not owned by the current user"
+    chmod 700 -- "$runtime_dir" ||
+        fail "could not secure $runtime_dir"
+
+    exec 8>"$backend_lock" || fail "could not open $backend_lock"
+    flock -x 8 || fail "could not lock $backend_lock"
+}
+
+ensure_preferences_dir()
+{
+    if [ -L "$preferences_dir" ]; then
+        fail "$preferences_dir must not be a symbolic link"
+    fi
+    if [ ! -d "$preferences_dir" ]; then
+        mkdir -m 700 -- "$preferences_dir" ||
+            fail "could not create $preferences_dir"
+    fi
+    preferences_owner=$(stat -c '%u' -- "$preferences_dir") ||
+        fail "could not inspect $preferences_dir"
+    [ "$preferences_owner" = "$current_uid" ] ||
+        fail "$preferences_dir is not owned by the current user"
+    chmod 700 -- "$preferences_dir" ||
+        fail "could not secure $preferences_dir"
+}
+
+load_preferences()
+{
+    preference_version=1
+    screensaver=never
+    display=never
+    suspend=never
+    lock_point=none
+
+    [ -e "$preferences_file" ] || [ -L "$preferences_file" ] || return 0
+    [ -f "$preferences_file" ] ||
+        fail "$preferences_file is not a regular file"
+    [ ! -L "$preferences_file" ] ||
+        fail "$preferences_file must not be a symbolic link"
+
+    seen_version=false
+    seen_screensaver=false
+    seen_display=false
+    seen_suspend=false
+    seen_lock=false
+
+    while IFS= read -r preference_line || [ -n "$preference_line" ]; do
+        preference_key=${preference_line%%=*}
+        preference_value=${preference_line#*=}
+        [ "$preference_key" != "$preference_line" ] ||
+            fail "invalid preference line: $preference_line"
+        case $preference_key in
+            version)
+                [ "$seen_version" = false ] ||
+                    fail 'duplicate version preference'
+                seen_version=true
+                preference_version=$preference_value
+                ;;
+            screensaver)
+                [ "$seen_screensaver" = false ] ||
+                    fail 'duplicate screensaver preference'
+                seen_screensaver=true
+                screensaver=$preference_value
+                ;;
+            display)
+                [ "$seen_display" = false ] ||
+                    fail 'duplicate display preference'
+                seen_display=true
+                display=$preference_value
+                ;;
+            suspend)
+                [ "$seen_suspend" = false ] ||
+                    fail 'duplicate suspend preference'
+                seen_suspend=true
+                suspend=$preference_value
+                ;;
+            lock)
+                [ "$seen_lock" = false ] ||
+                    fail 'duplicate lock preference'
+                seen_lock=true
+                lock_point=$preference_value
+                ;;
+            *) fail "unknown preference: $preference_key" ;;
+        esac
+    done < "$preferences_file"
+
+    [ "$seen_version" = true ] &&
+        [ "$seen_screensaver" = true ] &&
+        [ "$seen_display" = true ] &&
+        [ "$seen_suspend" = true ] &&
+        [ "$seen_lock" = true ] ||
+        fail "$preferences_file is incomplete"
+}
+
+validate_timeout()
+{
+    timeout_name=$1
+    timeout_value=$2
+    timeout_minimum=$3
+
+    [ "$timeout_value" = never ] && return 0
+    is_unsigned_integer "$timeout_value" ||
+        fail "$timeout_name must be \"never\" or integer seconds"
+    [ "$timeout_value" = "${timeout_value#0}" ] ||
+        fail "$timeout_name must not contain leading zeroes"
+    [ "${#timeout_value}" -le 10 ] ||
+        fail "$timeout_name exceeds $maximum_timeout seconds"
+    [ "$timeout_value" -le "$maximum_timeout" ] ||
+        fail "$timeout_name exceeds $maximum_timeout seconds"
+    [ "$timeout_value" -ge "$timeout_minimum" ] ||
+        fail "$timeout_name must be at least $timeout_minimum seconds"
+}
+
+validate_preferences()
+{
+    [ "$preference_version" = 1 ] ||
+        fail "unsupported preference version: $preference_version"
+    validate_timeout screensaver "$screensaver" 2
+    validate_timeout display "$display" 1
+    validate_timeout suspend "$suspend" 1
+
+    case $lock_point in
+        none) ;;
+        screensaver)
+            [ "$screensaver" != never ] ||
+                fail 'lock point screensaver requires an enabled screensaver stage'
+            ;;
+        display)
+            [ "$display" != never ] ||
+                fail 'lock point display requires an enabled display stage'
+            ;;
+        suspend)
+            [ "$suspend" != never ] ||
+                fail 'lock point suspend requires an enabled suspend stage'
+            ;;
+        *) fail 'lock must be one of: none, screensaver, display, suspend' ;;
+    esac
+
+    if [ "$screensaver" != never ] && [ "$display" != never ] &&
+        [ "$screensaver" -ge "$display" ]; then
+        fail 'screensaver timeout must be less than display timeout'
+    fi
+    if [ "$screensaver" != never ] && [ "$suspend" != never ] &&
+        [ "$screensaver" -ge "$suspend" ]; then
+        fail 'screensaver timeout must be less than suspend timeout'
+    fi
+    if [ "$display" != never ] && [ "$suspend" != never ] &&
+        [ "$display" -ge "$suspend" ]; then
+        fail 'display timeout must be less than suspend timeout'
+    fi
+}
+
+load_caffeine()
+{
+    caffeine=off
+    [ -e "$caffeine_file" ] || [ -L "$caffeine_file" ] || return 0
+    [ -f "$caffeine_file" ] ||
+        fail "$caffeine_file is not a regular file"
+    [ ! -L "$caffeine_file" ] ||
+        fail "$caffeine_file must not be a symbolic link"
+    caffeine_value=
+    caffeine_extra=
+    {
+        IFS= read -r caffeine_value ||
+            fail "could not read $caffeine_file"
+        if IFS= read -r caffeine_extra || [ -n "$caffeine_extra" ]; then
+            fail "$caffeine_file contains invalid runtime state"
+        fi
+    } < "$caffeine_file"
+    [ "$caffeine_value" = on ] ||
+        fail "$caffeine_file contains invalid runtime state"
+    caffeine=on
+}
+
+effective_listener_count()
+{
+    listener_count=0
+    ignore_inhibit_count=0
+    if [ "$caffeine" = off ]; then
+        if [ "$screensaver" != never ]; then
+            listener_count=$((listener_count + 2))
+            ignore_inhibit_count=1
+        fi
+        [ "$display" = never ] || listener_count=$((listener_count + 1))
+        [ "$suspend" = never ] || listener_count=$((listener_count + 1))
+    fi
+}
+
+render_fragment()
+{
+    effective_listener_count
+    printf '%s\n' '# Generated by vanhyprarch-idle. Do not edit.'
+    printf '# Stored: screensaver=%s display=%s suspend=%s lock=%s\n' \
+        "$screensaver" "$display" "$suspend" "$lock_point"
+    printf '# Caffeine: %s\n' "$caffeine"
+
+    if [ "$caffeine" = on ]; then
+        printf '%s\n' '# Automatic Power & Idle actions are disabled.'
+        return 0
+    fi
+
+    if [ "$screensaver" != never ]; then
+        dismiss_timeout=$((screensaver - 1))
+        printf '\nlistener {\n'
+        printf '    timeout = %s\n' "$screensaver"
+        printf '%s\n' '    on-timeout = vanhyprarch-screensaver start'
+        printf '}\n'
+        printf '\nlistener {\n'
+        printf '    timeout = %s\n' "$dismiss_timeout"
+        printf '%s\n' '    ignore_inhibit = true'
+        printf '%s\n' '    on-timeout = /usr/bin/true'
+        if [ "$lock_point" = screensaver ]; then
+            printf '%s\n' '    on-resume = loginctl lock-session'
+        else
+            printf '%s\n' '    on-resume = vanhyprarch-screensaver stop'
+        fi
+        printf '}\n'
+    fi
+
+    if [ "$display" != never ]; then
+        printf '\nlistener {\n'
+        printf '    timeout = %s\n' "$display"
+        if [ "$lock_point" = screensaver ] || [ "$lock_point" = display ]; then
+            printf '%s\n' '    on-timeout = loginctl lock-session && hyprctl dispatch '\''hl.dsp.dpms({ action = "disable" })'\'''
+        else
+            printf '%s\n' '    on-timeout = hyprctl dispatch '\''hl.dsp.dpms({ action = "disable" })'\'''
+        fi
+        printf '%s\n' '    on-resume = hyprctl dispatch '\''hl.dsp.dpms({ action = "enable" })'\'''
+        printf '}\n'
+    fi
+
+    if [ "$suspend" != never ]; then
+        printf '\nlistener {\n'
+        printf '    timeout = %s\n' "$suspend"
+        printf '%s\n' '    on-timeout = systemctl suspend'
+        printf '}\n'
+    fi
+}
+
+write_preferences()
+{
+    ensure_preferences_dir
+    preferences_temporary=$preferences_dir/.$preferences_name.$$
+    rm -f -- "$preferences_temporary" || return 1
+    if ! {
+        {
+            printf 'version=1\n'
+            printf 'screensaver=%s\n' "$screensaver"
+            printf 'display=%s\n' "$display"
+            printf 'suspend=%s\n' "$suspend"
+            printf 'lock=%s\n' "$lock_point"
+        } > "$preferences_temporary" &&
+            chmod 600 -- "$preferences_temporary" &&
+            mv -f -- "$preferences_temporary" "$preferences_file"
+    }; then
+        rm -f -- "$preferences_temporary" 2>/dev/null || true
+        return 1
+    fi
+}
+
+write_caffeine()
+{
+    requested_caffeine=$1
+    case $requested_caffeine in
+        on)
+            caffeine_temporary=$runtime_dir/.$caffeine_name.$$
+            rm -f -- "$caffeine_temporary" || return 1
+            if ! {
+                printf 'on\n' > "$caffeine_temporary" &&
+                    chmod 600 -- "$caffeine_temporary" &&
+                    mv -f -- "$caffeine_temporary" "$caffeine_file"
+            }; then
+                rm -f -- "$caffeine_temporary" 2>/dev/null || true
+                return 1
+            fi
+            ;;
+        off)
+            if [ -d "$caffeine_file" ] && [ ! -L "$caffeine_file" ]; then
+                return 1
+            fi
+            rm -f -- "$caffeine_file" || return 1
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+cleanup_validation()
+{
+    rm -f -- "$validation_dir/hypridle.conf" \
+        "$validation_dir/$managed_fragment_name" \
+        "$validation_dir/validation.log" 2>/dev/null || true
+    rmdir "$validation_dir" 2>/dev/null || true
+}
+
+has_only_expected_zero_listener_diagnostic()
+{
+    inspected_log=$1
+    [ "$(grep -Fc 'Config has errors:' "$inspected_log" 2>/dev/null || true)" -eq 1 ] &&
+        [ "$(grep -Fxc 'No rules configured' "$inspected_log" 2>/dev/null || true)" -eq 1 ] &&
+        [ "$(grep -Fxc 'Proceeding ignoring faulty entries' \
+            "$inspected_log" 2>/dev/null || true)" -eq 1 ] &&
+        [ "$(sed -n '/Config has errors:/,/Proceeding ignoring faulty entries/p' \
+            "$inspected_log" | wc -l)" -eq 3 ]
+}
+
+validate_generated_fragment()
+{
+    candidate_fragment=$1
+    expected_listeners=$2
+    [ -f "$hypridle_main" ] ||
+        fail "$hypridle_main does not exist"
+    [ ! -L "$hypridle_main" ] ||
+        fail "$hypridle_main must be a deployed regular file"
+    [ ! -e "$validation_dir" ] && [ ! -L "$validation_dir" ] ||
+        fail "$validation_dir already exists"
+    mkdir -m 700 -- "$validation_dir" ||
+        fail "could not create $validation_dir"
+    cp -- "$hypridle_main" "$validation_dir/hypridle.conf" || {
+        cleanup_validation
+        fail 'could not prepare hypridle validation main config'
+    }
+    cp -- "$candidate_fragment" \
+        "$validation_dir/$managed_fragment_name" || {
+        cleanup_validation
+        fail 'could not prepare hypridle validation fragment'
+    }
+
+    (
+        cd "$validation_dir" || exit 1
+        WAYLAND_DISPLAY=vanhyprarch-validation-invalid \
+            hypridle -c ./hypridle.conf -v
+    ) > "$validation_dir/validation.log" 2>&1 || true
+
+    validation_log=$validation_dir/validation.log
+    registered_count=$(grep -Fc 'Registered timeout rule for ' \
+        "$validation_log" || true)
+    if [ "$registered_count" -ne "$expected_listeners" ]; then
+        sed -n '1,120p' "$validation_log" >&2
+        cleanup_validation
+        fail 'generated hypridle configuration did not parse as expected'
+    fi
+    if [ "$expected_listeners" -gt 0 ]; then
+        if grep -Fq 'Config has errors:' "$validation_log"; then
+            sed -n '1,120p' "$validation_log" >&2
+            cleanup_validation
+            fail 'generated hypridle configuration contains errors'
+        fi
+    else
+        has_only_expected_zero_listener_diagnostic "$validation_log" || {
+            sed -n '1,120p' "$validation_log" >&2
+            cleanup_validation
+            fail 'zero-listener configuration did not produce only the expected diagnostic'
+        }
+    fi
+    cleanup_validation
+}
+
+get_hyprland_instance()
+{
+    instances=$(hyprctl instances) || return 1
+    hyprland_signature=$(printf '%s\n' "$instances" |
+        sed -n 's/^instance \([^:]*\):$/\1/p')
+    hyprland_pid=$(printf '%s\n' "$instances" |
+        sed -n 's/^[[:space:]]*pid: \([0-9][0-9]*\)$/\1/p')
+    [ -n "$hyprland_signature" ] &&
+        [ "$(printf '%s\n' "$hyprland_signature" | wc -l)" -eq 1 ] &&
+        [ -n "$hyprland_pid" ] &&
+        [ "$(printf '%s\n' "$hyprland_pid" | wc -l)" -eq 1 ]
+}
+
+daemon_is_owned()
+{
+    inspected_pid=$1
+    [ -r "/proc/$inspected_pid/stat" ] || return 1
+    daemon_executable=$(readlink "/proc/$inspected_pid/exe" 2>/dev/null) ||
+        return 1
+    [ "${daemon_executable##*/}" = hypridle ] || return 1
+    daemon_parent=$(ps -o ppid= -p "$inspected_pid" 2>/dev/null |
+        tr -d ' ') || return 1
+    [ "$daemon_parent" = "$hyprland_pid" ] || return 1
+    daemon_arguments=$(ps -o args= -p "$inspected_pid" 2>/dev/null) ||
+        return 1
+    [ "$daemon_arguments" = hypridle ] ||
+        [ "$daemon_arguments" = 'hypridle -v' ]
+}
+
+get_single_daemon()
+{
+    daemon_pids=$(pgrep -x hypridle 2>/dev/null || true)
+    [ -n "$daemon_pids" ] || return 1
+    [ "$(printf '%s\n' "$daemon_pids" | wc -l)" -eq 1 ] || return 1
+    daemon_pid=$daemon_pids
+    daemon_is_owned "$daemon_pid" || return 1
+    daemon_path=$(tr '\0' '\n' < "/proc/$daemon_pid/environ" |
+        sed -n 's/^PATH=//p') || return 1
+    [ -n "$daemon_path" ]
+}
+
+shell_quote()
+{
+    printf "'"
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+    printf "'"
+}
+
+launch_hypridle()
+{
+    launch_path=$1
+    launch_log=$2
+    quoted_path=$(shell_quote "$launch_path") || return 1
+    quoted_log=$(shell_quote "$launch_log") || return 1
+    launch_command="exec env PATH=$quoted_path hypridle -v > $quoted_log 2>&1"
+    case $launch_command in
+        *']==]'*) return 1 ;;
+    esac
+    hyprctl -i "$hyprland_signature" eval \
+        "hl.exec_cmd([==[$launch_command]==])" >/dev/null || return 1
+}
+
+wait_for_no_hypridle()
+{
+    wait_count=0
+    while [ "$wait_count" -lt 100 ]; do
+        pgrep -x hypridle >/dev/null 2>&1 || return 0
+        sleep 0.05
+        wait_count=$((wait_count + 1))
+    done
+    return 1
+}
+
+wait_for_single_hypridle()
+{
+    wait_count=0
+    while [ "$wait_count" -lt 100 ]; do
+        candidate_pids=$(pgrep -x hypridle 2>/dev/null || true)
+        if [ -n "$candidate_pids" ] &&
+            [ "$(printf '%s\n' "$candidate_pids" | wc -l)" -eq 1 ]; then
+            started_daemon_pid=$candidate_pids
+            return 0
+        fi
+        sleep 0.05
+        wait_count=$((wait_count + 1))
+    done
+    return 1
+}
+
+validate_running_daemon()
+{
+    running_pid=$1
+    expected_listeners=$2
+    expected_ignores=$3
+    daemon_is_owned "$running_pid" || return 1
+
+    wait_count=0
+    while [ "$wait_count" -lt 100 ]; do
+        grep -Fq "found $expected_listeners rules" "$hypridle_log" 2>/dev/null &&
+            break
+        sleep 0.05
+        wait_count=$((wait_count + 1))
+    done
+    [ "$(grep -Fc "found $expected_listeners rules" \
+        "$hypridle_log" 2>/dev/null || true)" -eq 1 ] || return 1
+    [ "$(grep -Fxc '      ignore_inhibit: true' \
+        "$hypridle_log" 2>/dev/null || true)" -eq "$expected_ignores" ] ||
+        return 1
+    if [ "$expected_listeners" -gt 0 ]; then
+        grep -Fq 'Config has errors:' "$hypridle_log" && return 1
+    else
+        has_only_expected_zero_listener_diagnostic "$hypridle_log" || return 1
+    fi
+    if grep -Eiq 'Another service|parse error|syntax error|critical|command not found' \
+        "$hypridle_log"; then
+        return 1
+    fi
+}
+
+count_fragment_listeners()
+{
+    counted_fragment=$1
+    if [ ! -f "$counted_fragment" ]; then
+        printf '0\n'
+        return
+    fi
+    grep -c '^listener {$' "$counted_fragment" 2>/dev/null || true
+}
+
+count_fragment_ignores()
+{
+    counted_fragment=$1
+    if [ ! -f "$counted_fragment" ]; then
+        printf '0\n'
+        return
+    fi
+    grep -c '^    ignore_inhibit = true$' "$counted_fragment" \
+        2>/dev/null || true
+}
+
+deploy_fragment()
+(
+    set -eu
+    candidate=$1
+    expected_listeners=$2
+    expected_ignores=$3
+    backup_fragment=$runtime_dir/idle-fragment.backup.$$
+    rollback_log=$runtime_dir/hypridle-rollback.$$.log
+    rollback_required=false
+    old_fragment_present=false
+    old_daemon_stopped=false
+
+    rollback_deployment()
+    {
+        rollback_status=$?
+        trap - 0 HUP INT TERM
+        if [ "$rollback_required" = true ]; then
+            if [ "$old_fragment_present" = true ]; then
+                cp -- "$backup_fragment" "$managed_fragment.rollback" 2>/dev/null &&
+                    mv -f -- "$managed_fragment.rollback" \
+                        "$managed_fragment" 2>/dev/null || true
+            else
+                rm -f -- "$managed_fragment" 2>/dev/null || true
+            fi
+
+            if [ "$old_daemon_stopped" = true ]; then
+                rollback_pids=$(pgrep -x hypridle 2>/dev/null || true)
+                for rollback_pid in $rollback_pids; do
+                    if daemon_is_owned "$rollback_pid"; then
+                        kill -TERM "$rollback_pid" 2>/dev/null || true
+                    fi
+                done
+                wait_for_no_hypridle || true
+                hypridle_log=$rollback_log
+                : > "$rollback_log"
+                if launch_hypridle "$daemon_path" "$rollback_log" &&
+                    wait_for_single_hypridle &&
+                    validate_running_daemon "$started_daemon_pid" \
+                        "$old_listeners" "$old_ignores"; then
+                    printf '%s: restored previous hypridle configuration\n' \
+                        "$program_name" >&2
+                else
+                    printf '%s: failed to restore the previous hypridle daemon\n' \
+                        "$program_name" >&2
+                fi
+            fi
+        fi
+        rm -f -- "$candidate" "$backup_fragment" \
+            "$managed_fragment.rollback" 2>/dev/null || true
+        exit "$rollback_status"
+    }
+    trap rollback_deployment 0 HUP INT TERM
+
+    [ -d "$hypr_dir" ]
+    [ ! -L "$hypr_dir" ]
+    [ -f "$hypridle_main" ]
+    [ ! -L "$hypridle_main" ]
+    get_hyprland_instance
+    get_single_daemon
+    [ "$(systemctl --user is-enabled hypridle.service 2>/dev/null || true)" = disabled ]
+    [ "$(systemctl --user is-active hypridle.service 2>/dev/null || true)" = inactive ]
+    PATH="$daemon_path" command -v hypridle >/dev/null
+    PATH="$daemon_path" command -v vanhyprarch-idle >/dev/null
+    PATH="$daemon_path" command -v vanhyprarch-screensaver >/dev/null
+
+    if [ -e "$managed_fragment" ] || [ -L "$managed_fragment" ]; then
+        [ -f "$managed_fragment" ]
+        [ ! -L "$managed_fragment" ]
+        cp -- "$managed_fragment" "$backup_fragment"
+        old_fragment_present=true
+    fi
+    old_listeners=$(count_fragment_listeners "$backup_fragment")
+    old_ignores=$(count_fragment_ignores "$backup_fragment")
+
+    mv -f -- "$candidate" "$managed_fragment"
+    rollback_required=true
+    kill -TERM "$daemon_pid"
+    old_daemon_stopped=true
+    wait_for_no_hypridle
+
+    : > "$hypridle_log"
+    launch_hypridle "$daemon_path" "$hypridle_log"
+    wait_for_single_hypridle
+    [ "$started_daemon_pid" != "$daemon_pid" ]
+    validate_running_daemon "$started_daemon_pid" \
+        "$expected_listeners" "$expected_ignores"
+    [ "$(pgrep -x hypridle | wc -l)" -eq 1 ]
+
+    rollback_required=false
+    trap - 0 HUP INT TERM
+    rm -f -- "$backup_fragment"
+    printf 'applied (hypridle pid %s, listeners %s)\n' \
+        "$started_daemon_pid" "$expected_listeners"
+)
+
+apply_effective_configuration()
+{
+    [ -d "$hypr_dir" ] || fail "$hypr_dir does not exist"
+    [ ! -L "$hypr_dir" ] || fail "$hypr_dir must not be a symbolic link"
+    candidate_fragment=$hypr_dir/.$managed_fragment_name.$$
+    [ ! -e "$candidate_fragment" ] && [ ! -L "$candidate_fragment" ] ||
+        fail "$candidate_fragment already exists"
+    render_fragment > "$candidate_fragment" || {
+        rm -f -- "$candidate_fragment"
+        fail 'could not render managed hypridle fragment'
+    }
+    chmod 600 -- "$candidate_fragment" || {
+        rm -f -- "$candidate_fragment"
+        fail 'could not secure managed hypridle fragment'
+    }
+    effective_listener_count
+    validate_generated_fragment "$candidate_fragment" "$listener_count"
+    deploy_fragment "$candidate_fragment" "$listener_count" \
+        "$ignore_inhibit_count"
+    deployment_status=$?
+    [ "$deployment_status" -eq 0 ] ||
+        fail 'hypridle deployment failed and was rolled back'
+}
+
+begin_preferences_transaction()
+{
+    preferences_backup=$runtime_dir/preferences.backup.$$
+    preferences_existed=false
+    if [ -e "$preferences_file" ] || [ -L "$preferences_file" ]; then
+        [ -f "$preferences_file" ] && [ ! -L "$preferences_file" ] ||
+            fail "$preferences_file is not a regular file"
+        cp -- "$preferences_file" "$preferences_backup" ||
+            fail 'could not back up preferences'
+        preferences_existed=true
+    fi
+    preferences_transaction=true
+    trap 'rollback_preferences $?' 0
+    trap 'rollback_preferences 129' HUP
+    trap 'rollback_preferences 130' INT
+    trap 'rollback_preferences 143' TERM
+}
+
+rollback_preferences()
+{
+    rollback_status=$1
+    trap - 0 HUP INT TERM
+    if [ "${preferences_transaction:-false}" = true ]; then
+        if [ "$preferences_existed" = true ]; then
+            cp -- "$preferences_backup" "$preferences_file.rollback" \
+                2>/dev/null &&
+                mv -f -- "$preferences_file.rollback" "$preferences_file" \
+                    2>/dev/null || true
+        else
+            rm -f -- "$preferences_file" 2>/dev/null || true
+        fi
+    fi
+    rm -f -- "$preferences_backup" "$preferences_file.rollback" \
+        2>/dev/null || true
+    exit "$rollback_status"
+}
+
+finish_preferences_transaction()
+{
+    preferences_transaction=false
+    trap - 0 HUP INT TERM
+    rm -f -- "$preferences_backup"
+}
+
+begin_caffeine_transaction()
+{
+    caffeine_was=$caffeine
+    caffeine_transaction=true
+    trap 'rollback_caffeine $?' 0
+    trap 'rollback_caffeine 129' HUP
+    trap 'rollback_caffeine 130' INT
+    trap 'rollback_caffeine 143' TERM
+}
+
+rollback_caffeine()
+{
+    rollback_status=$1
+    trap - 0 HUP INT TERM
+    if [ "${caffeine_transaction:-false}" = true ]; then
+        write_caffeine "$caffeine_was" || true
+    fi
+    exit "$rollback_status"
+}
+
+finish_caffeine_transaction()
+{
+    caffeine_transaction=false
+    trap - 0 HUP INT TERM
+}
+
+print_status()
+{
+    effective_listener_count
+    printf 'version=1\n'
+    printf 'screensaver=%s\n' "$screensaver"
+    printf 'display=%s\n' "$display"
+    printf 'suspend=%s\n' "$suspend"
+    printf 'lock=%s\n' "$lock_point"
+    printf 'caffeine=%s\n' "$caffeine"
+    printf 'effective_listeners=%s\n' "$listener_count"
+}
+
+apply_preferences_update()
+{
+    validate_preferences
+    load_caffeine
+    begin_preferences_transaction
+    write_preferences || fail 'could not write preferences'
+    apply_effective_configuration
+    finish_preferences_transaction
+}
+
+command_status()
+{
+    [ "$#" -eq 0 ] || fail 'status takes no arguments'
+    load_preferences
+    validate_preferences
+    load_caffeine
+    print_status
+}
+
+command_apply()
+{
+    [ "$#" -eq 0 ] || fail 'apply takes no arguments'
+    load_preferences
+    validate_preferences
+    load_caffeine
+    apply_effective_configuration
+}
+
+command_configure()
+{
+    [ "$#" -eq 4 ] ||
+        fail 'configure requires: screensaver display suspend lock'
+    load_preferences
+    screensaver=$1
+    display=$2
+    suspend=$3
+    lock_point=$4
+    apply_preferences_update
+}
+
+command_set()
+{
+    [ "$#" -eq 2 ] || fail 'set requires a field and value'
+    load_preferences
+    case $1 in
+        screensaver) screensaver=$2 ;;
+        display) display=$2 ;;
+        suspend) suspend=$2 ;;
+        lock) lock_point=$2 ;;
+        *) fail 'set field must be: screensaver, display, suspend, lock' ;;
+    esac
+    apply_preferences_update
+}
+
+command_caffeine()
+{
+    [ "$#" -eq 1 ] || fail 'caffeine requires on or off'
+    requested_caffeine=$1
+    case $requested_caffeine in on|off) ;; *) fail 'caffeine requires on or off' ;; esac
+    load_preferences
+    validate_preferences
+    load_caffeine
+    begin_caffeine_transaction
+    write_caffeine "$requested_caffeine" ||
+        fail "could not set Caffeine $requested_caffeine"
+    caffeine=$requested_caffeine
+    apply_effective_configuration
+    finish_caffeine_transaction
+    printf 'caffeine %s\n' "$caffeine"
+}
+
+command_validate()
+{
+    [ "$#" -eq 4 ] ||
+        fail 'validate requires: screensaver display suspend lock'
+    preference_version=1
+    screensaver=$1
+    display=$2
+    suspend=$3
+    lock_point=$4
+    validate_preferences
+    printf 'valid\n'
+}
+
+command_render()
+{
+    [ "$#" -eq 4 ] || [ "$#" -eq 5 ] ||
+        fail 'render requires: screensaver display suspend lock [on|off]'
+    preference_version=1
+    screensaver=$1
+    display=$2
+    suspend=$3
+    lock_point=$4
+    caffeine=${5:-off}
+    case $caffeine in on|off) ;; *) fail 'render Caffeine must be on or off' ;; esac
+    validate_preferences
+    render_fragment
+}
+
+command_before_sleep()
+{
+    [ "$#" -eq 0 ] || fail 'before-sleep takes no arguments'
+    load_preferences
+    validate_preferences
+    load_caffeine
+    if [ "$caffeine" = on ] || [ "$lock_point" = none ]; then
+        return 0
+    fi
+    loginctl lock-session
+}
+
+[ "$#" -ge 1 ] || {
+    usage
+    exit 2
+}
+
+command=$1
+shift
+
+case $command in
+    validate)
+        command_validate "$@"
+        exit 0
+        ;;
+    render)
+        command_render "$@"
+        exit 0
+        ;;
+esac
+
+prepare_paths
+
+case $command in
+    status) command_status "$@" ;;
+    apply) command_apply "$@" ;;
+    configure) command_configure "$@" ;;
+    set) command_set "$@" ;;
+    caffeine) command_caffeine "$@" ;;
+    before-sleep) command_before_sleep "$@" ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac
