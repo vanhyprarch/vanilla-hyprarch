@@ -125,14 +125,22 @@ provisional until reviewed with the final lock and screensaver lifecycle.
 ## Screensaver — PROVISIONAL
 
 Ly's `colormix` animation has been investigated and is the preferred candidate.
-The next task is an isolated proof of concept:
+An isolated proof-of-concept renderer is implemented and manually tested at
+`experiments/colormix/` with this candidate architecture:
 
 `Hyprland -> fullscreen Foot window -> lightweight standalone colormix renderer`
 
-No renderer has been implemented. There is no production screensaver, no
-hypridle listener for one, and no Quickshell integration. The candidate becomes
-an accepted project component only after visual, lifecycle, input-exit,
-licensing, and resource-use validation.
+Visual testing confirms that its 5, 16, and 33 millisecond render cadences now
+retain approximately the same movement speed by normalizing animation time to
+Ly's 5-millisecond reference. The current provisional default is 33
+milliseconds, approximately 30 fps. On the development system that mode used
+about 23.9% of one logical CPU across Foot and the renderer, versus about 42.4%
+at 16 milliseconds (approximately 60 fps), roughly halving the combined CPU
+cost. These measurements are observations, not universal performance claims.
+
+The PoC is not a production screensaver. There is no hypridle listener for it
+and no Quickshell integration. The candidate remains Provisional until its
+production lifecycle and integration are implemented and validated.
 
 ## Known open work
 
@@ -156,7 +164,8 @@ licensing, and resource-use validation.
 
 ### PROVISIONAL
 
-- Build and review the isolated colormix proof of concept.
+- Evaluate production lifecycle and Foot presentation before promoting the
+  tested colormix PoC beyond Provisional status.
 - Finalize hypridle configuration generation, restart/rollback behavior, and
   single-process ownership after screensaver validation.
 

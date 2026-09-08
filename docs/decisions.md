@@ -230,20 +230,23 @@ implementation.
 
 **Status:** Provisional
 **Date:** 2026-09-08
-**Implementation:** Not started
+**Implementation:** Isolated PoC tested; production integration not started
 
 Ly's `colormix` animation is the preferred screensaver candidate, but it is not
-accepted as the production screensaver yet. The next step is an isolated proof
-of concept with this candidate architecture:
+accepted as the production screensaver yet. An isolated proof of concept has
+validated this candidate architecture:
 
 `Hyprland -> fullscreen Foot window -> lightweight standalone colormix renderer`
 
-The renderer should reproduce the relevant Ly algorithm while respecting its
-license and attribution requirements. Resource use, appearance, input exit,
-fullscreen behavior, and process cleanup must be validated in isolation.
+The renderer reproduces the relevant Ly algorithm while respecting its license
+and attribution requirements. Its current PoC default is 33 milliseconds,
+approximately 30 fps, with animation movement normalized to Ly's 5-millisecond
+reference. This is a measured PoC choice, not an immutable architectural
+requirement.
 
-No hypridle or Quickshell integration will be added before that proof of concept
-is reviewed and accepted.
+Production lifecycle, input exit, fullscreen presentation, and process cleanup
+must still be designed and validated in their integrated context. No hypridle
+or Quickshell integration has been implemented.
 
 ## ADR-017: Respect third-party licenses
 
