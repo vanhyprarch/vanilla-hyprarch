@@ -176,7 +176,8 @@ reintroduce hibernate as an idle stage or menu action without a new decision.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend implemented; Quickshell UI pending
+**Implementation:** Backend and first Quickshell UI implemented; manual visual
+review pending
 
 The future Power & Idle control has three independently selectable stages:
 
@@ -196,8 +197,8 @@ screen-bound UI.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend implemented; integrated lock behavior awaits manual
-validation
+**Implementation:** Backend and first Quickshell UI implemented; integrated lock
+behavior awaits manual validation
 
 One radio-style selection associates automatic session locking with the screen
 saver, display-off, or suspend stage. A stage set to `Never` cannot own locking.
@@ -213,8 +214,8 @@ toggles.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend and production generation implemented; Quickshell UI
-pending
+**Implementation:** Backend, production generation, and first Quickshell UI
+implemented
 
 Use a mostly static `hypridle.conf` that sources a generated
 `vanhyprarch-idle.conf`. A strict project-owned preference file is the durable
@@ -286,7 +287,8 @@ validation criteria have been met.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend implemented; Quickshell control pending
+**Implementation:** Backend and Quickshell control implemented; manual visual
+review pending
 
 Caffeine temporarily suppresses every automatic Power & Idle action without
 altering the user's stored timeouts or lock point. Its marker is session-scoped

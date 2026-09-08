@@ -1,8 +1,8 @@
 # Power & Idle backend
 
 `bin/vanhyprarch-idle` is the non-graphical configuration owner for Power &
-Idle. The future Quickshell panel must call this command rather than edit
-hypridle files independently.
+Idle. The Quickshell panel calls this command rather than editing hypridle files
+independently.
 
 ## State model
 
@@ -114,9 +114,9 @@ the prior fragment and attempts to launch and validate one daemon against the
 previous counts. Preference and Caffeine updates are also rolled back if the
 effective configuration cannot be applied.
 
-## Future Quickshell panel
+## Quickshell panel
 
-The planned dock order is:
+The dock order is:
 
 1. System Tray
 2. Network
@@ -129,8 +129,10 @@ The planned dock order is:
 
 The panel begins with **Caffeine / Keep computer awake**, followed by Screen
 saver, Turn off display, and Suspend timeout controls. Each stage can be
-`Never` and can be selected as the one automatic lock point.
+`Never` and can be selected as the one automatic lock point. A single global
+controller owns backend processes and parsed state; screen-bound buttons and
+popups follow the existing `Quickshell.screens` delegate lifecycle.
 
 Installed Papirus provides exact icons named `preferences-system-power` and
 `caffeine`. Use the former normally and the latter while Caffeine is active.
-No Quickshell UI is implemented yet.
+The implementation is awaiting manual visual review.

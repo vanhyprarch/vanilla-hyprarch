@@ -95,6 +95,8 @@ The current Quickshell UI includes:
 - native Quickshell/NetworkManager network status, Wi-Fi scanning, connection,
   password, known-network, and forget flows;
 - DDC/CI brightness control and fixed monitor-scale presets;
+- a compact Power & Idle panel backed by the project controller, with Caffeine,
+  timeout presets, and one automatic-lock selection;
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
 - lock, suspend, reboot, and power-off actions;
@@ -104,7 +106,7 @@ The current Quickshell UI includes:
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent. No Bluetooth panel is implemented.
 
-## Power and idle backend — IMPLEMENTED
+## Power and idle — IMPLEMENTED, MANUAL UI REVIEW PENDING
 
 `bin/vanhyprarch-idle` owns persistent preferences, validation, managed
 hypridle generation, runtime Caffeine state, and transactional daemon restart.
@@ -148,7 +150,18 @@ remain disabled and inactive. It parses a candidate configuration before an
 atomic replacement and verifies exact listener counts after restart, restoring
 the previous fragment and daemon on failure.
 
-The Power & Idle Quickshell panel and user-configurable UI are NOT IMPLEMENTED.
+The first Quickshell panel is implemented between Monitor and Theme. One global
+`IdleController` reads the backend at shell startup, on panel open, after every
+operation, and at a conservative 30-second interval. Per-screen buttons and
+popups consume that shared state. The panel exposes the documented presets,
+disables choices that would violate stage ordering, clears automatic lock to
+`None` atomically when its stage is changed to `Never`, and shows backend errors
+without retaining failed optimistic state. The dock icon changes between
+Papirus `preferences-system-power` and `caffeine`.
+
+The QML loads in the live named configuration and external Caffeine on/off
+synchronization has been exercised with zero listeners. Click behavior,
+presentation, and the complete control flow still require manual visual review.
 
 ## Screensaver — PROVISIONAL
 
@@ -189,7 +202,6 @@ intended future hypridle semantics are recorded in
 
 ### PLANNED
 
-- Build the per-screen Power & Idle Quickshell UI on the backend CLI.
 - Bring the required hyprlock and hyprpaper configuration into the repository
   in portable form.
 - Build an auditable installer from the package manifests and documented
@@ -213,7 +225,6 @@ intended future hypridle semantics are recorded in
 
 ### NOT IMPLEMENTED
 
-- Power & Idle settings UI
 - Production screensaver
 - Bluetooth panel
 - Reproducible installer

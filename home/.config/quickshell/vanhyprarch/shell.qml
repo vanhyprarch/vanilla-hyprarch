@@ -25,6 +25,10 @@ ShellRoot {
         id: shortcuts
     }
 
+    IdleController {
+        id: idleController
+    }
+
     property int dockWidth: 56
     property int borderThickness: 10
     property int cornerRadius: 10
@@ -131,13 +135,26 @@ ShellRoot {
             }
         }
 
+        PowerIdle {
+            id: dockPowerIdle
+            controller: idleController
+            theme: shellTheme
+            popupRadius: root.cornerRadius
+
+            anchors {
+                bottom: dockThemeToggle.top
+                bottomMargin: dockClock.systemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
         Monitor {
             id: dockMonitor
             theme: shellTheme
             popupRadius: root.cornerRadius
 
             anchors {
-                bottom: dockThemeToggle.top
+                bottom: dockPowerIdle.top
                 bottomMargin: dockClock.systemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
