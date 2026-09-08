@@ -32,9 +32,9 @@ Scope {
         return home + "/.local/bin" + (inherited === "" ? "" : ":" + inherited)
     }
     readonly property var timeoutPresets: ({
-        screensaver: ["never", "300", "600", "900", "1800"],
-        display: ["never", "600", "1200", "1800", "2700", "3600"],
-        suspend: ["never", "1800", "2700", "3600", "7200", "10800"]
+        screensaver: ["never", "120", "300", "600", "1200"],
+        display: ["never", "300", "600", "1200", "1800"],
+        suspend: ["never", "600", "1200", "1800", "3600"]
     })
     readonly property var lockPoints: ["none", "screensaver", "display", "suspend"]
 

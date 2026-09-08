@@ -22,26 +22,24 @@ PopupWindow {
 
     readonly property var screensaverPresets: [
         { value: "never", label: "Never" },
+        { value: "120", label: "2 min" },
         { value: "300", label: "5 min" },
         { value: "600", label: "10 min" },
-        { value: "900", label: "15 min" },
-        { value: "1800", label: "30 min" }
+        { value: "1200", label: "20 min" }
     ]
     readonly property var displayPresets: [
+        { value: "never", label: "Never" },
+        { value: "300", label: "5 min" },
+        { value: "600", label: "10 min" },
+        { value: "1200", label: "20 min" },
+        { value: "1800", label: "30 min" }
+    ]
+    readonly property var suspendPresets: [
         { value: "never", label: "Never" },
         { value: "600", label: "10 min" },
         { value: "1200", label: "20 min" },
         { value: "1800", label: "30 min" },
-        { value: "2700", label: "45 min" },
         { value: "3600", label: "1 h" }
-    ]
-    readonly property var suspendPresets: [
-        { value: "never", label: "Never" },
-        { value: "1800", label: "30 min" },
-        { value: "2700", label: "45 min" },
-        { value: "3600", label: "1 h" },
-        { value: "7200", label: "2 h" },
-        { value: "10800", label: "3 h" }
     ]
     readonly property var lockChoices: [
         { value: "none", label: "None" },
@@ -88,12 +86,13 @@ PopupWindow {
         required property string stage
         required property string value
         required property string label
+        required property real buttonWidth
         readonly property bool selected:
             root.controller.stageValue(stage) === value
         readonly property bool available:
             root.controller.canSetStage(stage, value)
 
-        width: Math.max(44, presetLabel.implicitWidth + 16)
+        width: buttonWidth
         height: 26
         radius: root.popupRadius / 2
         color: selected ? root.accentColor
@@ -169,7 +168,9 @@ PopupWindow {
             }
         }
 
-        Flow {
+        Row {
+            id: presetRow
+
             width: parent.width
             height: childrenRect.height
             spacing: 4
@@ -183,6 +184,7 @@ PopupWindow {
                     stage: stageSection.stage
                     value: String(modelData.value)
                     label: String(modelData.label)
+                    buttonWidth: (presetRow.width - presetRow.spacing * 4) / 5
                 }
             }
         }
