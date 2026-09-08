@@ -6,6 +6,7 @@ program_name=${0##*/}
 app_id=vanhyprarch-screensaver
 runtime_subdir=vanhyprarch
 state_name=screensaver.state
+cursor_state_name=screensaver.cursor
 lock_name=screensaver.lock
 log_name=screensaver.log
 start_attempts=20
@@ -62,6 +63,7 @@ prepare_runtime()
         fail "could not secure $runtime_dir"
 
     state_file=$runtime_dir/$state_name
+    cursor_state_file=$runtime_dir/$cursor_state_name
     lock_file=$runtime_dir/$lock_name
     log_file=$runtime_dir/$log_name
 
@@ -74,12 +76,26 @@ state_path_exists()
     [ -e "$state_file" ] || [ -L "$state_file" ]
 }
 
+cursor_state_path_exists()
+{
+    [ -e "$cursor_state_file" ] || [ -L "$cursor_state_file" ]
+}
+
 remove_state()
 {
     if [ -d "$state_file" ] && [ ! -L "$state_file" ]; then
         fail "$state_file is unexpectedly a directory"
     fi
     rm -f -- "$state_file" || fail "could not remove $state_file"
+}
+
+remove_cursor_state()
+{
+    if [ -d "$cursor_state_file" ] && [ ! -L "$cursor_state_file" ]; then
+        fail "$cursor_state_file is unexpectedly a directory"
+    fi
+    rm -f -- "$cursor_state_file" ||
+        fail "could not remove $cursor_state_file"
 }
 
 load_state()
@@ -104,6 +120,27 @@ load_state()
     [ "$state_pid" -gt 1 ] || return 1
     [ "$state_pid" = "$state_pgid" ] || return 1
     [ "$state_pid" = "$state_sid" ] || return 1
+}
+
+load_cursor_state()
+{
+    [ -f "$cursor_state_file" ] || return 1
+    [ ! -L "$cursor_state_file" ] || return 1
+
+    saved_cursor_invisible=
+    cursor_state_extra=
+    {
+        IFS= read -r saved_cursor_invisible || return 1
+        if IFS= read -r cursor_state_extra ||
+            [ -n "$cursor_state_extra" ]; then
+            return 1
+        fi
+    } < "$cursor_state_file"
+
+    case $saved_cursor_invisible in
+        true|false) ;;
+        *) return 1 ;;
+    esac
 }
 
 read_process_snapshot()
@@ -179,6 +216,59 @@ resolve_renderer()
         fail 'renderer not found; build the PoC or install vanhyprarch-colormix'
 }
 
+resolve_hyprctl()
+{
+    hyprctl_executable=$(command -v hyprctl 2>/dev/null) || return 1
+}
+
+read_cursor_invisible()
+{
+    cursor_invisible=$(
+        "$hyprctl_executable" getoption cursor:invisible 2>/dev/null |
+            sed -n 's/^bool: //p'
+    ) || return 1
+
+    case $cursor_invisible in
+        true|false) ;;
+        *) return 1 ;;
+    esac
+}
+
+set_cursor_invisible()
+{
+    requested_cursor_invisible=$1
+    case $requested_cursor_invisible in
+        true|false) ;;
+        *) return 1 ;;
+    esac
+
+    "$hyprctl_executable" eval \
+        "hl.config({ cursor = { invisible = $requested_cursor_invisible } })" \
+        >/dev/null 2>&1 || return 1
+    read_cursor_invisible || return 1
+    [ "$cursor_invisible" = "$requested_cursor_invisible" ]
+}
+
+write_cursor_state()
+{
+    cursor_state_temporary=$runtime_dir/$cursor_state_name.$$
+    rm -f -- "$cursor_state_temporary" || return 1
+    printf '%s\n' "$cursor_invisible" > "$cursor_state_temporary" || return 1
+    chmod 600 -- "$cursor_state_temporary" || return 1
+    mv -f -- "$cursor_state_temporary" "$cursor_state_file" || return 1
+}
+
+restore_cursor_state()
+{
+    cursor_state_path_exists || return 0
+    load_cursor_state ||
+        fail "invalid cursor ownership state in $cursor_state_file"
+    resolve_hyprctl || fail 'hyprctl is not installed or not on PATH'
+    set_cursor_invisible "$saved_cursor_invisible" ||
+        fail "could not restore cursor:invisible=$saved_cursor_invisible"
+    remove_cursor_state
+}
+
 write_state()
 {
     state_temporary=$runtime_dir/$state_name.$$
@@ -204,6 +294,29 @@ terminate_failed_launch()
     wait "$launch_pid" 2>/dev/null || true
 }
 
+cleanup_failed_start()
+{
+    cleanup_status=$1
+    trap - 0 HUP INT TERM
+
+    if [ -n "${launch_pid:-}" ]; then
+        terminate_failed_launch
+    fi
+    rm -f -- "$runtime_dir/$state_name.$$" \
+        "$runtime_dir/$cursor_state_name.$$" 2>/dev/null || true
+    if [ "${cursor_cleanup_required:-false}" = true ]; then
+        if load_cursor_state && resolve_hyprctl &&
+            set_cursor_invisible "$saved_cursor_invisible"; then
+            rm -f -- "$cursor_state_file" 2>/dev/null || true
+        else
+            printf '%s: could not restore cursor state after failed start\n' \
+                "$program_name" >&2
+        fi
+    fi
+    rm -f -- "$state_file" 2>/dev/null || true
+    exit "$cleanup_status"
+}
+
 start_screensaver()
 {
     prepare_runtime
@@ -213,14 +326,29 @@ start_screensaver()
             printf 'running (pid %s); start is idempotent\n' "$state_pid"
             return 0
         fi
+        restore_cursor_state
         remove_state
     fi
+    restore_cursor_state
 
     resolve_renderer
     foot_executable=$(command -v foot 2>/dev/null) ||
         fail 'foot is not installed or not on PATH'
     setsid_executable=$(command -v setsid 2>/dev/null) ||
         fail 'setsid is not installed or not on PATH'
+    resolve_hyprctl || fail 'hyprctl is not installed or not on PATH'
+    read_cursor_invisible || fail 'could not read cursor:invisible'
+
+    cursor_cleanup_required=false
+    launch_pid=
+    trap 'cleanup_failed_start $?' 0
+    trap 'cleanup_failed_start 129' HUP
+    trap 'cleanup_failed_start 130' INT
+    trap 'cleanup_failed_start 143' TERM
+
+    write_cursor_state || fail 'could not record cursor ownership state'
+    cursor_cleanup_required=true
+    set_cursor_invisible true || fail 'could not hide the cursor'
 
     : > "$log_file" || fail "could not create $log_file"
     chmod 600 -- "$log_file" || fail "could not secure $log_file"
@@ -254,13 +382,10 @@ start_screensaver()
     done
 
     if [ "$launch_ready" != true ]; then
-        terminate_failed_launch
         fail "Foot did not start; inspect $log_file"
     fi
 
     if ! write_state; then
-        terminate_failed_launch
-        rm -f -- "$runtime_dir/$state_name.$$"
         fail 'could not record runtime ownership'
     fi
 
@@ -268,9 +393,11 @@ start_screensaver()
     if ! owned_process_is_running; then
         remove_state
         wait "$launch_pid" 2>/dev/null || true
+        launch_pid=
         fail "screensaver exited during startup; inspect $log_file"
     fi
 
+    trap - 0 HUP INT TERM
     printf 'started (pid %s)\n' "$state_pid"
 }
 
@@ -290,11 +417,19 @@ stop_screensaver()
     prepare_runtime
 
     if ! state_path_exists; then
+        if cursor_state_path_exists; then
+            restore_cursor_state
+            rm -f -- "$log_file"
+            printf 'stopped; restored cursor state\n'
+            return 0
+        fi
         printf 'stopped; stop is idempotent\n'
         return 0
     fi
     if ! owned_process_is_running; then
+        restore_cursor_state
         remove_state
+        rm -f -- "$log_file"
         printf 'stopped; removed stale ownership state\n'
         return 0
     fi
@@ -302,6 +437,7 @@ stop_screensaver()
     owned_pid=$state_pid
     owned_pgid=$state_pgid
     kill -TERM -- "-$owned_pgid" 2>/dev/null || true
+    restore_cursor_state
 
     if wait_for_owned_process_to_stop; then
         remove_state
@@ -329,10 +465,16 @@ status_screensaver()
     prepare_runtime
 
     if ! state_path_exists; then
+        if cursor_state_path_exists; then
+            restore_cursor_state
+            printf 'stopped; restored stale cursor state\n'
+            return 1
+        fi
         printf 'stopped\n'
         return 1
     fi
     if ! owned_process_is_running; then
+        restore_cursor_state
         remove_state
         printf 'stopped; removed stale ownership state\n'
         return 1

@@ -130,7 +130,9 @@ dismiss listener. The latter uses `ignore_inhibit = true`, performs only
 `/usr/bin/true` on timeout, and stops the owned screensaver on genuine resumed
 input. The start listener deliberately does not ignore legitimate inhibitors.
 The test performs no automatic lock. There are no display-off or suspend
-listeners.
+listeners. Two complete manual cycles validated automatic startup, persistence
+without real input, immediate mouse dismissal, absence of hyprlock, and
+single-daemon ownership.
 
 Hyprland continues to start hypridle directly; the packaged systemd user
 service remains disabled and inactive. This is a test integration, not the
@@ -161,6 +163,12 @@ Phase 1 of lifecycle work provides the tracked
 `status` commands, XDG runtime ownership state, and process-identity validation.
 Manual testing validated start, status, repeated-start idempotency, stop,
 repeated-stop idempotency, and isolation from ordinary Foot terminals.
+The controller also saves the current Hyprland `cursor:invisible` boolean in a
+separate runtime-only record, hides the cursor before launching Foot, and
+restores the exact prior value after stop, stale-process cleanup, or failed and
+interrupted startup. Static and non-GUI mock-process validation has passed;
+cursor behavior over the real fullscreen screensaver awaits manual visual
+confirmation.
 
 Phase 2B adds only the temporary two-listener hypridle structure for manual
 idle-cycle testing. It does not add locking or establish production timeouts.
@@ -192,9 +200,8 @@ intended future hypridle semantics are recorded in
 
 ### PROVISIONAL
 
-- Manually validate repeated Phase 2B idle start/resume-stop cycles, including
-  persistence beyond the false start-listener resume, then remove both
-  temporary listeners.
+- Manually validate cursor hiding and exact restoration across two fullscreen
+  Phase 2B cycles, then remove both temporary listeners when testing is complete.
 - Evaluate multi-output coverage and Foot presentation before promoting the
   colormix work beyond Provisional.
 - Finalize hypridle fragment generation, restart/rollback behavior, and

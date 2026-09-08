@@ -20,14 +20,20 @@ vanhyprarch-screensaver status
 `vanhyprarch-screensaver`. Foot runs the existing colormix renderer at its
 33-millisecond default cadence. A dedicated session and process group detach it
 from the caller, allowing a future hypridle timeout command to return promptly.
-Repeated starts are idempotent.
+Before launching Foot, the controller records the current Hyprland
+`cursor:invisible` value and hides the cursor through Hyprland's native Lua
+runtime API. Repeated starts are idempotent and do not overwrite that original
+cursor value.
 
 `stop` first sends SIGTERM only to the validated, dedicated screensaver process
 group. Foot owns the renderer terminal, so closing Foot also closes the
 renderer; the renderer handles termination and hangup cleanup. If the group
 does not exit within three seconds, the controller revalidates ownership before
 using SIGKILL. Repeated stops are harmless. It never searches for or signals
-Foot by process name.
+Foot by process name. Immediately after sending SIGTERM, the controller restores
+the exact cursor visibility value saved by `start`, before waiting for the
+process group to exit. It also restores that value when valid ownership state
+remains after Foot has already exited.
 
 `status` succeeds only while the owned screensaver Foot process is still valid.
 It prints a concise PID/process-group result and returns nonzero while stopped.
@@ -46,6 +52,15 @@ checks all four values, verifies that the executable is Foot, and requires the
 exact `--app-id=vanhyprarch-screensaver` and `--fullscreen` arguments. A reused
 PID or malformed state therefore cannot authorize a signal. Invalid or stale
 ownership state is removed automatically.
+
+A separate atomic `screensaver.cursor` record stores only the previous boolean
+value of `cursor:invisible`. Keeping it separate leaves process-identity
+validation unchanged and lets `stop` restore the cursor even if Foot or the
+renderer has already exited. The record is written before the cursor is hidden,
+is not overwritten by an idempotent start, and is removed only after successful
+restoration. Failed or interrupted starts terminate any launched process group,
+restore the saved value, and remove their ownership records. No persistent
+cursor state survives beyond the XDG runtime directory.
 
 An advisory lock serializes concurrent lifecycle calls. A runtime log captures
 Foot startup errors and is overwritten on each start; clean stop removes it.
@@ -141,6 +156,12 @@ screensaver action listener.
 The false resume delivered to the start listener when Foot maps is harmless
 because that listener has no resume command. The input-only dismiss listener is
 not updated by inhibitor rechecks and should remain idled until real input.
+
+Two complete manual cycles confirmed that the screensaver starts, remains
+visible without genuine input, and is dismissed immediately by mouse input.
+No hyprlock appeared, and exactly one Hyprland-owned hypridle remained running.
+Cursor hiding and restoration are an additional controller-owned lifecycle
+step and require their own visual confirmation.
 
 This design validates only `hypridle -> screensaver start/stop`. It never
 requests a session lock. Nine and ten seconds are deliberately short for manual
