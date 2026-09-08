@@ -68,7 +68,7 @@ Item {
             resultHandled = false
             lastExitCode = -1
             command = ["sh", "-c",
-                "state_file=\"${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch-shell/theme-mode\"; "
+                "state_file=\"${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/theme-mode\"; "
                     + "if [ -r \"$state_file\" ]; then cat -- \"$state_file\" 2>/dev/null || true; fi"]
             running = true
         }
@@ -80,14 +80,14 @@ Item {
             operation = "write"
             command = ["sh", "-c",
                 "set -eu; umask 077; "
-                    + "state_dir=\"${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch-shell\"; "
+                    + "state_dir=\"${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch\"; "
                     + "mkdir -p -- \"$state_dir\"; "
                     + "temporary_file=$(mktemp \"$state_dir/.theme-mode.XXXXXX\"); "
                     + "trap 'rm -f -- \"$temporary_file\"' EXIT HUP INT TERM; "
                     + "printf '%s' \"$1\" > \"$temporary_file\"; "
                     + "mv -f -- \"$temporary_file\" \"$state_dir/theme-mode\"; "
                     + "trap - EXIT HUP INT TERM",
-                "vanhyprarch-shell-theme", mode]
+                "vanhyprarch-theme", mode]
             running = true
         }
 
