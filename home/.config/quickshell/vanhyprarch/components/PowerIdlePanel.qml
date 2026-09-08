@@ -69,17 +69,6 @@ PopupWindow {
         return root.controller.canSetLock(value)
     }
 
-    function timeoutLabel(value: string): string {
-        if (value === "never")
-            return "Never"
-        const seconds = Number(value)
-        if (seconds % 3600 === 0)
-            return seconds / 3600 + " h"
-        if (seconds % 60 === 0)
-            return seconds / 60 + " min"
-        return seconds + " s"
-    }
-
     component PresetButton: Rectangle {
         id: presetButton
 
@@ -154,18 +143,6 @@ PopupWindow {
                 wrapMode: Text.NoWrap
             }
 
-            Text {
-                anchors {
-                    right: parent.right
-                    verticalCenter: parent.verticalCenter
-                }
-                text: root.timeoutLabel(
-                    root.controller.stageValue(stageSection.stage))
-                color: root.textColor
-                opacity: 0.72
-                font.pixelSize: 12
-                wrapMode: Text.NoWrap
-            }
         }
 
         Row {
