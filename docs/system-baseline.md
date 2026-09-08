@@ -35,6 +35,13 @@ available from Arch's `extra` repository on 2026-09-08.
 The project uses upstream Hyprland and Quickshell rather than a downstream
 desktop distribution layer.
 
+## Keyboard and session defaults
+
+Hyprland's native `input.numlock_by_default` option is enabled. Num Lock is
+therefore on by default when the graphical session starts. This is a compositor
+input default; it does not require `numlockx`, `setleds`, an autostart command,
+or an external script.
+
 ## Deliberate default applications
 
 | Role | Package |

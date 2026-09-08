@@ -64,6 +64,9 @@ Hyprland starts these processes on `hyprland.start`:
 Bindings are loaded from `~/.config/hypr/bindings.lua` with Lua `dofile()`, so a
 change only to that file requires an explicit `hyprctl reload`.
 
+Hyprland's existing input configuration sets `numlock_by_default = true`, so
+Num Lock is enabled by default when the graphical session starts.
+
 ## Shell architecture — IMPLEMENTED
 
 `ShellRoot` owns global state and controllers. A `Variants` instance models
