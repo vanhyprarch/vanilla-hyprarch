@@ -14,8 +14,9 @@ Scope {
     property bool ready: false
     property string errorMessage: ""
     property string pendingCaffeine: ""
+    property var queuedAction: null
 
-    readonly property bool busy: statusProcess.running || actionProcess.running
+    readonly property bool busy: actionProcess.running || queuedAction !== null
     readonly property bool visualCaffeine: pendingCaffeine !== ""
         ? pendingCaffeine === "on" : caffeine
     readonly property string backendCommand: {
@@ -182,11 +183,25 @@ Scope {
             return
 
         root.errorMessage = ""
+        if (statusProcess.running) {
+            root.queuedAction = command
+            return
+        }
+        actionProcess.startCommand(command)
+    }
+
+    function startQueuedAction(): void {
+        if (root.queuedAction === null)
+            return
+
+        const command = root.queuedAction
+        root.queuedAction = null
+        root.errorMessage = ""
         actionProcess.startCommand(command)
     }
 
     function refreshStatus(preserveError: bool): void {
-        if (root.busy)
+        if (root.busy || statusProcess.running)
             return
         if (!preserveError) {
             root.errorMessage = ""
@@ -263,7 +278,7 @@ Scope {
         interval: 30000
         repeat: true
         running: true
-        onTriggered: root.refreshStatus(false)
+        onTriggered: root.refreshStatus(true)
     }
 
     Process {
@@ -297,28 +312,38 @@ Scope {
                 return
 
             resultHandled = true
-            root.pendingCaffeine = ""
+            if (root.queuedAction === null && !actionProcess.running)
+                root.pendingCaffeine = ""
             if (lastExitCode !== 0) {
                 root.errorMessage = root.conciseError(errorText,
                     "Could not read Power & Idle status.")
+                Qt.callLater(root.startQueuedAction)
                 return
             }
 
             try {
                 const state = root.parseStatus(outputText)
-                root.screensaver = state.screensaver
-                root.display = state.display
-                root.suspend = state.suspend
-                root.lockPoint = state.lockPoint
-                root.caffeine = state.caffeine
-                root.effectiveListeners = state.effectiveListeners
-                root.ready = true
+                if (root.screensaver !== state.screensaver)
+                    root.screensaver = state.screensaver
+                if (root.display !== state.display)
+                    root.display = state.display
+                if (root.suspend !== state.suspend)
+                    root.suspend = state.suspend
+                if (root.lockPoint !== state.lockPoint)
+                    root.lockPoint = state.lockPoint
+                if (root.caffeine !== state.caffeine)
+                    root.caffeine = state.caffeine
+                if (root.effectiveListeners !== state.effectiveListeners)
+                    root.effectiveListeners = state.effectiveListeners
+                if (!root.ready)
+                    root.ready = true
                 if (!preserveError)
                     root.errorMessage = ""
             } catch (error) {
                 root.errorMessage = "Could not parse Power & Idle status."
                 console.warn("Failed to parse vanhyprarch-idle status: " + error)
             }
+            Qt.callLater(root.startQueuedAction)
         }
 
         stdout: StdioCollector {

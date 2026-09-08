@@ -333,15 +333,6 @@ PopupWindow {
                 }
             }
 
-            Text {
-                width: parent.width
-                visible: root.controller.visualCaffeine
-                text: "Automatic idle actions are temporarily suspended."
-                color: root.accentColor
-                font.pixelSize: 12
-                wrapMode: Text.WordWrap
-            }
-
             StageSection {
                 stage: "screensaver"
                 title: "Screen saver"
