@@ -26,7 +26,6 @@ pipewire
 pipewire-alsa
 pipewire-audio
 pipewire-pulse
-polkit-kde-agent
 qt6-svg
 quickshell
 system-config-printer
