@@ -64,8 +64,13 @@ uses `Quickshell.statePath("launchers.json")` under Quickshell's shell-ID state.
 Hyprland starts these processes on `hyprland.start`:
 
 1. `hyprpaper`
-2. `hypridle`
+2. `sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v'`
 3. `qs -n -c vanhyprarch`
+
+The temporary shell only constructs the user-local `PATH`; `exec` replaces it
+with `/usr/bin/hypridle`, so the final daemon remains directly parented by
+Hyprland while being able to resolve Vanilla HyprArch executables from
+`$HOME/.local/bin`.
 
 `-n` prevents a duplicate instance of the named Quickshell configuration.
 Bindings are loaded from `~/.config/hypr/bindings.lua` with Lua `dofile()`, so a
@@ -117,9 +122,9 @@ Hibernate is deliberately absent. No Bluetooth panel is implemented.
 hypridle generation, runtime Caffeine state, and transactional daemon restart.
 The accepted model has ordered Screen saver, Turn off display, and Suspend
 stages plus one selectable stage that owns automatic locking and one persisted
-screensaver effect. The deployed version-2 state is `Never / Never / Never`,
-Lock `None`, effect `colormix`, and Caffeine off, so the production fragment
-contains zero listeners and introduces no idle behavior. Existing version-1
+screensaver effect. The default version-2 state is `Never / Never / Never`,
+Lock `None`, effect `colormix`, and Caffeine off, producing zero listeners until
+the user enables one or more stages. Existing version-1
 preferences remain readable as `effect=colormix`; their next preference write
 migrates them to version 2 without losing prior settings.
 
@@ -146,7 +151,9 @@ Display-off generation uses Hyprland's native Lua DPMS dispatcher. Suspend uses
 `systemctl suspend`; conditional `before-sleep` locking preserves the selected
 lock point while allowing Lock `None` and Caffeine to suppress automatic lock.
 The generated screensaver path has passed production integration testing.
-Real lock, DPMS, and suspend actions remain intentionally untested.
+A real cold-boot idle sequence also passed with Screen saver at 2 minutes,
+display off at 5 minutes, suspend at 10 minutes, and normal resume. Automatic
+lock remains intentionally untested.
 
 Hyprland continues to own exactly one direct hypridle daemon. The backend
 validates that ownership and requires the packaged systemd user service to
@@ -166,8 +173,9 @@ Papirus `preferences-system-power` and `caffeine`.
 The QML loads in the live named configuration. The panel, its Caffeine state,
 timeout presentation, effect persistence, error-only feedback, and
 passive-refresh behavior have passed manual review. The complete screensaver
-chain is validated; real lock, DPMS, and suspend actions still require separate
-controlled validation.
+chain is validated. Real display-off and suspend behavior also passed a
+cold-boot 2/5/10-minute test with normal resume; automatic lock still requires
+separate controlled validation.
 
 ## Screensaver — NATIVE PLAYER PRODUCTION CHAIN VALIDATED
 

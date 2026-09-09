@@ -104,6 +104,13 @@ first key. Cleanup restored the normal zero-listener daemon and left the main
 Quickshell unchanged. Git history preserves the detailed experiments; the
 current result is maintained in the [compatibility register](compatibility.md).
 
+A subsequent real reboot exposed one cold-start mismatch: Hyprland was launching
+bare `hypridle` without `$HOME/.local/bin` in its environment. Startup was
+changed to construct that PATH and `exec hypridle -v`, preserving direct
+Hyprland ownership. A second reboot then passed the normal Power & Idle UI apply
+and the complete 2-minute screensaver / 5-minute display-off / 10-minute suspend
+sequence with normal resume.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

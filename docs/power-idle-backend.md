@@ -110,6 +110,15 @@ both be in hypridle's PATH; the pinned player installer defaults to
 configuration and initial generated fragment and create the default preference
 file without depending on a Git checkout.
 
+On normal Hyprland startup, hypridle is launched through
+`sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v'`. The shell is
+replaced by `exec`, leaving `/usr/bin/hypridle` directly parented by Hyprland
+while exposing the user-local Vanilla HyprArch executables in its `PATH`.
+
+A real reboot validated this cold-start contract, followed by a successful
+Power & Idle apply and a complete 2-minute screensaver / 5-minute display-off /
+10-minute suspend sequence with normal resume.
+
 The backend validates the candidate fragment with a disconnected verbose
 hypridle parse before deployment. It requires exactly one existing hypridle
 whose executable and parent identify it as the direct Hyprland-owned daemon,
