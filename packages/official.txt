@@ -12,6 +12,8 @@ hypridle
 hyprland
 hyprlock
 hyprpaper
+hyprpolkitagent
+hyprshutdown
 i2c-tools
 ly
 mesa

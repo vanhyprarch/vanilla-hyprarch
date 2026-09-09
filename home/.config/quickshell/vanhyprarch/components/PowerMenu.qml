@@ -36,6 +36,9 @@ Item {
         case "suspend":
             Quickshell.execDetached(["systemctl", "suspend"])
             break
+        case "logout":
+            Quickshell.execDetached(["hyprshutdown"])
+            break
         case "reboot":
             Quickshell.execDetached(["systemctl", "reboot"])
             break
@@ -160,6 +163,10 @@ Item {
                     onActivated: root.runAction("suspend")
                 }
                 ActionRow {
+                    label: "Logout"
+                    onActivated: root.pendingAction = "logout"
+                }
+                ActionRow {
                     label: "Reboot"
                     onActivated: root.pendingAction = "reboot"
                 }
@@ -180,7 +187,8 @@ Item {
                 Text {
                     width: root.popupWidth - 16
                     height: 36
-                    text: root.pendingAction === "reboot" ? "Reboot?" : "Power off?"
+                    text: root.pendingAction === "logout" ? "Logout?"
+                        : root.pendingAction === "reboot" ? "Reboot?" : "Power off?"
                     color: root.textColor
                     font.pixelSize: 14
                     font.bold: true

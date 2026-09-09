@@ -61,11 +61,21 @@ uses `Quickshell.statePath("launchers.json")` under Quickshell's shell-ID state.
 
 ## Session startup — IMPLEMENTED
 
+The graphical session remains the direct
+`Ly -> /usr/bin/start-hyprland -> Hyprland` path. UWSM is not part of the
+Vanilla HyprArch architecture.
+
 Hyprland starts these processes on `hyprland.start`:
 
 1. `hyprpaper`
-2. `sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v'`
-3. `qs -n -c vanhyprarch`
+2. `systemctl --user start hyprpolkitagent`
+3. `sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v'`
+4. `qs -n -c vanhyprarch`
+
+The official `hyprpolkitagent` package provides graphical PolicyKit
+authentication for GUI applications that require privileged authorization.
+Its packaged user service is started by the direct Hyprland session and is not
+enabled as a separate login-time startup owner.
 
 The temporary shell only constructs the user-local `PATH`; `exec` replaces it
 with `/usr/bin/hypridle`, so the final daemon remains directly parented by
@@ -109,7 +119,7 @@ The current Quickshell UI includes:
   selection;
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
-- lock, suspend, reboot, and power-off actions;
+- lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
 
@@ -223,8 +233,6 @@ workaround. Physical two-monitor validation remains pending.
   `file-roller` is a candidate convenience, not a core requirement.
 - Design future Bluetooth UX without presuming `blueman`; BlueZ remains the
   current backend and no shell Bluetooth panel exists.
-- Choose and validate an explicit PolicyKit authentication-agent startup owner
-  for the plain Hyprland session.
 - Develop the light/dark wallpaper selection system.
 - Consider the reserved main-menu, power-menu, clipboard, and Bluetooth-panel
   UX only as separate future work.

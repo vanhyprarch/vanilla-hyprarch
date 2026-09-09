@@ -187,8 +187,9 @@ not itself a user-session screensaver.
 **Date:** 2026-09-08
 
 Hibernate is not a supported user-facing power action. The current power menu
-offers lock, suspend, reboot, and power off. Future Power & Idle work must not
-reintroduce hibernate as an idle stage or menu action without a new decision.
+offers lock, suspend, logout through `hyprshutdown`, reboot, and power off.
+Future Power & Idle work must not reintroduce hibernate as an idle stage or
+menu action without a new decision.
 
 ## ADR-013: Power & Idle has three ordered stages
 

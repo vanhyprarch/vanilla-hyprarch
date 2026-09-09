@@ -52,6 +52,7 @@ hl.monitor({
 
 hl.on("hyprland.start", function ()
     hl.exec_cmd("hyprpaper")
+    hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd([[sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v']])
     hl.exec_cmd("qs -n -c vanhyprarch")
 end)

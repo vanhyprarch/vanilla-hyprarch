@@ -51,6 +51,8 @@ unresolved choices are maintained in the canonical
 | --- | --- | --- |
 | Compositor and window manager | `hyprland` | Hyprland owns composition, windows, input, bindings, and session autostart. |
 | Project shell | `quickshell`, `qt6-svg` | Quickshell owns the main desktop shell. |
+| Graphical authorization | `hyprpolkitagent` | Hyprland starts its packaged systemd user service for the direct graphical session. |
+| Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
 | Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The independently released native client owns layer-shell output coverage, input absorption, and animation. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
@@ -131,19 +133,19 @@ The Wayland portal stack is:
 - `xdg-desktop-portal-hyprland`
 - `xdg-desktop-portal-gtk`
 
-The installed authentication-agent package is `polkit-kde-agent`. It provides
-`/usr/lib/polkit-kde-authentication-agent-1`, a static
-`plasma-polkit-agent.service` user unit, and an XDG autostart entry restricted
-to KDE. The current session is plain `start-hyprland`, not uwsm-managed; its
-desktop identity is Hyprland, no user override or generic autostart launcher was
-found, and the repository has no agent start command. At verification time the
-unit was inactive, no authentication-agent process or user-bus name existed,
-and only the system `polkitd` authorization backend was running.
+Vanilla HyprArch uses the direct
+`Ly -> /usr/bin/start-hyprland -> Hyprland` session path; UWSM is not part of
+the project architecture. The required official `hyprpolkitagent` package
+provides graphical PolicyKit authentication for GUI applications that need
+privileged authorization. Hyprland starts its packaged user service from the
+existing `hyprland.start` callback with:
 
-This does not by itself establish that PolicyKit as a whole is broken. It means
-authentication-agent startup ownership is currently undefined for the Hyprland
-session and must be resolved and validated before the baseline installer is
-considered complete.
+```text
+systemctl --user start hyprpolkitagent
+```
+
+The project does not enable the unit separately; the direct Hyprland session
+remains its startup owner.
 
 ## Fonts and icons
 
