@@ -1,8 +1,8 @@
 # Installation strategy
 
 This document is the canonical plan for making Vanilla HyprArch reproducible.
-It describes a design target; no project installer or archinstall preset exists
-yet.
+The pinned external-player installer is implemented; no shared project
+bootstrap or archinstall preset exists yet.
 
 ## One bootstrap, two entry points
 
@@ -44,13 +44,15 @@ The shared bootstrap will eventually:
 - install the explicit `yay` exception declared by `packages/aur.txt`, without
   treating it as permission to add other AUR dependencies;
 - deploy tracked home and system configuration without personal paths;
-- deploy both the main and dedicated screensaver named Quickshell configs;
+- deploy the main `vanhyprarch` named Quickshell configuration;
 - install project commands, including the screensaver lifecycle controller, in
   an appropriate user or system PATH;
+- invoke the pinned external-player installer so
+  `vanhyprarch-zig-player` is available in that same PATH;
 - establish required symlinks and enable or disable documented services;
 - preserve the documented startup owner for each session process;
 - create safe initial state, including Power & Idle at all `Never`, automatic
-  lock at `None`, and Caffeine off;
+  lock at `None`, `effect=colormix`, and Caffeine off;
 - respect dependency ordering and migrations, remain idempotent where
   practical, fail closed on invalid state, and run post-install validation.
 
@@ -58,6 +60,27 @@ For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and
 validation must be recoverable from the canonical repository. Development-
 machine behavior alone is not complete integration.
+
+## External player installation
+
+`install/install-zig-player` is a reusable bootstrap component, not a copy of
+the external project. Its tracked metadata pins release `v0.1.1`, Linux
+`x86_64`, the exact asset name and SHA-256, and canonical release and source-tag
+URLs. It never follows GitHub's `latest` redirect.
+
+The normal per-user destination is
+`$HOME/.local/bin/vanhyprarch-zig-player`. The installer downloads into a
+private temporary directory, verifies the hard-coded digest before extraction,
+requires an exact archive layout, and atomically installs the executable with
+mode `0755`. The upstream LICENSE and `THIRD_PARTY_NOTICES.md` are installed
+under the user's XDG-style data tree together with the README and pinned source
+metadata. `DESTDIR` and an install-home override support packaging and isolated
+tests without touching a live home.
+
+Release v0.1.1 provides only x86_64. Other architectures fail closed until a
+reviewed release adds an explicit asset and digest. Runtime requires glibc and
+the Wayland client library, not Zig. Updating the player is a deliberate
+metadata and validation change, never an unattended download of a newer tag.
 
 ## Verified archinstall 4.4 capabilities
 
@@ -154,13 +177,13 @@ example or stale schema.
 The shared bootstrap should expose a stable input contract and remain less
 sensitive to archinstall schema changes.
 
-## Possible future repository shape
+## Future installation work
 
-A future implementation may use an `install/` tree containing the shared
-bootstrap, a small archinstall integration and recommended configuration or
-template, and post-install validation. Exact filenames are intentionally not
-selected until the bootstrap interface and current archinstall schema are
-designed. No installation files exist yet.
+The existing `install/` tree contains only the pinned external-player
+component and its metadata. Future work may add the shared bootstrap, a small
+archinstall integration and recommended configuration or template, and
+post-install validation. Exact filenames are intentionally not selected until
+the bootstrap interface and current archinstall schema are designed.
 
 Unresolved installation choices are the recommended bootloader, filesystem,
 layout policy, kernel policy, any project-wide timezone or locale defaults,

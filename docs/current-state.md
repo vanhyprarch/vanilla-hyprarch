@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-08.
+Snapshot date: 2026-09-09.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -29,7 +29,7 @@ Repository-managed sources:
 - `home/.config/hypr/hypridle.conf`
 - `home/.config/hypr/vanhyprarch-idle.conf`
 - `home/.config/quickshell/vanhyprarch/`
-- `home/.config/quickshell/vanhyprarch-screensaver/`
+- `install/install-zig-player`
 
 Live paths:
 
@@ -38,15 +38,10 @@ Live paths:
 - `~/.config/hypr/hypridle.conf`
 - `~/.config/hypr/vanhyprarch-idle.conf`
 - `~/.config/quickshell/vanhyprarch`
-- `~/.config/quickshell/vanhyprarch-screensaver`
 
 The live Quickshell path is a symlink to:
 
 `$HOME/Projects/vanilla-hyprarch/home/.config/quickshell/vanhyprarch`
-
-The dedicated screensaver named config uses the same development deployment
-model and points to the tracked `vanhyprarch-screensaver` directory. It starts
-only on demand and is not part of session autostart.
 
 The two live Hyprland Lua files were byte-identical to their repository copies
 when this snapshot was prepared.
@@ -105,7 +100,8 @@ The current Quickshell UI includes:
   password, known-network, and forget flows;
 - DDC/CI brightness control and fixed monitor-scale presets;
 - a compact Power & Idle panel backed by the project controller, with Caffeine,
-  timeout presets, and one automatic-lock selection;
+  timeout presets, screensaver-effect selection, and one automatic-lock
+  selection;
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
 - lock, suspend, reboot, and power-off actions;
@@ -115,15 +111,17 @@ The current Quickshell UI includes:
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent. No Bluetooth panel is implemented.
 
-## Power and idle — IMPLEMENTED, INTEGRATED ACTION TESTING PENDING
+## Power and idle — IMPLEMENTED, SCREENSAVER CHAIN VALIDATED
 
 `bin/vanhyprarch-idle` owns persistent preferences, validation, managed
 hypridle generation, runtime Caffeine state, and transactional daemon restart.
 The accepted model has ordered Screen saver, Turn off display, and Suspend
-stages plus one selectable stage that owns automatic locking. The current
-stored/default state is `Never / Never / Never`, Lock `None`, and Caffeine off,
-so the production fragment contains zero listeners and introduces no idle
-behavior.
+stages plus one selectable stage that owns automatic locking and one persisted
+screensaver effect. The deployed version-2 state is `Never / Never / Never`,
+Lock `None`, effect `colormix`, and Caffeine off, so the production fragment
+contains zero listeners and introduces no idle behavior. Existing version-1
+preferences remain readable as `effect=colormix`; their next preference write
+migrates them to version 2 without losing prior settings.
 
 Preferences use a strict `key=value` file at
 `${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/power-idle.conf`. Caffeine is a
@@ -139,19 +137,16 @@ The canonical static `hypridle.conf` retains
 to `vanhyprarch-idle before-sleep`, stops an owned saver after unlock, and
 sources the generated `vanhyprarch-idle.conf`.
 
-When Screen saver is enabled, generation preserves the manually validated
-Hyprland 0.56.2 workaround: an inhibitor-aware start listener has no resume
-action, while an input-only dismiss listener arms one second earlier and uses
-`ignore_inhibit = true` only for a harmless timeout plus genuine-input resume.
-The earlier 9/10-second values were test-only; they are not production
-defaults.
+When Screen saver is enabled, one inhibitor-aware listener starts the
+controller at its timeout and stops it on genuine-input resume. If Screen saver
+owns locking, resume requests the existing lock transition instead. No S-1,
+`ignore_inhibit`, or input-only helper is generated.
 
 Display-off generation uses Hyprland's native Lua DPMS dispatcher. Suspend uses
 `systemctl suspend`; conditional `before-sleep` locking preserves the selected
 lock point while allowing Lock `None` and Caffeine to suppress automatic lock.
-These generated non-default paths have passed parser and backend tests but
-still require integrated manual validation before the Power & Idle work is
-considered complete.
+The generated screensaver path has passed production integration testing.
+Real lock, DPMS, and suspend actions remain intentionally untested.
 
 Hyprland continues to own exactly one direct hypridle daemon. The backend
 validates that ownership and requires the packaged systemd user service to
@@ -169,62 +164,43 @@ without retaining failed optimistic state. The dock icon changes between
 Papirus `preferences-system-power` and `caffeine`.
 
 The QML loads in the live named configuration. The panel, its Caffeine state,
-timeout presentation, error-only feedback, and passive-refresh behavior have
-passed manual visual review. Integrated screensaver, lock, DPMS, and suspend
-actions still require controlled manual validation.
+timeout presentation, effect persistence, error-only feedback, and
+passive-refresh behavior have passed manual review. The complete screensaver
+chain is validated; real lock, DPMS, and suspend actions still require separate
+controlled validation.
 
-## Screensaver — IMPLEMENTED PRESENTATION, INTEGRATED ACTION TESTING PENDING
+## Screensaver — NATIVE PLAYER PRODUCTION CHAIN VALIDATED
 
-Ly's `colormix` animation remains the provisional visual. The isolated native
-renderer and former Foot presentation remain at `experiments/colormix/` as
-historical and algorithm references. Production now uses:
+Production now uses:
 
-`vanhyprarch-screensaver -> separate Quickshell process -> layer-shell overlays`
+`vanhyprarch-screensaver -> vanhyprarch-zig-player <effect> -> wlr-layer-shell`
 
-Visual testing confirms that its 5, 16, and 33 millisecond render cadences now
-retain approximately the same movement speed by normalizing animation time to
-Ly's 5-millisecond reference. The current provisional default is 33
-milliseconds, approximately 30 fps. On the development system that mode used
-about 23.9% of one logical CPU across Foot and the renderer, versus about 42.4%
-at 16 milliseconds (approximately 60 fps), roughly halving the combined CPU
-cost. These measurements are observations, not universal performance claims.
+Rendering is delegated to the independent GPL-2.0-only Zig Player at pinned
+release `v0.1.1`; its implementation is not vendored here. Available effects
+are ColorMix, Matrix, Doom, and Game of Life. The versioned installer verifies
+the x86_64 release archive and deploys the binary, upstream license, notices,
+README, and pinned metadata to per-user XDG locations. Zig is not a runtime
+dependency.
 
-The dedicated config creates one full-output overlay surface per live
-`Quickshell.screens` entry. A native Canvas port retains the transform,
-12-entry color structure, randomized offsets, 33-millisecond cadence, and
-Ly-equivalent 5-millisecond motion reference without Foot, ANSI, or a compiled
-production renderer.
+`bin/vanhyprarch-screensaver` retains idempotent `start`, `stop`, and `status`,
+exact cursor restoration, serialized lifecycle operations, failed-start
+cleanup, and stale-state handling. It records only the native PID, Linux start
+time, exact executable path, and effect argument and never signals a process
+that fails those checks. All Quickshell-specific screensaver ownership and
+presentation logic has been removed; the main shell is independent.
 
-`bin/vanhyprarch-screensaver` retains idempotent `start`, `stop`, and `status`.
-Its runtime record now combines PID/start-time/PGID/SID checks with the exact
-Quickshell instance ID, shell ID, named-config path, arguments, and startup
-layer namespace. Cursor preservation and immediate stop-time restoration are
-unchanged. Lifecycle, exact prior-cursor restoration, controlled crash
-recovery, main-shell isolation, and one-layer-per-current-output startup have
-passed runtime validation.
+The final production test exercised `hypridle -> vanhyprarch-screensaver ->`
+`vanhyprarch-zig-player v0.1.1`. The controller started ColorMix at +10.034
+seconds, a harmless second listener fired at +20.036 seconds, and their 10.002
+second separation proved that startup did not reset the idle clock. Genuine
+keyboard input emitted resume at +23.291 seconds and stopped the owned player.
+The first `x` did not reach the Foot terminal underneath; no process, layer, or
+cursor state remained afterward, and the normal zero-listener configuration
+was restored.
 
-The presentation architecture is Accepted, while final visual acceptance and
-real lock/DPMS/suspend integration remain Provisional. Current lifecycle design
-and generated hypridle semantics are recorded in
-`docs/screensaver-lifecycle.md`.
-
-On Hyprland 0.56.2 with hypridle 0.1.8, the former Foot mapping changed an
-intended 10/20/30-second marker timeline to approximately 10/30/40. The
-Quickshell layer-shell proof of concept retained 10/20/30 twice, and the real
-production controller path subsequently did so twice more without false
-resume or timer rearm. Evidence and retest conditions are in the
-[compatibility register](compatibility.md).
-
-The first Canvas version used a coarse 96-by-36 sample grid on the development
-output and appeared visibly zoomed compared with the Foot+C reference. The
-corrected grid uses the reference terminal's measured logical cell pitch,
-yielding approximately 320 by 77 samples on that output. An eight-second
-offscreen Qt software-rendering check painted 242 frames, sustaining the
-33-millisecond target at about 75% of one logical CPU and 74 MiB RSS for the
-standalone `qmlscene` test process. Those figures are a deliberately
-non-disruptive estimate, not a production Quickshell fullscreen measurement.
-The corrected visual scale and production-process resource use still require
-bounded manual validation.
+Separate manual tests also confirmed pointer-click and scroll absorption.
+Input routing is owned by the player; Vanilla HyprArch carries no input
+workaround. Physical two-monitor validation remains pending.
 
 ## Known open work
 
@@ -247,12 +223,10 @@ bounded manual validation.
 
 ### PROVISIONAL
 
-- Manually review the native layer-shell colormix appearance and resource
-  tradeoff, including real multi-output and suspend/resume behavior.
+- Validate the external player's physical multi-output and suspend/resume
+  behavior.
 - Manually validate production lock, DPMS, suspend, and Caffeine lifecycle
   combinations without turning test timings into defaults.
-- Reassess whether the retained S-1 dismissal workaround can be simplified
-  after a separate inhibitor and input-lifecycle regression.
 
 ### NOT IMPLEMENTED
 

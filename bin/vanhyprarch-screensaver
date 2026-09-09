@@ -3,14 +3,12 @@
 set -fu
 
 program_name=${0##*/}
-config_name=vanhyprarch-screensaver
-layer_namespace=vanhyprarch-screensaver
 runtime_subdir=vanhyprarch
 state_name=screensaver.state
 cursor_state_name=screensaver.cursor
 lock_name=screensaver.lock
 log_name=screensaver.log
-start_attempts=20
+start_attempts=40
 stop_attempts=30
 poll_delay=0.05
 
@@ -33,6 +31,14 @@ is_unsigned_integer()
     esac
 }
 
+valid_effect()
+{
+    case ${1-} in
+        colormix|matrix|doom|gameoflife) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 prepare_runtime()
 {
     [ -n "${XDG_RUNTIME_DIR:-}" ] ||
@@ -46,22 +52,19 @@ prepare_runtime()
 
     runtime_dir=$XDG_RUNTIME_DIR/$runtime_subdir
     umask 077
-
-    if [ -L "$runtime_dir" ]; then
+    [ ! -L "$runtime_dir" ] ||
         fail "$runtime_dir must not be a symbolic link"
-    fi
     if [ ! -d "$runtime_dir" ]; then
         mkdir -m 700 -- "$runtime_dir" ||
             fail "could not create $runtime_dir"
     fi
 
+    current_uid=$(id -u) || fail 'could not determine the current user ID'
     runtime_owner=$(stat -c '%u' -- "$runtime_dir") ||
         fail "could not inspect $runtime_dir"
-    current_uid=$(id -u) || fail 'could not determine the current user ID'
     [ "$runtime_owner" = "$current_uid" ] ||
         fail "$runtime_dir is not owned by the current user"
-    chmod 700 -- "$runtime_dir" ||
-        fail "could not secure $runtime_dir"
+    chmod 700 -- "$runtime_dir" || fail "could not secure $runtime_dir"
 
     state_file=$runtime_dir/$state_name
     cursor_state_file=$runtime_dir/$cursor_state_name
@@ -84,17 +87,15 @@ cursor_state_path_exists()
 
 remove_state()
 {
-    if [ -d "$state_file" ] && [ ! -L "$state_file" ]; then
+    [ ! -d "$state_file" ] || [ -L "$state_file" ] ||
         fail "$state_file is unexpectedly a directory"
-    fi
     rm -f -- "$state_file" || fail "could not remove $state_file"
 }
 
 remove_cursor_state()
 {
-    if [ -d "$cursor_state_file" ] && [ ! -L "$cursor_state_file" ]; then
+    [ ! -d "$cursor_state_file" ] || [ -L "$cursor_state_file" ] ||
         fail "$cursor_state_file is unexpectedly a directory"
-    fi
     rm -f -- "$cursor_state_file" ||
         fail "could not remove $cursor_state_file"
 }
@@ -103,54 +104,80 @@ load_state()
 {
     [ -f "$state_file" ] || return 1
     [ ! -L "$state_file" ] || return 1
+    [ "$(stat -c '%u' -- "$state_file" 2>/dev/null)" = "$current_uid" ] ||
+        return 1
 
+    state_version=
     state_pid=
     state_start_time=
-    state_pgid=
-    state_sid=
-    state_instance_id=
-    state_shell_id=
-    state_extra=
-    IFS=' ' read -r \
-        state_pid state_start_time state_pgid state_sid \
-        state_instance_id state_shell_id state_extra \
-        < "$state_file" || return 1
+    state_executable=
+    state_effect=
+    seen_version=false
+    seen_pid=false
+    seen_start_time=false
+    seen_executable=false
+    seen_effect=false
 
-    [ -z "$state_extra" ] || return 1
-    is_unsigned_integer "$state_pid" || return 1
+    while IFS= read -r state_line || [ -n "$state_line" ]; do
+        state_key=${state_line%%=*}
+        state_value=${state_line#*=}
+        [ "$state_key" != "$state_line" ] || return 1
+        case $state_key in
+            version)
+                [ "$seen_version" = false ] || return 1
+                seen_version=true
+                state_version=$state_value
+                ;;
+            pid)
+                [ "$seen_pid" = false ] || return 1
+                seen_pid=true
+                state_pid=$state_value
+                ;;
+            start_time)
+                [ "$seen_start_time" = false ] || return 1
+                seen_start_time=true
+                state_start_time=$state_value
+                ;;
+            executable)
+                [ "$seen_executable" = false ] || return 1
+                seen_executable=true
+                state_executable=$state_value
+                ;;
+            effect)
+                [ "$seen_effect" = false ] || return 1
+                seen_effect=true
+                state_effect=$state_value
+                ;;
+            *) return 1 ;;
+        esac
+    done < "$state_file"
+
+    [ "$seen_version" = true ] && [ "$state_version" = 1 ] &&
+        [ "$seen_pid" = true ] && [ "$seen_start_time" = true ] &&
+        [ "$seen_executable" = true ] && [ "$seen_effect" = true ] ||
+        return 1
+    is_unsigned_integer "$state_pid" && [ "$state_pid" -gt 1 ] || return 1
     is_unsigned_integer "$state_start_time" || return 1
-    is_unsigned_integer "$state_pgid" || return 1
-    is_unsigned_integer "$state_sid" || return 1
-    [ "$state_pid" -gt 1 ] || return 1
-    [ "$state_pid" = "$state_pgid" ] || return 1
-    [ "$state_pid" = "$state_sid" ] || return 1
-    case $state_instance_id in
-        ''|*[!a-z0-9]*) return 1 ;;
-    esac
-    case $state_shell_id in
-        ''|*[!a-f0-9]*) return 1 ;;
-    esac
+    case $state_executable in /*) ;; *) return 1 ;; esac
+    valid_effect "$state_effect"
 }
 
 load_cursor_state()
 {
     [ -f "$cursor_state_file" ] || return 1
     [ ! -L "$cursor_state_file" ] || return 1
+    [ "$(stat -c '%u' -- "$cursor_state_file" 2>/dev/null)" = "$current_uid" ] ||
+        return 1
 
     saved_cursor_invisible=
     cursor_state_extra=
     {
         IFS= read -r saved_cursor_invisible || return 1
-        if IFS= read -r cursor_state_extra ||
-            [ -n "$cursor_state_extra" ]; then
+        if IFS= read -r cursor_state_extra || [ -n "$cursor_state_extra" ]; then
             return 1
         fi
     } < "$cursor_state_file"
-
-    case $saved_cursor_invisible in
-        true|false) ;;
-        *) return 1 ;;
-    esac
+    case $saved_cursor_invisible in true|false) ;; *) return 1 ;; esac
 }
 
 read_process_snapshot()
@@ -160,155 +187,53 @@ read_process_snapshot()
     IFS= read -r process_stat < "/proc/$snapshot_pid/stat" || return 1
     process_tail=${process_stat##*) }
     [ "$process_tail" != "$process_stat" ] || return 1
-
     set -- $process_tail
     [ "$#" -ge 20 ] || return 1
     snapshot_state=$1
-    snapshot_pgid=$3
-    snapshot_sid=$4
     snapshot_start_time=${20}
-
-    case $snapshot_state in
-        Z|X|x) return 1 ;;
-    esac
-    is_unsigned_integer "$snapshot_pgid" || return 1
-    is_unsigned_integer "$snapshot_sid" || return 1
-    is_unsigned_integer "$snapshot_start_time" || return 1
+    case $snapshot_state in Z|X|x) return 1 ;; esac
+    is_unsigned_integer "$snapshot_start_time"
 }
 
-process_has_argument()
+process_arguments_match()
 {
     argument_pid=$1
-    argument_value=$2
+    argument_executable=$2
+    argument_effect=$3
     [ -r "/proc/$argument_pid/cmdline" ] || return 1
-    tr '\000' '\n' < "/proc/$argument_pid/cmdline" 2>/dev/null |
-        grep -Fqx -- "$argument_value"
+    argument_count=$(tr '\000' '\n' < "/proc/$argument_pid/cmdline" |
+        wc -l) || return 1
+    [ "$argument_count" -eq 2 ] || return 1
+    argument_zero=$(tr '\000' '\n' < "/proc/$argument_pid/cmdline" |
+        sed -n '1p') || return 1
+    argument_one=$(tr '\000' '\n' < "/proc/$argument_pid/cmdline" |
+        sed -n '2p') || return 1
+    [ "$argument_zero" = "$argument_executable" ] &&
+        [ "$argument_one" = "$argument_effect" ]
 }
 
-is_screensaver_quickshell()
+process_matches()
 {
-    identity_pid=$1
-    identity_executable=$(readlink "/proc/$identity_pid/exe" 2>/dev/null) ||
+    inspected_pid=$1
+    expected_start_time=$2
+    expected_executable=$3
+    expected_effect=$4
+    [ "$(stat -c '%u' -- "/proc/$inspected_pid" 2>/dev/null)" = "$current_uid" ] ||
         return 1
-    [ "${identity_executable##*/}" = quickshell ] || return 1
-    process_has_argument "$identity_pid" '-n' || return 1
-    process_has_argument "$identity_pid" '-c' || return 1
-    process_has_argument "$identity_pid" "$config_name" || return 1
-}
-
-owned_process_identity_is_running()
-{
-    load_state || return 1
-    read_process_snapshot "$state_pid" || return 1
-    [ "$snapshot_start_time" = "$state_start_time" ] || return 1
-    [ "$snapshot_pgid" = "$state_pgid" ] || return 1
-    [ "$snapshot_sid" = "$state_sid" ] || return 1
-    is_screensaver_quickshell "$state_pid" || return 1
-}
-
-resolve_quickshell()
-{
-    qs_executable=$(command -v qs 2>/dev/null) ||
-        fail 'qs is not installed or not on PATH'
-    config_root=${XDG_CONFIG_HOME:-$HOME/.config}
-    config_file=$config_root/quickshell/$config_name/shell.qml
-    [ -f "$config_file" ] ||
-        fail "named Quickshell config not found at $config_file"
-}
-
-registration_for_pid()
-{
-    registration_pid=$1
-    "$qs_executable" list --all --json 2>/dev/null |
-        awk -v wanted_pid="$registration_pid" '
-            function json_value(line) {
-                sub(/^[^:]*:[[:space:]]*/, "", line)
-                sub(/,$/, "", line)
-                sub(/^"/, "", line)
-                sub(/"$/, "", line)
-                return line
-            }
-            /"config_path"[[:space:]]*:/ { config_path = json_value($0) }
-            /"id"[[:space:]]*:/ { instance_id = json_value($0) }
-            /"pid"[[:space:]]*:/ { pid = json_value($0) }
-            /"shell_id"[[:space:]]*:/ { shell_id = json_value($0) }
-            /^[[:space:]]*}/ {
-                if (pid == wanted_pid) {
-                    print instance_id, shell_id, config_path
-                    found = 1
-                }
-                config_path = instance_id = pid = shell_id = ""
-            }
-            END { if (!found) exit 1 }
-        '
-}
-
-registration_for_config()
-{
-    "$qs_executable" list --all --json 2>/dev/null |
-        awk -v wanted_path="$config_file" '
-            function json_value(line) {
-                sub(/^[^:]*:[[:space:]]*/, "", line)
-                sub(/,$/, "", line)
-                sub(/^"/, "", line)
-                sub(/"$/, "", line)
-                return line
-            }
-            /"config_path"[[:space:]]*:/ { config_path = json_value($0) }
-            /"pid"[[:space:]]*:/ { pid = json_value($0) }
-            /^[[:space:]]*}/ {
-                if (config_path == wanted_path) {
-                    print pid
-                    found = 1
-                }
-                config_path = pid = ""
-            }
-            END { if (!found) exit 1 }
-        '
-}
-
-quickshell_registration_matches()
-{
-    registration=$(registration_for_pid "$state_pid") || return 1
-    IFS=' ' read -r observed_instance_id observed_shell_id \
-        observed_config_path observed_extra <<EOF
-$registration
-EOF
-    [ -z "$observed_extra" ] || return 1
-    [ "$observed_instance_id" = "$state_instance_id" ] || return 1
-    [ "$observed_shell_id" = "$state_shell_id" ] || return 1
-    [ "$observed_config_path" = "$config_file" ] || return 1
+    read_process_snapshot "$inspected_pid" || return 1
+    [ "$snapshot_start_time" = "$expected_start_time" ] || return 1
+    observed_executable=$(readlink "/proc/$inspected_pid/exe" 2>/dev/null) ||
+        return 1
+    [ "$observed_executable" = "$expected_executable" ] || return 1
+    process_arguments_match "$inspected_pid" "$expected_executable" \
+        "$expected_effect"
 }
 
 owned_process_is_running()
 {
-    owned_process_identity_is_running || return 1
-    quickshell_registration_matches || return 1
-}
-
-layer_surface_count()
-{
-    layer_pid=$1
-    "$hyprctl_executable" layers 2>/dev/null |
-        awk -v wanted_namespace="$layer_namespace" -v wanted_pid="$layer_pid" '
-            index($0, "namespace: " wanted_namespace ",") &&
-                    index($0, "pid: " wanted_pid) { count += 1 }
-            END { print count + 0 }
-        '
-}
-
-monitor_count()
-{
-    "$hyprctl_executable" monitors 2>/dev/null |
-        awk '/^Monitor / { count += 1 } END { print count + 0 }'
-}
-
-all_layer_surfaces_are_ready()
-{
-    expected_surfaces=$(monitor_count) || return 1
-    observed_surfaces=$(layer_surface_count "$state_pid") || return 1
-    [ "$expected_surfaces" -gt 0 ] || return 1
-    [ "$observed_surfaces" = "$expected_surfaces" ]
+    load_state || return 1
+    process_matches "$state_pid" "$state_start_time" "$state_executable" \
+        "$state_effect"
 }
 
 resolve_hyprctl()
@@ -322,21 +247,13 @@ read_cursor_invisible()
         "$hyprctl_executable" getoption cursor:invisible 2>/dev/null |
             sed -n 's/^bool: //p'
     ) || return 1
-
-    case $cursor_invisible in
-        true|false) ;;
-        *) return 1 ;;
-    esac
+    case $cursor_invisible in true|false) ;; *) return 1 ;; esac
 }
 
 set_cursor_invisible()
 {
     requested_cursor_invisible=$1
-    case $requested_cursor_invisible in
-        true|false) ;;
-        *) return 1 ;;
-    esac
-
+    case $requested_cursor_invisible in true|false) ;; *) return 1 ;; esac
     "$hyprctl_executable" eval \
         "hl.config({ cursor = { invisible = $requested_cursor_invisible } })" \
         >/dev/null 2>&1 || return 1
@@ -348,9 +265,9 @@ write_cursor_state()
 {
     cursor_state_temporary=$runtime_dir/$cursor_state_name.$$
     rm -f -- "$cursor_state_temporary" || return 1
-    printf '%s\n' "$cursor_invisible" > "$cursor_state_temporary" || return 1
-    chmod 600 -- "$cursor_state_temporary" || return 1
-    mv -f -- "$cursor_state_temporary" "$cursor_state_file" || return 1
+    printf '%s\n' "$cursor_invisible" > "$cursor_state_temporary" &&
+        chmod 600 -- "$cursor_state_temporary" &&
+        mv -f -- "$cursor_state_temporary" "$cursor_state_file"
 }
 
 restore_cursor_state()
@@ -364,42 +281,68 @@ restore_cursor_state()
     remove_cursor_state
 }
 
+resolve_effect()
+{
+    idle_executable=$(command -v vanhyprarch-idle 2>/dev/null) ||
+        fail 'vanhyprarch-idle is not installed or not on PATH'
+    selected_effect=$("$idle_executable" screensaver-effect 2>/dev/null) ||
+        fail 'could not read the configured screensaver effect'
+    valid_effect "$selected_effect" ||
+        fail "invalid configured screensaver effect: $selected_effect"
+}
+
+resolve_player()
+{
+    player_command=$(command -v vanhyprarch-zig-player 2>/dev/null) ||
+        fail 'vanhyprarch-zig-player is not installed or not on PATH'
+    player_executable=$(readlink -f -- "$player_command" 2>/dev/null) ||
+        fail 'could not resolve vanhyprarch-zig-player'
+    [ -f "$player_executable" ] && [ -x "$player_executable" ] ||
+        fail "$player_executable is not an executable regular file"
+}
+
 write_state()
 {
     state_temporary=$runtime_dir/$state_name.$$
     rm -f -- "$state_temporary" || return 1
-    printf '%s %s %s %s %s %s\n' \
-        "$launch_pid" \
-        "$snapshot_start_time" \
-        "$snapshot_pgid" \
-        "$snapshot_sid" \
-        "$launch_instance_id" \
-        "$launch_shell_id" > "$state_temporary" || return 1
-    chmod 600 -- "$state_temporary" || return 1
-    mv -f -- "$state_temporary" "$state_file" || return 1
+    {
+        printf 'version=1\n'
+        printf 'pid=%s\n' "$launch_pid"
+        printf 'start_time=%s\n' "$launch_start_time"
+        printf 'executable=%s\n' "$player_executable"
+        printf 'effect=%s\n' "$selected_effect"
+    } > "$state_temporary" &&
+        chmod 600 -- "$state_temporary" &&
+        mv -f -- "$state_temporary" "$state_file"
 }
 
 terminate_failed_launch()
 {
-    if read_process_snapshot "$launch_pid" &&
-        [ "$snapshot_pgid" = "$launch_pid" ] &&
-        [ "$snapshot_sid" = "$launch_pid" ] &&
-        is_screensaver_quickshell "$launch_pid"; then
-        kill -TERM -- "-$launch_pid" 2>/dev/null || true
+    [ -n "${launch_pid:-}" ] && [ -n "${launch_start_time:-}" ] || return 0
+    process_matches "$launch_pid" "$launch_start_time" \
+        "$player_executable" "$selected_effect" || return 0
+    kill -TERM "$launch_pid" 2>/dev/null || true
+
+    cleanup_attempt=0
+    while [ "$cleanup_attempt" -lt "$stop_attempts" ]; do
+        process_matches "$launch_pid" "$launch_start_time" \
+            "$player_executable" "$selected_effect" || return 0
+        sleep 0.10
+        cleanup_attempt=$((cleanup_attempt + 1))
+    done
+    if process_matches "$launch_pid" "$launch_start_time" \
+        "$player_executable" "$selected_effect"; then
+        kill -KILL "$launch_pid" 2>/dev/null || true
     fi
-    wait "$launch_pid" 2>/dev/null || true
 }
 
 cleanup_failed_start()
 {
     cleanup_status=$1
     trap - 0 HUP INT TERM
-
-    if [ -n "${launch_pid:-}" ]; then
-        terminate_failed_launch
-    fi
+    terminate_failed_launch
     rm -f -- "$runtime_dir/$state_name.$$" \
-        "$runtime_dir/$cursor_state_name.$$" 2>/dev/null || true
+        "$runtime_dir/$cursor_state_name.$$" "$state_file" 2>/dev/null || true
     if [ "${cursor_cleanup_required:-false}" = true ]; then
         if load_cursor_state && resolve_hyprctl &&
             set_cursor_invisible "$saved_cursor_invisible"; then
@@ -409,7 +352,6 @@ cleanup_failed_start()
                 "$program_name" >&2
         fi
     fi
-    rm -f -- "$state_file" 2>/dev/null || true
     exit "$cleanup_status"
 }
 
@@ -418,33 +360,26 @@ start_screensaver()
     prepare_runtime
 
     if state_path_exists; then
-        resolve_quickshell
-        if ! load_state; then
-            restore_cursor_state
-            remove_state
-        elif owned_process_identity_is_running; then
-            quickshell_registration_matches ||
-                fail 'owned process registration could not be validated'
-            printf 'running (pid %s); start is idempotent\n' "$state_pid"
+        if owned_process_is_running; then
+            printf 'running (pid %s, effect %s); start is idempotent\n' \
+                "$state_pid" "$state_effect"
             return 0
-        else
-            restore_cursor_state
-            remove_state
         fi
+        restore_cursor_state
+        remove_state
     fi
     restore_cursor_state
 
-    resolve_quickshell
+    resolve_effect
+    resolve_player
     setsid_executable=$(command -v setsid 2>/dev/null) ||
         fail 'setsid is not installed or not on PATH'
     resolve_hyprctl || fail 'hyprctl is not installed or not on PATH'
     read_cursor_invisible || fail 'could not read cursor:invisible'
-    if registration_for_config >/dev/null 2>&1; then
-        fail "an unowned $config_name Quickshell instance is already running"
-    fi
 
     cursor_cleanup_required=false
     launch_pid=
+    launch_start_time=
     trap 'cleanup_failed_start $?' 0
     trap 'cleanup_failed_start 129' HUP
     trap 'cleanup_failed_start 130' INT
@@ -456,76 +391,42 @@ start_screensaver()
 
     : > "$log_file" || fail "could not create $log_file"
     chmod 600 -- "$log_file" || fail "could not secure $log_file"
-
     (
         exec 9>&-
-        exec "$setsid_executable" \
-            "$qs_executable" -n -c "$config_name"
+        cd "$runtime_dir" || exit 1
+        exec "$setsid_executable" "$player_executable" "$selected_effect"
     ) </dev/null >> "$log_file" 2>&1 &
     launch_pid=$!
 
     launch_attempt=0
     launch_ready=false
-    launch_instance_id=
-    launch_shell_id=
     while [ "$launch_attempt" -lt "$start_attempts" ]; do
-        if read_process_snapshot "$launch_pid" &&
-            [ "$snapshot_pgid" = "$launch_pid" ] &&
-            [ "$snapshot_sid" = "$launch_pid" ] &&
-            is_screensaver_quickshell "$launch_pid"; then
-            launch_registration=$(registration_for_pid "$launch_pid" 2>/dev/null) ||
-                launch_registration=
-            if [ -n "$launch_registration" ]; then
-                IFS=' ' read -r launch_instance_id launch_shell_id \
-                    launch_config_path launch_extra <<EOF
-$launch_registration
-EOF
-                if [ -z "$launch_extra" ] &&
-                    [ "$launch_config_path" = "$config_file" ]; then
-                    launch_ready=true
-                    break
-                fi
+        if read_process_snapshot "$launch_pid"; then
+            launch_start_time=$snapshot_start_time
+            if process_matches "$launch_pid" "$launch_start_time" \
+                "$player_executable" "$selected_effect"; then
+                launch_ready=true
+                break
             fi
         fi
-        if ! kill -0 "$launch_pid" 2>/dev/null; then
-            break
-        fi
+        kill -0 "$launch_pid" 2>/dev/null || break
         sleep "$poll_delay"
         launch_attempt=$((launch_attempt + 1))
     done
-
-    if [ "$launch_ready" != true ]; then
-        fail "Quickshell screensaver did not start; inspect $log_file"
-    fi
-
-    if ! write_state; then
-        fail 'could not record runtime ownership'
-    fi
-
-    surface_attempt=0
-    surfaces_ready=false
-    while [ "$surface_attempt" -lt "$start_attempts" ]; do
-        if owned_process_is_running && all_layer_surfaces_are_ready; then
-            surfaces_ready=true
-            break
-        fi
-        sleep "$poll_delay"
-        surface_attempt=$((surface_attempt + 1))
-    done
-    if [ "$surfaces_ready" != true ]; then
-        remove_state
-        fail "screensaver layer surfaces did not become ready; inspect $log_file"
-    fi
+    [ "$launch_ready" = true ] ||
+        fail "Zig Player did not start; inspect $log_file"
+    write_state || fail 'could not record runtime ownership'
 
     trap - 0 HUP INT TERM
-    printf 'started (pid %s)\n' "$state_pid"
+    printf 'started (pid %s, effect %s)\n' "$launch_pid" "$selected_effect"
 }
 
 wait_for_owned_process_to_stop()
 {
     wait_attempt=0
     while [ "$wait_attempt" -lt "$stop_attempts" ]; do
-        owned_process_identity_is_running || return 0
+        process_matches "$state_pid" "$state_start_time" "$state_executable" \
+            "$state_effect" || return 0
         sleep 0.10
         wait_attempt=$((wait_attempt + 1))
     done
@@ -535,7 +436,6 @@ wait_for_owned_process_to_stop()
 stop_screensaver()
 {
     prepare_runtime
-
     if ! state_path_exists; then
         if cursor_state_path_exists; then
             restore_cursor_state
@@ -553,22 +453,18 @@ stop_screensaver()
         printf 'stopped; removed invalid ownership state\n'
         return 0
     fi
-    if ! owned_process_identity_is_running; then
+    if ! process_matches "$state_pid" "$state_start_time" \
+        "$state_executable" "$state_effect"; then
         restore_cursor_state
         remove_state
         rm -f -- "$log_file"
         printf 'stopped; removed stale ownership state\n'
         return 0
     fi
-    resolve_quickshell
-    quickshell_registration_matches ||
-        fail 'owned process registration could not be validated'
 
     owned_pid=$state_pid
-    owned_pgid=$state_pgid
-    kill -TERM -- "-$owned_pgid" 2>/dev/null || true
+    kill -TERM "$owned_pid" 2>/dev/null || true
     restore_cursor_state
-
     if wait_for_owned_process_to_stop; then
         remove_state
         rm -f -- "$log_file"
@@ -576,8 +472,9 @@ stop_screensaver()
         return 0
     fi
 
-    if owned_process_identity_is_running; then
-        kill -KILL -- "-$state_pgid" 2>/dev/null || true
+    if process_matches "$state_pid" "$state_start_time" "$state_executable" \
+        "$state_effect"; then
+        kill -KILL "$state_pid" 2>/dev/null || true
     fi
     if wait_for_owned_process_to_stop; then
         remove_state
@@ -586,14 +483,12 @@ stop_screensaver()
             "$owned_pid"
         return 0
     fi
-
     fail "owned screensaver process $owned_pid did not stop"
 }
 
 status_screensaver()
 {
     prepare_runtime
-
     if ! state_path_exists; then
         if cursor_state_path_exists; then
             printf 'stopped; cursor recovery is pending (run stop)\n'
@@ -606,18 +501,12 @@ status_screensaver()
         printf 'stopped; invalid ownership state (run stop)\n'
         return 1
     fi
-    if ! owned_process_identity_is_running; then
+    if ! process_matches "$state_pid" "$state_start_time" \
+        "$state_executable" "$state_effect"; then
         printf 'stopped; stale ownership state (run stop)\n'
         return 1
     fi
-    resolve_quickshell
-    if ! quickshell_registration_matches; then
-        printf 'stopped; process registration is not valid (run stop)\n'
-        return 1
-    fi
-
-    printf 'running (pid %s, process group %s, instance %s)\n' \
-        "$state_pid" "$state_pgid" "$state_instance_id"
+    printf 'running (pid %s, effect %s)\n' "$state_pid" "$state_effect"
 }
 
 [ "$#" -eq 1 ] || {

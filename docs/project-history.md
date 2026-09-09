@@ -76,15 +76,10 @@ namespace.
 
 ## Screensaver lifecycle and Power & Idle backend
 
-The Ly `colormix` direction advanced from exploration to an isolated native
-renderer presented by fullscreen Foot. The renderer, owned-process controller,
-input dismissal, and cursor lifecycle passed manual testing while the overall
-screensaver decision remained Provisional.
-
-A Hyprland v0.56.2 false resume on fullscreen window mapping invalidated the
-original single-listener approach. Phase 2B validated a two-listener design:
-the inhibitor-aware listener starts the saver, while an input-only listener
-arms one second earlier and owns genuine-input dismissal.
+The Ly `colormix` direction first advanced through a repository-local C
+renderer presented by fullscreen Foot. Mapping that xdg-toplevel exposed a
+Hyprland 0.56.2 inhibitor re-evaluation that reset pending idle clocks and
+temporarily required a split dismissal listener.
 
 The subsequent Power & Idle backend implemented strict persistent preferences,
 runtime-only Caffeine state, ordered-stage and lock-point validation, generated
@@ -92,16 +87,22 @@ hypridle configuration, and transactional restart/rollback. Migration defaults
 remain zero listeners. The later Quickshell panel and its passive synchronization
 behavior passed manual visual review.
 
-A harmless 10/20/30-second marker diagnostic then confirmed a separate
-Hyprland 0.56.2 limitation: mapping the screensaver Foot window rearms pending
-inhibitor-aware clocks, producing an approximately 10/30/40-second effective
-timeline. A genuine Quickshell layer-shell proof of concept retained 10/20/30
-twice with no false resume. Production subsequently moved to a separate
-controller-owned Quickshell config with per-output overlay surfaces and a
-native Qt Quick colormix port. Two production-path marker cycles repeated the
-absolute timeline, leaving the S-1 dismissal workaround in place pending a
-separate simplification decision. The evidence is maintained in the
-[compatibility register](compatibility.md).
+A separate Quickshell layer-shell renderer proved that native layer surfaces
+avoid that reset, but duplicated presentation code inside this repository. It
+was superseded by the independently released GPL-2.0-only Vanilla HyprArch Zig
+Player. Release v0.1.0 established the native boundary and exposed first-input
+leakage. Release v0.1.1 fixed that through native layer-shell input routing. A
+direct real-player test retained the later listener deadline, while keyboard,
+click, and scroll tests confirmed that input did not reach the underlying Foot
+instance. This permitted removal of the temporary S-1 workaround without
+adding an input workaround to Vanilla HyprArch.
+
+The final production-chain validation started ColorMix through hypridle and the
+project controller at +10.034 seconds, retained the harmless +20.036-second
+deadline, and dismissed at +23.291 seconds on genuine input without leaking the
+first key. Cleanup restored the normal zero-listener daemon and left the main
+Quickshell unchanged. Git history preserves the detailed experiments; the
+current result is maintained in the [compatibility register](compatibility.md).
 
 ## Project maintenance contract
 
@@ -120,6 +121,9 @@ silently become permanent architecture.
   fixed structurally.
 - Fullscreen Foot was superseded as the screensaver presentation after its
   xdg-toplevel mapping was proven to rearm later inhibitor-aware idle clocks.
+- The repository-local Quickshell/Canvas screensaver was superseded by the
+  independent native Zig Player; Vanilla HyprArch now owns only installation,
+  preferences, and lifecycle control.
 - A parallel JSON representation of hypridle settings was rejected. A strict
   project preference file is the durable source, and the hypridle fragment is
   generated from it.

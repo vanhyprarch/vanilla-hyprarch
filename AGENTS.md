@@ -38,10 +38,17 @@ Do not copy whole sections between documents or rewrite unrelated records.
   packaged `hypridle.service` remains disabled and inactive.
 - Caffeine is XDG runtime state. It suppresses automatic actions without
   overwriting saved Power & Idle preferences.
-- `vanhyprarch-screensaver` owns only its separate named Quickshell process and
-  the cursor state it changed. Never signal Quickshell by name or weaken the
-  PID, start-time, process-group, session, executable, argument, instance, or
-  config-path validation. The main shell must remain independent.
+- Screensaver rendering and keyboard/pointer input absorption belong to the
+  independent GPL-2.0-only `vanhyprarch-zig-player` executable. Do not
+  recreate, copy, or vendor its Zig implementation here, add a local input
+  workaround, or patch an upstream package to integrate it.
+- `vanhyprarch-screensaver` owns only the exact native player process it started
+  and the cursor state it changed. Preserve PID, start-time, executable,
+  argument, runtime-owner, and cursor validation; never signal by process name.
+  The main Quickshell must remain independent.
+- Player release versions, assets, source links, architectures, and checksums
+  are pinned installation inputs. Update them only as one deliberate, reviewed
+  change with matching validation.
 - Do not put personal names or absolute `/home/USERNAME` paths in tracked
   content. Use `$HOME`, `~`, XDG paths, or installer-resolved locations.
 - Do not add `jq` merely for convenience. Official Arch repositories are the
@@ -71,6 +78,8 @@ indispensable dependency is approved and documented.
 - Make the smallest scoped change and one architectural change at a time.
 - Preserve known-good live state during diagnostics. Prefer isolated,
   runtime-only probes with harmless actions.
+- Never run fullscreen or input-sensitive screensaver tests on an active
+  desktop without explicit approval and an independent bounded failsafe.
 - Do not stage or commit unless the user explicitly requests it.
 - Run `git --no-pager diff --check` before proposing a commit.
 - Never silently rewrite unrelated user settings to make a requested value fit.
@@ -84,11 +93,11 @@ indispensable dependency is approved and documented.
 
 Validation should be proportional to the change. Relevant checks include:
 
-- native Quickshell reload and final log health;
+- native Quickshell reload and final log health when main-shell QML changes;
 - named IPC calls when IPC changes;
 - deterministic `vanhyprarch-idle status` output;
 - exactly one direct Hyprland-owned hypridle and expected listener counts;
-- owned screensaver status and exact cursor restoration;
+- owned native-player status and exact cursor restoration;
 - shell syntax, parser, render, and safe mock tests;
 - `git --no-pager diff --check` and a scoped status/diff review.
 

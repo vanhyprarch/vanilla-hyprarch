@@ -9,6 +9,7 @@ Scope {
     property string display: "never"
     property string suspend: "never"
     property string lockPoint: "none"
+    property string effect: "colormix"
     property bool caffeine: false
     property int effectiveListeners: 0
     property bool ready: false
@@ -37,10 +38,11 @@ Scope {
         suspend: ["never", "600", "1200", "1800", "3600"]
     })
     readonly property var lockPoints: ["none", "screensaver", "display", "suspend"]
+    readonly property var effects: ["colormix", "matrix", "doom", "gameoflife"]
 
     Component.onCompleted: Qt.callLater(function() { root.refreshStatus(false) })
 
-    function timeoutIsValid(stage: string, value: string): bool {
+    function timeoutIsValid(value: string): bool {
         if (value === "never")
             return true
         if (!/^[1-9][0-9]*$/.test(value))
@@ -49,14 +51,14 @@ Scope {
         const seconds = Number(value)
         if (!isFinite(seconds) || seconds > 2147483647)
             return false
-        return stage !== "screensaver" || seconds >= 2
+        return true
     }
 
     function configurationIsValid(screenValue: string, displayValue: string,
         suspendValue: string, lockValue: string): bool {
-        if (!root.timeoutIsValid("screensaver", screenValue)
-                || !root.timeoutIsValid("display", displayValue)
-                || !root.timeoutIsValid("suspend", suspendValue)
+        if (!root.timeoutIsValid(screenValue)
+                || !root.timeoutIsValid(displayValue)
+                || !root.timeoutIsValid(suspendValue)
                 || root.lockPoints.indexOf(lockValue) < 0)
             return false
 
@@ -178,6 +180,16 @@ Scope {
         root.startAction([root.backendCommand, "caffeine", requested])
     }
 
+    function requestEffect(value: string): void {
+        if (!root.ready || root.busy || root.effects.indexOf(value) < 0) {
+            root.errorMessage = "Rejected an unknown screensaver effect."
+            return
+        }
+        if (value === root.effect)
+            return
+        root.startAction([root.backendCommand, "set", "effect", value])
+    }
+
     function startAction(command: var): void {
         if (root.busy)
             return
@@ -221,7 +233,7 @@ Scope {
         const values = {}
         const expectedKeys = [
             "version", "screensaver", "display", "suspend",
-            "lock", "caffeine", "effective_listeners"
+            "lock", "effect", "caffeine", "effective_listeners"
         ]
         const lines = String(output || "").split("\n")
         for (const rawLine of lines) {
@@ -241,15 +253,16 @@ Scope {
             if (values[key] === undefined)
                 throw new Error("missing status key")
         }
-        if (values.version !== "1"
+        if (values.version !== "2"
                 || (values.caffeine !== "on" && values.caffeine !== "off")
+                || root.effects.indexOf(values.effect) < 0
                 || !/^[0-9]+$/.test(values.effective_listeners)
                 || !root.configurationIsValid(values.screensaver,
                     values.display, values.suspend, values.lock))
             throw new Error("invalid backend status values")
 
         const expectedListeners = values.caffeine === "on" ? 0
-            : (values.screensaver === "never" ? 0 : 2)
+            : (values.screensaver === "never" ? 0 : 1)
                 + (values.display === "never" ? 0 : 1)
                 + (values.suspend === "never" ? 0 : 1)
         if (Number(values.effective_listeners) !== expectedListeners)
@@ -260,6 +273,7 @@ Scope {
             display: values.display,
             suspend: values.suspend,
             lockPoint: values.lock,
+            effect: values.effect,
             caffeine: values.caffeine === "on",
             effectiveListeners: expectedListeners
         }
@@ -331,6 +345,8 @@ Scope {
                     root.suspend = state.suspend
                 if (root.lockPoint !== state.lockPoint)
                     root.lockPoint = state.lockPoint
+                if (root.effect !== state.effect)
+                    root.effect = state.effect
                 if (root.caffeine !== state.caffeine)
                     root.caffeine = state.caffeine
                 if (root.effectiveListeners !== state.effectiveListeners)

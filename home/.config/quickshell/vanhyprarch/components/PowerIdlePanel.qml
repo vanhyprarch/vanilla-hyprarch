@@ -47,6 +47,12 @@ PopupWindow {
         { value: "display", label: "Display off" },
         { value: "suspend", label: "Suspend" }
     ]
+    readonly property var effectChoices: [
+        { value: "colormix", label: "ColorMix" },
+        { value: "matrix", label: "Matrix" },
+        { value: "doom", label: "Doom" },
+        { value: "gameoflife", label: "Game of Life" }
+    ]
 
     anchor {
         item: root.popupAnchorItem
@@ -164,6 +170,46 @@ PopupWindow {
                     buttonWidth: (presetRow.width - presetRow.spacing * 4) / 5
                 }
             }
+        }
+    }
+
+    component EffectButton: Rectangle {
+        id: effectButton
+
+        required property string value
+        required property string label
+        required property real buttonWidth
+        readonly property bool selected: root.controller.effect === value
+        readonly property bool available:
+            root.controller.ready && !root.controller.busy
+
+        width: buttonWidth
+        height: 26
+        radius: root.popupRadius / 2
+        color: selected ? root.accentColor
+            : effectMouse.containsMouse && available
+                ? root.hoverColor : root.secondaryColor
+        opacity: available || selected ? 1.0 : 0.35
+
+        Text {
+            anchors.fill: parent
+            text: effectButton.label
+            color: effectButton.selected ? root.backgroundColor : root.textColor
+            font.pixelSize: 11
+            font.weight: effectButton.selected ? Font.Medium : Font.Normal
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.NoWrap
+        }
+
+        MouseArea {
+            id: effectMouse
+
+            anchors.fill: parent
+            enabled: effectButton.available && !effectButton.selected
+            hoverEnabled: true
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: root.controller.requestEffect(effectButton.value)
         }
     }
 
@@ -308,6 +354,41 @@ PopupWindow {
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: root.controller.requestCaffeine(
                             !root.controller.caffeine)
+                    }
+                }
+            }
+
+            Column {
+                width: parent.width
+                spacing: 5
+                opacity: root.controller.ready ? 1.0 : 0.45
+
+                Text {
+                    width: parent.width
+                    text: "Screen saver effect"
+                    color: root.textColor
+                    font.pixelSize: 13
+                    font.weight: Font.Medium
+                    wrapMode: Text.NoWrap
+                }
+
+                Row {
+                    id: effectRow
+
+                    width: parent.width
+                    height: childrenRect.height
+                    spacing: 4
+
+                    Repeater {
+                        model: root.effectChoices
+
+                        EffectButton {
+                            required property var modelData
+
+                            value: String(modelData.value)
+                            label: String(modelData.label)
+                            buttonWidth: (effectRow.width - effectRow.spacing * 3) / 4
+                        }
                     }
                 }
             }

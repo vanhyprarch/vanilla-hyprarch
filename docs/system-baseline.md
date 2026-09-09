@@ -28,7 +28,13 @@ dependency. Its inclusion does not authorize the installer or future agents to
 select other AUR packages freely.
 
 All packages in the current official manifest were verified as installed and
-available from Arch's `extra` repository on 2026-09-08.
+available from Arch's official repositories by 2026-09-09.
+
+`wayland` is explicit because the external player directly links
+`libwayland-client`. `curl` is explicit because the pinned installer invokes
+its command-line client; neither dependency is left implicit merely because it
+is also present transitively on the development system. Zig is not a runtime
+or baseline package.
 
 ## Installation reproducibility
 
@@ -44,18 +50,18 @@ unresolved choices are maintained in the canonical
 | Role | Packages | Ownership |
 | --- | --- | --- |
 | Compositor and window manager | `hyprland` | Hyprland owns composition, windows, input, bindings, and session autostart. |
-| Project shell | `quickshell`, `qt6-svg` | Quickshell owns the main shell and the independently launched layer-shell screensaver presentation. |
+| Project shell | `quickshell`, `qt6-svg` | Quickshell owns the main desktop shell. |
+| Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The independently released native client owns layer-shell output coverage, input absorption, and animation. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream
 desktop distribution layer.
 
-The bootstrap must deploy both named Quickshell configurations:
-`vanhyprarch` for the main shell and `vanhyprarch-screensaver` for the separate
-on-demand screensaver. It must also install `vanhyprarch-screensaver` from
-`bin/` into PATH; production does not depend on Foot or the experimental C
-renderer for screensaver presentation.
+The bootstrap deploys the `vanhyprarch` named Quickshell configuration for the
+main shell. It installs `vanhyprarch-screensaver` from `bin/` and makes the
+separately released `vanhyprarch-zig-player` available in the same inherited
+PATH. Production screensaver presentation does not use Quickshell or Foot.
 
 ## Keyboard and session defaults
 
@@ -158,9 +164,9 @@ icon theme and uses it for project UI controls.
 disabled rollback artifact on the current machine and is not part of the
 Vanilla HyprArch package manifest.
 
-The current Ly configuration uses its `colormix` login animation. The user-
-session screensaver uses a separately attributed native Qt Quick port of the
-visual algorithm; Ly itself is not run inside the graphical session.
+The current Ly configuration uses its own login animation. User-session
+screensaver rendering is instead delegated to the independent native Zig
+Player; Ly itself is not run inside the graphical session.
 
 ## Locking and idle
 

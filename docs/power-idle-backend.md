@@ -16,11 +16,12 @@ The strict, versioned format is deterministic and deliberately parseable
 without jq:
 
 ```text
-version=1
+version=2
 screensaver=never
 display=never
 suspend=never
 lock=none
+effect=colormix
 ```
 
 Timeout values are integer seconds. Enabled stages must be strictly ordered:
@@ -28,14 +29,20 @@ Screen saver < Turn off display < Suspend. Stages set to `never` are ignored in
 that comparison. A lock point cannot name a disabled stage, and invalid changes
 are rejected without rewriting another setting.
 
+`effect` is one of `colormix`, `matrix`, `doom`, or `gameoflife`. Existing
+version-1 files remain valid and read as `effect=colormix`; the next preference
+write migrates them to version 2 without changing their existing settings.
+
 Caffeine is runtime-only. An atomic file containing `on` at
 `${XDG_RUNTIME_DIR}/vanhyprarch/caffeine` means enabled; absence means off. It
 never changes the durable preference file. Reapplying `caffeine on` or
 `caffeine off` is idempotent and reconciles the generated configuration after
 an interrupted operation. The default after login is off.
 
-The migration defaults are Screen saver `never`, Display `never`, Suspend
-`never`, Lock `none`, and Caffeine off. This produces zero listeners.
+The deployed version-2 state is Screen saver `never`, Display `never`, Suspend
+`never`, Lock `none`, effect `colormix`, and Caffeine off. This produces zero
+listeners. Version-1 migration preserves existing timeout and lock selections
+while defaulting the new effect field to `colormix`.
 
 ## Command interface
 
@@ -43,15 +50,18 @@ The migration defaults are Screen saver `never`, Display `never`, Suspend
 vanhyprarch-idle status
 vanhyprarch-idle apply
 vanhyprarch-idle configure <screensaver> <display> <suspend> <lock>
-vanhyprarch-idle set <screensaver|display|suspend|lock> <value>
+vanhyprarch-idle set <screensaver|display|suspend|lock|effect> <value>
 vanhyprarch-idle caffeine <on|off>
+vanhyprarch-idle screensaver-effect
 ```
 
 `status` emits stable `key=value` lines for later QML parsing. `configure`
 updates all durable fields as one validated transaction; `set` changes one
 field and rejects the result if it breaks ordering or lock ownership. `apply`
-regenerates runtime configuration without changing preferences. The
-`validate` and `render` commands are development aids.
+regenerates runtime configuration without changing preferences. Effect-only
+updates persist without applying or restarting hypridle; the controller reads
+the selection through `screensaver-effect` when starting. The `validate` and
+`render` commands are development aids.
 
 ## Generated configuration
 
@@ -61,28 +71,18 @@ stored preferences. When Caffeine is active, the fragment contains no
 listeners and therefore performs no automatic screensaver, display-off, lock,
 or suspend action.
 
-An enabled screensaver generates the validated two-listener workaround for
-Hyprland 0.56.2:
+An enabled screensaver generates one inhibitor-aware listener. Its timeout
+starts `vanhyprarch-screensaver`; genuine-input resume stops it. If Screen saver
+owns locking, resume requests `loginctl lock-session` instead and the general
+unlock command stops the saver. The listener never ignores legitimate
+inhibitors.
 
-- At the selected timeout, an inhibitor-aware listener starts
-  `vanhyprarch-screensaver` and has no resume action.
-- One second earlier, an input-only listener arms with
-  `ignore_inhibit = true`, runs only `/usr/bin/true` on timeout, and dismisses
-  the saver on genuine input. If Screen saver owns locking, that resume command
-  requests `loginctl lock-session` instead; the general unlock command then
-  stops the saver.
-
-The one-second lead is independent of the chosen timeout and guarantees the
-dismiss notification is already idle before the screensaver maps. Consequently
-the screensaver timeout must be at least two seconds. The action listener never
-ignores legitimate inhibitors.
-
-On the validated Hyprland 0.56.2, hypridle 0.1.8, and Quickshell 0.3.1 stack,
-the separate production layer-shell saver removes the deterministic pending-
-clock rearm caused by the former Foot xdg-toplevel. Two production-path marker
-cycles retained absolute 10/20/30 timing. The two-listener generation remains
-unchanged pending a separate simplification test; consult the
-[compatibility register](compatibility.md) before changing it.
+The final production chain started ColorMix through the controller at +10.034
+seconds and fired a harmless later listener at +20.036 seconds, 10.002 seconds
+afterward. Startup did not reset hypridle. Genuine keyboard input emitted
+resume at +23.291 seconds, stopped the owned player, and did not leak the first
+key to Foot underneath. The former S-1 helper listener is intentionally absent.
+See the [compatibility register](compatibility.md).
 
 An enabled display stage uses Hyprland's native 0.56 Lua dispatcher:
 
@@ -104,9 +104,11 @@ making Lock `none` and Caffeine meaningful even for pre-sleep handling.
 ## Deployment and rollback
 
 During development, `~/.local/bin/vanhyprarch-idle` is a symlink to the tracked
-backend. A future installer should place the executable in the user's PATH,
-deploy the static main configuration and initial generated fragment, and create
-the default preference file without depending on a Git checkout.
+backend. The controller and separately installed `vanhyprarch-zig-player` must
+both be in hypridle's PATH; the pinned player installer defaults to
+`$HOME/.local/bin`. A future shared bootstrap must deploy the static main
+configuration and initial generated fragment and create the default preference
+file without depending on a Git checkout.
 
 The backend validates the candidate fragment with a disconnected verbose
 hypridle parse before deployment. It requires exactly one existing hypridle
@@ -116,10 +118,10 @@ and requires the packaged user service to remain disabled and inactive.
 It saves the previous fragment, replaces the file atomically, stops only that
 validated daemon, and launches one replacement through Hyprland's Lua
 `hl.exec_cmd` API with the existing daemon PATH. The replacement log must show
-the exact expected listener and `ignore_inhibit` counts. Any failure restores
-the prior fragment and attempts to launch and validate one daemon against the
-previous counts. Preference and Caffeine updates are also rolled back if the
-effective configuration cannot be applied.
+the exact expected listener count. Any failure restores the prior fragment and
+attempts to launch and validate one daemon against the previous count.
+Preference and Caffeine updates are also rolled back if the effective
+configuration cannot be applied.
 
 ## Quickshell panel
 
@@ -134,8 +136,10 @@ The dock order is:
 7. Clock
 8. Power
 
-The panel begins with **Caffeine / Keep computer awake**, followed by Screen
-saver, Turn off display, and Suspend timeout controls. Each stage can be
+The panel begins with **Caffeine / Keep computer awake**, followed by a compact
+screensaver-effect choice and the Screen saver, Turn off display, and Suspend
+timeout controls. Effect choice persists even when Screen saver is `Never`.
+Each stage can be
 `Never` and can be selected as the one automatic lock point. A single global
 controller owns backend processes and parsed state; screen-bound buttons and
 popups follow the existing `Quickshell.screens` delegate lifecycle.
@@ -143,4 +147,6 @@ popups follow the existing `Quickshell.screens` delegate lifecycle.
 Installed Papirus provides exact icons named `preferences-system-power` and
 `caffeine`. Use the former normally and the latter while Caffeine is active.
 The panel and passive synchronization behavior have passed manual visual
-review; integrated idle actions remain pending.
+review, including effect persistence. The complete production screensaver
+chain is validated. Real DPMS, automatic-lock, and suspend actions remain
+intentionally untested.

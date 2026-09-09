@@ -3,6 +3,7 @@ bluez-utils
 cups
 cups-filters
 cups-pk-helper
+curl
 ddcutil
 firefox
 foot
@@ -31,6 +32,7 @@ thunar
 ttf-dejavu
 ttf-liberation
 tumbler
+wayland
 wireplumber
 xdg-desktop-portal
 xdg-desktop-portal-gtk

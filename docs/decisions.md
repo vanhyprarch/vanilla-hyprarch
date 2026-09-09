@@ -238,8 +238,9 @@ implemented
 Use a mostly static `hypridle.conf` that sources a generated
 `vanhyprarch-idle.conf`. A strict project-owned preference file is the durable
 source of truth; the fragment is its generated runtime projection. The
-temporary Phase 2B 9/10-second test validated the required two-listener
-screensaver lifecycle but did not establish production defaults.
+screensaver stage uses one inhibitor-aware listener with timeout and resume
+actions. Player v0.1.1 was measured not to reset the idle clock, so no separate
+input-only helper is generated.
 
 Updates must be atomic and followed by restart and verification, with rollback
 on failure. Hyprland remains the single direct owner of hypridle; the packaged
@@ -252,33 +253,13 @@ Hyprland or hypridle changes.
 
 ## ADR-016: Use Ly colormix as the screensaver visual
 
-**Status:** Provisional
+**Status:** Superseded by ADR-021
 **Date:** 2026-09-08
-**Implementation:** Native renderer PoC retained as reference; native Qt Quick
-visual port and lifecycle controller implemented, integrated power actions
-pending
 
-Ly's `colormix` animation is the preferred screensaver visual. An isolated
-proof of concept validated the original candidate architecture:
-
-`Hyprland -> fullscreen Foot window -> lightweight standalone colormix renderer`
-
-The renderer reproduces the relevant Ly algorithm while respecting its license
-and attribution requirements. Its current PoC default is 33 milliseconds,
-approximately 30 fps, with animation movement normalized to Ly's 5-millisecond
-reference. This is a measured PoC choice, not an immutable architectural
-requirement.
-
-Fullscreen lifecycle, input dismissal, cursor ownership, and process cleanup
-were manually validated. The Foot presentation has since been superseded by
-ADR-020 because its xdg-toplevel mapping rearms pending inhibitor-aware idle
-clocks on the validated stack. Production lock, DPMS, suspend, and final visual
-acceptance still require validation; the visual decision therefore remains
-Provisional.
-
-The lifecycle boundary remains a single
-`vanhyprarch-screensaver start|stop|status` interface. Process presentation and
-ownership are decided separately in ADR-020.
+The former repository-local ColorMix translations and Foot/Quickshell
+presentations established the lifecycle boundary and exposed a timer-reset
+problem. They are no longer production or retained reference implementations;
+Git history preserves that investigation.
 
 ## ADR-017: Respect third-party licenses
 
@@ -317,31 +298,56 @@ altering the user's stored timeouts or lock point. Its marker is session-scoped
 under `XDG_RUNTIME_DIR`, is absent after login or reboot, and can be reconciled
 idempotently by reapplying either state.
 
-Caffeine does not disable manual locking or other explicit power actions. Only
-the input/dismiss half of the screensaver workaround may ignore inhibitors;
-listeners that perform screensaver, display, lock, or suspend actions remain
+Caffeine does not disable manual locking or other explicit power actions.
+Listeners that perform screensaver, display, lock, or suspend actions remain
 inhibitor-aware.
 
 ## ADR-020: Present the screensaver as a separate Quickshell layer-shell process
 
-**Status:** Accepted
+**Status:** Superseded by ADR-021
 **Date:** 2026-09-08
-**Implementation:** Controller lifecycle and absolute-timer regression
+**Historical implementation:** Controller lifecycle and absolute-timer regression
 validated; integrated lock, DPMS, and suspend testing pending
 
-`vanhyprarch-screensaver` owns a separate minimal Quickshell configuration
-that creates genuine overlay layer-shell surfaces. It does not present the
-saver through Foot and does not host it inside the main desktop-shell process.
+The separate Quickshell layer-shell process replaced Foot and validated native
+layer-shell timing, but it duplicated rendering code and imposed
+Quickshell-specific lifecycle validation. The independent native player now
+owns this responsibility.
 
-A marker-only experiment on Hyprland 0.56.2, hypridle 0.1.8, and Quickshell
-0.3.1 retained the intended 10/20/30-second absolute idle timeline twice. The
-former Foot xdg-toplevel path produced approximately 10/30/40 because mapping
-it triggered an inhibitor-notification recheck. Canonical measurements and
-the upgrade retest condition are in the
-[compatibility register](compatibility.md).
+## ADR-021: Delegate screensaver rendering to Vanilla HyprArch Zig Player
 
-The separate process preserves an independent `start|stop|status` API, exact
-controller ownership, cursor lifecycle, and isolation from main-shell reloads
-or crashes. Its surfaces follow `Quickshell.screens` through per-screen
-`Variants` scopes so hotplug and suspend/resume output recreation are handled
-structurally. Stock upstream packages remain unmodified.
+**Status:** Accepted
+**Date:** 2026-09-09
+**Implementation:** Pinned v0.1.1 production chain, input routing, and idle
+continuity validated; physical multi-output, lock, DPMS, and suspend acceptance
+pending
+
+Vanilla HyprArch installs and controls the independent GPL-2.0-only
+`vanhyprarch-zig-player`; it does not copy, vendor, or recreate its Zig source.
+The player owns Wayland, layer-shell surfaces, output geometry and scaling,
+rendering, and the four built-in effects. The project controller retains only
+`start|stop|status`, exact native-process ownership, and cursor restoration.
+
+Release v0.1.1 is pinned by tag, architecture, asset, checksum, release URL, and
+source URL. Updates are explicit reviewed changes. The prebuilt x86_64 binary
+requires glibc and the Wayland client runtime, not Zig. Other architectures fail
+closed until a release asset is deliberately added.
+
+The final production chain started ColorMix through hypridle and the controller
+at +10.034 seconds and fired the next listener at +20.036 seconds, 10.002
+seconds later. Genuine input caused resume at +23.291 seconds, stopped the
+player, and did not leak the first key to the underlying Foot instance. Manual
+click and scroll tests also passed. The single inhibitor-aware listener is
+therefore the current architecture, with input absorption wholly owned by the
+player. Physical two-monitor behavior remains a live acceptance item.
+
+## ADR-022: License Vanilla HyprArch under GPL-2.0-only
+
+**Status:** Accepted
+**Date:** 2026-09-09
+
+Project-authored Vanilla HyprArch material is licensed under GPL-2.0-only as
+stated in the root `LICENSE` and README. This does not relicense independent
+software or erase third-party notices. If the project distributes an external
+GPL binary, its own license, notices, and corresponding-source obligations must
+remain satisfied independently.
