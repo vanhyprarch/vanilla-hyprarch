@@ -141,8 +141,8 @@ rather than by embedding arbitrary unlicensed assets.
 `file-roller` is a desktop convenience, not a core shell or runtime dependency.
 It is excluded from the core baseline and may be reconsidered only as part of a
 future optional or recommended package set. BlueZ remains the Bluetooth backend;
-`blueman` is excluded from the core baseline while the future Bluetooth UX
-remains undecided.
+`blueman` is excluded because the shell owns Bluetooth UX through native
+Quickshell state and a narrow pairing agent.
 
 ## ADR-009: Prefer native audio and network integrations
 
@@ -352,3 +352,26 @@ stated in the root `LICENSE` and README. This does not relicense independent
 software or erase third-party notices. If the project distributes an external
 GPL binary, its own license, notices, and corresponding-source obligations must
 remain satisfied independently.
+
+## ADR-023: Use native Quickshell Bluetooth with a narrow pairing agent
+
+**Status:** Accepted
+**Date:** 2026-09-09
+**Implementation:** First complete shell integration implemented; outgoing
+Android-phone discovery and pairing validated, broader device and incoming-flow
+validation pending
+
+Quickshell's native Bluetooth module owns adapter power, discovery, device
+state, pairing, connection, removal, and trust. Vanilla HyprArch does not poll
+or parse `bluetoothctl` and does not maintain a second Bluetooth device model.
+
+Quickshell 0.3.1 does not expose BlueZ's complete `org.bluez.Agent1` pairing
+callbacks. One Quickshell-supervised GPL-2.0-only Python helper therefore owns
+only that interface, registers as the default `KeyboardDisplay` agent, and
+exchanges versioned pairing requests over private newline-delimited JSON pipes.
+It uses the official `python`, `python-dbus`, and `python-gobject` packages and
+fails closed if its BlueZ owner, UI, IPC, or process owner disappears. Display
+callbacks are acknowledged to BlueZ only after the target panel reports them
+visible, and automatic trust/connect is scoped to one user transaction in the
+current agent session. Retest and remove the helper if a future Quickshell
+release exposes equivalent complete pairing-agent functionality.

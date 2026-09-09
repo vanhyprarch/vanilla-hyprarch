@@ -115,15 +115,21 @@ must not be reinstalled merely because it existed historically.
 
 ## Bluetooth
 
-The verified Bluetooth baseline is:
+The Bluetooth baseline is:
 
 - `bluez`
 - `bluez-utils`
+- `python`
+- `python-dbus`
+- `python-gobject`
 
-`bluetooth.service` is enabled and active. No Quickshell Bluetooth panel exists.
-`blueman` is not installed and is deliberately excluded from the core baseline.
-Future Bluetooth UX remains an open decision and must not presume that blueman
-is the selected interface.
+`bluetooth.service` is enabled and active. The shell uses native
+`Quickshell.Bluetooth` objects for adapter power, discovery, device state,
+pairing, connections, removal, and trust. A small Python/dbus-python/PyGObject
+child implements only the complete BlueZ pairing-agent callbacks missing from
+Quickshell 0.3.1. It is supervised by the main shell and is not a permanent
+service. `bluetoothctl` polling and prompt parsing are not used. `blueman` and
+other complete Bluetooth GUIs remain excluded.
 
 ## Desktop portals and authorization
 

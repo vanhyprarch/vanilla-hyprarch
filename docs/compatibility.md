@@ -23,6 +23,38 @@ and removable local mitigations. Package selection belongs in
 This is a tested rolling-release snapshot, not a claim that other versions are
 incompatible.
 
+## Quickshell Bluetooth pairing-agent boundary
+
+**Affected component:** Quickshell 0.3.1 with BlueZ 5.87
+
+Quickshell 0.3.1 exposes native Bluetooth adapters, discovery, devices,
+pairing, connection, removal, and trust, but not the full BlueZ
+`org.bluez.Agent1` callback surface required for PIN entry, displayed
+passkeys, numeric confirmation, and authorization. Vanilla HyprArch supplies
+one narrowly scoped Python agent using dbus-python and PyGObject. It is a
+Quickshell-supervised child, registers with capability `KeyboardDisplay`, and
+becomes the default agent because pairing is initiated by Quickshell's separate
+D-Bus client.
+
+The helper subscribes to BlueZ owner changes before registration and rechecks
+the unique owner before reporting readiness. Display callbacks use delayed
+replies until a panel acknowledges visibility; missing UI, bounded timeouts,
+IPC failure, and shell or BlueZ teardown all terminate outstanding work rather
+than accepting it. Automatic trust/connect is scoped to one user pairing
+transaction and one helper-session generation.
+
+The mitigation contains no adapter or device model and does not parse
+`bluetoothctl`. Retest after a Quickshell Bluetooth API upgrade. It can be
+removed when the installed native module provides equivalent complete pairing
+callbacks and explicit user-response methods without losing the current
+fail-closed lifecycle.
+
+Manual testing confirmed panel-owned discovery start/stop, Android-phone
+discovery, and successful outgoing pairing through the shell. Persistent device
+profiles, Forget/re-pair, incoming requests, the complete PIN/passkey and
+service-authorization matrix, multi-monitor routing, and reload during active
+pairing remain pending real-device validation.
+
 ## Current screensaver validation
 
 **Status:** validated with `vanhyprarch-zig-player` v0.1.1

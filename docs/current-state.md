@@ -113,6 +113,9 @@ The current Quickshell UI includes:
 - native PipeWire output/input volume, mute, and device selection;
 - native Quickshell/NetworkManager network status, Wi-Fi scanning, connection,
   password, known-network, and forget flows;
+- native Quickshell/BlueZ Bluetooth power, discovery, device, pairing,
+  connection, trust, and forget flows, with complete PIN, passkey,
+  confirmation, and authorization prompts supplied by a narrow pairing agent;
 - DDC/CI brightness control and fixed monitor-scale presets;
 - a compact Power & Idle panel backed by the project controller, with Caffeine,
   timeout presets, screensaver-effect selection, and one automatic-lock
@@ -124,7 +127,28 @@ The current Quickshell UI includes:
   bindings.
 
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
-Hibernate is deliberately absent. No Bluetooth panel is implemented.
+Hibernate is deliberately absent.
+
+The Bluetooth pairing agent is one global Quickshell-supervised Python child.
+It implements only BlueZ `org.bluez.Agent1`, becomes the default
+`KeyboardDisplay` agent, and uses versioned newline-delimited JSON over its
+private stdin/stdout pipes. The per-screen Bluetooth panels remain inside the
+validated screen `Variants`; incoming prompts are routed to the focused or
+last-active appropriate screen. Displayed PIN/passkey callbacks receive their
+D-Bus reply only after a panel confirms that the challenge is visible. Pairing
+intent is limited to one agent-session-bound transaction, and the agent fails
+closed if its authenticated BlueZ owner, UI, IPC, or process owner disappears.
+No `bluetoothctl` polling, listing, or interactive-prompt parsing is used.
+Static QML validation, synthetic agent/controller regression checks, and an
+isolated register/default/unregister lifecycle check passed without changing
+adapter power or starting discovery. Manual validation confirmed the dock
+placement, panel-owned discovery start/stop, discovery of an Android phone, and
+successful outgoing pairing through the Vanilla HyprArch UI. After the test,
+discovery was inactive and exactly one Quickshell-supervised helper remained.
+Persistent-profile connect/disconnect, Forget and re-pair, incoming requests
+with the panel closed, the full PIN/passkey and service-authorization matrix,
+multi-monitor prompt routing, and shell reload during active pairing still need
+real-device validation.
 
 ## Power and idle — IMPLEMENTED, SCREENSAVER CHAIN VALIDATED
 
@@ -231,11 +255,9 @@ workaround. Physical two-monitor validation remains pending.
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Design future Bluetooth UX without presuming `blueman`; BlueZ remains the
-  current backend and no shell Bluetooth panel exists.
 - Develop the light/dark wallpaper selection system.
-- Consider the reserved main-menu, power-menu, clipboard, and Bluetooth-panel
-  UX only as separate future work.
+- Consider the reserved main-menu, power-menu, and clipboard UX only as
+  separate future work.
 
 ### PROVISIONAL
 
@@ -246,5 +268,4 @@ workaround. Physical two-monitor validation remains pending.
 
 ### NOT IMPLEMENTED
 
-- Bluetooth panel
 - Shared bootstrap and optional archinstall integration

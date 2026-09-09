@@ -26,6 +26,9 @@ pipewire
 pipewire-alsa
 pipewire-audio
 pipewire-pulse
+python
+python-dbus
+python-gobject
 qt6-svg
 quickshell
 system-config-printer

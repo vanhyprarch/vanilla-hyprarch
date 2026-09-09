@@ -29,6 +29,10 @@ ShellRoot {
         id: idleController
     }
 
+    BluetoothAgentController {
+        id: bluetoothAgentController
+    }
+
     property int dockWidth: 56
     property int borderThickness: 10
     property int cornerRadius: 10
@@ -184,12 +188,26 @@ ShellRoot {
             }
         }
 
+        Bluetooth {
+            id: dockBluetooth
+            controller: bluetoothAgentController
+            theme: shellTheme
+            popupRadius: root.cornerRadius
+            screenName: screenScope.modelData.name
+
+            anchors {
+                bottom: dockNetwork.top
+                bottomMargin: dockClock.systemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
         SystemTray {
             id: dockSystemTray
             theme: shellTheme
 
             anchors {
-                bottom: dockNetwork.top
+                bottom: dockBluetooth.top
                 bottomMargin: dockSystemTray.clockGap
                 horizontalCenter: parent.horizontalCenter
             }
