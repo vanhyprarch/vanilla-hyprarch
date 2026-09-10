@@ -6,6 +6,7 @@ Item {
     id: root
 
     required property var controller
+    required property var powerController
     required property var theme
     required property int popupRadius
     required property string screenName
@@ -44,6 +45,7 @@ Item {
         id: bluetoothPanel
 
         controller: root.controller
+        powerController: root.powerController
         theme: root.theme
         popupAnchorItem: root
         popupRadius: root.popupRadius

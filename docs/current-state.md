@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-09.
+Snapshot date: 2026-09-10.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -139,6 +139,20 @@ D-Bus reply only after a panel confirms that the challenge is visible. Pairing
 intent is limited to one agent-session-bound transaction, and the agent fails
 closed if its authenticated BlueZ owner, UI, IPC, or process owner disappears.
 No `bluetoothctl` polling, listing, or interactive-prompt parsing is used.
+An explicit panel power choice is stored as `on` or `off` in
+`${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/bluetooth-power.conf`. One
+global controller restores that choice through native Quickshell adapter
+objects when adapters appear or recover from a transient state; observed
+adapter state never rewrites the preference. The global choice applies to all
+adapters. A missing preference is treated in memory as the Vanilla HyprArch
+default of ON without creating a preference file.
+
+The tracked minimal BlueZ configuration sets `[Policy] AutoEnable=false`, so
+BlueZ does not power controllers before the saved user choice can be restored.
+It is deployed on the development machine; manual reboot tests confirmed both
+OFF-to-OFF and ON-to-ON restoration with discovery inactive. The future
+bootstrap must install this configuration before the first session.
+
 Static QML validation, synthetic agent/controller regression checks, and an
 isolated register/default/unregister lifecycle check passed without changing
 adapter power or starting discovery. Manual validation confirmed the dock

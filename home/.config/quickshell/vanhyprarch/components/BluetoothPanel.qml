@@ -8,6 +8,7 @@ PopupWindow {
     id: root
 
     required property var controller
+    required property var powerController
     required property var theme
     required property Item popupAnchorItem
     required property int popupRadius
@@ -203,11 +204,12 @@ PopupWindow {
     }
 
     function toggleAdapter(): void {
-        if (!root.adapterAvailable || root.adapterBlocked || root.adapterChanging)
+        if (!root.adapterAvailable || root.adapterBlocked || root.adapterChanging
+                || !root.powerController.ready || root.powerController.busy)
             return
         if (root.adapterEnabled)
             root.releaseDiscovery()
-        root.adapter.enabled = !root.adapterEnabled
+        root.powerController.requestEnabled(!root.adapterEnabled)
     }
 
     function acquireDiscovery(): void {
@@ -600,6 +602,7 @@ PopupWindow {
 
                     readonly property bool actionable: root.adapterAvailable
                         && !root.adapterBlocked && !root.adapterChanging
+                        && root.powerController.ready && !root.powerController.busy
 
                     width: root.adapterAvailable && !root.adapterBlocked ? 72 : 104
                     height: 24
@@ -634,6 +637,19 @@ PopupWindow {
                         onClicked: root.toggleAdapter()
                     }
                 }
+            }
+
+            Text {
+                visible: root.powerController.errorMessage !== ""
+                width: parent.width
+                height: visible ? 18 : 0
+                text: root.powerController.errorMessage
+                textFormat: Text.PlainText
+                color: root.textColor
+                opacity: 0.75
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                wrapMode: Text.NoWrap
             }
 
             Text {

@@ -131,6 +131,14 @@ Quickshell 0.3.1. It is supervised by the main shell and is not a permanent
 service. `bluetoothctl` polling and prompt parsing are not used. `blueman` and
 other complete Bluetooth GUIs remain excluded.
 
+The tracked `system/etc/bluetooth/main.conf` sets only
+`[Policy] AutoEnable=false`; other BlueZ behavior uses upstream defaults. The
+shell stores the last explicit global power choice in
+`${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/bluetooth-power.conf` and
+restores it through native adapter objects. If no preference file exists, the
+shell uses ON as its in-memory first-run default without writing the file or
+inferring a choice from transient adapter state.
+
 ## Desktop portals and authorization
 
 The Wayland portal stack is:

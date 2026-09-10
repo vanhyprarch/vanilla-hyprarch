@@ -50,6 +50,9 @@ The shared bootstrap will eventually:
 - invoke the pinned external-player installer so
   `vanhyprarch-zig-player` is available in that same PATH;
 - establish required symlinks and enable or disable documented services;
+- deploy the minimal `system/etc/bluetooth/main.conf` before starting or
+  enabling `bluetooth.service`, preserving exact rollback material if an
+  existing administrator configuration would be replaced;
 - preserve the documented startup owner for each session process;
 - create safe initial state, including Power & Idle at all `Never`, automatic
   lock at `None`, `effect=colormix`, and Caffeine off;
@@ -60,6 +63,12 @@ For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and
 validation must be recoverable from the canonical repository. Development-
 machine behavior alone is not complete integration.
+
+The Bluetooth bootstrap must not seed a power preference. With BlueZ
+`AutoEnable=false`, the shell treats a missing preference as an in-memory
+first-run default of ON. Only an explicit On or Off selection creates the
+versioned XDG configuration file; subsequent sessions restore that saved
+global choice across all adapters.
 
 ## External player installation
 

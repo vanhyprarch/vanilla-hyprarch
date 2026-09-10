@@ -33,6 +33,10 @@ ShellRoot {
         id: bluetoothAgentController
     }
 
+    BluetoothPowerController {
+        id: bluetoothPowerController
+    }
+
     property int dockWidth: 56
     property int borderThickness: 10
     property int cornerRadius: 10
@@ -191,6 +195,7 @@ ShellRoot {
         Bluetooth {
             id: dockBluetooth
             controller: bluetoothAgentController
+            powerController: bluetoothPowerController
             theme: shellTheme
             popupRadius: root.cornerRadius
             screenName: screenScope.modelData.name

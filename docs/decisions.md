@@ -375,3 +375,23 @@ callbacks are acknowledged to BlueZ only after the target panel reports them
 visible, and automatic trust/connect is scoped to one user transaction in the
 current agent session. Retest and remove the helper if a future Quickshell
 release exposes equivalent complete pairing-agent functionality.
+
+## ADR-024: Persist one explicit Bluetooth power preference
+
+**Status:** Accepted
+**Date:** 2026-09-10
+**Implementation:** User preference, restore controller, and system
+configuration implemented; OFF-to-OFF and ON-to-ON reboot restoration validated
+
+The Bluetooth panel is the only writer of a versioned `on` or `off` preference
+under the user's XDG configuration directory. One global Quickshell controller
+applies it to every native Bluetooth adapter, including adapters that appear
+after shell startup or return after BlueZ restart or rfkill blocking. Adapter
+events never become preferences. An absent preference restores the first-run
+default of ON without writing a preference file.
+
+BlueZ `AutoEnable` is disabled in the project-owned minimal `main.conf` so an
+OFF preference does not incur an automatic ON followed by a session-level OFF.
+An ON preference is restored when the shell and adapter are available. This
+keeps BlueZ and Quickshell upstream, does not poll, and treats multiple
+adapters as one user-facing Bluetooth radio policy.

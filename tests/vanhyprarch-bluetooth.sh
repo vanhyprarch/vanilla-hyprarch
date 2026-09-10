@@ -5,6 +5,7 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 helper=$repository_dir/home/.config/quickshell/vanhyprarch/helpers/vanhyprarch_bluetooth_agent.py
+power_test=$script_dir/vanhyprarch-bluetooth-power.sh
 template=$script_dir/bluetooth-controller.qml
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-bluetooth-test.XXXXXX")
 
@@ -28,6 +29,7 @@ command -v qs >/dev/null 2>&1 || fail 'Quickshell is unavailable'
 
 PYTHONPYCACHEPREFIX=$test_dir/pycache python -m py_compile "$helper"
 python "$helper" --check
+"$power_test"
 
 components_uri=file:$repository_dir/home/.config/quickshell/vanhyprarch/components
 sed "s|@COMPONENTS_URI@|$components_uri|" "$template" > "$test_dir/shell.qml"

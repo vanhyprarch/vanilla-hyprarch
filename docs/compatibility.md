@@ -55,6 +55,26 @@ profiles, Forget/re-pair, incoming requests, the complete PIN/passkey and
 service-authorization matrix, multi-monitor routing, and reload during active
 pairing remain pending real-device validation.
 
+## BlueZ controller power persistence
+
+**Affected component:** BlueZ 5.87
+
+BlueZ `Adapter1.Powered` is runtime-only. Its packaged `main.conf` documents
+`[Policy] AutoEnable=true` as the default, which enables controllers when they
+are discovered at boot or later. Quickshell 0.3.1 writes that runtime property
+correctly but does not turn it into a durable user choice; rfkill persistence
+is a separate mechanism.
+
+Vanilla HyprArch supplies a minimal BlueZ `main.conf` with `AutoEnable=false`
+and restores Bluetooth through native Quickshell adapters. A missing user
+preference means the in-memory first-run default ON; only explicit panel actions
+write the versioned preference. BlueZ 5.87 reads one `main.conf`, not a
+configuration drop-in directory, so the future bootstrap must deploy the
+tracked complete minimal file and preserve an existing administrator file for
+rollback. On the development machine, manual reboot tests confirmed saved OFF
+restores OFF and saved ON restores ON, with discovery inactive in both cases.
+Retest the file-loading and `AutoEnable` behavior after a BlueZ upgrade.
+
 ## Current screensaver validation
 
 **Status:** validated with `vanhyprarch-zig-player` v0.1.1
