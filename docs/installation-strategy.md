@@ -4,6 +4,11 @@ This document is the canonical plan for making Vanilla HyprArch reproducible.
 The pinned external-player installer is implemented; no shared project
 bootstrap or archinstall preset exists yet.
 
+The current repository is therefore a development and testing source tree, not
+a copy-and-run installation payload. In particular, its tracked Hyprland
+display/input profile and complete BlueZ `main.conf` replacement must be
+reviewed rather than copied blindly onto another system.
+
 ## One bootstrap, two entry points
 
 Vanilla HyprArch will have one reusable bootstrap implementation with two

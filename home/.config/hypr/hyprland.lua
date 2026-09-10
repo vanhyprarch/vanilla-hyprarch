@@ -23,6 +23,9 @@
 ------------------
 
 -- See https://wiki.hypr.land/Configuring/Basics/Monitors/
+-- Alpha note: this is the current development-machine profile, not a portable
+-- project default. Review the connector, mode, scale, bit depth, and color
+-- management before deploying it on another system.
 local dp1Scale = 1.25
 
 hl.monitor({
@@ -44,7 +47,7 @@ hl.monitor({
 -- Autostart necessary processes (like notifications daemons, status bars, etc.)
 -- Or execute your favorite apps at launch like this:
 --
--- hl.on("hyprland.start", function () 
+-- hl.on("hyprland.start", function ()
 --   hl.exec_cmd(terminal)
 --   hl.exec_cmd("nm-applet")
 --   hl.exec_cmd("waybar & hyprpaper & firefox")
@@ -230,6 +233,7 @@ hl.config({
 
 hl.config({
     input = {
+        -- Development-machine locale choice; review before deployment.
         kb_layout  = "it",
         kb_variant = "",
         kb_model   = "",
@@ -253,14 +257,6 @@ hl.gesture({
     direction = "horizontal",
     action = "workspace"
 })
-
--- Example per-device config
--- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Devices/ for more
-hl.device({
-    name        = "epic-mouse-v1",
-    sensitivity = -0.5,
-})
-
 
 ---------------------
 ---- KEYBINDINGS ----

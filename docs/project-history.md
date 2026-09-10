@@ -12,6 +12,8 @@ The development system began as a minimal Arch Linux installation. Commit
 The initial shell quickly evolved into a configurable vertical dock
 (`e9ab956`) and a rounded desktop frame (`a087506`). Subsequent commits refined
 the shell palette, dock/frame geometry, layered inner shadow, and vector logo.
+References to Caelestia in that history describe visual inspiration only; no
+Caelestia code or assets were copied.
 
 ## 2026-09-06: Dock becomes a working desktop shell
 
@@ -47,6 +49,9 @@ Commit `259e65f` established the current described Hyprland binding structure.
 Commit `a4dcd2f` added named Quickshell autostart and the shell IPC foundation.
 The searchable shortcut viewer followed in `39e384a`, reading described active
 bindings without executing them. `4993907` refined its final layout.
+
+The Omarchy comparison in the binding milestone describes keyboard/UX
+inspiration only; no Omarchy code or assets were copied.
 
 The original ten numbered workspace shortcuts were reduced to five in
 `62c8f3d`. Relative navigation and the scratchpad remained available.
@@ -111,6 +116,12 @@ changed to construct that PATH and `exec hypridle -v`, preserving direct
 Hyprland ownership. A second reboot then passed the normal Power & Idle UI apply
 and the complete 2-minute screensaver / 5-minute display-off / 10-minute suspend
 sequence with normal resume.
+
+Later controlled tests validated manual lock and password unlock, automatic
+lock at both the Screen saver and Display stages, dismissal before a later
+Display lock without a password, and cleanup without residual lock/player
+state or a double-lock. The current scope and remaining combinations are kept
+in `current-state.md`.
 
 ## Project maintenance contract
 

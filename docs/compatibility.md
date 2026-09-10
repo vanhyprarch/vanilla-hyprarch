@@ -9,19 +9,20 @@ and removable local mitigations. Package selection belongs in
 
 | Component | Validated version | Role / status |
 | --- | --- | --- |
-| Arch Linux | Rolling snapshot, 2026-09-08 | Standard minimal base, packaging, and systemd |
+| Arch Linux | Rolling snapshot, 2026-09-10 | Standard minimal base, packaging, and systemd |
 | Hyprland | 0.56.2 (`hyprland 0.56.2-2`) | Compositor, Lua configuration, input, and session ownership |
 | hypridle | 0.1.8 (`hypridle 0.1.8-2`) | Idle notifications and pre-sleep hooks |
-| hyprlock | 0.9.6 (`hyprlock 0.9.6-3`) | Manual lock works; integrated automatic-lock testing remains pending |
+| hyprlock | 0.9.6 (`hyprlock 0.9.6-3`) | Manual/password unlock and Screen saver/Display automatic-lock paths validated; portable theming remains pending |
 | Quickshell | 0.3.1 (`quickshell 0.3.1-1`) | Main desktop shell; no longer part of screensaver rendering |
 | Qt | 6.11.2 (`qt6-base 6.11.2-3`) | Main Quickshell runtime |
 | `vanhyprarch-zig-player` | v0.1.1 | Native layer-shell screensaver renderer; idle continuity and input routing validated, physical two-monitor testing pending |
-| Foot | 1.28.0 (`foot 1.28.0-1`) | Default terminal only |
+| Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal only |
 | hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Wallpaper process launched by Hyprland; portable tracked configuration remains open work |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
 
-This is a tested rolling-release snapshot, not a claim that other versions are
-incompatible.
+This is a tested rolling-release snapshot, not a dependency lock or a claim
+that other versions are incompatible. External release artifacts are pinned
+separately when required.
 
 ## Quickshell Bluetooth pairing-agent boundary
 
@@ -75,6 +76,9 @@ rollback. On the development machine, manual reboot tests confirmed saved OFF
 restores OFF and saved ON restores ON, with discovery inactive in both cases.
 Retest the file-loading and `AutoEnable` behavior after a BlueZ upgrade.
 
+Until that bootstrap exists, users must not copy the tracked file blindly over
+an existing customized BlueZ configuration.
+
 ## Current screensaver validation
 
 **Status:** validated with `vanhyprarch-zig-player` v0.1.1
@@ -115,6 +119,19 @@ Release v0.1.0 exposed first-input leakage. Release v0.1.1 fixed it using
 native layer-shell input routing. Input absorption belongs to the player;
 Vanilla HyprArch carries no keyboard, pointer, injection, or compositor
 workaround.
+
+### Integrated power and lock lifecycle
+
+Controlled single-output testing validated real display-off, suspend, resume,
+automatic lock at the Screen saver stage, automatic lock at the Display stage,
+and dismissal of the saver before its later Display lock without a password.
+Manual Power Menu lock and `hyprlock` password unlock also passed. Cleanup left
+no residual `hyprlock`, player process, or layer; cursor state was restored and
+no double-lock was observed. Cold-start hypridle ownership and behavior were
+also revalidated.
+
+These results do not claim physical two-monitor acceptance or every
+lock-at-suspend/Caffeine combination.
 
 Retest after a Hyprland, hypridle, Wayland, or player update. Use harmless
 timestamp actions first; do not trigger DPMS, locking, suspend, or fullscreen

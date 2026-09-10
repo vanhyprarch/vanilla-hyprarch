@@ -2,7 +2,7 @@
 
 This document defines the reusable Vanilla HyprArch base system. It describes
 project requirements, not a complete snapshot of every package installed on the
-development machine. Package facts were verified locally on 2026-09-08.
+development machine. Package facts were verified locally on 2026-09-10.
 
 The starting point is a working minimal Arch Linux installation with systemd,
 network access, a suitable kernel, firmware, and GPU drivers. Kernel, firmware,
@@ -28,7 +28,7 @@ dependency. Its inclusion does not authorize the installer or future agents to
 select other AUR packages freely.
 
 All packages in the current official manifest were verified as installed and
-available from Arch's official repositories by 2026-09-09.
+available from Arch's official repositories by 2026-09-10.
 
 `wayland` is explicit because the external player directly links
 `libwayland-client`. `curl` is explicit because the pinned installer invokes
@@ -40,9 +40,9 @@ or baseline package.
 
 One future bootstrap will consume this baseline, the package manifests, and
 tracked configuration. It must support both an archinstall-time entry point and
-independent execution after a fresh minimal Arch installation. The installer
-does not exist yet. Its responsibilities, public-preset boundaries, and
-unresolved choices are maintained in the canonical
+independent execution after a fresh minimal Arch installation. The shared
+bootstrap does not exist yet. Its responsibilities, public-preset boundaries,
+and unresolved choices are maintained in the canonical
 [installation strategy](installation-strategy.md).
 
 ## Graphical and shell stack
@@ -60,10 +60,11 @@ unresolved choices are maintained in the canonical
 The project uses upstream Hyprland and Quickshell rather than a downstream
 desktop distribution layer.
 
-The bootstrap deploys the `vanhyprarch` named Quickshell configuration for the
-main shell. It installs `vanhyprarch-screensaver` from `bin/` and makes the
-separately released `vanhyprarch-zig-player` available in the same inherited
-PATH. Production screensaver presentation does not use Quickshell or Foot.
+The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
+configuration for the main shell. It will install `vanhyprarch-screensaver`
+from `bin/` and invoke the existing pinned player installer so the separately
+released `vanhyprarch-zig-player` is available in the same inherited PATH.
+Production screensaver presentation does not use Quickshell or Foot.
 
 ## Keyboard and session defaults
 
@@ -139,6 +140,12 @@ restores it through native adapter objects. If no preference file exists, the
 shell uses ON as its in-memory first-run default without writing the file or
 inferring a choice from transient adapter state.
 
+For the validated BlueZ 5.87 baseline this is a complete `main.conf`
+replacement, because BlueZ does not load a `main.conf.d` drop-in directory.
+Users must not copy it blindly over an existing customized administrator file.
+The future bootstrap must validate the target, preserve exact rollback
+material, and fail closed rather than overwrite unknown configuration.
+
 ## Desktop portals and authorization
 
 The Wayland portal stack is:
@@ -203,6 +210,11 @@ operations. `i2c-tools` is included with that support. Actual DDC availability,
 I2C permissions, connector names, monitor modes, scale, color depth, and GPU
 drivers are hardware-specific installation concerns.
 
+The tracked alpha `hyprland.lua` still carries the development machine's
+`DP-1` mode, scale, color, and keyboard choices, and the scale writer is tied to
+that connector. It is not a portable baseline file and must be reviewed before
+manual deployment. General overrides belong to the planned customization layer.
+
 ## Printing
 
 The verified printing baseline is:
@@ -223,4 +235,7 @@ discovery.
   inspection; Python's standard library is adequate for development checks.
 - `less` is not installed and is intentionally outside the desired workflow;
   use non-paginated commands such as `git --no-pager`.
-- Omarchy is a design reference, not a runtime or package dependency.
+- Omarchy is a keybinding/UX reference, not a runtime or package dependency;
+  no Omarchy code or assets are included.
+- Caelestia is a visual-design reference only; no Caelestia code or assets are
+  included.

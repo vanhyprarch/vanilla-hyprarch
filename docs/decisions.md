@@ -195,8 +195,8 @@ menu action without a new decision.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend and Quickshell UI implemented and visually
-reviewed; integrated idle-action testing pending
+**Implementation:** Backend and Quickshell UI implemented; real screensaver,
+display-off, suspend/resume, and tested lock-stage actions manually validated
 
 The Power & Idle control has three independently selectable stages:
 
@@ -216,8 +216,9 @@ screen-bound UI.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend and first Quickshell UI implemented; integrated lock
-behavior awaits manual validation
+**Implementation:** Backend and Quickshell UI implemented; manual lock and
+automatic locking at the Screen saver and Display stages manually validated.
+Remaining combinations are tracked in `current-state.md`
 
 One radio-style selection associates automatic session locking with the screen
 saver, display-off, or suspend stage. A stage set to `Never` cannot own locking.
@@ -291,8 +292,9 @@ validation criteria have been met.
 
 **Status:** Accepted
 **Date:** 2026-09-08
-**Implementation:** Backend and Quickshell control implemented and manually
-reviewed; integrated idle-action testing pending
+**Implementation:** Backend and Quickshell control implemented and reviewed;
+runtime suppression is regression-tested and remaining manual combinations are
+tracked in `current-state.md`
 
 Caffeine temporarily suppresses every automatic Power & Idle action without
 altering the user's stored timeouts or lock point. Its marker is session-scoped
@@ -307,8 +309,10 @@ inhibitor-aware.
 
 **Status:** Superseded by ADR-021
 **Date:** 2026-09-08
-**Historical implementation:** Controller lifecycle and absolute-timer regression
-validated; integrated lock, DPMS, and suspend testing pending
+**Historical implementation:** Controller lifecycle and absolute-timer
+regression validated; lock, DPMS, and suspend had not yet been tested before
+this renderer was superseded. Current native-chain status is in
+`current-state.md`
 
 The separate Quickshell layer-shell process replaced Foot and validated native
 layer-shell timing, but it duplicated rendering code and imposed
@@ -319,9 +323,9 @@ owns this responsibility.
 
 **Status:** Accepted
 **Date:** 2026-09-09
-**Implementation:** Pinned v0.1.1 production chain, input routing, and idle
-continuity validated; physical multi-output, lock, DPMS, and suspend acceptance
-pending
+**Implementation:** Pinned v0.1.1 production chain, input routing, idle
+continuity, real DPMS, suspend/resume, and tested automatic-lock paths
+validated; physical multi-output acceptance remains pending
 
 Vanilla HyprArch installs and controls the independent GPL-2.0-only
 `vanhyprarch-zig-player`; it does not copy, vendor, or recreate its Zig source.

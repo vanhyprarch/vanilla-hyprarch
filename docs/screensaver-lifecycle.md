@@ -88,8 +88,14 @@ scroll were absorbed while real input still caused hypridle to resume and stop
 the player. Input absorption remains the player's responsibility; Vanilla
 HyprArch adds no grab, injection, or input workaround.
 
-Real DPMS, automatic locking, and suspend actions were deliberately excluded
-from this validation and remain separate work.
+The timing and input-routing validation described above deliberately excluded
+DPMS, locking, and suspend. Subsequent controlled lifecycle tests validated
+real display-off, suspend/resume, manual lock and password unlock, automatic
+lock at the Screen saver and Display stages, dismissal before a later Display
+lock without a password, cursor restoration, and cleanup without residual
+lock, player, or layer state. No double-lock was observed. Remaining
+lock-at-suspend/Caffeine combinations are tracked separately in
+[current state](current-state.md).
 
 Physical two-monitor validation also remains pending upstream.
 

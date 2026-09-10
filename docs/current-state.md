@@ -46,6 +46,15 @@ The live Quickshell path is a symlink to:
 The two live Hyprland Lua files were byte-identical to their repository copies
 when this snapshot was prepared.
 
+The tracked `hyprland.lua` is the current development-machine profile, not a
+portable Vanilla HyprArch default. It contains the development system's
+`DP-1`, `3840x2160@60`, scale `1.25`, 10-bit/color-management, and Italian
+keyboard choices. The Monitor panel's persistent scale presets intentionally
+edit the single `dp1Scale` declaration and are currently enabled only for
+`DP-1`. Users must review these values rather than deploy the file unchanged;
+general monitor and input overrides belong to the planned update-safe
+customization layer.
+
 The following live configuration files exist but are not yet represented in
 the repository:
 
@@ -126,6 +135,10 @@ The current Quickshell UI includes:
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
 
+From bottom to top, the dock's lower status/control area is Power,
+Clock/calendar, Theme, Power & Idle, Display, Audio, Network, Bluetooth, and
+System tray.
+
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent.
 
@@ -147,24 +160,29 @@ adapter state never rewrites the preference. The global choice applies to all
 adapters. A missing preference is treated in memory as the Vanilla HyprArch
 default of ON without creating a preference file.
 
-The tracked minimal BlueZ configuration sets `[Policy] AutoEnable=false`, so
-BlueZ does not power controllers before the saved user choice can be restored.
-It is deployed on the development machine; manual reboot tests confirmed both
-OFF-to-OFF and ON-to-ON restoration with discovery inactive. The future
-bootstrap must install this configuration before the first session.
+The tracked minimal BlueZ configuration is a complete `main.conf` replacement
+that sets `[Policy] AutoEnable=false`; BlueZ 5.87 does not provide a
+`main.conf.d` drop-in mechanism. It is deployed on the development machine, but
+current users must not copy it blindly over an existing customized file. The
+future bootstrap must validate and preserve administrator configuration for
+rollback before installing the project file ahead of the first session.
 
-Static QML validation, synthetic agent/controller regression checks, and an
-isolated register/default/unregister lifecycle check passed without changing
-adapter power or starting discovery. Manual validation confirmed the dock
-placement, panel-owned discovery start/stop, discovery of an Android phone, and
-successful outgoing pairing through the Vanilla HyprArch UI. After the test,
-discovery was inactive and exactly one Quickshell-supervised helper remained.
-Persistent-profile connect/disconnect, Forget and re-pair, incoming requests
-with the panel closed, the full PIN/passkey and service-authorization matrix,
-multi-monitor prompt routing, and shell reload during active pairing still need
-real-device validation.
+Synthetic validation covers static QML, controller state, fail-closed agent
+callbacks, power-preference behavior, and an isolated
+register/default/unregister lifecycle without changing real adapter power or
+starting discovery. This is not counted as hardware validation.
 
-## Power and idle — IMPLEMENTED, SCREENSAVER CHAIN VALIDATED
+Real-hardware validation covers dock integration, panel-owned discovery and
+cleanup, discovery of an Android phone, successful outgoing pairing through
+the Vanilla HyprArch UI, and both saved OFF-to-OFF and ON-to-ON restoration
+across real reboots with discovery inactive. Persistent-profile
+Connect/Disconnect with suitable headphones, mouse, or keyboard; Forget and
+re-pair; incoming pairing while the panel is closed; the full PIN, passkey,
+display-passkey, and service-authorization matrix; multi-monitor incoming
+prompt routing; and shell reload during active pairing remain pending
+real-hardware validation.
+
+## Power and idle — IMPLEMENTED, POWER/LOCK LIFECYCLE VALIDATED
 
 `bin/vanhyprarch-idle` owns persistent preferences, validation, managed
 hypridle generation, runtime Caffeine state, and transactional daemon restart.
@@ -200,8 +218,21 @@ Display-off generation uses Hyprland's native Lua DPMS dispatcher. Suspend uses
 lock point while allowing Lock `None` and Caffeine to suppress automatic lock.
 The generated screensaver path has passed production integration testing.
 A real cold-boot idle sequence also passed with Screen saver at 2 minutes,
-display off at 5 minutes, suspend at 10 minutes, and normal resume. Automatic
-lock remains intentionally untested.
+display off at 5 minutes, suspend at 10 minutes, and normal resume.
+
+Controlled manual lifecycle tests additionally validated:
+
+- automatic lock at the Screen saver stage;
+- automatic lock at the Display stage;
+- dismissing the saver before its later Display lock stage without a password;
+- manual lock through the Power Menu and password unlock through `hyprlock`;
+- real display-off, suspend, and resume;
+- cleanup with no residual `hyprlock`, Zig Player process, or layer;
+- no observed double-lock and exact cursor restoration;
+- cold-start hypridle ownership and behavior.
+
+These results validate the tested single-output paths; they do not claim the
+remaining physical multi-monitor or every lock-at-suspend/Caffeine combination.
 
 Hyprland continues to own exactly one direct hypridle daemon. The backend
 validates that ownership and requires the packaged systemd user service to
@@ -221,9 +252,10 @@ Papirus `preferences-system-power` and `caffeine`.
 The QML loads in the live named configuration. The panel, its Caffeine state,
 timeout presentation, effect persistence, error-only feedback, and
 passive-refresh behavior have passed manual review. The complete screensaver
-chain is validated. Real display-off and suspend behavior also passed a
-cold-boot 2/5/10-minute test with normal resume; automatic lock still requires
-separate controlled validation.
+chain is validated. Real display-off, suspend/resume, manual lock, password
+unlock, and automatic locking at the Screen saver and Display stages have
+passed controlled manual testing. Physical multi-monitor acceptance and
+untested combinations remain separate work.
 
 ## Screensaver — NATIVE PLAYER PRODUCTION CHAIN VALIDATED
 
@@ -270,16 +302,22 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Consider the reserved main-menu, power-menu, and clipboard UX only as
-  separate future work.
+- Build the reserved Super+Space main menu and screenshot-to-clipboard
+  workflow as separate features.
+- Add local F9 push-to-talk dictation without introducing a hosted dependency.
+- Design an update-safe customization/override layer rather than asking users
+  to edit future managed defaults in place.
 
 ### PROVISIONAL
 
 - Validate the external player's physical multi-output and suspend/resume
   behavior.
-- Manually validate production lock, DPMS, suspend, and Caffeine lifecycle
-  combinations without turning test timings into defaults.
+- Validate remaining lock-at-suspend and Caffeine lifecycle combinations
+  without turning test timings into defaults.
 
 ### NOT IMPLEMENTED
 
 - Shared bootstrap and optional archinstall integration
+- Super+Space main menu
+- Screenshot-to-clipboard workflow
+- Local F9 push-to-talk dictation

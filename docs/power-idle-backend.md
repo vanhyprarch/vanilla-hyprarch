@@ -136,14 +136,17 @@ configuration cannot be applied.
 
 The dock order is:
 
-1. System Tray
-2. Network
-3. Audio
-4. Monitor
-5. Power & Idle
-6. Theme
-7. Clock
-8. Power
+1. Power
+2. Clock/calendar
+3. Theme
+4. Power & Idle
+5. Display
+6. Audio
+7. Network
+8. Bluetooth
+9. System tray
+
+This list follows the lower control area from bottom to top.
 
 The panel begins with **Caffeine / Keep computer awake**, followed by a compact
 screensaver-effect choice and the Screen saver, Turn off display, and Suspend
@@ -157,5 +160,10 @@ Installed Papirus provides exact icons named `preferences-system-power` and
 `caffeine`. Use the former normally and the latter while Caffeine is active.
 The panel and passive synchronization behavior have passed manual visual
 review, including effect persistence. The complete production screensaver
-chain is validated. Real DPMS, automatic-lock, and suspend actions remain
-intentionally untested.
+chain is validated. Controlled manual tests also passed for real DPMS,
+suspend/resume, manual lock and password unlock, automatic lock at the Screen
+saver and Display stages, dismissal before a later Display lock without a
+password, cursor restoration, and cleanup without a residual lock or player.
+No double-lock was observed. Physical multi-monitor acceptance and remaining
+lock-at-suspend/Caffeine combinations are not implied by those results; see
+[current state](current-state.md).
