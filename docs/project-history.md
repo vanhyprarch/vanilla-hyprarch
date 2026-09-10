@@ -6,11 +6,11 @@ refer to the `dock-prototype` branch.
 ## 2026-09-04: Minimal system and first shell
 
 The development system began as a minimal Arch Linux installation. Commit
-`8e4dd67` established the baseline vanilla Hyprland Lua configuration, and
-`1142429` added the first working Quickshell configuration.
+`b0938c1` established the baseline vanilla Hyprland Lua configuration, and
+`0f0b00b` added the first working Quickshell configuration.
 
 The initial shell quickly evolved into a configurable vertical dock
-(`4ae5946`) and a rounded desktop frame (`75dd7fb`). Subsequent commits refined
+(`e9ab956`) and a rounded desktop frame (`a087506`). Subsequent commits refined
 the shell palette, dock/frame geometry, layered inner shadow, and vector logo.
 
 ## 2026-09-06: Dock becomes a working desktop shell
@@ -43,13 +43,13 @@ authentication retry, known-network handling, and forget operations. An
 
 ## 2026-09-07: Bindings, IPC, and shortcut viewer
 
-Commit `64c586b` established the current described Hyprland binding structure.
-Commit `937ac2a` added named Quickshell autostart and the shell IPC foundation.
-The searchable shortcut viewer followed in `13ff6e6`, reading described active
-bindings without executing them. `739b03f` refined its final layout.
+Commit `259e65f` established the current described Hyprland binding structure.
+Commit `a4dcd2f` added named Quickshell autostart and the shell IPC foundation.
+The searchable shortcut viewer followed in `39e384a`, reading described active
+bindings without executing them. `4993907` refined its final layout.
 
 The original ten numbered workspace shortcuts were reduced to five in
-`37a922b`. Relative navigation and the scratchpad remained available.
+`62c8f3d`. Relative navigation and the scratchpad remained available.
 
 ## 2026-09-07: Suspend/resume lifecycle fix
 
@@ -57,16 +57,17 @@ An important failure appeared after suspend/resume: the Quickshell process and
 IPC remained alive, but the dock and frame disappeared when output objects were
 recreated. Restarting Quickshell was considered only as a workaround.
 
-Commit `b7ec6b0` fixed the structure instead. Permanent per-monitor surfaces now
+Commit `ba8b65f` fixed the structure instead. Permanent per-monitor surfaces now
 live under `Variants { model: Quickshell.screens }` and bind explicitly to each
 delegate screen. Suspend/resume testing passed without a restart hook. This
 global-controller/per-screen-UI split is now a preserved architectural rule.
 
 ## 2026-09-08: Vanilla HyprArch identity
 
-Commit `3f5803f` migrated the personal Quickshell configuration, IPC targets,
-theme state namespace, Hyprland autostart, and shortcut binding to the accepted
-`vanhyprarch` namespace. The repository directory was subsequently renamed to
+Commit `44aec1f` migrated the prototype Quickshell configuration from the
+historical `vanhyprarch-shell` namespace, along with its IPC targets, theme
+state, Hyprland autostart, and shortcut binding, to the accepted `vanhyprarch`
+namespace. The repository directory was subsequently renamed to
 `~/Projects/vanilla-hyprarch`, and the live Quickshell symlink was updated and
 validated against the new root.
 

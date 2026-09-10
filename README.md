@@ -19,5 +19,8 @@ release `v0.1.1` and offers ColorMix, Matrix, Doom, and Game of Life.
 Architecture, installation policy, current implementation state, and known
 compatibility constraints are documented under [`docs/`](docs/).
 
-Vanilla HyprArch is licensed under GPL-2.0-only. The external player is an
-independent GPL-2.0-only project with its own license and third-party notices.
+Project-authored Vanilla HyprArch material in this repository, including
+historical project-authored revisions, is licensed under GPL-2.0-only. Files or
+material explicitly carrying separate third-party licensing or attribution
+remain under those terms. The external player is an independent GPL-2.0-only
+project with its own license and third-party notices.
