@@ -3,24 +3,24 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var theme
     property date currentDate
     property int monthOffset: 0
-    property Item popupAnchorItem
-    property int panelWidth: 252
-    property int panelPadding: 12
-    property int cellSize: 30
-    required property int popupRadius
-    property color backgroundColor: root.theme.background
-    property color textColor: root.theme.text
-    property color accentColor: root.theme.accent
-    property color todayColor: root.theme.surface
-
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
+    readonly property int calendarColumnCount: 7
+    readonly property int calendarRowCount: 6
+    readonly property int calendarCellCount:
+        calendarColumnCount * calendarRowCount
+    readonly property int calendarCellSize: root.metrics.scaled(30)
+    readonly property int weekdayCellHeight: root.metrics.scaled(22)
+    readonly property int calendarColumnSpacing: root.metrics.scaled(3)
+    readonly property int navigationButtonSize: root.metrics.textFieldHeight
+    readonly property int calendarPanelWidth:
+        root.metrics.panelPadding * 2
+        + root.calendarCellSize * root.calendarColumnCount
+        + root.calendarColumnSpacing * (root.calendarColumnCount - 1)
 
     readonly property var monthNames: ["January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"]
@@ -31,115 +31,96 @@ PopupWindow {
     readonly property int daysInMonth: new Date(displayedYear, displayedMonth + 1, 0).getDate()
     readonly property date firstDay: new Date(displayedYear, displayedMonth, 1)
     readonly property int firstDayOffset: (firstDay.getDay() + 6) % 7
-    readonly property real columnSpacing: Math.max(0, (panelWidth - panelPadding * 2 - cellSize * 7) / 6)
-
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0, (root.popupAnchorItem.parent.width - root.popupAnchorItem.width) / 2) + root.popupHorizontalGap
-        margins.bottom: root.popupVerticalOffset
-    }
-
-    implicitWidth: panelWidth
-    implicitHeight: content.implicitHeight + panelPadding * 2
-    grabFocus: true
-    color: "transparent"
-    visible: false
+    panelWidth: root.calendarPanelWidth
+    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     onVisibleChanged: {
         if (visible)
             root.monthOffset = 0
     }
 
-    Rectangle {
+    component NavigationButton: Rectangle {
+        id: navigationButton
+
+        required property string label
+        signal activated()
+
+        width: root.navigationButtonSize
+        height: root.navigationButtonSize
+        radius: root.metrics.rowRadius
+        color: navigationMouse.pressed
+            ? root.theme.pressedFill
+            : navigationMouse.containsMouse
+                ? root.theme.hoverFill : root.theme.normalFill
+
+        Text {
+            anchors.fill: parent
+            text: navigationButton.label
+            color: root.theme.text
+            font.pixelSize: root.metrics.heroIconSize
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.NoWrap
+        }
+
+        MouseArea {
+            id: navigationMouse
+
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: navigationButton.activated()
+        }
+    }
+
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomLeftRadius: 0
-        bottomRightRadius: 0
+        metrics: root.metrics
+        theme: root.theme
 
         Column {
             id: content
 
-            x: root.panelPadding
-            y: root.panelPadding
-            width: root.panelWidth - root.panelPadding * 2
-            spacing: 6
+            width: parent.width
+            spacing: root.metrics.contentGap
 
             Item {
                 width: parent.width
-                height: 24
+                height: root.navigationButtonSize
 
-                Item {
-                    id: previousMonth
-
+                NavigationButton {
                     anchors.left: parent.left
-                    width: 30
-                    height: parent.height
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "‹"
-                        color: previousMouse.containsMouse ? root.accentColor : root.textColor
-                        font.pixelSize: 24
-                    }
-
-                    MouseArea {
-                        id: previousMouse
-
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.monthOffset -= 1
-                    }
+                    label: "‹"
+                    onActivated: root.monthOffset -= 1
                 }
 
                 Text {
                     anchors {
-                        left: previousMonth.right
-                        right: nextMonth.left
+                        left: parent.left
+                        right: parent.right
+                        leftMargin: root.navigationButtonSize
+                        rightMargin: root.navigationButtonSize
                         top: parent.top
                         bottom: parent.bottom
                     }
                     text: root.monthNames[root.displayedMonth] + " " + root.displayedYear
-                    color: root.textColor
-                    font.pixelSize: 14
-                    font.weight: Font.Medium
+                    color: root.theme.text
+                    font.pixelSize: root.metrics.panelTitleFontSize
+                    font.weight: root.metrics.panelTitleFontWeight
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     wrapMode: Text.NoWrap
                 }
 
-                Item {
-                    id: nextMonth
-
+                NavigationButton {
                     anchors.right: parent.right
-                    width: 30
-                    height: parent.height
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "›"
-                        color: nextMouse.containsMouse ? root.accentColor : root.textColor
-                        font.pixelSize: 24
-                    }
-
-                    MouseArea {
-                        id: nextMouse
-
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.monthOffset += 1
-                    }
+                    label: "›"
+                    onActivated: root.monthOffset += 1
                 }
             }
 
             Row {
-                spacing: root.columnSpacing
+                spacing: root.calendarColumnSpacing
 
                 Repeater {
                     model: root.weekdayNames
@@ -147,11 +128,12 @@ PopupWindow {
                     Text {
                         required property string modelData
 
-                        width: root.cellSize
-                        height: 22
+                        width: root.calendarCellSize
+                        height: root.weekdayCellHeight
                         text: modelData
-                        color: root.accentColor
-                        font.pixelSize: 11
+                        color: root.theme.textMuted
+                        font.pixelSize: root.metrics.sectionHeadingFontSize
+                        font.weight: root.metrics.sectionHeadingFontWeight
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.NoWrap
@@ -160,12 +142,12 @@ PopupWindow {
             }
 
             Grid {
-                columns: 7
-                rows: 6
-                columnSpacing: root.columnSpacing
+                columns: root.calendarColumnCount
+                rows: root.calendarRowCount
+                columnSpacing: root.calendarColumnSpacing
 
                 Repeater {
-                    model: 42
+                    model: root.calendarCellCount
 
                     Rectangle {
                         id: dayCell
@@ -178,17 +160,20 @@ PopupWindow {
                             && root.displayedMonth === root.currentDate.getMonth()
                             && dayNumber === root.currentDate.getDate()
 
-                        width: root.cellSize
-                        height: root.cellSize
-                        radius: 8
-                        color: isToday ? root.todayColor : "transparent"
+                        width: root.calendarCellSize
+                        height: root.calendarCellSize
+                        radius: root.metrics.rowRadius
+                        color: isToday
+                            ? root.theme.activeFill : "transparent"
 
                         Text {
                             anchors.fill: parent
                             text: dayCell.inMonth ? dayCell.dayNumber : ""
-                            color: dayCell.isToday ? root.accentColor : root.textColor
-                            font.pixelSize: 12
-                            font.weight: dayCell.isToday ? Font.Medium : Font.Normal
+                            color: root.theme.text
+                            font.pixelSize: root.metrics.bodyFontSize
+                            font.weight: dayCell.isToday
+                                ? root.metrics.informationLabelFontWeight
+                                : root.metrics.informationValueFontWeight
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             wrapMode: Text.NoWrap

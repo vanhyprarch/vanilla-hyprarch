@@ -6,12 +6,10 @@ Item {
 
     required property var theme
     required property var metrics
-    property Item popupAnchorItem
     property color textColor: root.theme.text
     readonly property int contentWidth: root.metrics.dockContentWidth
     property int iconSize: 28
     readonly property int itemSpacing: root.metrics.dockItemGap
-    required property int popupRadius
     property int weekdayFontSize: 11
     property int dateFontSize: 13
     property int timeFontSize: 13
@@ -28,12 +26,24 @@ Item {
         precision: SystemClock.Minutes
     }
 
+    Item {
+        id: calendarPopupAnchor
+
+        parent: root.parent
+        anchors {
+            top: root.top
+            horizontalCenter: root.horizontalCenter
+        }
+        width: root.metrics.dockSystemControlTarget
+        height: root.iconSize
+    }
+
     MonthCalendar {
         id: monthCalendar
         theme: root.theme
+        metrics: root.metrics
         currentDate: clock.date
-        popupAnchorItem: root.popupAnchorItem
-        popupRadius: root.popupRadius
+        popupAnchorItem: calendarPopupAnchor
     }
 
     Column {

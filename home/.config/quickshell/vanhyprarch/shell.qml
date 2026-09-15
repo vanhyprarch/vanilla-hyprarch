@@ -130,8 +130,6 @@ ShellRoot {
             id: dockClock
             theme: shellTheme
             metrics: visualMetrics
-            popupAnchorItem: powerMenu
-            popupRadius: root.cornerRadius
 
             anchors {
                 bottom: powerMenu.top
