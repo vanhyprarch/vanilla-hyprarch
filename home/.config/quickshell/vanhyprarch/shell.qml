@@ -157,7 +157,6 @@ ShellRoot {
             controller: idleController
             theme: shellTheme
             metrics: visualMetrics
-            popupRadius: root.cornerRadius
 
             anchors {
                 bottom: dockThemeToggle.top

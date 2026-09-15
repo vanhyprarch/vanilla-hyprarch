@@ -3,22 +3,11 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var controller
     required property var theme
-    required property Item popupAnchorItem
-    required property int popupRadius
-    property int panelWidth: 360
-    property int panelPadding: 12
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
-    property color backgroundColor: root.theme.background
-    property color textColor: root.theme.text
-    property color secondaryColor: root.theme.surface
-    property color hoverColor: root.theme.hover
-    property color accentColor: root.theme.accent
 
     readonly property var screensaverPresets: [
         { value: "never", label: "Never" },
@@ -53,71 +42,58 @@ PopupWindow {
         { value: "doom", label: "Doom" },
         { value: "gameoflife", label: "Game of Life" }
     ]
+    readonly property int minimumLockChoiceWidth: root.metrics.scaled(48)
 
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0,
-            ((root.popupAnchorItem.parent ? root.popupAnchorItem.parent.width
-                : root.popupAnchorItem.width) - root.popupAnchorItem.width) / 2)
-            + root.popupHorizontalGap
-        margins.bottom: root.popupVerticalOffset
-    }
-
-    implicitWidth: panelWidth
-    implicitHeight: content.implicitHeight + panelPadding * 2
-    color: "transparent"
-    visible: false
-    grabFocus: true
+    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     function lockChoiceEnabled(value: string): bool {
         return root.controller.canSetLock(value)
     }
 
-    component PresetButton: Rectangle {
-        id: presetButton
+    component ChoiceButton: Rectangle {
+        id: choiceButton
 
-        required property string stage
-        required property string value
         required property string label
-        required property real buttonWidth
-        readonly property bool selected:
-            root.controller.stageValue(stage) === value
-        readonly property bool available:
-            root.controller.canSetStage(stage, value)
+        required property bool selected
+        required property bool available
+        property real controlWidth: Math.max(root.minimumLockChoiceWidth,
+            choiceLabel.implicitWidth + root.metrics.rowSidePadding * 2)
+        readonly property bool actionable: available && !selected
+        signal activated()
 
-        width: buttonWidth
-        height: 26
-        radius: root.popupRadius / 2
-        color: selected ? root.accentColor
-            : presetMouse.containsMouse && available
-                ? root.hoverColor : root.secondaryColor
-        opacity: available || selected ? 1.0 : 0.35
+        width: controlWidth
+        height: root.metrics.compactControlHeight
+        radius: root.metrics.rowRadius
+        color: choiceMouse.pressed && actionable
+            ? root.theme.pressedFill
+            : selected ? root.theme.activeFill
+                : choiceMouse.containsMouse && actionable
+                    ? root.theme.hoverFill : root.theme.normalFill
+        opacity: available || selected
+            ? 1.0 : root.metrics.disabledInteractiveOpacity
 
         Text {
-            id: presetLabel
+            id: choiceLabel
 
             anchors.fill: parent
-            text: presetButton.label
-            color: presetButton.selected ? root.backgroundColor : root.textColor
-            font.pixelSize: 12
-            font.weight: presetButton.selected ? Font.Medium : Font.Normal
+            text: choiceButton.label
+            color: root.theme.text
+            font.pixelSize: root.metrics.bodyFontSize
+            font.weight: choiceButton.selected
+                ? root.metrics.overlayFontWeight : Font.Normal
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.NoWrap
         }
 
         MouseArea {
-            id: presetMouse
+            id: choiceMouse
 
             anchors.fill: parent
-            enabled: presetButton.available
-                && !presetButton.selected
+            enabled: choiceButton.actionable
             hoverEnabled: true
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: root.controller.requestStage(
-                presetButton.stage, presetButton.value)
+            onClicked: choiceButton.activated()
         }
     }
 
@@ -129,13 +105,15 @@ PopupWindow {
         required property var presets
 
         width: content.width
-        spacing: 5
-        opacity: !root.controller.ready ? 0.45
-            : root.controller.visualCaffeine ? 0.72 : 1.0
+        spacing: root.metrics.contentGap
+        opacity: !root.controller.ready
+            ? root.metrics.disabledInteractiveOpacity
+            : root.controller.visualCaffeine
+                ? root.metrics.informationalMutedOpacity : 1.0
 
         Item {
             width: parent.width
-            height: 18
+            height: root.metrics.compactControlHeight
 
             Text {
                 anchors {
@@ -143,12 +121,11 @@ PopupWindow {
                     verticalCenter: parent.verticalCenter
                 }
                 text: stageSection.title
-                color: root.textColor
-                font.pixelSize: 13
-                font.weight: Font.Medium
+                color: root.theme.text
+                font.pixelSize: root.metrics.informationLabelFontSize
+                font.weight: root.metrics.informationLabelFontWeight
                 wrapMode: Text.NoWrap
             }
-
         }
 
         Row {
@@ -156,202 +133,110 @@ PopupWindow {
 
             width: parent.width
             height: childrenRect.height
-            spacing: 4
+            spacing: root.metrics.rowSpacing
 
             Repeater {
                 model: stageSection.presets
 
-                PresetButton {
+                ChoiceButton {
                     required property var modelData
 
-                    stage: stageSection.stage
-                    value: String(modelData.value)
                     label: String(modelData.label)
-                    buttonWidth: (presetRow.width - presetRow.spacing * 4) / 5
+                    selected: root.controller.stageValue(stageSection.stage)
+                        === String(modelData.value)
+                    available: root.controller.canSetStage(stageSection.stage,
+                        String(modelData.value))
+                    controlWidth: (presetRow.width
+                        - presetRow.spacing * (stageSection.presets.length - 1))
+                        / stageSection.presets.length
+                    onActivated: root.controller.requestStage(stageSection.stage,
+                        String(modelData.value))
                 }
             }
         }
     }
 
-    component EffectButton: Rectangle {
-        id: effectButton
-
-        required property string value
-        required property string label
-        required property real buttonWidth
-        readonly property bool selected: root.controller.effect === value
-        readonly property bool available:
-            root.controller.ready && !root.controller.busy
-
-        width: buttonWidth
-        height: 26
-        radius: root.popupRadius / 2
-        color: selected ? root.accentColor
-            : effectMouse.containsMouse && available
-                ? root.hoverColor : root.secondaryColor
-        opacity: available || selected ? 1.0 : 0.35
-
-        Text {
-            anchors.fill: parent
-            text: effectButton.label
-            color: effectButton.selected ? root.backgroundColor : root.textColor
-            font.pixelSize: 11
-            font.weight: effectButton.selected ? Font.Medium : Font.Normal
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.NoWrap
-        }
-
-        MouseArea {
-            id: effectMouse
-
-            anchors.fill: parent
-            enabled: effectButton.available && !effectButton.selected
-            hoverEnabled: true
-            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: root.controller.requestEffect(effectButton.value)
-        }
-    }
-
-    component LockButton: Rectangle {
-        id: lockButton
-
-        required property string value
-        required property string label
-        readonly property bool selected:
-            root.controller.lockPoint === value
-        readonly property bool available: root.lockChoiceEnabled(value)
-
-        width: Math.max(48, lockLabel.implicitWidth + 16)
-        height: 26
-        radius: root.popupRadius / 2
-        color: selected ? root.accentColor
-            : lockMouse.containsMouse && available
-                ? root.hoverColor : root.secondaryColor
-        opacity: available || selected ? 1.0 : 0.35
-
-        Text {
-            id: lockLabel
-
-            anchors.fill: parent
-            text: lockButton.label
-            color: lockButton.selected ? root.backgroundColor : root.textColor
-            font.pixelSize: 12
-            font.weight: lockButton.selected ? Font.Medium : Font.Normal
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.NoWrap
-        }
-
-        MouseArea {
-            id: lockMouse
-
-            anchors.fill: parent
-            enabled: lockButton.available && !lockButton.selected
-            hoverEnabled: true
-            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: root.controller.requestLock(lockButton.value)
-        }
-    }
-
-    Rectangle {
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomLeftRadius: 0
-        bottomRightRadius: root.popupRadius
+        metrics: root.metrics
+        theme: root.theme
 
         Column {
             id: content
 
-            x: root.panelPadding
-            y: root.panelPadding
-            width: root.panelWidth - root.panelPadding * 2
-            spacing: 8
+            width: parent.width
+            spacing: root.metrics.sectionGap
 
             Text {
                 width: parent.width
                 text: "Power & Idle"
-                color: root.textColor
-                font.pixelSize: 16
-                font.bold: true
+                color: root.theme.text
+                font.pixelSize: root.metrics.panelTitleFontSize
+                font.weight: root.metrics.panelTitleFontWeight
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             Item {
                 width: parent.width
-                height: 42
+                height: root.metrics.twoLineRowHeight
 
                 Column {
                     anchors {
                         left: parent.left
-                        right: caffeineToggle.left
-                        rightMargin: 12
+                        right: caffeineControl.left
+                        rightMargin: root.metrics.contentGap
                         verticalCenter: parent.verticalCenter
                     }
-                    spacing: 2
+                    spacing: root.metrics.rowSpacing
 
                     Text {
                         width: parent.width
                         text: "Caffeine"
-                        color: root.textColor
-                        font.pixelSize: 13
-                        font.weight: Font.Medium
+                        color: root.theme.text
+                        font.pixelSize: root.metrics.informationLabelFontSize
+                        font.weight: root.metrics.informationLabelFontWeight
                         wrapMode: Text.NoWrap
                     }
 
                     Text {
                         width: parent.width
                         text: "Keep computer awake"
-                        color: root.textColor
-                        opacity: 0.72
-                        font.pixelSize: 12
+                        color: root.theme.textMuted
+                        font.pixelSize: root.metrics.detailFontSize
                         wrapMode: Text.NoWrap
                     }
                 }
 
-                Rectangle {
-                    id: caffeineToggle
+                Item {
+                    id: caffeineControl
 
                     anchors {
                         right: parent.right
                         verticalCenter: parent.verticalCenter
                     }
-                    width: 40
-                    height: 22
-                    radius: height / 2
-                    color: root.controller.visualCaffeine
-                        ? root.accentColor : root.secondaryColor
-                    opacity: root.controller.ready ? 1.0 : 0.45
+                    width: root.metrics.toggleTrackWidth
+                    height: root.metrics.twoLineRowHeight
 
-                    Rectangle {
-                        width: 16
-                        height: 16
-                        radius: width / 2
-                        y: 3
-                        x: root.controller.visualCaffeine
-                            ? caffeineToggle.width - width - 3 : 3
-                        color: root.controller.visualCaffeine
-                            ? root.backgroundColor : root.textColor
-
-                        Behavior on x {
-                            NumberAnimation { duration: 100 }
-                        }
+                    ToggleSwitch {
+                        anchors.centerIn: parent
+                        metrics: root.metrics
+                        theme: root.theme
+                        checked: root.controller.visualCaffeine
+                        interactive: false
+                        enabled: root.controller.ready && !root.controller.busy
                     }
 
                     MouseArea {
                         anchors.fill: parent
                         enabled: root.controller.ready && !root.controller.busy
                         hoverEnabled: true
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        cursorShape: enabled
+                            ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: root.controller.requestCaffeine(
                             !root.controller.caffeine)
                     }
@@ -360,15 +245,16 @@ PopupWindow {
 
             Column {
                 width: parent.width
-                spacing: 5
-                opacity: root.controller.ready ? 1.0 : 0.45
+                spacing: root.metrics.contentGap
+                opacity: root.controller.ready
+                    ? 1.0 : root.metrics.disabledInteractiveOpacity
 
                 Text {
                     width: parent.width
                     text: "Screen saver effect"
-                    color: root.textColor
-                    font.pixelSize: 13
-                    font.weight: Font.Medium
+                    color: root.theme.text
+                    font.pixelSize: root.metrics.informationLabelFontSize
+                    font.weight: root.metrics.informationLabelFontWeight
                     wrapMode: Text.NoWrap
                 }
 
@@ -377,17 +263,25 @@ PopupWindow {
 
                     width: parent.width
                     height: childrenRect.height
-                    spacing: 4
+                    spacing: root.metrics.rowSpacing
 
                     Repeater {
                         model: root.effectChoices
 
-                        EffectButton {
+                        ChoiceButton {
                             required property var modelData
 
-                            value: String(modelData.value)
                             label: String(modelData.label)
-                            buttonWidth: (effectRow.width - effectRow.spacing * 3) / 4
+                            selected: root.controller.effect
+                                === String(modelData.value)
+                            available: root.controller.ready
+                                && !root.controller.busy
+                            controlWidth: (effectRow.width
+                                - effectRow.spacing
+                                    * (root.effectChoices.length - 1))
+                                / root.effectChoices.length
+                            onActivated: root.controller.requestEffect(
+                                String(modelData.value))
                         }
                     }
                 }
@@ -411,34 +305,37 @@ PopupWindow {
                 presets: root.suspendPresets
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             Text {
                 width: parent.width
                 text: "Automatic lock"
-                color: root.textColor
-                font.pixelSize: 13
-                font.weight: Font.Medium
+                color: root.theme.text
+                font.pixelSize: root.metrics.informationLabelFontSize
+                font.weight: root.metrics.informationLabelFontWeight
                 wrapMode: Text.NoWrap
             }
 
             Flow {
                 width: parent.width
                 height: childrenRect.height
-                spacing: 4
+                spacing: root.metrics.rowSpacing
 
                 Repeater {
                     model: root.lockChoices
 
-                    LockButton {
+                    ChoiceButton {
                         required property var modelData
 
-                        value: String(modelData.value)
                         label: String(modelData.label)
+                        selected: root.controller.lockPoint
+                            === String(modelData.value)
+                        available: root.lockChoiceEnabled(String(modelData.value))
+                        onActivated: root.controller.requestLock(
+                            String(modelData.value))
                     }
                 }
             }
@@ -447,9 +344,8 @@ PopupWindow {
                 width: parent.width
                 visible: !root.controller.ready
                 text: "Loading Power & Idle state…"
-                color: root.textColor
-                opacity: 0.72
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 wrapMode: Text.WordWrap
             }
 
@@ -457,11 +353,10 @@ PopupWindow {
                 width: parent.width
                 visible: root.controller.errorMessage !== ""
                 text: root.controller.errorMessage
-                color: root.accentColor
-                font.pixelSize: 12
+                color: root.theme.danger
+                font.pixelSize: root.metrics.detailFontSize
                 wrapMode: Text.WordWrap
             }
-
         }
     }
 }

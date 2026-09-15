@@ -7,7 +7,6 @@ Item {
     required property var controller
     required property var theme
     required property var metrics
-    required property int popupRadius
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
     readonly property int iconSize: root.metrics.dockSystemIconSize
 
@@ -26,7 +25,8 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true
-        opacity: root.controller.ready ? 1.0 : 0.45
+        opacity: root.controller.ready
+            ? 1.0 : root.metrics.disabledInteractiveOpacity
     }
 
     MouseArea {
@@ -45,7 +45,7 @@ Item {
 
         controller: root.controller
         theme: root.theme
+        metrics: root.metrics
         popupAnchorItem: root
-        popupRadius: root.popupRadius
     }
 }
