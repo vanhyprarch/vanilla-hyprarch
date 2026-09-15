@@ -32,6 +32,7 @@ QtObject {
     // Surface size classes.
     readonly property int standardPanelWidth: scaled(380)
     readonly property int actionSurfaceWidth: scaled(300)
+    readonly property int compactActionSurfaceWidth: scaled(200)
     readonly property int wideOverlayMaximum: scaled(720)
 
     // Transitional value for surfaces that have not joined the square visual
@@ -43,6 +44,7 @@ QtObject {
     readonly property int rowRadius: 0
     readonly property int panelPadding: scaled(14)
     readonly property int overlayPadding: scaled(18)
+    readonly property int compactMenuPadding: scaled(10)
     readonly property int sectionGap: scaled(14)
     readonly property int contentGap: scaled(6)
     readonly property int rowSidePadding: scaled(10)
@@ -72,6 +74,7 @@ QtObject {
 
     // Rows and controls.
     readonly property int compactRowHeight: scaled(32)
+    readonly property int compactActionRowHeight: scaled(40)
     readonly property int twoLineRowHeight: scaled(42)
     readonly property int navigationRowHeight: scaled(50)
     readonly property int detailedNavigationRowHeight: scaled(58)

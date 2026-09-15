@@ -10,17 +10,11 @@ Item {
     required property var metrics
     readonly property int buttonSize: root.metrics.dockPowerButtonTarget
     property int bottomMargin: root.metrics.dockOuterInset
-    property color buttonColor: root.theme.surface
-    property color buttonHoverColor: root.theme.hover
     property color iconColor: root.theme.accent
-    property color popupColor: root.theme.background
-    property color textColor: root.theme.text
-    property int popupWidth: 150
-    required property int popupRadius
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
 
     property string pendingAction: ""
+    readonly property int confirmationButtonHeight: root.metrics.scaled(34)
+    readonly property int confirmationButtonGap: root.metrics.scaled(10)
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize
@@ -48,6 +42,12 @@ Item {
             break
         }
     }
+
+    function clearTransientMenuFocus(): void {
+        popup.contentItem.forceActiveFocus()
+    }
+
+    onPendingActionChanged: root.clearTransientMenuFocus()
 
     Rectangle {
         id: powerButton
@@ -84,26 +84,55 @@ Item {
         }
     }
 
-    component ActionRow: Rectangle {
+    component CompactActionRow: PanelActionRow {
+        width: parent ? parent.width : 0
+        implicitHeight: root.metrics.compactActionRowHeight
+        metrics: root.metrics
+        theme: root.theme
+        primaryFontSize: root.metrics.informationLabelFontSize
+        primaryFontWeight: root.metrics.informationLabelFontWeight
+        activeFocusOnTab: false
+    }
+
+    component ConfirmationButton: Rectangle {
         id: row
 
         required property string label
+        property bool danger: false
+        property real buttonWidth: 0
         signal activated()
 
-        width: root.popupWidth - 16
-        height: 36
-        radius: root.popupRadius
-        color: rowMouse.containsMouse ? root.buttonHoverColor : "transparent"
+        width: buttonWidth
+        height: root.confirmationButtonHeight
+        radius: root.metrics.rowRadius
+        color: row.danger ? root.theme.danger
+            : rowMouse.pressed ? root.theme.pressedFill
+                : rowMouse.containsMouse
+                    ? root.theme.hoverFill : root.theme.normalFill
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            visible: row.danger
+            color: rowMouse.pressed ? root.theme.pressedFill
+                : rowMouse.containsMouse
+                    ? root.theme.hoverFill : "transparent"
+        }
 
         Text {
             anchors {
                 left: parent.left
-                leftMargin: 12
+                right: parent.right
+                leftMargin: root.metrics.rowSidePadding
+                rightMargin: root.metrics.rowSidePadding
                 verticalCenter: parent.verticalCenter
             }
             text: row.label
-            color: root.textColor
-            font.pixelSize: 14
+            color: row.danger ? root.theme.onDanger : root.theme.text
+            font.pixelSize: root.metrics.informationLabelFontSize
+            font.weight: root.metrics.informationLabelFontWeight
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
         }
 
         MouseArea {
@@ -116,63 +145,54 @@ Item {
         }
     }
 
-    PopupWindow {
+    DockPopup {
         id: popup
 
-        anchor {
-            item: powerButton
-            edges: Edges.Right | Edges.Bottom
-            gravity: Edges.Right | Edges.Top
-            // Include the space between the centered button and the dock edge.
-            margins.right: Math.max(0, (root.parent.width - root.width) / 2) + root.popupHorizontalGap
-            margins.bottom: root.popupVerticalOffset
-        }
-        implicitWidth: root.popupWidth
-        implicitHeight: (root.pendingAction === "" ? actionMenu.implicitHeight : confirmationMenu.implicitHeight) + 16
-        color: "transparent"
-        visible: false
-        grabFocus: true
+        metrics: root.metrics
+        popupAnchorItem: root
+        panelWidth: root.metrics.compactActionSurfaceWidth
+        implicitHeight: (root.pendingAction === ""
+            ? actionMenu.implicitHeight : confirmationMenu.implicitHeight)
+            + root.metrics.compactMenuPadding * 2
 
         onVisibleChanged: {
-            if (!visible)
+            if (!visible) {
                 root.pendingAction = ""
+                root.clearTransientMenuFocus()
+            }
         }
 
-        Rectangle {
+        PanelSurface {
             anchors.fill: parent
-            radius: 0
-            topLeftRadius: 0
-            topRightRadius: root.popupRadius
-            bottomLeftRadius: 0
-            bottomRightRadius: 0
-            color: root.popupColor
+            metrics: root.metrics
+            theme: root.theme
+            padding: root.metrics.compactMenuPadding
 
             Column {
                 id: actionMenu
 
-                x: 8
-                y: 8
-                spacing: 4
+                width: parent.width
+                spacing: root.metrics.rowSpacing
                 visible: root.pendingAction === ""
 
-                ActionRow {
-                    label: "Lock"
+                CompactActionRow {
+                    primaryText: "Lock"
                     onActivated: root.runAction("lock")
                 }
-                ActionRow {
-                    label: "Suspend"
+                CompactActionRow {
+                    primaryText: "Suspend"
                     onActivated: root.runAction("suspend")
                 }
-                ActionRow {
-                    label: "Logout"
+                CompactActionRow {
+                    primaryText: "Logout"
                     onActivated: root.pendingAction = "logout"
                 }
-                ActionRow {
-                    label: "Reboot"
+                CompactActionRow {
+                    primaryText: "Reboot"
                     onActivated: root.pendingAction = "reboot"
                 }
-                ActionRow {
-                    label: "Power off"
+                CompactActionRow {
+                    primaryText: "Power off"
                     onActivated: root.pendingAction = "poweroff"
                 }
             }
@@ -180,29 +200,40 @@ Item {
             Column {
                 id: confirmationMenu
 
-                x: 8
-                y: 8
-                spacing: 4
+                width: parent.width
+                spacing: root.confirmationButtonGap
                 visible: root.pendingAction !== ""
 
                 Text {
-                    width: root.popupWidth - 16
-                    height: 36
+                    width: parent.width
+                    height: root.metrics.compactActionRowHeight
                     text: root.pendingAction === "logout" ? "Logout?"
                         : root.pendingAction === "reboot" ? "Reboot?" : "Power off?"
-                    color: root.textColor
-                    font.pixelSize: 14
-                    font.bold: true
+                    color: root.theme.text
+                    font.pixelSize: root.metrics.informationLabelFontSize
+                    font.weight: root.metrics.informationLabelFontWeight
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.NoWrap
                 }
-                ActionRow {
-                    label: "Confirm"
-                    onActivated: root.runAction(root.pendingAction)
-                }
-                ActionRow {
-                    label: "Cancel"
-                    onActivated: root.pendingAction = ""
+
+                Row {
+                    width: parent.width
+                    height: root.confirmationButtonHeight
+                    spacing: root.confirmationButtonGap
+
+                    ConfirmationButton {
+                        label: "Cancel"
+                        buttonWidth: (parent.width - parent.spacing) / 2
+                        onActivated: root.pendingAction = ""
+                    }
+
+                    ConfirmationButton {
+                        label: "Confirm"
+                        danger: true
+                        buttonWidth: (parent.width - parent.spacing) / 2
+                        onActivated: root.runAction(root.pendingAction)
+                    }
                 }
             }
         }

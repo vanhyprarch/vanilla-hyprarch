@@ -97,6 +97,12 @@ ShellRoot {
                 && metrics.informationValueFontSize === metrics.bodyFontSize,
                 "ordinary information typography diverged from body text")
             root.check(metrics.standardPanelWidth === 380, "base panel width changed")
+            root.check(metrics.actionSurfaceWidth === 300
+                && metrics.compactActionSurfaceWidth === 200,
+                "base action-surface size classes changed")
+            root.check(metrics.compactMenuPadding === 10
+                && metrics.compactActionRowHeight === 40,
+                "base compact-menu geometry changed")
             root.check(metrics.toggleTrackWidth === 42
                 && metrics.toggleTrackHeight === 22
                 && metrics.toggleKnobSize === 16
@@ -188,6 +194,10 @@ ShellRoot {
             root.check(metrics.panelTitleFontSize === 19, "title size did not scale")
             root.check(metrics.overlayFontSize === 21, "overlay size did not scale")
             root.check(metrics.standardPanelWidth === 507, "panel width did not scale")
+            root.check(metrics.compactActionSurfaceWidth === 267
+                && metrics.compactMenuPadding === 13
+                && metrics.compactActionRowHeight === 53,
+                "compact-menu geometry did not scale")
             root.check(metrics.dockWidth === 56
                 && metrics.dockLauncherTarget === 40
                 && metrics.dockSystemControlTarget === 36

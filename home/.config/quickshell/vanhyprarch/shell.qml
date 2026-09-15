@@ -118,7 +118,6 @@ ShellRoot {
             id: powerMenu
             theme: shellTheme
             metrics: visualMetrics
-            popupRadius: root.cornerRadius
 
             anchors {
                 bottom: parent.bottom

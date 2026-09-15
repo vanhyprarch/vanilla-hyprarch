@@ -12,6 +12,8 @@ Rectangle {
     property bool keyboardSelected: false
     property bool active: false
     property bool danger: false
+    property int primaryFontSize: root.metrics.overlayFontSize
+    property int primaryFontWeight: root.metrics.overlayFontWeight
     readonly property bool highlighted: root.keyboardSelected
         || root.activeFocus || pointer.containsMouse
     signal activated()
@@ -60,8 +62,8 @@ Rectangle {
             textFormat: Text.PlainText
             color: root.danger ? root.theme.danger
                 : root.theme.text
-            font.pixelSize: root.metrics.overlayFontSize
-            font.weight: root.metrics.overlayFontWeight
+            font.pixelSize: root.primaryFontSize
+            font.weight: root.primaryFontWeight
             elide: Text.ElideRight
         }
 

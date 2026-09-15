@@ -146,6 +146,10 @@ square panel foundation, including a nine-pixel dock gap, complete opaque
 three-pixel exterior outlines, and one-pixel internal separators. Other panels
 retain their legacy visual treatment until their scheduled normalization.
 
+PowerMenu may show a very brief oversized-text first frame when opening; QML
+geometry, font-size, and scale measurements were correct from the first visible
+event, the root cause is not proven, and the issue is currently non-blocking.
+
 From bottom to top, the dock's lower status/control area is Power,
 Clock/calendar, Theme, Power & Idle, Display, Audio, Network, Bluetooth, and
 System tray.
