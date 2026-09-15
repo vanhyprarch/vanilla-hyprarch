@@ -1,0 +1,319 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+set -fu
+
+program_name=${0##*/}
+minimum_size=9
+maximum_size=20
+vanilla_text_baseline=12
+vanilla_foot_baseline_points=12
+default_size=$vanilla_text_baseline
+preference_name=text-size.conf
+
+fail()
+{
+    printf '%s: %s\n' "$program_name" "$*" >&2
+    exit 1
+}
+
+prepare_paths()
+{
+    [ -n "${HOME:-}" ] || fail 'HOME is not set'
+    case $HOME in
+        /*) ;;
+        *) fail 'HOME must be an absolute path' ;;
+    esac
+
+    config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+    case $config_home in
+        /*) ;;
+        *) fail 'XDG_CONFIG_HOME must be an absolute path' ;;
+    esac
+
+    preference_dir=$config_home/vanhyprarch
+    preference_file=$preference_dir/$preference_name
+    foot_dir=$config_home/foot
+    foot_file=$foot_dir/foot.ini
+    current_uid=$(id -u) || fail 'could not determine the current user ID'
+    umask 077
+}
+
+validate_size()
+{
+    case ${1-} in
+        ''|*[!0-9]*) fail "text size must be an integer from $minimum_size to $maximum_size" ;;
+    esac
+    [ "$1" -ge "$minimum_size" ] && [ "$1" -le "$maximum_size" ] ||
+        fail "text size must be an integer from $minimum_size to $maximum_size"
+}
+
+load_preference()
+{
+    size=$default_size
+    explicit=no
+    [ -e "$preference_file" ] || [ -L "$preference_file" ] || return 0
+    [ -f "$preference_file" ] || fail "$preference_file is not a regular file"
+    [ ! -L "$preference_file" ] || fail "$preference_file must not be a symbolic link"
+
+    preference_owner=$(stat -c '%u' -- "$preference_file") ||
+        fail "could not inspect $preference_file"
+    [ "$preference_owner" = "$current_uid" ] ||
+        fail "$preference_file is not owned by the current user"
+
+    seen_version=false
+    seen_size=false
+    while IFS= read -r preference_line || [ -n "$preference_line" ]; do
+        preference_key=${preference_line%%=*}
+        preference_value=${preference_line#*=}
+        [ "$preference_key" != "$preference_line" ] ||
+            fail 'invalid text-size preference line'
+        case $preference_key in
+            version)
+                [ "$seen_version" = false ] || fail 'duplicate version preference'
+                seen_version=true
+                [ "$preference_value" = 1 ] || fail 'unsupported preference version'
+                ;;
+            size)
+                [ "$seen_size" = false ] || fail 'duplicate size preference'
+                seen_size=true
+                validate_size "$preference_value"
+                size=$preference_value
+                ;;
+            *) fail 'unknown text-size preference key' ;;
+        esac
+    done < "$preference_file"
+    [ "$seen_version" = true ] || fail 'missing version preference'
+    [ "$seen_size" = true ] || fail 'missing size preference'
+    explicit=yes
+}
+
+ensure_private_dir()
+{
+    target_dir=$1
+    [ ! -L "$target_dir" ] || fail "$target_dir must not be a symbolic link"
+    if [ ! -d "$target_dir" ]; then
+        mkdir -m 700 -- "$target_dir" || fail "could not create $target_dir"
+    fi
+    target_owner=$(stat -c '%u' -- "$target_dir") ||
+        fail "could not inspect $target_dir"
+    [ "$target_owner" = "$current_uid" ] ||
+        fail "$target_dir is not owned by the current user"
+    chmod 700 -- "$target_dir" || fail "could not secure $target_dir"
+}
+
+inspect_owned_dir()
+{
+    target_dir=$1
+    [ -d "$target_dir" ] || fail "$target_dir is not a directory"
+    [ ! -L "$target_dir" ] || fail "$target_dir must not be a symbolic link"
+    target_owner=$(stat -c '%u' -- "$target_dir") ||
+        fail "could not inspect $target_dir"
+    [ "$target_owner" = "$current_uid" ] ||
+        fail "$target_dir is not owned by the current user"
+}
+
+terminal_points_for()
+{
+    awk -v size="$1" -v points="$vanilla_foot_baseline_points" \
+        -v base="$vanilla_text_baseline" \
+        'BEGIN { printf "%d", int(size * points / base + 0.5) }'
+}
+
+gtk_factor_for()
+{
+    requested_size=$1
+    gtk_font_name=$($gsettings_command get org.gnome.desktop.interface font-name) ||
+        fail 'could not read the GTK interface font'
+    gtk_font_name=${gtk_font_name#\'}
+    gtk_font_name=${gtk_font_name%\'}
+    gtk_font_points=${gtk_font_name##* }
+    printf '%s\n' "$gtk_font_points" | grep -Eq '^[0-9]+([.][0-9]+)?$' ||
+        gtk_font_points=11
+
+    awk -v size="$requested_size" -v base="$default_size" \
+        -v points="$gtk_font_points" \
+        'BEGIN { printf "%.4f", int(points * size / base + 0.5) / points }'
+}
+
+prepare_foot_candidate()
+{
+    foot_status=unmanaged
+    foot_restart=no
+    foot_candidate=
+    foot_backup=
+
+    [ -e "$foot_file" ] || [ -L "$foot_file" ] || return 0
+    inspect_owned_dir "$foot_dir"
+    [ -f "$foot_file" ] || fail "$foot_file is not a regular file"
+    [ ! -L "$foot_file" ] || fail "$foot_file must not be a symbolic link"
+    foot_owner=$(stat -c '%u' -- "$foot_file") || fail "could not inspect $foot_file"
+    [ "$foot_owner" = "$current_uid" ] ||
+        fail "$foot_file is not owned by the current user"
+
+    main_font_count=$(awk '
+        BEGIN { in_main = 1; count = 0 }
+        /^[[:space:]]*\[/ {
+            in_main = ($0 ~ /^[[:space:]]*\[main\][[:space:]]*([#;].*)?$/)
+        }
+        in_main && /^[[:space:]]*font[[:space:]]*=/ { count += 1 }
+        END { print count }
+    ' "$foot_file") || fail 'could not inspect the Foot font setting'
+
+    # Includes and unusual multi-definition configurations are left alone.
+    # The authoritative Vanilla preference still updates the shell and GTK,
+    # and the UI reports that Foot was not projected.
+    [ "$main_font_count" -eq 1 ] || return 0
+
+    terminal_points=$(terminal_points_for "$1") ||
+        fail 'could not calculate the Foot font size'
+    foot_candidate=$(mktemp "$foot_dir/.foot.ini.text-size.XXXXXX") ||
+        fail 'could not create a Foot candidate'
+    awk -v points="$terminal_points" '
+        BEGIN { in_main = 1; changed = 0 }
+        /^[[:space:]]*\[/ {
+            in_main = ($0 ~ /^[[:space:]]*\[main\][[:space:]]*([#;].*)?$/)
+        }
+        in_main && /^[[:space:]]*font[[:space:]]*=/ && !changed {
+            line = $0
+            if (line ~ /:size=[0-9]+([.][0-9]+)?/) {
+                gsub(/:size=[0-9]+([.][0-9]+)?/, ":size=" points, line)
+            } else {
+                equals = index(line, "=")
+                prefix = substr(line, 1, equals)
+                value = substr(line, equals + 1)
+                comma = index(value, ",")
+                if (comma > 0)
+                    value = substr(value, 1, comma - 1) ":size=" points substr(value, comma)
+                else
+                    value = value ":size=" points
+                line = prefix value
+            }
+            print line
+            changed = 1
+            next
+        }
+        { print }
+        END { if (!changed) exit 70 }
+    ' "$foot_file" > "$foot_candidate" || fail 'could not prepare the Foot font update'
+    chmod --reference="$foot_file" "$foot_candidate" ||
+        fail 'could not preserve Foot configuration permissions'
+    foot --check-config --config="$foot_candidate" >/dev/null 2>&1 ||
+        fail 'the generated Foot configuration is invalid'
+
+    foot_backup=$(mktemp "$foot_dir/.foot.ini.rollback.XXXXXX") ||
+        fail 'could not prepare Foot rollback material'
+    cp -p -- "$foot_file" "$foot_backup" || fail 'could not preserve the Foot configuration'
+    foot_status=updated
+    foot_restart=required
+}
+
+cleanup()
+{
+    [ -z "${foot_candidate:-}" ] || rm -f -- "$foot_candidate"
+    [ -z "${foot_backup:-}" ] || rm -f -- "$foot_backup"
+    [ -z "${preference_candidate:-}" ] || rm -f -- "$preference_candidate"
+}
+
+rollback_gtk()
+{
+    $gsettings_command set org.gnome.desktop.interface text-scaling-factor \
+        "$old_gtk_factor" >/dev/null 2>&1 || true
+}
+
+rollback_foot()
+{
+    [ "$foot_status" = updated ] || return 0
+    [ -n "$foot_backup" ] || return 0
+    mv -f -- "$foot_backup" "$foot_file" || true
+    foot_backup=
+}
+
+apply_size()
+{
+    requested_size=$1
+    validate_size "$requested_size"
+    load_preference
+    ensure_private_dir "$preference_dir"
+
+    gsettings_command=$(command -v gsettings) ||
+        fail 'gsettings is unavailable; GTK text size was not changed'
+    old_gtk_factor=$($gsettings_command get \
+        org.gnome.desktop.interface text-scaling-factor) ||
+        fail 'could not read the current GTK text scaling factor'
+    printf '%s\n' "$old_gtk_factor" | grep -Eq '^[0-9]+([.][0-9]+)?$' ||
+        fail 'the current GTK text scaling factor is invalid'
+    next_gtk_factor=$(gtk_factor_for "$requested_size") ||
+        fail 'could not calculate the GTK text scaling factor'
+
+    foot_candidate=
+    foot_backup=
+    preference_candidate=
+    trap cleanup EXIT HUP INT TERM
+    prepare_foot_candidate "$requested_size"
+
+    preference_candidate=$(mktemp "$preference_dir/.text-size.XXXXXX") ||
+        fail 'could not create a text-size preference candidate'
+    printf 'version=1\nsize=%s\n' "$requested_size" > "$preference_candidate" ||
+        fail 'could not write the text-size preference candidate'
+    chmod 600 -- "$preference_candidate" ||
+        fail 'could not secure the text-size preference candidate'
+
+    $gsettings_command set org.gnome.desktop.interface text-scaling-factor \
+        "$next_gtk_factor" >/dev/null || {
+            rollback_gtk
+            fail 'could not update GTK text scaling'
+        }
+    actual_gtk_factor=$($gsettings_command get \
+        org.gnome.desktop.interface text-scaling-factor) || {
+            rollback_gtk
+            fail 'could not verify GTK text scaling'
+        }
+    awk -v expected="$next_gtk_factor" -v actual="$actual_gtk_factor" \
+        'BEGIN { difference = actual - expected; if (difference < 0) difference = -difference; exit difference > 0.0001 }' || {
+            rollback_gtk
+            fail 'GTK text scaling verification failed'
+        }
+
+    if [ "$foot_status" = updated ]; then
+        mv -f -- "$foot_candidate" "$foot_file" || {
+            rollback_gtk
+            fail 'could not replace the Foot configuration'
+        }
+        foot_candidate=
+    fi
+
+    mv -f -- "$preference_candidate" "$preference_file" || {
+        rollback_foot
+        rollback_gtk
+        fail 'could not replace the text-size preference'
+    }
+    preference_candidate=
+    explicit=yes
+    size=$requested_size
+    cleanup
+    trap - EXIT HUP INT TERM
+
+    printf 'version=1\nsize=%s\nexplicit=yes\ngtk=updated\nfoot=%s\nfoot_restart=%s\n' \
+        "$size" "$foot_status" "$foot_restart"
+}
+
+print_status()
+{
+    printf 'version=1\nsize=%s\nexplicit=%s\ngtk=unchanged\nfoot=unchanged\nfoot_restart=no\n' \
+        "$size" "$explicit"
+}
+
+prepare_paths
+case ${1-} in
+    status)
+        [ "$#" -eq 1 ] || fail 'usage: status'
+        load_preference
+        print_status
+        ;;
+    set)
+        [ "$#" -eq 2 ] || fail 'usage: set <9-20>'
+        apply_size "$2"
+        ;;
+    *) fail 'usage: status | set <9-20>' ;;
+esac

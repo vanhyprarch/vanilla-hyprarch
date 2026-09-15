@@ -9,8 +9,13 @@ import "components"
 ShellRoot {
     id: root
 
+    TextSizeController {
+        id: textSizeController
+    }
+
     VisualMetrics {
         id: visualMetrics
+        fontBaseSize: textSizeController.baseSize
     }
 
     IpcHandler {
@@ -42,6 +47,7 @@ ShellRoot {
         id: bluetoothPowerController
     }
 
+    readonly property var globalTextSizeController: textSizeController
     property int dockWidth: 56
     property int cornerRadius: 10
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
