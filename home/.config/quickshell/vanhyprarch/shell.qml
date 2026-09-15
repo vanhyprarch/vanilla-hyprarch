@@ -9,6 +9,10 @@ import "components"
 ShellRoot {
     id: root
 
+    VisualMetrics {
+        id: visualMetrics
+    }
+
     IpcHandler {
         target: "vanhyprarch.shell"
 
@@ -19,6 +23,7 @@ ShellRoot {
 
     Theme {
         id: shellTheme
+        metrics: visualMetrics
     }
 
     Shortcuts {
