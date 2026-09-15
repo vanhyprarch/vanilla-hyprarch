@@ -226,6 +226,7 @@ ShellRoot {
     }
 
     ShortcutsPanel {
+        metrics: visualMetrics
         controller: shortcuts
         theme: shellTheme
         anchorItem: shortcutsAnchor

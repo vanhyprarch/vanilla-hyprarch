@@ -7,6 +7,7 @@ PopupWindow {
     id: root
 
     required property var controller
+    required property var metrics
     required property var theme
     required property Item anchorItem
     required property string screenName
@@ -26,6 +27,11 @@ PopupWindow {
     property int categoryHeight: 36
     property int columnHeaderHeight: 32
     property real actionColumnRatio: 0.43
+    readonly property int categoryHeadingFontSize:
+        metrics.fontPixels(17 / metrics.fontReferenceSize)
+    readonly property int categoryHeadingFontWeight:
+        metrics.sectionHeadingFontWeight
+    readonly property int categorySectionTopGap: metrics.scaled(12)
 
     function syncVisibility(): void {
         const shouldShow = controller.isOpen && activeForScreen
@@ -71,10 +77,10 @@ PopupWindow {
 
     Rectangle {
         anchors.fill: parent
-        radius: root.popupRadius
+        radius: root.metrics.panelRadius
         color: root.theme.background
-        border.width: 1
-        border.color: root.theme.accent
+        border.width: root.metrics.panelOutlineThickness
+        border.color: root.theme.panelOutline
 
         Text {
             id: titleText
@@ -128,7 +134,8 @@ PopupWindow {
             radius: root.popupRadius
             color: root.theme.surface
             border.width: searchInput.activeFocus ? 2 : 1
-            border.color: root.theme.accent
+            border.color: searchInput.activeFocus
+                ? root.theme.focus : root.theme.separator
 
             Text {
                 anchors {
@@ -153,7 +160,7 @@ PopupWindow {
                     rightMargin: 16
                 }
                 color: root.theme.text
-                selectionColor: root.theme.accent
+                selectionColor: root.theme.focus
                 selectedTextColor: root.theme.background
                 font.pixelSize: 17
                 verticalAlignment: TextInput.AlignVCenter
@@ -223,10 +230,9 @@ PopupWindow {
 
                 x: Math.round(parent.width * root.actionColumnRatio)
                 y: 6
-                width: 1
+                width: root.metrics.separatorThickness
                 height: parent.height - 12
-                color: root.theme.text
-                opacity: 0.16
+                color: root.theme.separator
             }
 
             Text {
@@ -252,9 +258,8 @@ PopupWindow {
                     right: parent.right
                     bottom: parent.bottom
                 }
-                height: 1
-                color: root.theme.text
-                opacity: 0.12
+                height: root.metrics.separatorThickness
+                color: root.theme.separator
             }
         }
 
@@ -301,21 +306,25 @@ PopupWindow {
 
                 required property var modelData
                 required property int index
+                readonly property int sectionTopGap:
+                    modelData.showCategory && index > 0
+                        ? root.categorySectionTopGap : 0
 
                 width: shortcutsView.width
-                height: root.rowHeight
+                height: root.rowHeight + sectionTopGap
                     + (modelData.showCategory ? root.categoryHeight : 0)
 
                 Text {
                     visible: shortcutDelegate.modelData.showCategory
                     x: 4
+                    y: shortcutDelegate.sectionTopGap
                     width: parent.width - 8
                     height: root.categoryHeight
                     text: shortcutDelegate.modelData.category
                     textFormat: Text.PlainText
-                    color: root.theme.accent
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
+                    color: root.theme.text
+                    font.pixelSize: root.categoryHeadingFontSize
+                    font.weight: root.categoryHeadingFontWeight
                     verticalAlignment: Text.AlignVCenter
                 }
 
@@ -330,18 +339,18 @@ PopupWindow {
                     height: root.rowHeight
                     radius: root.popupRadius
                     color: shortcutDelegate.index === shortcutsView.currentIndex
-                        || rowMouse.containsMouse
-                        ? root.theme.hover : "transparent"
+                        ? root.theme.activeFill
+                        : rowMouse.containsMouse ? root.theme.hoverFill
+                            : "transparent"
 
                     Rectangle {
                         id: rowDivider
 
                         x: Math.round(parent.width * root.actionColumnRatio)
                         y: 10
-                        width: 1
+                        width: root.metrics.separatorThickness
                         height: parent.height - 20
-                        color: root.theme.text
-                        opacity: 0.14
+                        color: root.theme.separator
                     }
 
                     Text {
@@ -389,9 +398,8 @@ PopupWindow {
                             leftMargin: 8
                             rightMargin: 8
                         }
-                        height: 1
-                        color: root.theme.text
-                        opacity: 0.09
+                        height: root.metrics.separatorThickness
+                        color: root.theme.separator
                     }
 
                     MouseArea {
