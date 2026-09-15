@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-10.
+Snapshot date: 2026-09-15.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -12,7 +12,7 @@ tracked in the [compatibility register](compatibility.md).
 
 - Public name: **Vanilla HyprArch**
 - Repository: `~/Projects/vanilla-hyprarch`
-- Branch: `dock-prototype`
+- Development branch: `visual-foundation`
 - Technical namespace and named Quickshell config: `vanhyprarch`
 - Hyprland: 0.56.2 (`hyprland` package 0.56.2-2)
 - Quickshell: 0.3.1 (`quickshell` package 0.3.1-1)
@@ -67,6 +67,9 @@ copy hardware- or user-specific settings blindly.
 Mutable shell state is stored outside Git. Theme mode uses
 `${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/theme-mode`; launcher order
 uses `Quickshell.statePath("launchers.json")` under Quickshell's shell-ID state.
+Global text size uses the versioned preference documented in
+[Global text size](text-size.md); a missing preference means the 12-pixel
+default without creating state.
 
 ## Session startup — IMPLEMENTED
 
@@ -101,9 +104,9 @@ Num Lock is enabled by default when the graphical session starts.
 ## Shell architecture — IMPLEMENTED
 
 `ShellRoot` owns global state and controllers. A `Variants` instance models
-`Quickshell.screens`; each delegate owns the permanent dock and desktop-frame
-surfaces for one screen. This screen lifecycle structure is the validated fix
-for dock/frame loss after suspend and resume.
+`Quickshell.screens`; each delegate owns the permanent dock and transparent
+shortcut-anchor surfaces for one screen. This screen lifecycle structure is
+the validated fix for dock loss after suspend and resume.
 
 Current IPC targets are:
 
@@ -114,7 +117,7 @@ Current IPC targets are:
 
 The current Quickshell UI includes:
 
-- a 56-pixel vertical dock and a desktop frame with rounded inner corners;
+- a 56-pixel vertical dock, without a decorative desktop frame;
 - five numbered workspaces, relative navigation, and a special scratchpad;
 - persistent, drag-reorderable application launchers with running-workspace
   indicators, add/remove controls, and context actions;
@@ -125,7 +128,9 @@ The current Quickshell UI includes:
 - native Quickshell/BlueZ Bluetooth power, discovery, device, pairing,
   connection, trust, and forget flows, with complete PIN, passkey,
   confirmation, and authorization prompts supplied by a narrow pairing agent;
-- DDC/CI brightness control and fixed monitor-scale presets;
+- DDC/CI brightness control, fixed monitor-scale presets, and a global text-size
+  control supporting every integer from 9 through 20 with a project default of
+  12;
 - a compact Power & Idle panel backed by the project controller, with Caffeine,
   timeout presets, screensaver-effect selection, and one automatic-lock
   selection;
@@ -134,6 +139,12 @@ The current Quickshell UI includes:
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
+
+The desktop uses 5-pixel inner and 10-pixel outer Hyprland gaps with square
+application windows. Network, Bluetooth, Audio, and Display use the centralized
+square panel foundation, including a nine-pixel dock gap, complete opaque
+three-pixel exterior outlines, and one-pixel internal separators. Other panels
+retain their legacy visual treatment until their scheduled normalization.
 
 From bottom to top, the dock's lower status/control area is Power,
 Clock/calendar, Theme, Power & Idle, Display, Audio, Network, Bluetooth, and
