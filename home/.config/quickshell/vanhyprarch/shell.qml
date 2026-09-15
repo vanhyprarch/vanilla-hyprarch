@@ -109,7 +109,6 @@ ShellRoot {
         Launchers {
             theme: shellTheme
             metrics: visualMetrics
-            popupRadius: root.cornerRadius
             anchors.verticalCenter: parent.verticalCenter
             anchors.horizontalCenter: parent.horizontalCenter
         }

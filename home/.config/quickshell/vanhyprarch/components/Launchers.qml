@@ -13,11 +13,11 @@ Item {
     readonly property int buttonSize: root.metrics.dockLauncherTarget
     readonly property int iconSize: root.metrics.applicationLauncherIconSize
     readonly property int spacing: root.metrics.dockItemGap
-    required property int popupRadius
     property color textColor: root.theme.text
     property var runtimeOrder: []
     property string activeDragDesktopId: ""
     property int pendingDropIndex: -1
+    property Item contextMenuSourceAnchor: null
     property color dragIndicatorColor: root.theme.accent
     property int dragIndicatorWidth: 24
     property int dragIndicatorHeight: 2
@@ -326,7 +326,7 @@ Item {
             pinned: bool, running: bool): void {
         launcherContextMenu.visible = false
         launcherContextMenu.desktopEntry = desktopEntry
-        launcherContextMenu.popupAnchorItem = anchorItem
+        contextMenuSourceAnchor = anchorItem
         launcherContextMenu.pinned = pinned
         launcherContextMenu.running = running
         launcherContextMenu.visible = true
@@ -451,19 +451,43 @@ Item {
         visible: root.activeDragDesktopId !== "" && root.pendingDropIndex >= 0
     }
 
+    Item {
+        id: appPickerPopupAnchor
+
+        parent: root.parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: root.y + addButton.y
+        width: root.metrics.dockLauncherTarget
+        height: root.metrics.dockLauncherTarget
+    }
+
+    Item {
+        id: launcherContextPopupAnchor
+
+        parent: root.parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: root.contextMenuSourceAnchor
+            ? root.contextMenuSourceAnchor.mapToItem(parent, 0, 0).y : 0
+        width: root.metrics.dockLauncherTarget
+        height: root.contextMenuSourceAnchor
+            ? root.contextMenuSourceAnchor.height
+            : root.metrics.dockLauncherTarget
+    }
+
     AppPicker {
         id: appPicker
         theme: root.theme
-        anchor.item: addButton
+        metrics: root.metrics
+        popupAnchorItem: appPickerPopupAnchor
         launcherStore: store
-        popupRadius: root.popupRadius
     }
 
     LauncherContextMenu {
         id: launcherContextMenu
         theme: root.theme
+        metrics: root.metrics
         launcherStore: store
-        popupRadius: root.popupRadius
+        popupAnchorItem: launcherContextPopupAnchor
         onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)
     }
 }

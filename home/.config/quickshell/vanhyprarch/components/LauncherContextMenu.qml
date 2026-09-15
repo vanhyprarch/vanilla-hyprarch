@@ -7,20 +7,13 @@ PopupWindow {
     id: root
 
     required property var theme
+    required property var metrics
     required property LauncherStore launcherStore
     property DesktopEntry desktopEntry
     property Item popupAnchorItem
     property bool pinned: true
     property bool running: false
-    required property int popupRadius
-    property int panelWidth: 150
-    property int panelPadding: 6
-    property int rowHeight: 36
-    property int popupHorizontalOffset: 8
     property int popupVerticalOffset: 4
-    property color backgroundColor: root.theme.background
-    property color textColor: root.theme.text
-    property color hoverColor: root.theme.hover
 
     signal closeAllRequested()
 
@@ -28,14 +21,27 @@ PopupWindow {
         item: root.popupAnchorItem
         edges: Edges.Right | Edges.Top
         gravity: Edges.Right | Edges.Bottom
-        margins.right: -root.popupHorizontalOffset
+        margins.right: -Math.max(0,
+            ((root.popupAnchorItem && root.popupAnchorItem.parent
+                ? root.popupAnchorItem.parent.width
+                : root.metrics.dockWidth)
+                - (root.popupAnchorItem
+                    ? root.popupAnchorItem.width
+                    : root.metrics.dockLauncherTarget)) / 2)
+            - root.metrics.dockPopupGap
         margins.top: -root.popupVerticalOffset
     }
-    implicitWidth: panelWidth
-    implicitHeight: actionsColumn.implicitHeight + panelPadding * 2
+    implicitWidth: root.metrics.compactActionSurfaceWidth
+    implicitHeight: actionsColumn.implicitHeight
+        + root.metrics.compactMenuPadding * 2
     color: "transparent"
     grabFocus: true
     visible: false
+
+    onVisibleChanged: {
+        if (!visible)
+            root.contentItem.forceActiveFocus()
+    }
 
     function normalizeActionIdentifier(value): string {
         return value === null || value === undefined
@@ -72,116 +78,58 @@ PopupWindow {
             desktopEntry.execute()
     }
 
-    Rectangle {
+    component ContextActionRow: PanelActionRow {
+        width: parent ? parent.width : 0
+        implicitHeight: root.metrics.compactActionRowHeight
+        metrics: root.metrics
+        theme: root.theme
+        primaryFontSize: root.metrics.informationLabelFontSize
+        primaryFontWeight: root.metrics.informationLabelFontWeight
+        activeFocusOnTab: false
+    }
+
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        bottomLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomRightRadius: root.popupRadius
+        metrics: root.metrics
+        theme: root.theme
+        padding: root.metrics.compactMenuPadding
 
         Column {
             id: actionsColumn
 
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: root.panelPadding
-            spacing: 0
+            width: parent.width
+            spacing: root.metrics.rowSpacing
 
-            Rectangle {
-                width: parent.width
-                height: root.rowHeight
+            ContextActionRow {
                 visible: root.running
-                radius: root.popupRadius
-                color: newWindowMouse.containsMouse ? root.hoverColor : "transparent"
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Open new window"
-                    color: root.textColor
-                    font.pixelSize: 13
-                    wrapMode: Text.NoWrap
-                }
-
-                MouseArea {
-                    id: newWindowMouse
-
-                    anchors.fill: parent
-                    enabled: root.desktopEntry !== null
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.openNewWindow()
-                        root.visible = false
-                    }
+                enabled: root.desktopEntry !== null
+                primaryText: "Open new window"
+                onActivated: {
+                    root.openNewWindow()
+                    root.visible = false
                 }
             }
 
-            Rectangle {
-                width: parent.width
-                height: root.rowHeight
-                radius: root.popupRadius
-                color: removeMouse.containsMouse ? root.hoverColor : "transparent"
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.pinned ? "Remove from dock" : "Pin to dock"
-                    color: root.textColor
-                    font.pixelSize: 13
-                    wrapMode: Text.NoWrap
-                }
-
-                MouseArea {
-                    id: removeMouse
-
-                    anchors.fill: parent
-                    enabled: root.desktopEntry !== null
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (root.pinned)
-                            root.launcherStore.removeLauncher(root.desktopEntry.id)
-                        else
-                            root.launcherStore.addLauncher(root.desktopEntry.id)
-                        root.visible = false
-                    }
+            ContextActionRow {
+                enabled: root.desktopEntry !== null
+                primaryText: root.pinned ? "Remove from dock" : "Pin to dock"
+                onActivated: {
+                    if (root.pinned)
+                        root.launcherStore.removeLauncher(root.desktopEntry.id)
+                    else
+                        root.launcherStore.addLauncher(root.desktopEntry.id)
+                    root.visible = false
                 }
             }
 
-            Rectangle {
-                width: parent.width
-                height: root.rowHeight
+            ContextActionRow {
                 visible: root.running
-                radius: root.popupRadius
-                color: closeAllMouse.containsMouse ? root.hoverColor : "transparent"
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Close all windows"
-                    color: root.textColor
-                    font.pixelSize: 13
-                    wrapMode: Text.NoWrap
-                }
-
-                MouseArea {
-                    id: closeAllMouse
-
-                    anchors.fill: parent
-                    enabled: root.desktopEntry !== null
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.closeAllRequested()
-                        root.visible = false
-                    }
+                enabled: root.desktopEntry !== null
+                primaryText: "Close all windows"
+                danger: true
+                onActivated: {
+                    root.closeAllRequested()
+                    root.visible = false
                 }
             }
         }
