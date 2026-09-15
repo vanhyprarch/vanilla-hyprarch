@@ -48,11 +48,11 @@ ShellRoot {
     }
 
     readonly property var globalTextSizeController: textSizeController
-    property int dockWidth: 56
-    property int cornerRadius: 10
+    readonly property int dockWidth: visualMetrics.dockWidth
+    readonly property int cornerRadius: visualMetrics.legacyPopupRadius
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
     property int logoSize: 40
-    property int logoTopMargin: 12
+    readonly property int logoTopMargin: visualMetrics.dockOuterInset
 
     Variants {
         model: Quickshell.screens
@@ -108,6 +108,7 @@ ShellRoot {
 
         Launchers {
             theme: shellTheme
+            metrics: visualMetrics
             popupRadius: root.cornerRadius
             anchors.verticalCenter: parent.verticalCenter
             anchors.horizontalCenter: parent.horizontalCenter
@@ -116,6 +117,7 @@ ShellRoot {
         PowerMenu {
             id: powerMenu
             theme: shellTheme
+            metrics: visualMetrics
             popupRadius: root.cornerRadius
 
             anchors {
@@ -127,12 +129,13 @@ ShellRoot {
         Clock {
             id: dockClock
             theme: shellTheme
+            metrics: visualMetrics
             popupAnchorItem: powerMenu
             popupRadius: root.cornerRadius
 
             anchors {
                 bottom: powerMenu.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockGroupGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -140,10 +143,11 @@ ShellRoot {
         ThemeToggle {
             id: dockThemeToggle
             theme: shellTheme
+            metrics: visualMetrics
 
             anchors {
                 bottom: dockClock.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockGroupGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -152,11 +156,12 @@ ShellRoot {
             id: dockPowerIdle
             controller: idleController
             theme: shellTheme
+            metrics: visualMetrics
             popupRadius: root.cornerRadius
 
             anchors {
                 bottom: dockThemeToggle.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockSystemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -164,11 +169,12 @@ ShellRoot {
         Monitor {
             id: dockMonitor
             theme: shellTheme
-            popupRadius: root.cornerRadius
+            metrics: visualMetrics
+            textSizeController: root.globalTextSizeController
 
             anchors {
                 bottom: dockPowerIdle.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockSystemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -176,11 +182,11 @@ ShellRoot {
         Audio {
             id: dockAudio
             theme: shellTheme
-            popupRadius: root.cornerRadius
+            metrics: visualMetrics
 
             anchors {
                 bottom: dockMonitor.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockSystemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -188,11 +194,11 @@ ShellRoot {
         Network {
             id: dockNetwork
             theme: shellTheme
-            popupRadius: root.cornerRadius
+            metrics: visualMetrics
 
             anchors {
                 bottom: dockAudio.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockSystemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
         }
@@ -202,12 +208,12 @@ ShellRoot {
             controller: bluetoothAgentController
             powerController: bluetoothPowerController
             theme: shellTheme
-            popupRadius: root.cornerRadius
+            metrics: visualMetrics
             screenName: screenScope.modelData.name
 
             anchors {
                 bottom: dockNetwork.top
-                bottomMargin: dockClock.systemControlGap
+                bottomMargin: visualMetrics.dockSystemControlGap
                 horizontalCenter: parent.horizontalCenter
             }
         }

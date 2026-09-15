@@ -8,10 +8,11 @@ Item {
     id: root
 
     required property var theme
-    property int contentWidth: 48
-    property int buttonSize: 40
-    property int iconSize: 28
-    property int spacing: 4
+    required property var metrics
+    readonly property int contentWidth: root.metrics.dockContentWidth
+    readonly property int buttonSize: root.metrics.dockLauncherTarget
+    readonly property int iconSize: root.metrics.applicationLauncherIconSize
+    readonly property int spacing: root.metrics.dockItemGap
     required property int popupRadius
     property color textColor: root.theme.text
     property var runtimeOrder: []
@@ -358,10 +359,9 @@ Item {
                 required property var modelData
 
                 theme: root.theme
+                metrics: root.metrics
                 x: (root.width - width) / 2
                 desktopEntry: modelData.desktopEntry
-                buttonSize: root.buttonSize
-                iconSize: root.iconSize
                 draggable: true
                 workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
                 onActivationRequested: root.activateOrLaunch(modelData.desktopEntry)
@@ -383,7 +383,7 @@ Item {
                 anchors.centerIn: parent
                 text: "+"
                 color: root.textColor
-                font.pixelSize: 24
+                font.pixelSize: root.metrics.heroIconSize
             }
 
             MouseArea {
@@ -403,10 +403,9 @@ Item {
                 required property DesktopEntry modelData
 
                 theme: root.theme
+                metrics: root.metrics
                 x: (root.width - width) / 2
                 desktopEntry: modelData
-                buttonSize: root.buttonSize
-                iconSize: root.iconSize
                 draggable: false
                 workspaceIds: root.workspaceIdsForDesktopEntry(modelData)
                 onActivationRequested: root.activateOrLaunch(modelData)

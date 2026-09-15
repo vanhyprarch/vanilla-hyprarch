@@ -6,9 +6,9 @@ Item {
     id: root
 
     required property var theme
-    property int buttonSize: 40
-    property int iconSize: 28
-    required property int popupRadius
+    required property var metrics
+    readonly property int buttonSize: root.metrics.dockSystemControlTarget
+    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property string iconName: {
@@ -57,7 +57,7 @@ Item {
         id: audioPanel
 
         theme: root.theme
+        metrics: root.metrics
         popupAnchorItem: root
-        popupRadius: root.popupRadius
     }
 }

@@ -7,8 +7,9 @@ Item {
     id: root
 
     required property var theme
-    property int buttonSize: 40
-    property int bottomMargin: 12
+    required property var metrics
+    readonly property int buttonSize: root.metrics.dockPowerButtonTarget
+    property int bottomMargin: root.metrics.dockOuterInset
     property color buttonColor: root.theme.surface
     property color buttonHoverColor: root.theme.hover
     property color iconColor: root.theme.accent

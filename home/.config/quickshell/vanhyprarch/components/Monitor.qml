@@ -5,9 +5,10 @@ Item {
     id: root
 
     required property var theme
-    property int buttonSize: 40
-    property int iconSize: 28
-    required property int popupRadius
+    required property var metrics
+    required property var textSizeController
+    readonly property int buttonSize: root.metrics.dockSystemControlTarget
+    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize
@@ -36,7 +37,8 @@ Item {
         id: monitorPanel
 
         theme: root.theme
+        metrics: root.metrics
+        textSizeController: root.textSizeController
         popupAnchorItem: root
-        popupRadius: root.popupRadius
     }
 }

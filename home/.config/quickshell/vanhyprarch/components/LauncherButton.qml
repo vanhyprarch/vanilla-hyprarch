@@ -5,9 +5,10 @@ Item {
     id: root
 
     required property var theme
+    required property var metrics
     required property DesktopEntry desktopEntry
-    property int buttonSize: 40
-    property int iconSize: 28
+    readonly property int buttonSize: root.metrics.dockLauncherTarget
+    readonly property int iconSize: root.metrics.applicationLauncherIconSize
     property var workspaceIds: []
     property bool draggable: false
     property string dragDesktopId: desktopEntry ? desktopEntry.id : ""

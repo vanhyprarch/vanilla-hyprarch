@@ -4,22 +4,11 @@ import QtQuick
 import Quickshell
 import Quickshell.Networking
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var theme
-    required property Item popupAnchorItem
-    required property int popupRadius
-    property int panelWidth: 260
-    property int panelPadding: 12
-    property int rowHeight: 32
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
-    property color backgroundColor: root.theme.background
     property color textColor: root.theme.text
-    property color secondaryColor: root.theme.surface
-    property color accentColor: root.theme.accent
-    property color hoverColor: root.theme.hover
 
     readonly property bool backendAvailable:
         Networking.backend === NetworkBackendType.NetworkManager
@@ -531,65 +520,36 @@ PopupWindow {
         }
     }
 
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0,
-            ((root.popupAnchorItem.parent ? root.popupAnchorItem.parent.width : root.popupAnchorItem.width)
-                - root.popupAnchorItem.width) / 2) + root.popupHorizontalGap
-        margins.bottom: root.popupVerticalOffset
-    }
+    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
-    implicitWidth: panelWidth
-    implicitHeight: content.implicitHeight + panelPadding * 2
-    color: "transparent"
-    visible: false
-    grabFocus: true
-
-    component SectionHeading: Text {
-        width: content.width
-        color: root.textColor
-        font.pixelSize: 13
-        font.weight: Font.Medium
-        wrapMode: Text.NoWrap
-    }
-
-    Rectangle {
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomLeftRadius: 0
-        bottomRightRadius: root.popupRadius
+        metrics: root.metrics
+        theme: root.theme
 
         Column {
             id: content
 
-            x: root.panelPadding
-            y: root.panelPadding
-            width: root.panelWidth - root.panelPadding * 2
-            spacing: 6
+            width: parent.width
+            spacing: root.metrics.sectionGap
 
             Text {
                 width: parent.width
                 text: "Network"
                 color: root.textColor
-                font.pixelSize: 16
-                font.bold: true
+                font.pixelSize: root.metrics.panelTitleFontSize
+                font.weight: root.metrics.panelTitleFontWeight
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             Item {
                 width: parent.width
-                height: root.rowHeight
+                height: root.metrics.compactRowHeight
 
                 Text {
                     anchors {
@@ -598,8 +558,8 @@ PopupWindow {
                     }
                     text: "Status"
                     color: root.textColor
-                    font.pixelSize: 13
-                    font.weight: Font.Medium
+                    font.pixelSize: root.metrics.informationLabelFontSize
+                    font.weight: root.metrics.informationLabelFontWeight
                 }
 
                 Text {
@@ -608,28 +568,31 @@ PopupWindow {
                         verticalCenter: parent.verticalCenter
                     }
                     text: root.connectivityLabel()
-                    color: root.textColor
-                    font.pixelSize: 13
+                    color: root.theme.textMuted
+                    font.pixelSize: root.metrics.informationValueFontSize
+                    font.weight: root.metrics.informationValueFontWeight
                 }
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
                 visible: root.wiredDevices.length > 0
             }
 
             SectionHeading {
+                metrics: root.metrics
+                theme: root.theme
                 visible: root.wiredDevices.length > 0
-                height: visible ? root.rowHeight : 0
-                text: "Wired"
+                width: parent.width
+                height: visible ? root.metrics.compactControlHeight : 0
+                text: "WIRED"
                 verticalAlignment: Text.AlignVCenter
             }
 
             Column {
                 width: parent.width
-                spacing: 4
+                spacing: root.metrics.rowSpacing
                 visible: root.wiredDevices.length > 0
 
                 Repeater {
@@ -645,24 +608,24 @@ PopupWindow {
                             Boolean(wiredRow.modelData && wiredRow.modelData.hasLink)
 
                         width: content.width
-                        height: root.rowHeight + 12
-                        radius: root.popupRadius / 2
-                        color: root.secondaryColor
+                        height: root.metrics.twoLineRowHeight
+                        radius: root.metrics.rowRadius
+                        color: root.theme.normalFill
 
                         Text {
                             anchors {
                                 left: parent.left
                                 right: wiredState.left
                                 top: parent.top
-                                leftMargin: 8
-                                rightMargin: 8
-                                topMargin: 6
+                                leftMargin: root.metrics.rowSidePadding
+                                rightMargin: root.metrics.rowSidePadding
+                                topMargin: root.metrics.contentGap
                             }
                             text: wiredRow.deviceConnected
                                 ? root.wiredConnectionName(wiredRow.modelData) : "Ethernet"
                             color: root.textColor
-                            font.pixelSize: 12
-                            font.weight: Font.Medium
+                            font.pixelSize: root.metrics.bodyFontSize
+                            font.weight: root.metrics.overlayFontWeight
                             elide: Text.ElideRight
                             wrapMode: Text.NoWrap
                         }
@@ -673,14 +636,14 @@ PopupWindow {
                             anchors {
                                 right: parent.right
                                 top: parent.top
-                                rightMargin: 8
-                                topMargin: 6
+                                rightMargin: root.metrics.rowSidePadding
+                                topMargin: root.metrics.contentGap
                             }
                             text: wiredRow.deviceConnected
                                 ? root.linkSpeedLabel(wiredRow.modelData)
                                 : (wiredRow.linkAvailable ? "Link available" : "Disconnected")
                             color: root.textColor
-                            font.pixelSize: 12
+                            font.pixelSize: root.metrics.bodyFontSize
                             wrapMode: Text.NoWrap
                         }
 
@@ -689,15 +652,14 @@ PopupWindow {
                                 left: parent.left
                                 right: parent.right
                                 bottom: parent.bottom
-                                leftMargin: 8
-                                rightMargin: 8
-                                bottomMargin: 5
+                                leftMargin: root.metrics.rowSidePadding
+                                rightMargin: root.metrics.rowSidePadding
+                                bottomMargin: root.metrics.contentGap
                             }
                             text: root.cleanText(wiredRow.modelData
                                 ? wiredRow.modelData.name : "", "Unknown device")
-                            color: root.textColor
-                            opacity: 0.75
-                            font.pixelSize: 11
+                            color: root.theme.textMuted
+                            font.pixelSize: root.metrics.detailFontSize
                             elide: Text.ElideRight
                             wrapMode: Text.NoWrap
                         }
@@ -705,15 +667,14 @@ PopupWindow {
                 }
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             Item {
                 width: parent.width
-                height: root.rowHeight
+                height: root.metrics.compactRowHeight
 
                 Text {
                     anchors {
@@ -722,38 +683,44 @@ PopupWindow {
                     }
                     text: "Wi-Fi"
                     color: root.textColor
-                    font.pixelSize: 13
-                    font.weight: Font.Medium
+                    font.pixelSize: root.metrics.bodyFontSize
+                    font.weight: root.metrics.overlayFontWeight
                 }
 
-                Rectangle {
+                Item {
                     id: wifiToggle
 
-                    width: root.wifiControlAvailable ? 52 : 104
-                    height: 24
+                    width: wifiToggleContent.implicitWidth
+                    height: root.metrics.compactRowHeight
                     anchors {
                         right: parent.right
                         verticalCenter: parent.verticalCenter
                     }
-                    radius: root.popupRadius / 2
-                    color: root.wifiControlAvailable && Networking.wifiEnabled
-                        ? root.accentColor
-                        : (wifiToggleMouse.containsMouse && root.wifiControlAvailable
-                            ? root.hoverColor : root.secondaryColor)
-                    opacity: root.wifiControlAvailable ? 1.0 : 0.55
+                    opacity: root.wifiControlAvailable
+                        ? 1.0 : root.metrics.disabledInteractiveOpacity
 
-                    Text {
-                        anchors.fill: parent
-                        text: root.wifiControlAvailable
-                            ? (Networking.wifiEnabled ? "On" : "Off") : "Unavailable"
-                        color: root.wifiControlAvailable && Networking.wifiEnabled
-                            ? root.backgroundColor : root.textColor
-                        font.pixelSize: 12
-                        font.weight: root.wifiControlAvailable && Networking.wifiEnabled
-                            ? Font.Medium : Font.Normal
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        wrapMode: Text.NoWrap
+                    Row {
+                        id: wifiToggleContent
+
+                        anchors.centerIn: parent
+                        spacing: root.metrics.contentGap
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.wifiControlAvailable
+                                ? (Networking.wifiEnabled ? "On" : "Off") : "Unavailable"
+                            color: root.theme.textMuted
+                            font.pixelSize: root.metrics.detailFontSize
+                        }
+
+                        ToggleSwitch {
+                            metrics: root.metrics
+                            theme: root.theme
+                            checked: root.wifiControlAvailable
+                                && Networking.wifiEnabled
+                            interactive: false
+                            enabled: root.wifiControlAvailable
+                        }
                     }
 
                     MouseArea {
@@ -771,18 +738,17 @@ PopupWindow {
             Text {
                 visible: root.wifiDevices.length === 0
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: root.backendAvailable
                     ? "No Wi-Fi device" : "NetworkManager unavailable"
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 wrapMode: Text.NoWrap
             }
 
             Column {
                 width: parent.width
-                spacing: 4
+                spacing: root.metrics.rowSpacing
                 visible: root.wifiDevices.length > 0
 
                 Repeater {
@@ -799,25 +765,25 @@ PopupWindow {
                                 && wifiRow.currentNetwork)
 
                         width: content.width
-                        height: root.rowHeight + 12
-                        radius: root.popupRadius / 2
-                        color: root.secondaryColor
+                        height: root.metrics.twoLineRowHeight
+                        radius: root.metrics.rowRadius
+                        color: root.theme.normalFill
 
                         Text {
                             anchors {
                                 left: parent.left
                                 right: wifiState.left
                                 top: parent.top
-                                leftMargin: 8
-                                rightMargin: 8
-                                topMargin: 6
+                                leftMargin: root.metrics.rowSidePadding
+                                rightMargin: root.metrics.rowSidePadding
+                                topMargin: root.metrics.contentGap
                             }
                             text: wifiRow.deviceConnected
                                 ? root.cleanText(wifiRow.currentNetwork.name, "Connected")
                                 : "Not connected"
                             color: root.textColor
-                            font.pixelSize: 12
-                            font.weight: Font.Medium
+                            font.pixelSize: root.metrics.bodyFontSize
+                            font.weight: root.metrics.overlayFontWeight
                             elide: Text.ElideRight
                             wrapMode: Text.NoWrap
                         }
@@ -828,13 +794,13 @@ PopupWindow {
                             anchors {
                                 right: parent.right
                                 top: parent.top
-                                rightMargin: 8
-                                topMargin: 6
+                                rightMargin: root.metrics.rowSidePadding
+                                topMargin: root.metrics.contentGap
                             }
                             text: wifiRow.deviceConnected
                                 ? root.signalPercent(wifiRow.currentNetwork) + "%" : ""
                             color: root.textColor
-                            font.pixelSize: 12
+                            font.pixelSize: root.metrics.bodyFontSize
                             wrapMode: Text.NoWrap
                         }
 
@@ -843,15 +809,14 @@ PopupWindow {
                                 left: parent.left
                                 right: parent.right
                                 bottom: parent.bottom
-                                leftMargin: 8
-                                rightMargin: 8
-                                bottomMargin: 5
+                                leftMargin: root.metrics.rowSidePadding
+                                rightMargin: root.metrics.rowSidePadding
+                                bottomMargin: root.metrics.contentGap
                             }
                             text: root.cleanText(wifiRow.modelData
                                 ? wifiRow.modelData.name : "", "Unknown device")
-                            color: root.textColor
-                            opacity: 0.75
-                            font.pixelSize: 11
+                            color: root.theme.textMuted
+                            font.pixelSize: root.metrics.detailFontSize
                             elide: Text.ElideRight
                             wrapMode: Text.NoWrap
                         }
@@ -859,17 +824,19 @@ PopupWindow {
                 }
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
                 visible: root.wifiControlAvailable && Networking.wifiEnabled
             }
 
             SectionHeading {
+                metrics: root.metrics
+                theme: root.theme
                 visible: root.wifiControlAvailable && Networking.wifiEnabled
-                height: visible ? root.rowHeight : 0
-                text: "Available networks"
+                width: parent.width
+                height: visible ? root.metrics.compactControlHeight : 0
+                text: "AVAILABLE NETWORKS"
                 verticalAlignment: Text.AlignVCenter
             }
 
@@ -882,9 +849,9 @@ PopupWindow {
                 visible: root.wifiControlAvailable && Networking.wifiEnabled
                     && root.wifiNetworks.length > 0
                 width: parent.width
-                height: visible ? displayedRows * root.rowHeight
+                height: visible ? displayedRows * root.metrics.compactRowHeight
                     + Math.max(0, displayedRows - 1) * spacing : 0
-                spacing: 4
+                spacing: root.metrics.rowSpacing
                 clip: true
                 interactive: contentHeight > height
                 boundsBehavior: Flickable.StopAtBounds
@@ -906,22 +873,22 @@ PopupWindow {
                         && root.failureSsid === networkRow.modelData.ssid
 
                     width: wifiNetworkList.width
-                    height: root.rowHeight
-                    radius: root.popupRadius / 2
-                    color: networkRow.selected ? root.accentColor
+                    height: root.metrics.compactRowHeight
+                    radius: root.metrics.rowRadius
+                    color: networkRow.selected ? root.theme.activeFill
                         : (networkRowMouse.containsMouse
-                            ? root.hoverColor : root.secondaryColor)
+                            ? root.theme.hoverFill : "transparent")
 
                     Image {
                         id: networkSignalIcon
 
                         anchors {
                             left: parent.left
-                            leftMargin: 6
+                            leftMargin: root.metrics.rowSidePadding
                             verticalCenter: parent.verticalCenter
                         }
-                        width: 20
-                        height: 20
+                        width: root.metrics.standardIconSize
+                        height: root.metrics.standardIconSize
                         source: Quickshell.iconPath(
                             root.signalIconName(networkRow.modelData.signal))
                         sourceSize: Qt.size(width, height)
@@ -934,17 +901,17 @@ PopupWindow {
                         anchors {
                             left: networkSignalIcon.right
                             right: networkRowStatus.left
-                            leftMargin: 6
-                            rightMargin: 6
+                            leftMargin: root.metrics.contentGap
+                            rightMargin: root.metrics.contentGap
                             verticalCenter: parent.verticalCenter
                         }
                         text: networkRow.modelData.ssid
                         textFormat: Text.PlainText
-                        color: networkRow.selected
-                            ? root.backgroundColor : root.textColor
-                        font.pixelSize: 12
+                        color: networkRow.failed ? root.theme.danger
+                            : root.textColor
+                        font.pixelSize: root.metrics.bodyFontSize
                         font.weight: networkRow.selected
-                            ? Font.Medium : Font.Normal
+                            ? root.metrics.overlayFontWeight : Font.Normal
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
                     }
@@ -955,11 +922,13 @@ PopupWindow {
                         anchors {
                             right: forgetAction.visible
                                 ? forgetAction.left : parent.right
-                            rightMargin: forgetAction.visible ? 4 : 7
+                            rightMargin: forgetAction.visible
+                                ? root.metrics.contentGap : root.metrics.rowSidePadding
                             verticalCenter: parent.verticalCenter
                         }
-                        width: forgetAction.visible ? 82
-                            : (networkRow.connecting || networkRow.failed ? 94 : 88)
+                        width: forgetAction.visible ? root.metrics.scaled(82)
+                            : (networkRow.connecting || networkRow.failed
+                                ? root.metrics.scaled(94) : root.metrics.scaled(88))
                         text: {
                             if (networkRow.connecting)
                                 return "Connecting…"
@@ -971,13 +940,14 @@ PopupWindow {
                                 + root.securityLabel(networkRow.modelData.security)
                         }
                         textFormat: Text.PlainText
-                        color: networkRow.selected
-                            ? root.backgroundColor : root.textColor
+                        color: networkRow.failed ? root.theme.danger
+                            : root.textColor
                         opacity: networkRow.connecting || networkRow.failed
-                            || networkRow.selected ? 1.0 : 0.75
-                        font.pixelSize: 10
+                            || networkRow.selected ? 1.0
+                                : root.metrics.informationalMutedOpacity
+                        font.pixelSize: root.metrics.captionFontSize
                         font.weight: networkRow.connecting || networkRow.selected
-                            ? Font.Medium : Font.Normal
+                            ? root.metrics.overlayFontWeight : Font.Normal
                         horizontalAlignment: Text.AlignRight
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
@@ -988,23 +958,22 @@ PopupWindow {
 
                         visible: Boolean(networkRow.modelData.known)
                         z: 2
-                        width: visible ? 42 : 0
-                        height: 22
+                        width: visible ? root.metrics.inlineTextActionWidth : 0
+                        height: root.metrics.inlineActionButtonSize
                         anchors {
                             right: parent.right
-                            rightMargin: 4
+                            rightMargin: root.metrics.contentGap
                             verticalCenter: parent.verticalCenter
                         }
-                        radius: root.popupRadius / 2
+                        radius: root.metrics.rowRadius
                         color: forgetMouse.containsMouse
-                            ? root.hoverColor : "transparent"
+                            ? root.theme.dangerFill : "transparent"
 
                         Text {
                             anchors.fill: parent
                             text: "Forget"
-                            color: networkRow.selected && !forgetMouse.containsMouse
-                                ? root.backgroundColor : root.textColor
-                            font.pixelSize: 10
+                            color: root.theme.danger
+                            font.pixelSize: root.metrics.captionFontSize
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             wrapMode: Text.NoWrap
@@ -1040,11 +1009,10 @@ PopupWindow {
                 visible: root.wifiControlAvailable && Networking.wifiEnabled
                     && root.wifiNetworks.length === 0
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: "No networks found"
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 wrapMode: Text.NoWrap
             }
 
@@ -1053,9 +1021,10 @@ PopupWindow {
 
                 visible: root.passwordSsid !== ""
                 width: parent.width
-                height: visible ? passwordContent.implicitHeight + 16 : 0
-                radius: root.popupRadius / 2
-                color: root.secondaryColor
+                height: visible ? passwordContent.implicitHeight
+                    + root.metrics.overlayPadding : 0
+                radius: root.metrics.rowRadius
+                color: root.theme.normalFill
 
                 Column {
                     id: passwordContent
@@ -1064,17 +1033,17 @@ PopupWindow {
                         left: parent.left
                         right: parent.right
                         top: parent.top
-                        margins: 8
+                        margins: root.metrics.rowSidePadding
                     }
-                    spacing: 6
+                    spacing: root.metrics.contentGap
 
                     Text {
                         width: parent.width
                         text: "Password for " + root.passwordSsid
                         textFormat: Text.PlainText
                         color: root.textColor
-                        font.pixelSize: 12
-                        font.weight: Font.Medium
+                        font.pixelSize: root.metrics.bodyFontSize
+                        font.weight: root.metrics.overlayFontWeight
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
                     }
@@ -1085,30 +1054,32 @@ PopupWindow {
                         width: parent.width
                         text: root.failureText
                         textFormat: Text.PlainText
-                        color: root.textColor
-                        opacity: 0.8
-                        font.pixelSize: 11
+                        color: root.theme.danger
+                        font.pixelSize: root.metrics.detailFontSize
                         wrapMode: Text.NoWrap
                     }
 
                     Rectangle {
                         width: parent.width
-                        height: root.rowHeight
-                        radius: root.popupRadius / 2
-                        color: root.backgroundColor
+                        height: root.metrics.textFieldHeight
+                        radius: root.metrics.rowRadius
+                        color: passwordInput.activeFocus
+                            ? root.theme.hoverFill : root.theme.normalFill
+                        border.width: root.metrics.controlOutlineThickness
+                        border.color: passwordInput.activeFocus
+                            ? root.theme.focus : root.theme.separator
 
                         Text {
                             anchors {
                                 left: parent.left
-                                leftMargin: 8
+                                leftMargin: root.metrics.rowSidePadding
                                 verticalCenter: parent.verticalCenter
                             }
                             visible: passwordInput.text.length === 0
                                 && !passwordInput.activeFocus
                             text: "Password"
-                            color: root.textColor
-                            opacity: 0.55
-                            font.pixelSize: 12
+                            color: root.theme.textMuted
+                            font.pixelSize: root.metrics.bodyFontSize
                         }
 
                         TextInput {
@@ -1116,15 +1087,15 @@ PopupWindow {
 
                             anchors {
                                 fill: parent
-                                leftMargin: 8
-                                rightMargin: 8
+                                leftMargin: root.metrics.rowSidePadding
+                                rightMargin: root.metrics.rowSidePadding
                             }
                             text: root.passwordSsid !== ""
                                 ? root.passwordText : ""
                             color: root.textColor
-                            selectionColor: root.accentColor
-                            selectedTextColor: root.backgroundColor
-                            font.pixelSize: 12
+                            selectionColor: root.theme.activeFill
+                            selectedTextColor: root.theme.text
+                            font.pixelSize: root.metrics.bodyFontSize
                             verticalAlignment: TextInput.AlignVCenter
                             echoMode: TextInput.Password
                             clip: true
@@ -1142,21 +1113,21 @@ PopupWindow {
 
                     Row {
                         width: parent.width
-                        height: 24
-                        spacing: 6
+                        height: root.metrics.compactControlHeight
+                        spacing: root.metrics.contentGap
 
                         Rectangle {
                             width: (parent.width - parent.spacing) / 2
                             height: parent.height
-                            radius: root.popupRadius / 2
+                            radius: root.metrics.rowRadius
                             color: cancelMouse.containsMouse
-                                ? root.hoverColor : root.backgroundColor
+                                ? root.theme.hoverFill : root.theme.normalFill
 
                             Text {
                                 anchors.fill: parent
                                 text: "Cancel"
                                 color: root.textColor
-                                font.pixelSize: 12
+                                font.pixelSize: root.metrics.bodyFontSize
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 wrapMode: Text.NoWrap
@@ -1179,18 +1150,19 @@ PopupWindow {
 
                             width: (parent.width - parent.spacing) / 2
                             height: parent.height
-                            radius: root.popupRadius / 2
-                            color: canSubmit ? root.accentColor : root.backgroundColor
-                            opacity: canSubmit ? 1.0 : 0.55
+                            radius: root.metrics.rowRadius
+                            color: canSubmit
+                                ? root.theme.activeFill : root.theme.normalFill
+                            opacity: canSubmit ? 1.0
+                                : root.metrics.disabledInteractiveOpacity
 
                             Text {
                                 anchors.fill: parent
                                 text: "Connect"
-                                color: parent.canSubmit
-                                    ? root.backgroundColor : root.textColor
-                                font.pixelSize: 12
+                                color: root.textColor
+                                font.pixelSize: root.metrics.bodyFontSize
                                 font.weight: parent.canSubmit
-                                    ? Font.Medium : Font.Normal
+                                    ? root.metrics.overlayFontWeight : Font.Normal
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 wrapMode: Text.NoWrap

@@ -6,8 +6,9 @@ Item {
     id: root
 
     required property var theme
-    property int buttonSize: 40
-    property int iconSize: 28
+    required property var metrics
+    readonly property int buttonSize: root.metrics.dockSystemControlTarget
+    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize

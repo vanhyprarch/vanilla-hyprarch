@@ -4,25 +4,14 @@ import QtQuick
 import Quickshell
 import Quickshell.Bluetooth
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var controller
     required property var powerController
     required property var theme
-    required property Item popupAnchorItem
-    required property int popupRadius
     required property string screenName
-    property int panelWidth: 260
-    property int panelPadding: 12
-    property int rowHeight: 42
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
-    property color backgroundColor: root.theme.background
     property color textColor: root.theme.text
-    property color secondaryColor: root.theme.surface
-    property color accentColor: root.theme.accent
-    property color hoverColor: root.theme.hover
     property var discoveryAdapter: null
     property bool discoveryOwnedByPanel: false
     property string confirmForgetPath: ""
@@ -39,10 +28,17 @@ PopupWindow {
             || adapter.state === BluetoothAdapterState.Disabling)
     readonly property var deviceObjects: adapterAvailable && adapter.devices
         ? adapter.devices.values : []
+    // BlueZ removes discovery-only device objects asynchronously after the
+    // adapter powers down. Detach the hidden views immediately so those late
+    // model removals cannot keep invalidating a collapsed native popup.
+    readonly property var visibleDeviceObjects: root.adapterEnabled
+        ? root.deviceObjects : []
     readonly property var pairedDevices: root.sortedDevices(
-        root.deviceObjects.filter(device => device && (device.paired || device.bonded)))
+        root.visibleDeviceObjects.filter(device =>
+            device && (device.paired || device.bonded)))
     readonly property var availableDevices: root.sortedDevices(
-        root.deviceObjects.filter(device => device && !device.paired && !device.bonded))
+        root.visibleDeviceObjects.filter(device =>
+            device && !device.paired && !device.bonded))
     readonly property bool promptForScreen: root.controller.promptActive
         && root.controller.promptScreenName === root.screenName
     readonly property var prompt: promptForScreen ? root.controller.currentPrompt : null
@@ -386,29 +382,7 @@ PopupWindow {
         }
     }
 
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0,
-            ((root.popupAnchorItem.parent ? root.popupAnchorItem.parent.width : root.popupAnchorItem.width)
-                - root.popupAnchorItem.width) / 2) + root.popupHorizontalGap
-        margins.bottom: root.popupVerticalOffset
-    }
-
-    implicitWidth: panelWidth
-    implicitHeight: content.implicitHeight + panelPadding * 2
-    color: "transparent"
-    visible: false
-    grabFocus: true
-
-    component SectionHeading: Text {
-        width: content.width
-        color: root.textColor
-        font.pixelSize: 13
-        font.weight: Font.Medium
-        wrapMode: Text.NoWrap
-    }
+    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     component DeviceRow: Rectangle {
         id: deviceRow
@@ -419,21 +393,22 @@ PopupWindow {
         readonly property bool forgetPending: root.confirmForgetPath === path
 
         width: content.width
-        height: root.rowHeight
-        radius: root.popupRadius / 2
+        height: root.metrics.twoLineRowHeight
+        radius: root.metrics.rowRadius
         color: mainMouse.containsMouse && root.mainActionEnabled(device)
-            ? root.hoverColor : root.secondaryColor
+            ? root.theme.hoverFill
+            : device.connected ? root.theme.activeFill : "transparent"
 
         Image {
             id: deviceIcon
 
             anchors {
                 left: parent.left
-                leftMargin: 7
+                leftMargin: root.metrics.rowSidePadding
                 verticalCenter: parent.verticalCenter
             }
-            width: 22
-            height: 22
+            width: root.metrics.standardIconSize
+            height: root.metrics.standardIconSize
             source: Quickshell.iconPath(root.deviceIcon(deviceRow.device),
                 "preferences-system-bluetooth")
             sourceSize: Qt.size(width, height)
@@ -447,15 +422,15 @@ PopupWindow {
                 left: deviceIcon.right
                 right: actionLabel.left
                 top: parent.top
-                leftMargin: 6
-                rightMargin: 5
-                topMargin: 5
+                leftMargin: root.metrics.contentGap
+                rightMargin: root.metrics.contentGap
+                topMargin: root.metrics.contentGap
             }
             text: root.deviceName(deviceRow.device)
             textFormat: Text.PlainText
             color: root.textColor
-            font.pixelSize: 12
-            font.weight: Font.Medium
+            font.pixelSize: root.metrics.bodyFontSize
+            font.weight: root.metrics.overlayFontWeight
             elide: Text.ElideRight
             wrapMode: Text.NoWrap
         }
@@ -465,15 +440,14 @@ PopupWindow {
                 left: deviceIcon.right
                 right: actionLabel.left
                 bottom: parent.bottom
-                leftMargin: 6
-                rightMargin: 5
-                bottomMargin: 5
+                leftMargin: root.metrics.contentGap
+                rightMargin: root.metrics.contentGap
+                bottomMargin: root.metrics.contentGap
             }
             text: root.stateLabel(deviceRow.device)
             textFormat: Text.PlainText
-            color: root.textColor
-            opacity: 0.7
-            font.pixelSize: 10
+            color: root.theme.textMuted
+            font.pixelSize: root.metrics.captionFontSize
             elide: Text.ElideRight
             wrapMode: Text.NoWrap
         }
@@ -483,15 +457,18 @@ PopupWindow {
 
             anchors {
                 right: forgetAction.visible ? forgetAction.left : parent.right
-                rightMargin: forgetAction.visible ? 3 : 7
+                rightMargin: forgetAction.visible
+                    ? root.metrics.contentGap : root.metrics.rowSidePadding
                 verticalCenter: parent.verticalCenter
             }
-            width: forgetAction.visible ? 57 : 78
+            width: forgetAction.visible
+                ? root.metrics.scaled(57) : root.metrics.scaled(78)
             text: root.mainActionLabel(deviceRow.device)
             color: root.textColor
-            opacity: root.mainActionEnabled(deviceRow.device) ? 1.0 : 0.55
-            font.pixelSize: 10
-            font.weight: Font.Medium
+            opacity: root.mainActionEnabled(deviceRow.device)
+                ? 1.0 : root.metrics.disabledInteractiveOpacity
+            font.pixelSize: root.metrics.captionFontSize
+            font.weight: root.metrics.overlayFontWeight
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideRight
             wrapMode: Text.NoWrap
@@ -502,22 +479,26 @@ PopupWindow {
 
             visible: deviceRow.pairedSection && !deviceRow.device.pairing
             z: 2
-            width: visible ? (deviceRow.forgetPending ? 49 : 42) : 0
-            height: 22
+            width: visible ? (deviceRow.forgetPending
+                ? root.metrics.inlineConfirmationActionWidth
+                : root.metrics.inlineTextActionWidth) : 0
+            height: root.metrics.inlineActionButtonSize
             anchors {
                 right: parent.right
-                rightMargin: 4
+                rightMargin: root.metrics.contentGap
                 verticalCenter: parent.verticalCenter
             }
-            radius: root.popupRadius / 2
-            color: forgetMouse.containsMouse ? root.hoverColor : "transparent"
+            radius: root.metrics.rowRadius
+            color: forgetMouse.containsMouse
+                ? root.theme.dangerFill : "transparent"
 
             Text {
                 anchors.fill: parent
                 text: deviceRow.forgetPending ? "Confirm" : "Forget"
-                color: root.textColor
-                font.pixelSize: 10
-                font.weight: deviceRow.forgetPending ? Font.Medium : Font.Normal
+                color: root.theme.danger
+                font.pixelSize: root.metrics.captionFontSize
+                font.weight: deviceRow.forgetPending
+                    ? root.metrics.overlayFontWeight : Font.Normal
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 wrapMode: Text.NoWrap
@@ -550,41 +531,34 @@ PopupWindow {
         }
     }
 
-    Rectangle {
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomLeftRadius: 0
-        bottomRightRadius: root.popupRadius
+        metrics: root.metrics
+        theme: root.theme
 
         Column {
             id: content
 
-            x: root.panelPadding
-            y: root.panelPadding
-            width: root.panelWidth - root.panelPadding * 2
-            spacing: 6
+            width: parent.width
+            spacing: root.metrics.sectionGap
 
             Text {
                 width: parent.width
                 text: "Bluetooth"
                 color: root.textColor
-                font.pixelSize: 16
-                font.bold: true
+                font.pixelSize: root.metrics.panelTitleFontSize
+                font.weight: root.metrics.panelTitleFontWeight
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             Item {
                 width: parent.width
-                height: 32
+                height: root.metrics.compactRowHeight
 
                 Text {
                     anchors {
@@ -593,38 +567,46 @@ PopupWindow {
                     }
                     text: "Bluetooth"
                     color: root.textColor
-                    font.pixelSize: 13
-                    font.weight: Font.Medium
+                    font.pixelSize: root.metrics.bodyFontSize
+                    font.weight: root.metrics.overlayFontWeight
                 }
 
-                Rectangle {
+                Item {
                     id: adapterToggle
 
                     readonly property bool actionable: root.adapterAvailable
                         && !root.adapterBlocked && !root.adapterChanging
                         && root.powerController.ready && !root.powerController.busy
 
-                    width: root.adapterAvailable && !root.adapterBlocked ? 72 : 104
-                    height: 24
+                    width: adapterToggleContent.implicitWidth
+                    height: root.metrics.compactRowHeight
                     anchors {
                         right: parent.right
                         verticalCenter: parent.verticalCenter
                     }
-                    radius: root.popupRadius / 2
-                    color: root.adapterEnabled ? root.accentColor
-                        : (adapterToggleMouse.containsMouse && actionable
-                            ? root.hoverColor : root.secondaryColor)
-                    opacity: actionable ? 1.0 : 0.55
+                    opacity: actionable
+                        ? 1.0 : root.metrics.disabledInteractiveOpacity
 
-                    Text {
-                        anchors.fill: parent
-                        text: root.adapterStatus()
-                        color: root.adapterEnabled ? root.backgroundColor : root.textColor
-                        font.pixelSize: 12
-                        font.weight: root.adapterEnabled ? Font.Medium : Font.Normal
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        wrapMode: Text.NoWrap
+                    Row {
+                        id: adapterToggleContent
+
+                        anchors.centerIn: parent
+                        spacing: root.metrics.contentGap
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.adapterStatus()
+                            color: root.theme.textMuted
+                            font.pixelSize: root.metrics.detailFontSize
+                        }
+
+                        ToggleSwitch {
+                            metrics: root.metrics
+                            theme: root.theme
+                            checked: root.adapterEnabled
+                            interactive: false
+                            enabled: adapterToggle.actionable
+                        }
                     }
 
                     MouseArea {
@@ -642,12 +624,11 @@ PopupWindow {
             Text {
                 visible: root.powerController.errorMessage !== ""
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: root.powerController.errorMessage
                 textFormat: Text.PlainText
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 11
+                color: root.theme.danger
+                font.pixelSize: root.metrics.detailFontSize
                 elide: Text.ElideRight
                 wrapMode: Text.NoWrap
             }
@@ -655,15 +636,14 @@ PopupWindow {
             Text {
                 visible: root.controller.state !== "ready"
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: root.controller.state === "starting"
                     ? "Pairing agent starting…"
                     : root.cleanText(root.controller.errorMessage,
                         "Pairing agent unavailable")
                 textFormat: Text.PlainText
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 11
+                color: root.theme.danger
+                font.pixelSize: root.metrics.detailFontSize
                 elide: Text.ElideRight
                 wrapMode: Text.NoWrap
             }
@@ -673,9 +653,10 @@ PopupWindow {
 
                 visible: root.promptForScreen
                 width: parent.width
-                height: visible ? promptContent.implicitHeight + 16 : 0
-                radius: root.popupRadius / 2
-                color: root.secondaryColor
+                height: visible ? promptContent.implicitHeight
+                    + root.metrics.overlayPadding : 0
+                radius: root.metrics.rowRadius
+                color: root.theme.normalFill
 
                 Column {
                     id: promptContent
@@ -684,17 +665,17 @@ PopupWindow {
                         left: parent.left
                         right: parent.right
                         top: parent.top
-                        margins: 8
+                        margins: root.metrics.rowSidePadding
                     }
-                    spacing: 6
+                    spacing: root.metrics.contentGap
 
                     Text {
                         width: parent.width
                         text: root.promptTitle()
                         textFormat: Text.PlainText
                         color: root.textColor
-                        font.pixelSize: 12
-                        font.weight: Font.Medium
+                        font.pixelSize: root.metrics.bodyFontSize
+                        font.weight: root.metrics.overlayFontWeight
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
                     }
@@ -703,9 +684,8 @@ PopupWindow {
                         width: parent.width
                         text: root.promptDescription()
                         textFormat: Text.PlainText
-                        color: root.textColor
-                        opacity: 0.8
-                        font.pixelSize: 11
+                        color: root.theme.textMuted
+                        font.pixelSize: root.metrics.detailFontSize
                         wrapMode: Text.WordWrap
                     }
 
@@ -714,7 +694,7 @@ PopupWindow {
                             || root.prompt.kind === "displayPasskey"
                             || root.prompt.kind === "requestConfirmation")
                         width: parent.width
-                        height: visible ? 34 : 0
+                        height: visible ? root.metrics.prominentValueHeight : 0
                         text: {
                             if (!root.prompt)
                                 return ""
@@ -723,8 +703,8 @@ PopupWindow {
                             return root.formatPasskey(root.prompt.passkey)
                         }
                         textFormat: Text.PlainText
-                        color: root.textColor
-                        font.pixelSize: 20
+                        color: root.theme.control
+                        font.pixelSize: root.metrics.prominentValueFontSize
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -734,13 +714,12 @@ PopupWindow {
                     Text {
                         visible: root.prompt && root.prompt.kind === "displayPasskey"
                         width: parent.width
-                        height: visible ? 16 : 0
+                        height: visible ? root.metrics.captionLineHeight : 0
                         text: root.prompt
                             ? String(root.prompt.entered) + " of 6 digits entered" : ""
                         textFormat: Text.PlainText
-                        color: root.textColor
-                        opacity: 0.7
-                        font.pixelSize: 10
+                        color: root.theme.textMuted
+                        font.pixelSize: root.metrics.captionFontSize
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.NoWrap
                     }
@@ -749,23 +728,26 @@ PopupWindow {
                         visible: root.prompt && (root.prompt.kind === "requestPinCode"
                             || root.prompt.kind === "requestPasskey")
                         width: parent.width
-                        height: visible ? 32 : 0
-                        radius: root.popupRadius / 2
-                        color: root.backgroundColor
+                        height: visible ? root.metrics.textFieldHeight : 0
+                        radius: root.metrics.rowRadius
+                        color: promptInput.activeFocus
+                            ? root.theme.hoverFill : root.theme.normalFill
+                        border.width: root.metrics.controlOutlineThickness
+                        border.color: promptInput.activeFocus
+                            ? root.theme.focus : root.theme.separator
 
                         Text {
                             anchors {
                                 left: parent.left
-                                leftMargin: 8
+                                leftMargin: root.metrics.rowSidePadding
                                 verticalCenter: parent.verticalCenter
                             }
                             visible: promptInput.text.length === 0
                                 && !promptInput.activeFocus
                             text: root.prompt && root.prompt.kind === "requestPasskey"
                                 ? "Numeric passkey" : "PIN"
-                            color: root.textColor
-                            opacity: 0.55
-                            font.pixelSize: 12
+                            color: root.theme.textMuted
+                            font.pixelSize: root.metrics.bodyFontSize
                         }
 
                         TextInput {
@@ -773,14 +755,14 @@ PopupWindow {
 
                             anchors {
                                 fill: parent
-                                leftMargin: 8
-                                rightMargin: 8
+                                leftMargin: root.metrics.rowSidePadding
+                                rightMargin: root.metrics.rowSidePadding
                             }
                             text: root.promptValue
                             color: root.textColor
-                            selectionColor: root.accentColor
-                            selectedTextColor: root.backgroundColor
-                            font.pixelSize: 12
+                            selectionColor: root.theme.activeFill
+                            selectedTextColor: root.theme.text
+                            font.pixelSize: root.metrics.bodyFontSize
                             verticalAlignment: TextInput.AlignVCenter
                             echoMode: TextInput.Password
                             clip: true
@@ -800,24 +782,24 @@ PopupWindow {
 
                     Row {
                         width: parent.width
-                        height: 24
-                        spacing: 6
+                        height: root.metrics.compactControlHeight
+                        spacing: root.metrics.contentGap
 
                         Rectangle {
                             width: root.controller.displayPrompt
                                 ? parent.width : (parent.width - parent.spacing) / 2
                             height: parent.height
-                            radius: root.popupRadius / 2
+                            radius: root.metrics.rowRadius
                             color: promptRejectMouse.containsMouse
-                                ? root.hoverColor : root.backgroundColor
+                                ? root.theme.dangerFill : root.theme.normalFill
 
                             Text {
                                 anchors.fill: parent
                                 text: root.controller.displayCancellationPending
                                     ? "Canceling…"
                                     : (root.controller.displayPrompt ? "Cancel pairing" : "Reject")
-                                color: root.textColor
-                                font.pixelSize: 12
+                                color: root.theme.danger
+                                font.pixelSize: root.metrics.bodyFontSize
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 wrapMode: Text.NoWrap
@@ -863,17 +845,19 @@ PopupWindow {
                             visible: !root.controller.displayPrompt
                             width: visible ? (parent.width - parent.spacing) / 2 : 0
                             height: parent.height
-                            radius: root.popupRadius / 2
-                            color: canAccept ? root.accentColor : root.backgroundColor
-                            opacity: canAccept ? 1.0 : 0.55
+                            radius: root.metrics.rowRadius
+                            color: canAccept
+                                ? root.theme.activeFill : root.theme.normalFill
+                            opacity: canAccept ? 1.0
+                                : root.metrics.disabledInteractiveOpacity
 
                             Text {
                                 anchors.fill: parent
                                 text: parent.entryPrompt ? "Submit" : "Allow"
-                                color: parent.canAccept
-                                    ? root.backgroundColor : root.textColor
-                                font.pixelSize: 12
-                                font.weight: parent.canAccept ? Font.Medium : Font.Normal
+                                color: root.textColor
+                                font.pixelSize: root.metrics.bodyFontSize
+                                font.weight: parent.canAccept
+                                    ? root.metrics.overlayFontWeight : Font.Normal
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 wrapMode: Text.NoWrap
@@ -900,42 +884,45 @@ PopupWindow {
             Text {
                 visible: root.controller.actionError !== ""
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: root.controller.actionError
                 textFormat: Text.PlainText
-                color: root.textColor
-                opacity: 0.8
-                font.pixelSize: 11
+                color: root.theme.danger
+                font.pixelSize: root.metrics.detailFontSize
                 elide: Text.ElideRight
                 wrapMode: Text.NoWrap
             }
 
             Text {
-                visible: !root.adapterAvailable || root.adapterBlocked
-                    || (!root.adapterEnabled && !root.adapterChanging)
+                // Keep one inactive-status row present throughout transitional
+                // power states. Removing it during Disabling made the native
+                // popup shrink and then grow again when Disabled was reached.
+                visible: !root.adapterEnabled
                 width: parent.width
-                height: visible ? 24 : 0
+                height: root.metrics.compactControlHeight
                 text: !root.adapterAvailable ? "No Bluetooth adapter"
                     : (root.adapterBlocked ? "Bluetooth is blocked"
                         : "Bluetooth is off")
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.informationValueFontSize
+                font.weight: root.metrics.informationValueFontWeight
                 verticalAlignment: Text.AlignVCenter
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
+            PanelSeparator {
                 visible: root.adapterEnabled
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+                metrics: root.metrics
+                theme: root.theme
             }
 
             SectionHeading {
+                metrics: root.metrics
+                theme: root.theme
                 visible: root.adapterEnabled
-                height: visible ? 28 : 0
-                text: "Paired devices"
+                width: parent.width
+                height: visible ? root.metrics.compactControlHeight : 0
+                text: "PAIRED DEVICES"
                 verticalAlignment: Text.AlignVCenter
             }
 
@@ -947,9 +934,9 @@ PopupWindow {
 
                 visible: root.adapterEnabled && root.pairedDevices.length > 0
                 width: parent.width
-                height: visible ? displayedRows * root.rowHeight
+                height: visible ? displayedRows * root.metrics.twoLineRowHeight
                     + Math.max(0, displayedRows - 1) * spacing : 0
-                spacing: 4
+                spacing: root.metrics.rowSpacing
                 clip: true
                 interactive: contentHeight > height
                 boundsBehavior: Flickable.StopAtBounds
@@ -965,32 +952,32 @@ PopupWindow {
             Text {
                 visible: root.adapterEnabled && root.pairedDevices.length === 0
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: "No paired devices"
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
+            PanelSeparator {
                 visible: root.adapterEnabled
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+                metrics: root.metrics
+                theme: root.theme
             }
 
             Item {
                 visible: root.adapterEnabled
                 width: parent.width
-                height: visible ? 28 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
 
                 SectionHeading {
+                    metrics: root.metrics
+                    theme: root.theme
                     anchors {
                         left: parent.left
                         verticalCenter: parent.verticalCenter
                     }
-                    text: "Available devices"
+                    text: "AVAILABLE DEVICES"
                 }
 
                 Text {
@@ -999,9 +986,8 @@ PopupWindow {
                         verticalCenter: parent.verticalCenter
                     }
                     text: root.adapter && root.adapter.discovering ? "Scanning…" : ""
-                    color: root.textColor
-                    opacity: 0.7
-                    font.pixelSize: 10
+                    color: root.theme.textMuted
+                    font.pixelSize: root.metrics.captionFontSize
                     wrapMode: Text.NoWrap
                 }
             }
@@ -1014,9 +1000,9 @@ PopupWindow {
 
                 visible: root.adapterEnabled && root.availableDevices.length > 0
                 width: parent.width
-                height: visible ? displayedRows * root.rowHeight
+                height: visible ? displayedRows * root.metrics.twoLineRowHeight
                     + Math.max(0, displayedRows - 1) * spacing : 0
-                spacing: 4
+                spacing: root.metrics.rowSpacing
                 clip: true
                 interactive: contentHeight > height
                 boundsBehavior: Flickable.StopAtBounds
@@ -1032,12 +1018,11 @@ PopupWindow {
             Text {
                 visible: root.adapterEnabled && root.availableDevices.length === 0
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: root.adapter && root.adapter.discovering
                     ? "Searching for devices…" : "No devices found"
-                color: root.textColor
-                opacity: 0.75
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 wrapMode: Text.NoWrap
             }
         }

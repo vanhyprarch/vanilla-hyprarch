@@ -5,21 +5,13 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var theme
-    required property Item popupAnchorItem
-    required property int popupRadius
-    property int panelWidth: 260
-    property int panelPadding: 12
-    property int rowHeight: 32
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
-    property color backgroundColor: root.theme.background
+    required property var textSizeController
     property color textColor: root.theme.text
-    property color secondaryColor: root.theme.surface
-    property color accentColor: root.theme.accent
+    property int textSizePreviewIndex: -1
     property bool brightnessAvailable: false
     property int brightnessPercent: 0
     property int confirmedBrightnessPercent: 0
@@ -393,17 +385,22 @@ PopupWindow {
             : root.monitorDescription
     }
 
-    function modeText(): string {
+    function resolutionText(): string {
         if (!root.monitor)
             return "—"
 
         const width = Number(root.monitor.width)
         const height = Number(root.monitor.height)
-        const dimensions = width > 0 && height > 0
+        return width > 0 && height > 0
             ? width + " × " + height
             : "Unknown resolution"
+    }
+
+    function refreshText(): string {
+        if (!root.monitor)
+            return "—"
         const refresh = root.formatNumber(root.refreshRate, 2)
-        return refresh !== "—" ? dimensions + " @ " + refresh + " Hz" : dimensions
+        return refresh !== "—" ? refresh + " Hz" : "—"
     }
 
     function scaleText(): string {
@@ -440,28 +437,55 @@ PopupWindow {
         scaleWriteProcess.running = true
     }
 
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0,
-            ((root.popupAnchorItem.parent ? root.popupAnchorItem.parent.width : root.popupAnchorItem.width)
-                - root.popupAnchorItem.width) / 2) + root.popupHorizontalGap
-        margins.bottom: root.popupVerticalOffset
+    function nearestTextSizeIndex(size: int): int {
+        let bestIndex = 0
+        let bestDistance = Number.MAX_VALUE
+        for (let index = 0; index < root.textSizeController.values.length; index++) {
+            const distance = Math.abs(root.textSizeController.values[index] - size)
+            if (distance < bestDistance) {
+                bestDistance = distance
+                bestIndex = index
+            }
+        }
+        return bestIndex
     }
 
-    implicitWidth: panelWidth
-    implicitHeight: content.implicitHeight + panelPadding * 2
-    color: "transparent"
-    visible: false
-    grabFocus: true
+    function currentTextSizeIndex(): int {
+        return root.textSizePreviewIndex >= 0
+            ? root.textSizePreviewIndex
+            : root.nearestTextSizeIndex(root.textSizeController.baseSize)
+    }
+
+    function displayedTextSize(): int {
+        return root.textSizePreviewIndex >= 0
+            ? root.textSizeController.values[root.textSizePreviewIndex]
+            : root.textSizeController.baseSize
+    }
+
+    function previewTextSize(position: real, width: real): void {
+        if (width <= 0 || root.textSizeController.busy)
+            return
+        const lastIndex = root.textSizeController.values.length - 1
+        root.textSizePreviewIndex = Math.max(0, Math.min(lastIndex,
+            Math.round(Math.max(0, Math.min(width, position)) / width * lastIndex)))
+    }
+
+    function applyTextSizePreview(): void {
+        if (root.textSizePreviewIndex < 0)
+            return
+        const requested = root.textSizeController.values[root.textSizePreviewIndex]
+        if (!root.textSizeController.requestSize(requested))
+            root.textSizePreviewIndex = -1
+    }
+
+    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     component InfoRow: Item {
         required property string label
         required property string value
 
         width: content.width
-        height: root.rowHeight
+        height: root.metrics.compactRowHeight
 
         Text {
             anchors {
@@ -470,7 +494,8 @@ PopupWindow {
             }
             text: parent.label
             color: root.textColor
-            font.pixelSize: 13
+            font.pixelSize: root.metrics.informationLabelFontSize
+            font.weight: root.metrics.informationLabelFontWeight
         }
 
         Text {
@@ -479,9 +504,9 @@ PopupWindow {
                 verticalCenter: parent.verticalCenter
             }
             text: parent.value
-            color: root.textColor
-            font.pixelSize: 13
-            font.weight: Font.Medium
+            color: root.theme.textMuted
+            font.pixelSize: root.metrics.informationValueFontSize
+            font.weight: root.metrics.informationValueFontWeight
         }
     }
 
@@ -564,55 +589,66 @@ PopupWindow {
         }
     }
 
-    Rectangle {
+    Connections {
+        target: root.textSizeController
+
+        function onBusyChanged(): void {
+            if (!root.textSizeController.busy)
+                root.textSizePreviewIndex = -1
+        }
+
+        function onBaseSizeChanged(): void {
+            root.textSizePreviewIndex = -1
+        }
+
+        function onErrorMessageChanged(): void {
+            if (root.textSizeController.errorMessage !== "")
+                root.textSizePreviewIndex = -1
+        }
+    }
+
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomLeftRadius: 0
-        bottomRightRadius: root.popupRadius
+        metrics: root.metrics
+        theme: root.theme
 
         Column {
             id: content
 
-            x: root.panelPadding
-            y: root.panelPadding
-            width: root.panelWidth - root.panelPadding * 2
-            spacing: 6
+            width: parent.width
+            spacing: root.metrics.sectionGap
 
             Text {
                 width: parent.width
                 text: "Display"
                 color: root.textColor
-                font.pixelSize: 16
-                font.bold: true
+                font.pixelSize: root.metrics.panelTitleFontSize
+                font.weight: root.metrics.panelTitleFontWeight
                 wrapMode: Text.NoWrap
             }
 
             Text {
                 width: parent.width
                 text: root.monitorSubtitle()
-                color: root.textColor
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 elide: Text.ElideRight
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
-            Text {
-                width: parent.width
-                height: root.rowHeight
-                text: root.modeText()
-                color: root.textColor
-                font.pixelSize: 13
-                verticalAlignment: Text.AlignVCenter
-                wrapMode: Text.NoWrap
+            InfoRow {
+                label: "Resolution"
+                value: root.resolutionText()
+            }
+
+            InfoRow {
+                label: "Refresh rate"
+                value: root.refreshText()
             }
 
             InfoRow {
@@ -624,8 +660,8 @@ PopupWindow {
                 id: scalePresetsRow
 
                 width: parent.width
-                height: 24
-                spacing: 4
+                height: root.metrics.compactControlHeight
+                spacing: root.metrics.rowSpacing
 
                 Repeater {
                     model: root.scalePresets
@@ -641,25 +677,31 @@ PopupWindow {
                             - scalePresetsRow.spacing * (root.scalePresets.length - 1))
                             / root.scalePresets.length
                         height: scalePresetsRow.height
-                        radius: root.popupRadius / 2
-                        color: selected ? root.accentColor : root.secondaryColor
+                        radius: root.metrics.rowRadius
+                        color: selected ? root.theme.activeFill
+                            : (presetMouse.containsMouse
+                                ? root.theme.hoverFill : root.theme.normalFill)
+                        opacity: scaleWriteProcess.running
+                            ? root.metrics.disabledInteractiveOpacity : 1.0
 
                         Text {
                             anchors.fill: parent
                             text: String(Number(scalePresetButton.preset))
-                            color: scalePresetButton.selected
-                                ? root.backgroundColor : root.textColor
-                            font.pixelSize: 12
+                            color: root.textColor
+                            font.pixelSize: root.metrics.bodyFontSize
                             font.weight: scalePresetButton.selected
-                                ? Font.Medium : Font.Normal
+                                ? root.metrics.overlayFontWeight : Font.Normal
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             wrapMode: Text.NoWrap
                         }
 
                         MouseArea {
+                            id: presetMouse
+
                             anchors.fill: parent
                             enabled: !scaleWriteProcess.running
+                            hoverEnabled: true
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.requestScalePreset(scalePresetButton.preset)
                         }
@@ -667,16 +709,124 @@ PopupWindow {
                 }
             }
 
+            Item {
+                width: parent.width
+                height: root.metrics.compactRowHeight
+                    + root.metrics.compactControlHeight
+
+                InfoRow {
+                    label: "Text size"
+                    value: root.displayedTextSize() + " px"
+                }
+
+                Item {
+                    id: textSizeSlider
+
+                    readonly property int currentIndex: root.currentTextSizeIndex()
+                    readonly property int lastIndex:
+                        root.textSizeController.values.length - 1
+                    readonly property real progress: lastIndex > 0
+                        ? currentIndex / lastIndex : 0
+
+                    x: 0
+                    y: root.metrics.compactRowHeight
+                    width: parent.width
+                    height: root.metrics.sliderHitHeight
+                    opacity: root.textSizeController.ready
+                        && !root.textSizeController.busy
+                        ? 1.0 : root.metrics.disabledInteractiveOpacity
+
+                    Rectangle {
+                        id: textSizeTrack
+
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            verticalCenter: parent.verticalCenter
+                        }
+                        height: root.metrics.sliderTrackThickness
+                        radius: root.metrics.sliderTrackRadius
+                        color: root.theme.normalFill
+                    }
+
+                    Rectangle {
+                        anchors {
+                            left: textSizeTrack.left
+                            verticalCenter: textSizeTrack.verticalCenter
+                        }
+                        width: textSizeTrack.width * textSizeSlider.progress
+                        height: textSizeTrack.height
+                        radius: root.metrics.sliderTrackRadius
+                        color: root.theme.control
+                    }
+
+                    Repeater {
+                        model: root.textSizeController.values
+
+                        Rectangle {
+                            required property int index
+
+                            x: textSizeTrack.x + (textSizeTrack.width - width)
+                                * index / Math.max(1, textSizeSlider.lastIndex)
+                            anchors.verticalCenter: textSizeTrack.verticalCenter
+                            width: root.metrics.separatorThickness
+                            height: root.metrics.sliderNotchHeight
+                            color: root.theme.control
+                        }
+                    }
+
+                    Rectangle {
+                        width: root.metrics.sliderThumbSize
+                        height: root.metrics.sliderThumbSize
+                        radius: root.metrics.sliderThumbRadius
+                        x: Math.max(0, Math.min(textSizeTrack.width - width,
+                            textSizeTrack.width * textSizeSlider.progress - width / 2))
+                        anchors.verticalCenter: textSizeTrack.verticalCenter
+                        color: root.theme.control
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: root.textSizeController.ready
+                            && !root.textSizeController.busy
+                        hoverEnabled: true
+                        preventStealing: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onPressed: mouse => root.previewTextSize(mouse.x, width)
+                        onPositionChanged: mouse => {
+                            if (pressed)
+                                root.previewTextSize(mouse.x, width)
+                        }
+                        onReleased: root.applyTextSizePreview()
+                        onCanceled: root.textSizePreviewIndex = -1
+                    }
+                }
+            }
+
+            Text {
+                visible: root.textSizeController.busy
+                    || root.textSizeController.errorMessage !== ""
+                width: parent.width
+                text: root.textSizeController.errorMessage !== ""
+                    ? root.textSizeController.errorMessage
+                    : "Applying…"
+                color: root.textSizeController.errorMessage !== ""
+                    ? root.theme.danger : root.theme.textMuted
+                font.pixelSize: root.metrics.captionFontSize
+                wrapMode: Text.WordWrap
+            }
+
             InfoRow {
                 visible: root.isTenBit
-                height: visible ? root.rowHeight : 0
+                height: visible ? root.metrics.compactRowHeight : 0
                 label: "Color depth"
                 value: "10-bit"
             }
 
             Item {
                 width: parent.width
-                height: root.rowHeight + 28
+                height: root.metrics.compactRowHeight
+                    + root.metrics.compactControlHeight
 
                 InfoRow {
                     label: "Brightness"
@@ -691,10 +841,11 @@ PopupWindow {
                         (root.brightnessPercent - 1) / 99))
 
                     x: 0
-                    y: root.rowHeight
+                    y: root.metrics.compactRowHeight
                     width: parent.width
-                    height: 20
-                    opacity: root.brightnessAvailable ? 1.0 : 0.35
+                    height: root.metrics.sliderHitHeight
+                    opacity: root.brightnessAvailable
+                        ? 1.0 : root.metrics.disabledInteractiveOpacity
 
                     Rectangle {
                         id: brightnessTrack
@@ -704,9 +855,9 @@ PopupWindow {
                             right: parent.right
                             verticalCenter: parent.verticalCenter
                         }
-                        height: 4
-                        radius: height / 2
-                        color: root.secondaryColor
+                        height: root.metrics.sliderTrackThickness
+                        radius: root.metrics.sliderTrackRadius
+                        color: root.theme.normalFill
                     }
 
                     Rectangle {
@@ -716,18 +867,18 @@ PopupWindow {
                         }
                         width: brightnessTrack.width * brightnessSlider.progress
                         height: brightnessTrack.height
-                        radius: height / 2
-                        color: root.accentColor
+                        radius: root.metrics.sliderTrackRadius
+                        color: root.theme.control
                     }
 
                     Rectangle {
-                        width: 14
-                        height: 14
-                        radius: width / 2
+                        width: root.metrics.sliderThumbSize
+                        height: root.metrics.sliderThumbSize
+                        radius: root.metrics.sliderThumbRadius
                         x: Math.max(0, Math.min(brightnessTrack.width - width,
                             brightnessTrack.width * brightnessSlider.progress - width / 2))
                         anchors.verticalCenter: brightnessTrack.verticalCenter
-                        color: root.accentColor
+                        color: root.theme.control
                     }
 
                     MouseArea {

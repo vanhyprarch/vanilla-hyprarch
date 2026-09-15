@@ -8,10 +8,10 @@ Item {
     required property var controller
     required property var powerController
     required property var theme
-    required property int popupRadius
+    required property var metrics
     required property string screenName
-    property int buttonSize: 40
-    property int iconSize: 28
+    readonly property int buttonSize: root.metrics.dockSystemControlTarget
+    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool adapterEnabled: adapter
@@ -47,8 +47,8 @@ Item {
         controller: root.controller
         powerController: root.powerController
         theme: root.theme
+        metrics: root.metrics
         popupAnchorItem: root
-        popupRadius: root.popupRadius
         screenName: root.screenName
     }
 }

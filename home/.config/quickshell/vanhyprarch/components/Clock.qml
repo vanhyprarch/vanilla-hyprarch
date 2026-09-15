@@ -5,12 +5,12 @@ Item {
     id: root
 
     required property var theme
+    required property var metrics
     property Item popupAnchorItem
     property color textColor: root.theme.text
-    property int contentWidth: 48
+    readonly property int contentWidth: root.metrics.dockContentWidth
     property int iconSize: 28
-    property int itemSpacing: 4
-    property int systemControlGap: 8
+    readonly property int itemSpacing: root.metrics.dockItemGap
     required property int popupRadius
     property int weekdayFontSize: 11
     property int dateFontSize: 13

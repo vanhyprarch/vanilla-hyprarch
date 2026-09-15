@@ -4,22 +4,11 @@ import QtQuick
 import Quickshell
 import Quickshell.Services.Pipewire
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var theme
-    required property Item popupAnchorItem
-    required property int popupRadius
-    property int panelWidth: 260
-    property int panelPadding: 12
-    property int rowHeight: 32
-    property int popupHorizontalGap: -16
-    property int popupVerticalOffset: -2
-    property color backgroundColor: root.theme.background
     property color textColor: root.theme.text
-    property color secondaryColor: root.theme.surface
-    property color accentColor: root.theme.accent
-    property color hoverColor: root.theme.hover
 
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property var source: Pipewire.defaultAudioSource
@@ -84,21 +73,7 @@ PopupWindow {
         objects: root.outputDevices.concat(root.inputDevices)
     }
 
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Bottom
-        gravity: Edges.Right | Edges.Top
-        margins.right: Math.max(0,
-            ((root.popupAnchorItem.parent ? root.popupAnchorItem.parent.width : root.popupAnchorItem.width)
-                - root.popupAnchorItem.width) / 2) + root.popupHorizontalGap
-        margins.bottom: root.popupVerticalOffset
-    }
-
-    implicitWidth: panelWidth
-    implicitHeight: content.implicitHeight + panelPadding * 2
-    color: "transparent"
-    visible: false
-    grabFocus: true
+    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     component VolumeSection: Column {
         id: volumeSection
@@ -131,11 +106,11 @@ PopupWindow {
         }
 
         width: content.width
-        spacing: 6
+        spacing: root.metrics.contentGap
 
         Item {
             width: parent.width
-            height: root.rowHeight
+            height: root.metrics.compactRowHeight
 
             Text {
                 anchors {
@@ -144,8 +119,8 @@ PopupWindow {
                 }
                 text: volumeSection.title
                 color: root.textColor
-                font.pixelSize: 13
-                font.weight: Font.Medium
+                font.pixelSize: root.metrics.informationLabelFontSize
+                font.weight: root.metrics.informationLabelFontWeight
             }
 
             Text {
@@ -155,15 +130,15 @@ PopupWindow {
                 }
                 text: volumeSection.available
                     ? Math.round(volumeSection.volume * 100) + "%" : "—"
-                color: root.textColor
-                font.pixelSize: 13
-                font.weight: Font.Medium
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.informationValueFontSize
+                font.weight: root.metrics.informationValueFontWeight
             }
         }
 
         Column {
             width: parent.width
-            spacing: 4
+            spacing: root.metrics.rowSpacing
 
             Repeater {
                 model: volumeSection.devices
@@ -176,23 +151,23 @@ PopupWindow {
                         modelData, volumeSection.defaultNode)
 
                     width: volumeSection.width
-                    height: root.rowHeight
-                    radius: root.popupRadius / 2
-                    color: selected ? root.accentColor
-                        : (deviceMouse.containsMouse ? root.hoverColor : root.secondaryColor)
+                    height: root.metrics.compactRowHeight
+                    radius: root.metrics.rowRadius
+                    color: selected ? root.theme.activeFill
+                        : (deviceMouse.containsMouse
+                            ? root.theme.hoverFill : "transparent")
 
                     Text {
                         anchors {
                             fill: parent
-                            leftMargin: 8
-                            rightMargin: 8
+                            leftMargin: root.metrics.rowSidePadding
+                            rightMargin: root.metrics.rowSidePadding
                         }
                         text: root.nodeLabel(deviceRow.modelData, "Unknown device")
-                        color: deviceRow.selected
-                            ? root.backgroundColor : root.textColor
-                        font.pixelSize: 12
+                        color: root.textColor
+                        font.pixelSize: root.metrics.bodyFontSize
                         font.weight: deviceRow.selected
-                            ? Font.Medium : Font.Normal
+                            ? root.metrics.overlayFontWeight : Font.Normal
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.NoWrap
@@ -217,10 +192,10 @@ PopupWindow {
             Text {
                 visible: volumeSection.devices.length === 0
                 width: parent.width
-                height: visible ? 18 : 0
+                height: visible ? root.metrics.compactControlHeight : 0
                 text: volumeSection.deviceLabel
-                color: root.textColor
-                font.pixelSize: 12
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
                 wrapMode: Text.NoWrap
@@ -233,8 +208,9 @@ PopupWindow {
             readonly property real progress: volumeSection.volume
 
             width: parent.width
-            height: 20
-            opacity: volumeSection.available ? 1.0 : 0.35
+            height: root.metrics.sliderHitHeight
+            opacity: volumeSection.available
+                ? 1.0 : root.metrics.disabledInteractiveOpacity
 
             Rectangle {
                 id: volumeTrack
@@ -244,9 +220,9 @@ PopupWindow {
                     right: parent.right
                     verticalCenter: parent.verticalCenter
                 }
-                height: 4
-                radius: height / 2
-                color: root.secondaryColor
+                height: root.metrics.sliderTrackThickness
+                radius: root.metrics.sliderTrackRadius
+                color: root.theme.normalFill
             }
 
             Rectangle {
@@ -256,18 +232,18 @@ PopupWindow {
                 }
                 width: volumeTrack.width * volumeSlider.progress
                 height: volumeTrack.height
-                radius: height / 2
-                color: root.accentColor
+                radius: root.metrics.sliderTrackRadius
+                color: root.theme.control
             }
 
             Rectangle {
-                width: 14
-                height: 14
-                radius: width / 2
+                width: root.metrics.sliderThumbSize
+                height: root.metrics.sliderThumbSize
+                radius: root.metrics.sliderThumbRadius
                 x: Math.max(0, Math.min(volumeTrack.width - width,
                     volumeTrack.width * volumeSlider.progress - width / 2))
                 anchors.verticalCenter: volumeTrack.verticalCenter
-                color: root.accentColor
+                color: root.theme.control
             }
 
             MouseArea {
@@ -293,70 +269,64 @@ PopupWindow {
 
         Item {
             width: parent.width
-            height: 24
+            height: root.metrics.compactRowHeight
 
-            Rectangle {
-                width: 72
-                height: parent.height
+            Row {
                 anchors.right: parent.right
-                radius: root.popupRadius / 2
-                color: volumeSection.muted ? root.accentColor : root.secondaryColor
-                opacity: volumeSection.available ? 1.0 : 0.35
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: root.metrics.contentGap
+                opacity: volumeSection.available
+                    ? 1.0 : root.metrics.disabledInteractiveOpacity
 
                 Text {
-                    anchors.fill: parent
-                    text: volumeSection.muted ? "Unmute" : "Mute"
-                    color: volumeSection.muted
-                        ? root.backgroundColor : root.textColor
-                    font.pixelSize: 12
-                    font.weight: volumeSection.muted
-                        ? Font.Medium : Font.Normal
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    wrapMode: Text.NoWrap
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: volumeSection.muted ? "Muted" : "Enabled"
+                    color: root.theme.textMuted
+                    font.pixelSize: root.metrics.detailFontSize
                 }
 
-                MouseArea {
-                    anchors.fill: parent
+                ToggleSwitch {
+                    metrics: root.metrics
+                    theme: root.theme
+                    checked: volumeSection.muted
+                    interactive: false
                     enabled: volumeSection.available
-                    hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: volumeSection.toggleMute()
                 }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                enabled: volumeSection.available
+                hoverEnabled: true
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: volumeSection.toggleMute()
             }
         }
     }
 
-    Rectangle {
+    PanelSurface {
         anchors.fill: parent
-        color: root.backgroundColor
-        radius: 0
-        topLeftRadius: 0
-        topRightRadius: root.popupRadius
-        bottomLeftRadius: 0
-        bottomRightRadius: root.popupRadius
+        metrics: root.metrics
+        theme: root.theme
 
         Column {
             id: content
 
-            x: root.panelPadding
-            y: root.panelPadding
-            width: root.panelWidth - root.panelPadding * 2
-            spacing: 6
+            width: parent.width
+            spacing: root.metrics.sectionGap
 
             Text {
                 width: parent.width
                 text: "Audio"
                 color: root.textColor
-                font.pixelSize: 16
-                font.bold: true
+                font.pixelSize: root.metrics.panelTitleFontSize
+                font.weight: root.metrics.panelTitleFontWeight
                 wrapMode: Text.NoWrap
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             VolumeSection {
@@ -368,10 +338,9 @@ PopupWindow {
                 audio: root.outputAudio
             }
 
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: root.secondaryColor
+            PanelSeparator {
+                metrics: root.metrics
+                theme: root.theme
             }
 
             VolumeSection {
