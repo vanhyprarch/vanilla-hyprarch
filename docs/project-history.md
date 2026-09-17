@@ -143,6 +143,19 @@ operation helper: it keeps yay attached to the terminal, retains the final
 output, and lets Enter close Foot cleanly after success, failure, or
 cancellation.
 
+The next Super+Space milestone added Update with exactly System and Flatpak.
+Both are fixed typed actions using the same terminal helper: System runs the
+full interactive `yay -Syu` repository/AUR workflow, and Flatpak runs the
+interactive `flatpak update` application/runtime workflow. Entering the section
+does not execute either action. Everything and Vanilla HyprArch self-update are
+deliberately absent.
+
+Flatpak simultaneously became an unpinned required official package, with the
+system Flathub remote as required bootstrap state. A reusable bootstrap
+component leaves an existing correct remote untouched, creates a missing remote
+with `--if-not-exists`, and fails closed on a conflicting URL without modifying
+user remotes or installing applications.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

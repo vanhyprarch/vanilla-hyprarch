@@ -48,6 +48,8 @@ The shared bootstrap will eventually:
 - install `packages/official.txt` from official Arch repositories;
 - install the explicit `yay` exception declared by `packages/aur.txt`, without
   treating it as permission to add other AUR dependencies;
+- after installing the required unpinned `flatpak` package, invoke
+  `install/configure-flatpak` to establish the required system Flathub remote;
 - deploy tracked home and system configuration without personal paths;
 - deploy the main `vanhyprarch` named Quickshell configuration;
 - install project commands, including the screensaver lifecycle controller, in
@@ -68,6 +70,11 @@ For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and
 validation must be recoverable from the canonical repository. Development-
 machine behavior alone is not complete integration.
+
+Post-install validation must verify that `/usr/bin/flatpak` is executable,
+that an enabled system remote named `flathub` exists, and that its URL is
+`https://dl.flathub.org/repo/`. These checks validate the installed result;
+they do not pin a Flatpak version, modify remotes, or install applications.
 
 The Bluetooth bootstrap must not seed a power preference. With BlueZ
 `AutoEnable=false`, the shell treats a missing preference as an in-memory
@@ -95,6 +102,24 @@ Release v0.1.1 provides only x86_64. Other architectures fail closed until a
 reviewed release adds an explicit asset and digest. Runtime requires glibc and
 the Wayland client library, not Zig. Updating the player is a deliberate
 metadata and validation change, never an unattended download of a newer tag.
+
+## Flatpak and Flathub configuration
+
+`flatpak` is an ordinary required entry in `packages/official.txt`, without a
+version constraint. The shared bootstrap must install the currently available
+official Arch package before it invokes `install/configure-flatpak`.
+
+The component uses the fixed system-scoped operation equivalent to:
+
+```text
+/usr/bin/flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+```
+
+It first inspects enabled system remotes. An existing `flathub` pointing to
+`https://dl.flathub.org/repo/` is accepted without a write. An existing
+same-named remote with another URL fails closed and is not modified. After an
+add, the component verifies the resulting name and URL. It never deletes or
+rewrites user remotes, resets Flatpak state, or installs Flatpak applications.
 
 ## Verified archinstall 4.4 capabilities
 
@@ -193,11 +218,12 @@ sensitive to archinstall schema changes.
 
 ## Future installation work
 
-The existing `install/` tree contains only the pinned external-player
-component and its metadata. Future work may add the shared bootstrap, a small
-archinstall integration and recommended configuration or template, and
-post-install validation. Exact filenames are intentionally not selected until
-the bootstrap interface and current archinstall schema are designed.
+The existing `install/` tree contains the pinned external-player component and
+the idempotent system-Flathub configuration component. Future work may add the
+shared bootstrap, a small archinstall integration and recommended configuration
+or template, and post-install validation. Exact filenames for those remaining
+pieces are intentionally not selected until the bootstrap interface and current
+archinstall schema are designed.
 
 Unresolved installation choices are the recommended bootloader, filesystem,
 layout policy, kernel policy, any project-wide timezone or locale defaults,

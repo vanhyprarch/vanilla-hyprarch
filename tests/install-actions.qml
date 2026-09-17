@@ -19,6 +19,13 @@ ShellRoot {
         enumerationEnabled: false
     }
 
+    UpdateActions {
+        id: updateActions
+        availabilityChecksEnabled: false
+        executionEnabled: false
+        flatpakAvailable: true
+    }
+
     PowerActions {
         id: powerActions
     }
@@ -27,6 +34,7 @@ ShellRoot {
         id: superSpace
         installActions: controller
         removeActions: removeActions
+        updateActions: updateActions
         powerActions: powerActions
     }
 
@@ -69,7 +77,8 @@ ShellRoot {
                     "unsafe Install argument present: " + forbidden)
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Power", "root section order changed")
+                === "Apps,Install,Remove,Update,Power",
+                "root section order changed")
             superSpace.enterSection("install")
             root.check(superSpace.currentSection === "install",
                 "Install section was rejected")

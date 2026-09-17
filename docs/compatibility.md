@@ -16,9 +16,10 @@ and removable local mitigations. Package selection belongs in
 | Quickshell | 0.3.1 (`quickshell 0.3.1-1`) | Main desktop shell; no longer part of screensaver rendering |
 | Qt | 6.11.2 (`qt6-base 6.11.2-3`) | Main Quickshell runtime |
 | `vanhyprarch-zig-player` | v0.1.1 | Native layer-shell screensaver renderer; idle continuity and input routing validated, physical two-monitor testing pending |
-| Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal for interactive Install/Remove operations; a shared helper retains final output until Enter without `--hold` |
+| Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal for interactive Install/Remove/Update operations; a shared helper retains final output until Enter without `--hold` |
 | pacman | 7.1.0 (`pacman 7.1.0.r9.g54d9411-2`) | Local installed-package catalog and authoritative removal transaction semantics |
-| yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR installation and package removal wrapper |
+| yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR installation, removal, and full-system update wrapper |
+| Flatpak | 1.18.2 (`flatpak 1:1.18.2-1`) | Locally validated official package for interactive app/runtime updates; required but not version-pinned |
 | hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Wallpaper process launched by Hyprland; portable tracked configuration remains open work |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
 
@@ -159,10 +160,25 @@ validated upstream.
 
 ## Updateability principle
 
-Arch packages update normally. Vanilla HyprArch must not blindly update its
-configuration or external player. A player update requires an explicit version,
-architecture, asset-name, checksum, release URL, and source-tag update followed
-by controller, timing, output, input, and license-notice validation.
+On the validated stack, explicit `yay -Syu` updates installed official and AUR
+packages while preserving yay and pacman configuration and prompts. Explicit
+`flatpak update` updates installed Flatpak applications and runtimes with its
+normal interactive behavior. Super+Space passes both as fixed direct argument
+vectors through the shared terminal helper; it supplies no noninteractive,
+forced-refresh, downgrade, dependency-bypass, or ordering flags. No real update
+transaction was run as part of this validation.
+
+Flatpak's recorded version is compatibility evidence, not an installation pin.
+Clean installations consume the current official Arch package, and the normal
+system update keeps it current. The system Flathub remote was validated at
+`https://dl.flathub.org/repo/`.
+
+Vanilla HyprArch must not blindly update its configuration or external player.
+A player update requires an explicit version, architecture, asset-name,
+checksum, release URL, and source-tag update followed by controller, timing,
+output, input, and license-notice validation. Project self-update remains
+unavailable until the required MANAGED / USER OVERRIDE / STATE deployment
+architecture can preserve user changes and roll back a validated deployment.
 
 Before changing this baseline:
 

@@ -6,6 +6,7 @@ cups-pk-helper
 curl
 ddcutil
 firefox
+flatpak
 foot
 gvfs
 hypridle

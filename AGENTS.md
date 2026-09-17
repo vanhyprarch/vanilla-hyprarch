@@ -49,6 +49,9 @@ Do not copy whole sections between documents or rewrite unrelated records.
 - Player release versions, assets, source links, architectures, and checksums
   are pinned installation inputs. Update them only as one deliberate, reviewed
   change with matching validation.
+- Flatpak is an unpinned required package from the official Arch repositories,
+  and Flathub is the required system remote. Bootstrap it idempotently without
+  disturbing an existing correct remote or installing applications.
 - Do not put personal names or absolute `/home/USERNAME` paths in tracked
   content. Use `$HOME`, `~`, XDG paths, or installer-resolved locations.
 - Do not add `jq` merely for convenience. Official Arch repositories are the

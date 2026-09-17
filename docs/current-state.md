@@ -16,6 +16,7 @@ tracked in the [compatibility register](compatibility.md).
 - Technical namespace and named Quickshell config: `vanhyprarch`
 - Hyprland: 0.56.2 (`hyprland` package 0.56.2-2)
 - Quickshell: 0.3.1 (`quickshell` package 0.3.1-1)
+- Flatpak: required unpinned official package; locally validated with 1.18.2
 
 At inspection time exactly one Quickshell instance was registered, launched
 from the `vanhyprarch` named configuration.
@@ -29,6 +30,7 @@ Repository-managed sources:
 - `home/.config/hypr/hypridle.conf`
 - `home/.config/hypr/vanhyprarch-idle.conf`
 - `home/.config/quickshell/vanhyprarch/`
+- `install/configure-flatpak`
 - `install/install-zig-player`
 
 Live paths:
@@ -104,8 +106,8 @@ Num Lock is enabled by default when the graphical session starts.
 ## Shell architecture — IMPLEMENTED
 
 `ShellRoot` owns global state and controllers, including the single
-`LauncherStore`, typed Install and Power actions, and the Super+Space
-controller. A `Variants`
+`LauncherStore`, typed Install, Remove, Update, and Power actions, and the
+Super+Space controller. A `Variants`
 instance models `Quickshell.screens`; each delegate owns its per-screen
 `Launchers` presentation, permanent dock, Super+Space and Shortcuts popup
 presentations, and transparent popup-anchor surface. This screen lifecycle
@@ -141,9 +143,9 @@ The current Quickshell UI includes:
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
-- a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, and Power
-  sections, in-process search over `DesktopEntries.applications` and typed
-  action metadata, and confirmation for logout, reboot, and power off;
+- a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, Update,
+  and Power sections, in-process search over `DesktopEntries.applications` and
+  typed action metadata, and confirmation for logout, reboot, and power off;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
 
@@ -176,6 +178,23 @@ complete transaction and normal confirmation prompt; after completion or
 cancellation, Enter closes the terminal. Remove Application is deliberately
 absent because Quickshell's `DesktopEntry` does not expose enough source-path
 provenance to prove package ownership safely.
+
+Update contains the fixed typed actions System and Flatpak. Entering the
+section only presents those actions. Explicit System activation starts
+`/usr/bin/yay -Syu`; explicit Flatpak activation starts
+`/usr/bin/flatpak update`. Both use direct argument vectors through the shared
+Foot terminal-operation helper, preserve normal interactive prompts, and add
+no forced ordering, noninteractive confirmation, database-force, downgrade,
+or shell option. One startup-time executable check reports a missing required
+Flatpak command in the panel and blocks that activation. There is no Everything
+action and no Vanilla HyprArch self-update action.
+
+Flatpak is an unpinned required entry in the official package manifest. The
+development machine has a correct system `flathub` remote. The reusable
+`install/configure-flatpak` bootstrap component accepts that state without a
+write, adds the system remote idempotently when absent, and fails closed rather
+than changing a same-named remote with an unexpected URL. It never installs a
+Flatpak application.
 
 The surface opens on the focused monitor through Super+Space or the named IPC
 target, supports pointer activation plus Up, Down, Enter, and Escape, and uses
@@ -360,8 +379,6 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Extend Super+Space with a deliberately designed Update section; no inactive
-  placeholder is currently shown.
 - Build the screenshot-to-clipboard workflow as a separate feature.
 - Add local F9 push-to-talk dictation without introducing a hosted dependency.
 - Design an update-safe customization/override layer rather than asking users
@@ -377,6 +394,8 @@ workaround. Physical two-monitor validation remains pending.
 ### NOT IMPLEMENTED
 
 - Shared bootstrap and optional archinstall integration
-- Super+Space Update section and Remove Application ownership mapping
+- Remove Application ownership mapping
+- Vanilla HyprArch self-update, pending the MANAGED / USER OVERRIDE / STATE
+  deployment architecture
 - Screenshot-to-clipboard workflow
 - Local F9 push-to-talk dictation

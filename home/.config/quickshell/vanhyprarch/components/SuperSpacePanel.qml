@@ -222,6 +222,8 @@ PopupWindow {
                         ? "Enter package or search terms"
                     : root.controller.currentSection === "remove"
                         ? "Search installed packages"
+                    : root.controller.currentSection === "update"
+                        ? "Search update actions"
                     : root.controller.currentSection === "power"
                         ? "Search power actions" : "Search apps and actions"
                 textFormat: Text.PlainText
@@ -273,6 +275,7 @@ PopupWindow {
                         ? "Install packages"
                     : root.controller.currentSection === "remove"
                         ? "Remove packages"
+                    : root.controller.currentSection === "update" ? "Update"
                     : root.controller.currentSection === "power" ? "Power"
                         : root.controller.searchText.trim() === ""
                             ? "Choose a section" : "Results"
@@ -362,6 +365,8 @@ PopupWindow {
                         : root.controller.removeActions.errorMessage !== ""
                             ? root.controller.removeActions.errorMessage
                             : "No matching installed packages"
+                : root.controller.currentSection === "update"
+                    ? "No matching update actions"
                 : "No matching apps or actions"
             textFormat: Text.PlainText
             color: root.controller.currentSection === "remove"

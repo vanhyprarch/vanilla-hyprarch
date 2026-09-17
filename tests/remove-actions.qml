@@ -21,6 +21,13 @@ ShellRoot {
         enumerationEnabled: false
     }
 
+    UpdateActions {
+        id: updateActions
+        availabilityChecksEnabled: false
+        executionEnabled: false
+        flatpakAvailable: true
+    }
+
     PowerActions {
         id: powerActions
     }
@@ -29,6 +36,7 @@ ShellRoot {
         id: superSpace
         installActions: installActions
         removeActions: removeActions
+        updateActions: updateActions
         powerActions: powerActions
     }
 
@@ -118,9 +126,10 @@ ShellRoot {
             }).length === 0, "option-like input became a yay target")
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Power", "root section order is wrong")
+                === "Apps,Install,Remove,Update,Power",
+                "root section order is wrong")
 
-            for (const section of ["apps", "install", "power"]) {
+            for (const section of ["apps", "install", "update", "power"]) {
                 superSpace.enterSection(section)
                 root.check(superSpace.currentSection === section,
                     section + " navigation was not preserved")

@@ -1,0 +1,75 @@
+#!/bin/sh
+
+set -eu
+
+program_name=${0##*/}
+canonical_flatpak=/usr/bin/flatpak
+flatpak_executable=${VANHYPRARCH_FLATPAK_EXECUTABLE:-$canonical_flatpak}
+flathub_name=flathub
+flathub_repository_url=https://dl.flathub.org/repo/
+flathub_descriptor_url=https://dl.flathub.org/repo/flathub.flatpakrepo
+
+fail()
+{
+    printf '%s: %s\n' "$program_name" "$*" >&2
+    exit 1
+}
+
+if [ "$flatpak_executable" != "$canonical_flatpak" ]; then
+    [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" = 1 ] ||
+        fail 'alternate Flatpak executable is allowed only for isolated tests'
+fi
+
+case $flatpak_executable in /*) ;; *)
+    fail 'Flatpak executable path must be absolute' ;; esac
+[ -x "$flatpak_executable" ] ||
+    fail "required Flatpak executable is unavailable: $flatpak_executable"
+
+system_remotes()
+{
+    "$flatpak_executable" remotes --system --columns=name,url
+}
+
+remote_url()
+{
+    printf '%s\n' "$1" |
+        awk -F '\t' -v remote_name="$flathub_name" \
+            '$1 == remote_name { print $2 }'
+}
+
+remote_count()
+{
+    printf '%s\n' "$1" |
+        awk -F '\t' -v remote_name="$flathub_name" \
+            '$1 == remote_name { count++ } END { print count + 0 }'
+}
+
+inspect_flathub()
+{
+    if ! remote_rows=$(system_remotes); then
+        fail 'could not inspect system Flatpak remotes'
+    fi
+
+    count=$(remote_count "$remote_rows")
+    [ "$count" -le 1 ] || fail 'multiple system Flathub remotes were reported'
+    if [ "$count" -eq 0 ]; then
+        return 1
+    fi
+
+    configured_url=$(remote_url "$remote_rows")
+    [ "$configured_url" = "$flathub_repository_url" ] ||
+        fail "system Flathub remote has unexpected URL: $configured_url"
+    return 0
+}
+
+if inspect_flathub; then
+    printf '%s\n' 'system Flathub remote is already configured'
+    exit 0
+fi
+
+"$flatpak_executable" remote-add --system --if-not-exists \
+    "$flathub_name" "$flathub_descriptor_url" ||
+    fail 'could not add the system Flathub remote'
+
+inspect_flathub || fail 'system Flathub remote was not created'
+printf '%s\n' 'configured system Flathub remote'

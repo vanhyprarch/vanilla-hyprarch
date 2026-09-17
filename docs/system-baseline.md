@@ -28,13 +28,18 @@ dependency. Its inclusion does not authorize the installer or future agents to
 select other AUR packages freely.
 
 All packages in the current official manifest were verified as installed and
-available from Arch's official repositories by 2026-09-10.
+available from Arch's official repositories by 2026-09-17.
 
 `wayland` is explicit because the external player directly links
 `libwayland-client`. `curl` is explicit because the pinned installer invokes
 its command-line client; neither dependency is left implicit merely because it
 is also present transitively on the development system. Zig is not a runtime
 or baseline package.
+
+`flatpak` is a required, unpinned official Arch package. Clean installations
+install the version currently available from the enabled official repositories,
+and normal `yay -Syu` system upgrades keep it current. Flatpak is not sourced
+from the AUR and its locally validated version is not an installation pin.
 
 ## Installation reproducibility
 
@@ -65,6 +70,17 @@ configuration for the main shell. It will install `vanhyprarch-screensaver`
 from `bin/` and invoke the existing pinned player installer so the separately
 released `vanhyprarch-zig-player` is available in the same inherited PATH.
 Production screensaver presentation does not use Quickshell or Foot.
+
+## Flatpak applications
+
+The system-wide `flathub` remote is required and must resolve to
+`https://dl.flathub.org/repo/`. The reusable `install/configure-flatpak`
+component inspects system remotes, leaves an existing correct Flathub remote
+unchanged, and otherwise adds it with `--system --if-not-exists` from the
+canonical Flathub repository descriptor. A conflicting remote with the same
+name fails closed instead of being rewritten. User remotes and installed
+Flatpak applications are outside bootstrap ownership; the bootstrap neither
+removes them nor installs any application automatically.
 
 ## Keyboard and session defaults
 

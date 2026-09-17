@@ -405,7 +405,7 @@ adapters as one user-facing Bluetooth radio policy.
 
 **Status:** Accepted
 **Date:** 2026-09-17
-**Implementation:** Apps, Install, Remove Package, and Power implemented;
+**Implementation:** Apps, Install, Remove Package, Update, and Power implemented;
 visual and interaction behavior pending manual validation
 
 Super+Space has one global navigation/search controller and one presentation
@@ -445,6 +445,33 @@ dependencies that become unnecessary under pacman semantics, and retained
 visible. No shell, cascade, dependency bypass, or noninteractive confirmation
 option is permitted.
 
-Remove Application and Update remain unimplemented and must not be exposed as
-placeholders. Application display names, desktop IDs, Exec fields, and
+Update is one global typed controller with exactly two fixed actions. System
+starts `/usr/bin/yay -Syu`; Flatpak starts `/usr/bin/flatpak update`. Both run
+through the shared terminal-operation helper as direct argument vectors and
+retain their normal interactive prompts. Entering Update performs neither
+operation. There is no Everything action, arbitrary command runner, or project
+self-update action.
+
+Remove Application remains unimplemented and must not be exposed as a
+placeholder. Application display names, desktop IDs, Exec fields, and
 executable names are not package-ownership evidence.
+
+## ADR-026: Require unpinned Flatpak and the system Flathub remote
+
+**Status:** Accepted
+**Date:** 2026-09-17
+
+`flatpak` is a required package from the official Arch repositories. The
+manifest intentionally contains only the package name: clean installation uses
+the currently available official version, and normal full system upgrades keep
+it current. Flatpak is not an AUR or version-pinned dependency.
+
+The system-wide `flathub` remote is also required. The reusable bootstrap
+component uses `remote-add --system --if-not-exists`, preserves an existing
+correct remote without a write, verifies the resulting canonical repository
+URL, and fails closed on a same-named conflicting URL. It does not alter user
+remotes, reset Flatpak state, or install applications.
+
+Vanilla HyprArch self-update remains intentionally unavailable. Repository
+updates must wait for a transactional MANAGED / USER OVERRIDE / STATE
+deployment architecture; `git pull` is not a deployment mechanism.

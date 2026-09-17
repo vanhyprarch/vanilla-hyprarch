@@ -8,6 +8,7 @@ Scope {
 
     required property InstallActions installActions
     required property RemoveActions removeActions
+    required property UpdateActions updateActions
     required property PowerActions powerActions
 
     property bool isOpen: false
@@ -38,6 +39,14 @@ Scope {
             detail: "Cleanly uninstall an installed package",
             icon: "edit-delete",
             keywords: ["remove", "uninstall", "package", "packages", "yay"]
+        },
+        {
+            kind: "section",
+            sectionId: "update",
+            label: "Update",
+            detail: "Update system and Flatpak packages",
+            icon: "system-software-update",
+            keywords: ["update", "upgrade", "system", "flatpak", "yay"]
         },
         {
             kind: "section",
@@ -94,7 +103,8 @@ Scope {
 
     function enterSection(sectionId: string): void {
         if (sectionId !== "apps" && sectionId !== "install"
-                && sectionId !== "remove" && sectionId !== "power")
+                && sectionId !== "remove" && sectionId !== "update"
+                && sectionId !== "power")
             return
         currentSection = sectionId
         searchText = ""
@@ -265,6 +275,48 @@ Scope {
         return result
     }
 
+    function updateEntries(query: string): var {
+        const result = []
+        const actions = updateActions.actions
+
+        for (let index = 0; index < actions.length; ++index) {
+            const action = actions[index]
+            const searchable = normalize(action.label + " "
+                + action.keywords.join(" "))
+            const rank = query === "" ? 0
+                : matchRank(action.label, searchable, query)
+            if (rank < 0)
+                continue
+
+            let detail = action.detail
+            let danger = false
+            if (action.id === "flatpak") {
+                if (updateActions.errorMessage !== "") {
+                    detail = updateActions.errorMessage
+                    danger = true
+                } else if (!updateActions.flatpakCheckComplete) {
+                    detail = "Checking required Flatpak executable…"
+                } else if (!updateActions.flatpakAvailable) {
+                    detail = "Required /usr/bin/flatpak is unavailable."
+                    danger = true
+                }
+            }
+
+            result.push({
+                kind: "update",
+                actionId: action.id,
+                label: action.label,
+                detail: detail,
+                icon: action.icon,
+                danger: danger,
+                rank: rank,
+                sourceIndex: index
+            })
+        }
+
+        return result
+    }
+
     function buildVisibleEntries(): var {
         // Keep the upstream model as a direct binding dependency while it scans.
         DesktopEntries.applications.values
@@ -297,6 +349,8 @@ Scope {
             return installEntries(query)
         if (currentSection === "remove")
             return removeEntries(query)
+        if (currentSection === "update")
+            return updateEntries(query)
         if (currentSection === "power")
             return powerEntries(query)
         if (query === "")
@@ -348,6 +402,10 @@ Scope {
             removeActions.executePackage(packageObject)
             break
         }
+        case "update":
+            if (updateActions.execute(entry.actionId))
+                close()
+            break
         case "power":
             if (powerActions.requiresConfirmation(entry.actionId))
                 pendingPowerAction = entry.actionId

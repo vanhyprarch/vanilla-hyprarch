@@ -38,10 +38,13 @@ Matrix, Doom, and Game of Life.
 - persistent Power & Idle preferences, Caffeine, automatic locking, display
   power-off, suspend/resume, and the independent native screensaver;
 - direct-session PolicyKit and clean Hyprland logout integration;
-- keyboard-and-mouse Super+Space Apps, Install, Remove Package, and Power
-  workflows with native catalogs and interactive package-manager transactions;
+- keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update, and
+  Power workflows with native catalogs and interactive package-manager
+  transactions;
 - official Arch package manifests and a pinned, checksummed Zig Player
   installer component.
+- required, unpinned Flatpak from the official Arch repositories, with an
+  idempotent bootstrap component for the required system Flathub remote.
 
 ## Installation status
 
@@ -64,8 +67,10 @@ configuration, final light/dark wallpaper integration, and an update-safe user
 override layer remain future work. The pinned Zig Player release is currently
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
-and Update, the screenshot-to-clipboard workflow, and local F9 push-to-talk
-dictation are not implemented. The detailed status and roadmap are in
+and Vanilla HyprArch self-update, the screenshot-to-clipboard workflow, and
+local F9 push-to-talk dictation are not implemented. Project self-update
+remains unavailable until a MANAGED / USER OVERRIDE / STATE deployment
+architecture exists. The detailed status and roadmap are in
 [current state](docs/current-state.md).
 
 Architecture decisions, compatibility evidence, and version-specific retest
