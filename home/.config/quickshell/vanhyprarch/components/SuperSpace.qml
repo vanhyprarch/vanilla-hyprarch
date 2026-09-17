@@ -429,7 +429,9 @@ Scope {
             infoEntry("Current settings",
                 status.matches_defaults ? "Matches the Vanilla default" : "Customized for this user", false),
             infoEntry("Status", "Installed · service " + status.service_state, false),
-            infoEntry("Acceleration", "CPU", false),
+            actionEntry("dictationAccelerationView", "Acceleration",
+                actions.accelerationLabel(actions.proposedAcceleration), "video-display",
+                !actions.operationRunning && actions.catalogData !== null, false),
             actionEntry("dictationModelView", "Model",
                 actions.modelLabel(actions.proposedModel), "audio-input-microphone",
                 !actions.operationRunning && actions.catalogData !== null, false),
@@ -547,6 +549,29 @@ Scope {
         return result
     }
 
+    function accelerationSelectorEntries(): var {
+        const result = []
+        const actions = systemComponentsActions
+        const catalog = actions.catalogData
+        if (!catalog)
+            return [infoEntry("Acceleration choices unavailable",
+                "Could not read the reviewed acceleration catalog.", true)]
+        for (const acceleration of catalog.accelerations) {
+            if (!acceleration.ui_selectable)
+                continue
+            result.push({
+                kind: "dictationAccelerationSelect",
+                accelerationId: acceleration.id,
+                label: acceleration.label,
+                detail: actions.accelerationReadiness(acceleration.id),
+                icon: acceleration.id === "vulkan" ? "video-display" : "computer",
+                active: actions.proposedAcceleration === acceleration.id,
+                enabled: true
+            })
+        }
+        return result
+    }
+
     function uninstallConfirmationEntries(): var {
         return [
             infoEntry("Uninstall Local Dictation?",
@@ -572,6 +597,8 @@ Scope {
             return selectedLanguageEntries()
         if (componentSubview === "duration")
             return durationSelectorEntries()
+        if (componentSubview === "acceleration")
+            return accelerationSelectorEntries()
         if (componentSubview === "uninstall")
             return uninstallConfirmationEntries()
         return dictationDetailEntries()
@@ -732,6 +759,13 @@ Scope {
         case "dictationDurationSelect":
             systemComponentsActions.proposedMaxDuration = entry.duration
             componentSubview = ""
+            break
+        case "dictationAccelerationView":
+            componentSubview = "acceleration"
+            break
+        case "dictationAccelerationSelect":
+            if (systemComponentsActions.selectAcceleration(entry.accelerationId))
+                componentSubview = ""
             break
         case "dictationApply":
             if (systemComponentsActions.execute(

@@ -25,7 +25,7 @@ and removable local mitigations. Package selection belongs in
 | grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic tests and the real 10-bit workflow pass |
 | slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer selection passes |
 | wl-clipboard | 2.3.0 (`wl-clipboard 1:2.3.0-1`) | Installed clipboard publisher; deterministic MIME/byte-stream tests and real paste acceptance pass |
-| Voxtype | 1.0.1 upstream AVX2 binary | Optional CPU-only local dictation; deterministic and live cold-session audio/transcription/typing validation pass |
+| Voxtype | 1.0.1 upstream AVX2 and Vulkan binaries | Optional local dictation; CPU remains the public default. Explicit Vulkan selection, signed-artifact switching, and vendor-aware runtime proof are implemented. Radeon 680M inference has been validated; its observed latency is not a general performance guarantee. |
 
 This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
@@ -75,10 +75,11 @@ then requires TOML parsing, upstream schema validation, resolved-value
 readback, service activation, and daemon status before committing. Retest that
 complete editing and status contract on any Voxtype upgrade.
 
-The manager currently accepts only the CPU backend. Vulkan artifact selection,
-runtime packages, switching, rollback, and real Radeon 680M benchmarking are
-deliberately deferred. The UI must not expose Vulkan until that transaction is
-implemented and validated; no performance claim exists yet.
+The manager identifies CPU and Vulkan only by exact reviewed binary digest. It
+can transactionally switch the signed artifacts through the CLI or SuperSpace,
+validate official loader/vendor prerequisites from sysfs facts, and restore
+the prior binary, config, and service state on failure. CPU remains the default
+and there is no automatic acceleration selection.
 
 Stable Voxtype 1.0.1 can report `backend = "unknown"` in extended status even
 while its managed AVX2 build is running successfully with `use gpu = 0`.
@@ -86,8 +87,19 @@ Vanilla therefore does not infer acceleration identity from `backend` or
 tooltip text. Apply health requires the user service to become active, valid
 extended status with the requested model and a non-error runtime state, and an
 unchanged pinned managed-binary digest. Retest this status behavior on a
-Voxtype upgrade; future Vulkan identity must likewise come from its verified
-artifact plus backend-specific runtime validation, not this advisory field.
+Voxtype upgrade; Vulkan identity likewise comes from its verified artifact,
+not this advisory field.
+
+Stable 1.0.1 exposes no machine-readable backend proof, so Vulkan health
+resolves systemd's `MainPID` and requires the managed executable, Vulkan
+loader, and reviewed vendor ICD to remain mapped. Live Radeon 680M validation
+also established the selected DRM render node as a stable required invariant
+for AMD; Intel uses the same Mesa/DRM rule. The
+[NVIDIA Linux driver component documentation](https://download.nvidia.com/XFree86/Linux-x86_64/580.126.09/README/installedcomponents.html)
+identifies `libGLX_nvidia.so.0` or `libEGL_nvidia.so.0` as its
+Vulkan ICD and `/dev/nvidia*` device handling, so absence of a DRM-render-node
+fd alone does not reject NVIDIA until a reliable NVIDIA-specific device proof
+is reviewed. Retest this contract on Voxtype, Vulkan loader, or driver upgrades.
 
 ## Foot completion boundary for component transactions
 

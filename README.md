@@ -79,14 +79,16 @@ executables there atomically and will not depend on a Git checkout.
 Dictation is a separate opt-in component, not part of the baseline. Its
 installer, dependencies, exact verification chain, runtime activation, and
 clean-uninstall procedure are documented in
-[Local push-to-talk dictation](docs/dictation.md). The default is CPU-only,
+[Local push-to-talk dictation](docs/dictation.md). The default uses CPU,
 English-only, local/offline transcription: hold F9 to record and release it to
 transcribe and type through `wtype`.
 The independently deployed `vanhyprarch-dictation` manager remains available
 when Voxtype is absent, so Super+Space can report state and offer installation.
 It exposes ten reviewed Whisper models, curated language choices, and recording
-limits of 30, 60, 120, or 300 seconds. Vulkan remains a future explicit opt-in
-and is not selectable in the current implementation.
+limits of 30, 60, 120, or 300 seconds. SuperSpace offers explicit CPU and
+Vulkan GPU choices through the same transactional backend. CPU remains the
+public default, Vulkan is never selected automatically, and a Vulkan change
+succeeds only after verified runtime evidence for the selected vendor.
 Local Dictation uses clean uninstall semantics: removing it deletes Voxtype's
 configuration and every downloaded speech model, but keeps the Vanilla manager
 available so the component can be installed again later.

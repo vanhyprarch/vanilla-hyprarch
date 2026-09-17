@@ -74,26 +74,23 @@ class DictationManagerTest(unittest.TestCase):
         self._write_model_manifest()
         self.fake_binary = self.root / "voxtype-0.0.0-linux-x86_64-avx2"
         self._write_fake_voxtype()
+        self.fake_vulkan_binary = self.root / "voxtype-0.0.0-linux-x86_64-vulkan"
+        self.fake_vulkan_binary.write_bytes(self.fake_binary.read_bytes() + b"# vulkan fixture\n")
+        self.fake_vulkan_binary.chmod(0o755)
         self.fingerprint = "A" * 40
         self.key = self.resources / "voxtype-ci-signing-key.asc"
         self.key.write_text("mock public key\n", encoding="utf-8")
         self.signature = self.root / (self.fake_binary.name + ".asc")
         self.signature.write_text("mock detached signature\n", encoding="utf-8")
-        self.metadata = self.resources / "voxtype.conf"
-        self.metadata.write_text(textwrap.dedent(f"""\
-            VANHYPRARCH_VOXTYPE_VERSION=0.0.0
-            VANHYPRARCH_VOXTYPE_ARCHITECTURE=x86_64
-            VANHYPRARCH_VOXTYPE_ASSET={self.fake_binary.name}
-            VANHYPRARCH_VOXTYPE_SHA256={digest(self.fake_binary)}
-            VANHYPRARCH_VOXTYPE_SIGNING_FINGERPRINT={self.fingerprint}
-            VANHYPRARCH_VOXTYPE_RELEASE_URL=https://example.invalid/releases/tag/v0.0.0
-            VANHYPRARCH_VOXTYPE_DOWNLOAD_URL=https://example.invalid/{self.fake_binary.name}
-            VANHYPRARCH_VOXTYPE_SIGNATURE_URL=https://example.invalid/{self.fake_binary.name}.asc
-        """), encoding="utf-8")
+        self.vulkan_signature = self.root / (self.fake_vulkan_binary.name + ".asc")
+        self.vulkan_signature.write_text("mock detached signature\n", encoding="utf-8")
+        self.binary_manifest = self.resources / "binaries.toml"
+        self._write_binary_manifest()
         self.fake_wtype = self.root / "wtype"
         self.fake_curl = self.root / "curl"
         self.fake_gpg = self.root / "gpg"
         self.fake_systemctl = self.root / "systemctl"
+        self.fake_pacman = self.root / "pacman"
         self.fake_wtype.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         self.fake_curl.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
         self.fake_gpg.write_text(textwrap.dedent(f"""\
@@ -112,7 +109,14 @@ class DictationManagerTest(unittest.TestCase):
             esac
         """).lstrip(), encoding="utf-8")
         self._write_fake_systemctl()
-        for path in (self.fake_wtype, self.fake_curl, self.fake_gpg, self.fake_systemctl):
+        self.fake_pacman.write_text(textwrap.dedent("""\
+            #!/bin/sh
+            [ "$1" = -Q ] || exit 64
+            package=$3
+            [ -f "$VULKAN_PACKAGES/$package" ]
+        """).lstrip(), encoding="utf-8")
+        for path in (self.fake_wtype, self.fake_curl, self.fake_gpg,
+                self.fake_systemctl, self.fake_pacman):
             path.chmod(0o755)
         self.environment = os.environ.copy()
         self.environment.update({
@@ -122,20 +126,49 @@ class DictationManagerTest(unittest.TestCase):
             "XDG_RUNTIME_DIR": str(self.runtime_home),
             "VANHYPRARCH_ALLOW_TEST_OVERRIDES": "1",
             "VANHYPRARCH_DICTATION_RESOURCE_DIR": str(self.resources),
-            "VANHYPRARCH_VOXTYPE_METADATA": str(self.metadata),
+            "VANHYPRARCH_VOXTYPE_BINARY_MANIFEST": str(self.binary_manifest),
             "VANHYPRARCH_VOXTYPE_SIGNING_KEY": str(self.key),
-            "VANHYPRARCH_TEST_BINARY": str(self.fake_binary),
-            "VANHYPRARCH_TEST_SIGNATURE": str(self.signature),
+            "VANHYPRARCH_TEST_BINARY_CPU": str(self.fake_binary),
+            "VANHYPRARCH_TEST_SIGNATURE_CPU": str(self.signature),
+            "VANHYPRARCH_TEST_BINARY_VULKAN": str(self.fake_vulkan_binary),
+            "VANHYPRARCH_TEST_SIGNATURE_VULKAN": str(self.vulkan_signature),
             "VANHYPRARCH_CURL_EXECUTABLE": str(self.fake_curl),
             "VANHYPRARCH_GPG_EXECUTABLE": str(self.fake_gpg),
             "VANHYPRARCH_WTYPE_EXECUTABLE": str(self.fake_wtype),
             "VANHYPRARCH_SYSTEMCTL_EXECUTABLE": str(self.fake_systemctl),
+            "VANHYPRARCH_PACMAN_EXECUTABLE": str(self.fake_pacman),
             "VANHYPRARCH_CPU_FLAGS": "avx2 fma bmi1 bmi2 f16c movbe",
             "VANHYPRARCH_HEALTH_TIMEOUT_SECONDS": "0.3",
             "VOXTYPE_MODEL_SOURCE_DIR": str(self.models_source),
             "SYSTEMCTL_STATE": str(self.root / "systemctl.state"),
             "SYSTEMCTL_LOG": str(self.root / "systemctl.log"),
+            "VULKAN_PACKAGES": str(self.root / "vulkan-packages"),
         })
+
+    def _write_binary_manifest(self) -> None:
+        records = []
+        for artifact_id, label, binary, selectable in (
+                ("cpu", "CPU", self.fake_binary, True),
+                ("vulkan", "Vulkan GPU", self.fake_vulkan_binary, True)):
+            records.append(textwrap.dedent(f"""\
+                [[binaries]]
+                id = "{artifact_id}"
+                label = "{label}"
+                version = "0.0.0"
+                architecture = "x86_64"
+                asset = "{binary.name}"
+                size = {binary.stat().st_size}
+                sha256 = "{digest(binary)}"
+                download_url = "https://example.invalid/{binary.name}"
+                signature_asset = "{binary.name}.asc"
+                signature_url = "https://example.invalid/{binary.name}.asc"
+                required_cpu_features = ["avx2", "fma", "bmi1", "bmi2", "f16c", "movbe"]
+                ui_selectable = {str(selectable).lower()}
+            """))
+        self.binary_manifest.write_text(
+            'schema_version = 1\nrelease_url = "https://example.invalid/releases/tag/v0.0.0"\n'
+            f'signing_fingerprint = "{self.fingerprint}"\n\n' + "\n".join(records),
+            encoding="utf-8")
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -164,7 +197,7 @@ class DictationManagerTest(unittest.TestCase):
     def _write_fake_voxtype(self) -> None:
         self.fake_binary.write_text(textwrap.dedent("""\
             #!/usr/bin/python
-            import json, os, pathlib, shutil, sys, tomllib
+            import hashlib, json, os, pathlib, shutil, sys, tomllib
 
             args = sys.argv[1:]
             if args == ["--version"]:
@@ -207,7 +240,13 @@ class DictationManagerTest(unittest.TestCase):
                     if side_effect == "unsafe-config-symlink":
                         (config_dir / "unsafe-link").symlink_to(
                             pathlib.Path(os.environ["VOXTYPE_FIXTURE_OUTSIDE_TARGET"]))
-                if os.environ.get("VOXTYPE_FIXTURE_HEALTH_FAIL") == "1":
+                executable_digest = hashlib.sha256(pathlib.Path(sys.argv[0]).read_bytes()).hexdigest()
+                fail_once = os.environ.get("VOXTYPE_FIXTURE_HEALTH_FAIL_ONCE_FILE")
+                if fail_once and not pathlib.Path(fail_once).exists():
+                    pathlib.Path(fail_once).write_text("failed once\\n")
+                    raise SystemExit(1)
+                if (os.environ.get("VOXTYPE_FIXTURE_HEALTH_FAIL") == "1"
+                        or os.environ.get("VOXTYPE_FIXTURE_HEALTH_FAIL_DIGEST") == executable_digest):
                     raise SystemExit(1)
                 config = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "voxtype/config.toml"
                 data = tomllib.loads(config.read_text())
@@ -269,7 +308,23 @@ class DictationManagerTest(unittest.TestCase):
                     ;;
                 '--user start vanhyprarch-voxtype.service')
                     [ "${SYSTEMCTL_FAIL_START:-}" != 1 ] || exit 1
+                    if [ -n "${SYSTEMCTL_FAIL_START_ONCE_FILE:-}" ] &&
+                            [ ! -f "$SYSTEMCTL_FAIL_START_ONCE_FILE" ]; then
+                        : > "$SYSTEMCTL_FAIL_START_ONCE_FILE"
+                        exit 1
+                    fi
+                    if [ -n "${VULKAN_EVIDENCE_FAIL_ON_START_ONCE_FILE:-}" ]; then
+                        if [ ! -f "$VULKAN_EVIDENCE_FAIL_ON_START_ONCE_FILE" ]; then
+                            : > "$VULKAN_EVIDENCE_FAIL_ON_START_ONCE_FILE"
+                            printf 'libvulkan.so.1\n' > "$VULKAN_MAPS_PATH"
+                        else
+                            printf 'libvulkan.so.1\n/usr/lib/libvulkan_radeon.so\n' > "$VULKAN_MAPS_PATH"
+                        fi
+                    fi
                     printf 'active\n' > "$SYSTEMCTL_STATE"
+                    ;;
+                '--user show vanhyprarch-voxtype.service --property MainPID --value')
+                    printf '%s\n' "${SYSTEMCTL_MAIN_PID:-0}"
                     ;;
                 '--user daemon-reload') ;;
                 *) exit 64 ;;
@@ -285,6 +340,61 @@ class DictationManagerTest(unittest.TestCase):
         if check and result.returncode != 0:
             self.fail(f"manager failed ({result.returncode}): {result.stderr or result.stdout}")
         return result
+
+    def vulkan_environment(self, vendors: tuple[tuple[str, str, str], ...] = (
+            ("renderD128", "0x1002", "amdgpu"),), packages: tuple[str, ...] = (
+                "vulkan-icd-loader", "vulkan-radeon")) -> dict[str, str]:
+        sysfs = self.root / "drm-sysfs"
+        dev = self.root / "dri-dev"
+        drivers = self.root / "drivers"
+        icd = self.root / "icd.d"
+        libraries = self.root / "vulkan-libraries"
+        package_root = self.root / "vulkan-packages"
+        for path in (sysfs, dev, drivers, icd, libraries, package_root):
+            path.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(package_root)
+        package_root.mkdir()
+        accessible = []
+        for node, vendor_id, driver in vendors:
+            device = sysfs / node / "device"
+            device.mkdir(parents=True, exist_ok=True)
+            (device / "vendor").write_text(vendor_id + "\n")
+            driver_dir = drivers / driver
+            driver_dir.mkdir(exist_ok=True)
+            (device / "driver").unlink(missing_ok=True)
+            (device / "driver").symlink_to(driver_dir)
+            (dev / node).write_text("mock render node\n")
+            accessible.append(node)
+        for package in packages:
+            (package_root / package).write_text("installed\n")
+        (libraries / "libvulkan.so.1").write_text("loader\n")
+        (icd / "radeon_icd.json").write_text("{}\n")
+        (icd / "intel_icd.x86_64.json").write_text("{}\n")
+        (icd / "nvidia_icd.json").write_text("{}\n")
+        proc_root = self.root / "mock-proc"
+        process = proc_root / "4242"
+        fd = process / "fd"
+        fd.mkdir(parents=True, exist_ok=True)
+        managed_binary = self.home / ".local/bin/voxtype"
+        executable = process / "exe"
+        executable.unlink(missing_ok=True)
+        executable.symlink_to(managed_binary)
+        (process / "maps").write_text(
+            "7f000000-7f001000 r-xp /usr/lib/libvulkan.so.1\n"
+            "7f001000-7f002000 r-xp /usr/lib/libvulkan_radeon.so\n")
+        for descriptor in fd.iterdir():
+            descriptor.unlink()
+        if accessible:
+            (fd / "9").symlink_to(dev / accessible[0])
+        return {
+            "VANHYPRARCH_DRM_SYSFS_ROOT": str(sysfs),
+            "VANHYPRARCH_DRI_DEV_ROOT": str(dev),
+            "VANHYPRARCH_VULKAN_ICD_ROOT": str(icd),
+            "VANHYPRARCH_VULKAN_LIBRARY_ROOT": str(libraries),
+            "VANHYPRARCH_TEST_ACCESSIBLE_RENDER_NODES": ",".join(accessible),
+            "VANHYPRARCH_PROC_ROOT": str(proc_root),
+            "SYSTEMCTL_MAIN_PID": "4242",
+        }
 
     def assert_messages_in_order(self, output: str, messages: list[str]) -> None:
         position = -1
@@ -427,8 +537,10 @@ class DictationManagerTest(unittest.TestCase):
         )
         before = {path: path.read_bytes() for path in paths}
 
-        failed = self.manager("install", check=False,
-            extra_env={"VOXTYPE_FIXTURE_HEALTH_FAIL": "1"})
+        failed = self.manager("install", check=False, extra_env={
+            "VOXTYPE_FIXTURE_HEALTH_FAIL_ONCE_FILE": str(self.root / "health-failed-once"),
+            "VANHYPRARCH_HEALTH_TIMEOUT_SECONDS": "0.1",
+        })
 
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn("did not become healthy after installation", failed.stderr)
@@ -438,6 +550,37 @@ class DictationManagerTest(unittest.TestCase):
         status = json.loads(self.manager("status", "--json").stdout)
         self.assertEqual(status["state"], "installed")
         self.assertEqual(status["max_duration"], 60)
+
+    def test_vulkan_reinstall_requires_runtime_evidence_and_restores_health(self) -> None:
+        self.install()
+        environment = self.vulkan_environment()
+        self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            extra_env=environment)
+        binary = self.home / ".local/bin/voxtype"
+        config = self.config_home / "voxtype/config.toml"
+        marker = self.data_home / "vanhyprarch/components/dictation"
+        before = {path: path.read_bytes() for path in (binary, config, marker)}
+        maps = Path(environment["VANHYPRARCH_PROC_ROOT"]) / "4242/maps"
+
+        failed = self.manager("install", check=False, extra_env={**environment,
+            "VULKAN_EVIDENCE_FAIL_ON_START_ONCE_FILE": str(
+                self.root / "vulkan-evidence-failed-once"),
+            "VULKAN_MAPS_PATH": str(maps),
+        })
+
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("did not become healthy after installation", failed.stderr)
+        self.assertNotIn("rollback also failed", failed.stderr)
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertEqual((self.root / "systemctl.state").read_text().strip(), "active")
+        status = json.loads(self.manager("status", "--json",
+            extra_env=environment).stdout)
+        self.assertEqual(status["state"], "installed")
+        self.assertEqual(status["acceleration"], "vulkan")
+        self.assertTrue(status["vulkan"]["runtime_evidence"]
+            ["device_runtime_evidence_valid"])
 
     def test_progress_is_flushed_and_model_download_precedes_blocking_work(self) -> None:
         module = load_manager_module()
@@ -488,6 +631,31 @@ class DictationManagerTest(unittest.TestCase):
         ])
 
     def test_production_manifest_and_catalog_are_exact(self) -> None:
+        binary_document = tomllib.loads((RESOURCES / "binaries.toml").read_text())
+        self.assertEqual(binary_document["schema_version"], 1)
+        self.assertEqual(binary_document["signing_fingerprint"],
+            "9CCF7915B750CAE8B095ED1AA3FC9F33FD209279")
+        binaries = {item["id"]: item for item in binary_document["binaries"]}
+        self.assertEqual(set(binaries), {"cpu", "vulkan"})
+        self.assertEqual(binaries["cpu"]["asset"],
+            "voxtype-1.0.1-linux-x86_64-avx2")
+        self.assertEqual(binaries["cpu"]["sha256"],
+            "cb3843a894ef47aca230b30bb1c45c2ef8e0d015adf2fa754d60e55123165fd0")
+        self.assertEqual(binaries["vulkan"]["asset"],
+            "voxtype-1.0.1-linux-x86_64-vulkan")
+        self.assertEqual(binaries["vulkan"]["size"], 64913912)
+        self.assertEqual(binaries["vulkan"]["sha256"],
+            "c569d038057464aa60290296794bcbd79b928ee0efd038e33062a4c015558ed8")
+        self.assertEqual(binaries["vulkan"]["download_url"],
+            "https://github.com/peteonrails/voxtype/releases/download/v1.0.1/voxtype-1.0.1-linux-x86_64-vulkan")
+        self.assertEqual(binaries["vulkan"]["signature_asset"],
+            "voxtype-1.0.1-linux-x86_64-vulkan.asc")
+        self.assertEqual(binaries["vulkan"]["signature_url"],
+            "https://github.com/peteonrails/voxtype/releases/download/v1.0.1/voxtype-1.0.1-linux-x86_64-vulkan.asc")
+        self.assertEqual({item["version"] for item in binaries.values()}, {"1.0.1"})
+        self.assertTrue(binaries["vulkan"]["ui_selectable"])
+        self.assertNotIn("latest", (RESOURCES / "binaries.toml").read_text().lower())
+
         document = tomllib.loads((RESOURCES / "models.toml").read_text())
         self.assertEqual(document["provenance_revision"], "5359861c739e955e79d9a303bcbc70fb988958b1")
         expected = {
@@ -518,12 +686,193 @@ class DictationManagerTest(unittest.TestCase):
             self.assertNotIn("Preparing Local Dictation", output)
             self.assertNotIn("Downloading model", output)
             self.assertNotIn("Verifying model integrity", output)
-        self.assertEqual(status["schema_version"], 1)
+        self.assertEqual(status["schema_version"], 2)
         self.assertEqual(status["state"], "not-installed")
         self.assertFalse(status["installed"])
         self.assertEqual(status["max_duration"], 120)
         self.assertEqual(catalog["defaults"]["max_duration"], 120)
-        self.assertEqual(catalog["accelerations"], [{"id": "cpu", "label": "CPU"}])
+        self.assertEqual([item["id"] for item in catalog["accelerations"]],
+            ["cpu", "vulkan"])
+        self.assertTrue(catalog["accelerations"][1]["ui_selectable"])
+        self.assertEqual(catalog["accelerations"][1]["hardware_validation"], "complete")
+        self.assertEqual(catalog["ui_policy"]["selectable_accelerations"],
+            ["cpu", "vulkan"])
+        self.assertEqual(catalog["ui_policy"]["vulkan"], "supported-explicit-opt-in")
+        self.assertIn("vulkan", status)
+        self.assertIn(status["vulkan"]["state"], {
+            "ready", "missing-prerequisites", "unavailable", "unsupported",
+            "inaccessible", "ambiguous"})
+
+    def test_acceleration_identity_maps_only_reviewed_digests(self) -> None:
+        module = load_manager_module()
+        with mock.patch.dict(os.environ, self.environment, clear=True):
+            _, binaries = module.load_binaries(self.resources)
+            self.assertEqual(module.acceleration_identity(self.fake_binary, binaries)[0], "cpu")
+            self.assertEqual(module.acceleration_identity(
+                self.fake_vulkan_binary, binaries)[0], "vulkan")
+            unknown = self.root / "unknown-binary"
+            unknown.write_bytes(b"unknown\n")
+            with self.assertRaises(module.ManagerError):
+                module.acceleration_identity(unknown, binaries)
+
+    def test_vulkan_vendor_detection_and_fail_closed_states(self) -> None:
+        module = load_manager_module()
+        cases = (
+            ("0x1002", "amd", "vulkan-radeon"),
+            ("0x8086", "intel", "vulkan-intel"),
+            ("0x10de", "nvidia", "nvidia-utils"),
+        )
+        for vendor_id, vendor, package in cases:
+            with self.subTest(vendor=vendor):
+                environment = {**self.environment, **self.vulkan_environment(
+                    (("renderD128", vendor_id, vendor + "-driver"),),
+                    ("vulkan-icd-loader", package))}
+                with mock.patch.dict(os.environ, environment, clear=True):
+                    capability = module.vulkan_capability()
+                self.assertEqual(capability["vendor"], vendor)
+                self.assertEqual(capability["vendor_id"], vendor_id)
+                self.assertEqual(capability["required_packages"],
+                    ["vulkan-icd-loader", package])
+                self.assertNotIn("cuda", " ".join(capability["required_packages"]).lower())
+
+        inaccessible = {**self.environment, **self.vulkan_environment()}
+        inaccessible["VANHYPRARCH_TEST_ACCESSIBLE_RENDER_NODES"] = ""
+        with mock.patch.dict(os.environ, inaccessible, clear=True):
+            self.assertEqual(module.vulkan_capability()["state"], "inaccessible")
+        unsupported = {**self.environment, **self.vulkan_environment(
+            (("renderD128", "0x1234", "other"),), ("vulkan-icd-loader",))}
+        with mock.patch.dict(os.environ, unsupported, clear=True):
+            self.assertEqual(module.vulkan_capability()["state"], "unsupported")
+        ambiguous = {**self.environment, **self.vulkan_environment((
+            ("renderD128", "0x1002", "amdgpu"),
+            ("renderD129", "0x8086", "i915")),
+            ("vulkan-icd-loader", "vulkan-radeon", "vulkan-intel"))}
+        with mock.patch.dict(os.environ, ambiguous, clear=True):
+            self.assertEqual(module.vulkan_capability()["state"], "ambiguous")
+
+    def test_vulkan_missing_device_loader_and_vendor_icd(self) -> None:
+        module = load_manager_module()
+        no_device = {**self.environment, **self.vulkan_environment(vendors=(),
+            packages=("vulkan-icd-loader",))}
+        with mock.patch.dict(os.environ, no_device, clear=True):
+            self.assertEqual(module.vulkan_capability()["state"], "unavailable")
+
+        missing_loader = {**self.environment, **self.vulkan_environment(
+            packages=("vulkan-radeon",))}
+        with mock.patch.dict(os.environ, missing_loader, clear=True):
+            capability = module.vulkan_capability()
+        self.assertEqual(capability["state"], "missing-prerequisites")
+        self.assertEqual(capability["missing_packages"], ["vulkan-icd-loader"])
+
+        missing_icd = {**self.environment, **self.vulkan_environment(
+            packages=("vulkan-icd-loader",))}
+        with mock.patch.dict(os.environ, missing_icd, clear=True):
+            capability = module.vulkan_capability()
+        self.assertEqual(capability["state"], "missing-prerequisites")
+        self.assertEqual(capability["missing_packages"], ["vulkan-radeon"])
+
+    def test_vulkan_runtime_evidence_is_exact_and_required(self) -> None:
+        module = load_manager_module()
+        proc_root = self.root / "proc"
+        process = proc_root / "4242"
+        fd = process / "fd"
+        fd.mkdir(parents=True)
+        binary = self.root / "managed-voxtype"
+        binary.write_bytes(b"managed\n")
+        (process / "exe").symlink_to(binary)
+        (process / "maps").write_text(
+            "libvulkan.so.1\n/usr/lib/libvulkan_radeon.so\n")
+        render = self.root / "dri/renderD128"
+        render.parent.mkdir()
+        render.write_text("node\n")
+        (fd / "9").symlink_to(render)
+        capability = {"state": "ready", "vendor_id": "0x1002",
+            "render_node": str(render)}
+        environment = {**self.environment, "VANHYPRARCH_PROC_ROOT": str(proc_root)}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(module, "systemd_main_pid", return_value=4242):
+            evidence = module.collect_vulkan_runtime_evidence(binary, capability)
+        self.assertEqual(evidence, {"collected": True, "pid": 4242,
+            "executable_matches": True, "vulkan_loader_mapped": True,
+            "vendor_icd_mapped": True, "render_node_open": True,
+            "device_runtime_evidence_valid": True,
+            "device_runtime_evidence_rule": "drm-render-node"})
+        self.assertTrue(module.valid_vulkan_runtime_evidence(evidence, capability))
+        self.assertFalse(module.valid_vulkan_runtime_evidence(
+            {**evidence, "device_runtime_evidence_valid": False}, capability))
+        (process / "maps").write_text("unrelated.so\n")
+        (fd / "9").unlink()
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(module, "systemd_main_pid", return_value=4242):
+            missing = module.collect_vulkan_runtime_evidence(binary, capability)
+        self.assertTrue(missing["collected"])
+        self.assertFalse(missing["vulkan_loader_mapped"])
+        self.assertFalse(missing["vendor_icd_mapped"])
+        self.assertFalse(missing["render_node_open"])
+        self.assertFalse(module.valid_vulkan_runtime_evidence(missing, capability))
+        with mock.patch.object(module, "systemd_main_pid", return_value=None):
+            self.assertEqual(module.collect_vulkan_runtime_evidence(
+                binary, capability), module.empty_runtime_evidence())
+
+        (process / "maps").write_text(
+            "libvulkan.so.1\n/usr/lib/libvulkan_intel.so\n")
+        intel = {"state": "ready", "vendor_id": "0x8086",
+            "render_node": str(render)}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(module, "systemd_main_pid", return_value=4242):
+            intel_evidence = module.collect_vulkan_runtime_evidence(binary, intel)
+        self.assertFalse(intel_evidence["render_node_open"])
+        self.assertFalse(module.valid_vulkan_runtime_evidence(intel_evidence, intel))
+
+        (process / "maps").write_text(
+            "libvulkan.so.1\n/usr/lib/libEGL_nvidia.so.0\n")
+        nvidia = {"state": "ready", "vendor_id": "0x10de",
+            "render_node": str(render)}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(module, "systemd_main_pid", return_value=4242):
+            nvidia_evidence = module.collect_vulkan_runtime_evidence(binary, nvidia)
+        self.assertTrue(nvidia_evidence["vendor_icd_mapped"])
+        self.assertFalse(nvidia_evidence["render_node_open"])
+        self.assertIsNone(nvidia_evidence["device_runtime_evidence_valid"])
+        self.assertEqual(nvidia_evidence["device_runtime_evidence_rule"],
+            "not-established")
+        self.assertTrue(module.valid_vulkan_runtime_evidence(
+            nvidia_evidence, nvidia))
+        for field in ("executable_matches", "vulkan_loader_mapped",
+                "vendor_icd_mapped"):
+            self.assertFalse(module.valid_vulkan_runtime_evidence(
+                {**nvidia_evidence, field: False}, nvidia),
+                f"NVIDIA common evidence unexpectedly ignored {field}")
+
+    def test_vulkan_prerequisite_install_uses_exact_visible_argv(self) -> None:
+        module = load_manager_module()
+        missing = {"state": "missing-prerequisites", "missing_packages":
+            ["vulkan-icd-loader", "vulkan-radeon"]}
+        ready = {**missing, "state": "ready", "missing_packages": []}
+        events: list[Any] = []
+
+        def record_run(argv, **_kwargs):
+            events.append(list(argv))
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        with mock.patch.object(module.sys.stdin, "isatty", return_value=True), \
+                mock.patch("builtins.input", return_value="yes"), \
+                mock.patch.object(module, "run", side_effect=record_run), \
+                mock.patch.object(module, "vulkan_capability", return_value=ready):
+            self.assertEqual(module.ensure_vulkan_prerequisites(missing), ready)
+        self.assertEqual(events, [["/usr/bin/sudo", "/usr/bin/pacman", "-S",
+            "--needed", "--", "vulkan-icd-loader", "vulkan-radeon"]])
+
+    def test_systemd_pid_parsing_fails_closed(self) -> None:
+        module = load_manager_module()
+        with mock.patch.object(module.os, "access", return_value=True):
+            for output in ("", "0\n", "1\n", "not-a-pid\n"):
+                with self.subTest(output=output), mock.patch.object(module, "run",
+                        return_value=subprocess.CompletedProcess([], 0, output, "")):
+                    self.assertIsNone(module.systemd_main_pid())
+            with mock.patch.object(module, "run", return_value=
+                    subprocess.CompletedProcess([], 0, "4242\n", "")):
+                self.assertEqual(module.systemd_main_pid(), 4242)
 
     def test_malformed_installed_state_is_explicit_error(self) -> None:
         self.install()
@@ -535,6 +884,16 @@ class DictationManagerTest(unittest.TestCase):
         self.assertTrue(status["errors"])
         self.assertIsNone(status["model"])
         self.assertFalse(status["matches_defaults"])
+
+    def test_unknown_active_digest_is_explicit_error(self) -> None:
+        self.install()
+        binary = self.home / ".local/bin/voxtype"
+        binary.write_bytes(binary.read_bytes() + b"unknown artifact\n")
+        status = json.loads(self.manager("status", "--json").stdout)
+        self.assertEqual(status["state"], "error")
+        self.assertTrue(status["installed"])
+        self.assertIsNone(status["acceleration"])
+        self.assertIn("not a reviewed managed artifact", " ".join(status["errors"]))
 
     def test_daemon_health_uses_runtime_state_not_backend_label(self) -> None:
         module = load_manager_module()
@@ -601,6 +960,62 @@ class DictationManagerTest(unittest.TestCase):
                 timeout_seconds=0.1, retry_interval=0.1))
             service_mock.assert_not_called()
 
+    def test_vulkan_health_requires_all_runtime_evidence_with_bounded_retry(self) -> None:
+        module = load_manager_module()
+        binary = self.root / "vulkan-health-binary"
+        binary.write_bytes(b"managed vulkan artifact\n")
+        expected_digest = digest(binary)
+        capability = {"state": "ready", "vendor_id": "0x1002",
+            "render_node": "/dev/dri/renderD128"}
+        healthy_status = subprocess.CompletedProcess([], 0,
+            json.dumps({"alt": "idle", "class": "idle", "model": "small.en",
+                "backend": "unknown"}), "")
+        complete = {"collected": True, "pid": 4242,
+            "executable_matches": True, "vulkan_loader_mapped": True,
+            "vendor_icd_mapped": True, "render_node_open": True,
+            "device_runtime_evidence_valid": True,
+            "device_runtime_evidence_rule": "drm-render-node"}
+
+        for field in ("executable_matches", "vulkan_loader_mapped",
+                "vendor_icd_mapped", "render_node_open"):
+            with self.subTest(missing=field):
+                clock = FakeClock()
+                incomplete = {**complete, field: False}
+                with mock.patch.object(module, "service_state", return_value="active"), \
+                        mock.patch.object(module, "run", return_value=healthy_status), \
+                        mock.patch.object(module, "collect_vulkan_runtime_evidence",
+                            return_value=incomplete), \
+                        mock.patch.object(module.time, "monotonic", clock.monotonic), \
+                        mock.patch.object(module.time, "sleep", clock.sleep):
+                    self.assertFalse(module.daemon_healthy(binary, "small.en",
+                        expected_digest, acceleration="vulkan", vulkan=capability,
+                        timeout_seconds=0.3, retry_interval=0.1))
+                self.assertGreaterEqual(len(clock.sleeps), 2)
+
+        clock = FakeClock()
+        evidence = iter(({**complete, "render_node_open": False}, complete))
+        with mock.patch.object(module, "service_state", return_value="active"), \
+                mock.patch.object(module, "run", return_value=healthy_status), \
+                mock.patch.object(module, "collect_vulkan_runtime_evidence",
+                    side_effect=lambda *_args: next(evidence)), \
+                mock.patch.object(module.time, "monotonic", clock.monotonic), \
+                mock.patch.object(module.time, "sleep", clock.sleep):
+            self.assertTrue(module.daemon_healthy(binary, "small.en", expected_digest,
+                acceleration="vulkan", vulkan=capability,
+                timeout_seconds=0.5, retry_interval=0.1))
+        self.assertEqual(clock.sleeps, [0.1])
+
+        with mock.patch.object(module, "service_state", return_value="active"), \
+                mock.patch.object(module, "run", return_value=healthy_status), \
+                mock.patch.object(module, "collect_vulkan_runtime_evidence") as collector:
+            self.assertTrue(module.daemon_healthy(binary, "small.en", expected_digest,
+                acceleration="cpu", timeout_seconds=0.1, retry_interval=0.1))
+            collector.assert_not_called()
+
+        self.assertFalse(module.daemon_healthy(binary, "small.en", expected_digest,
+            acceleration="vulkan", vulkan={"state": "missing-prerequisites"},
+            timeout_seconds=0.1, retry_interval=0.1))
+
     def test_deployed_manager_has_no_checkout_dependency(self) -> None:
         deployed_manager = self.home / ".local/bin/vanhyprarch-dictation"
         deployed_manager.parent.mkdir(parents=True)
@@ -622,25 +1037,26 @@ class DictationManagerTest(unittest.TestCase):
         target = self.home / ".local/bin/voxtype"
         target.parent.mkdir(parents=True)
         target.write_bytes(b"known-good binary\n")
-        original_metadata = self.metadata.read_text()
+        original_manifest = self.binary_manifest.read_text()
         replacements = {
-            "hash": ("VANHYPRARCH_VOXTYPE_SHA256=", "0" * 64, {}),
-            "fingerprint": ("VANHYPRARCH_VOXTYPE_SIGNING_FINGERPRINT=", "B" * 40, {}),
-            "version": ("VANHYPRARCH_VOXTYPE_VERSION=", "9.9.9", {}),
+            "hash": (f'sha256 = "{digest(self.fake_binary)}"',
+                'sha256 = "' + "0" * 64 + '"', {}),
+            "fingerprint": (f'signing_fingerprint = "{self.fingerprint}"',
+                'signing_fingerprint = "' + "B" * 40 + '"', {}),
+            "version": ('version = "0.0.0"', 'version = "9.9.9"', {}),
             "signature": (None, None, {"GPG_FAIL_VERIFY": "1"}),
         }
-        for name, (prefix, value, extra) in replacements.items():
+        for name, (old, new, extra) in replacements.items():
             with self.subTest(name=name):
-                self.metadata.write_text(original_metadata)
-                if prefix is not None:
-                    lines = [prefix + value if line.startswith(prefix) else line
-                        for line in original_metadata.splitlines()]
-                    self.metadata.write_text("\n".join(lines) + "\n")
+                self.binary_manifest.write_text(original_manifest)
+                shutil.rmtree(self.data_home / "voxtype", ignore_errors=True)
+                if old is not None:
+                    self.binary_manifest.write_text(original_manifest.replace(old, new, 1))
                 failed = self.manager("install", check=False, extra_env=extra)
                 self.assertNotEqual(failed.returncode, 0)
                 self.assertEqual(target.read_bytes(), b"known-good binary\n")
                 self.assertFalse((self.data_home / "vanhyprarch/components/dictation").exists())
-        self.metadata.write_text(original_metadata)
+        self.binary_manifest.write_text(original_manifest)
 
     def test_install_apply_noop_rollback_and_uninstall(self) -> None:
         self.install()
@@ -742,6 +1158,155 @@ class DictationManagerTest(unittest.TestCase):
         self.assertTrue((data_dir / "models/ggml-small.en.bin").exists())
         self.assertFalse((data_dir / "models/ggml-small.bin").exists())
 
+    def test_cpu_vulkan_cpu_transaction_and_verified_cache(self) -> None:
+        self.install()
+        environment = self.vulkan_environment()
+        config = self.config_home / "voxtype/config.toml"
+        before = tomllib.loads(config.read_text())
+        switched = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            extra_env=environment)
+        self.assertEqual(digest(self.home / ".local/bin/voxtype"),
+            digest(self.fake_vulkan_binary))
+        self.assertEqual(tomllib.loads(config.read_text()), before)
+        status = json.loads(self.manager("status", "--json",
+            extra_env=environment).stdout)
+        self.assertEqual(status["acceleration"], "vulkan")
+        self.assertFalse(status["matches_defaults"])
+        self.assertEqual(status["vulkan"]["vendor"], "amd")
+        cache = self.data_home / "voxtype/binaries/1.0.1"
+        self.assertTrue((cache / self.fake_binary.name).is_file())
+        self.assertTrue((cache / self.fake_vulkan_binary.name).is_file())
+        self.assertFalse((self.home / ".local/bin/voxtype").is_symlink())
+        self.assertIn("Verifying Voxtype release integrity...", switched.stdout)
+
+        failed_cpu = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "cpu", "--max-duration", "120", check=False,
+            extra_env={**environment,
+                "VOXTYPE_FIXTURE_HEALTH_FAIL_DIGEST": digest(self.fake_binary)})
+        self.assertNotEqual(failed_cpu.returncode, 0)
+        self.assertEqual(digest(self.home / ".local/bin/voxtype"),
+            digest(self.fake_vulkan_binary))
+        self.assertEqual((self.root / "systemctl.state").read_text().strip(), "active")
+        self.assertEqual(tomllib.loads(config.read_text()), before)
+
+        log_before = (self.root / "systemctl.log").read_text()
+        reused = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "cpu", "--max-duration", "120",
+            extra_env=environment)
+        self.assertIn("Reusing verified Voxtype CPU component.", reused.stdout)
+        self.assertEqual(digest(self.home / ".local/bin/voxtype"),
+            digest(self.fake_binary))
+        self.assertEqual(tomllib.loads(config.read_text()), before)
+        self.assertGreater((self.root / "systemctl.log").read_text().count(
+            "--user stop vanhyprarch-voxtype.service"),
+            log_before.count("--user stop vanhyprarch-voxtype.service"))
+        self.manager("uninstall")
+        self.assertFalse(cache.exists())
+        self.assertTrue(self.resources.exists())
+        self.assertTrue((self.resources / "binaries.toml").exists())
+        self.assertTrue((self.resources / "voxtype-ci-signing-key.asc").exists())
+        self.assertTrue(self.fake_pacman.exists())
+
+    def test_vulkan_prerequisites_fail_before_service_stop(self) -> None:
+        self.install()
+        environment = self.vulkan_environment(packages=())
+        log = self.root / "systemctl.log"
+        before_log = log.read_bytes()
+        before_binary = (self.home / ".local/bin/voxtype").read_bytes()
+        failed = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            check=False, extra_env=environment)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("official Vulkan requirements", failed.stderr)
+        self.assertEqual(log.read_bytes(), before_log)
+        self.assertEqual((self.home / ".local/bin/voxtype").read_bytes(), before_binary)
+
+    def test_vulkan_candidate_and_runtime_failures_restore_cpu(self) -> None:
+        self.install()
+        environment = self.vulkan_environment()
+        binary = self.home / ".local/bin/voxtype"
+        config = self.config_home / "voxtype/config.toml"
+        before_binary = binary.read_bytes()
+        before_config = config.read_bytes()
+
+        signature_failed = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            check=False, extra_env={**environment, "GPG_FAIL_VERIFY": "1"})
+        self.assertNotEqual(signature_failed.returncode, 0)
+        self.assertEqual(binary.read_bytes(), before_binary)
+        self.assertEqual(config.read_bytes(), before_config)
+        self.assertFalse((self.data_home / "voxtype/binaries/1.0.1"
+            / self.fake_vulkan_binary.name).exists())
+
+        start_once = self.root / "start-failed-once"
+        start_failed = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            check=False, extra_env={**environment,
+                "SYSTEMCTL_FAIL_START_ONCE_FILE": str(start_once)})
+        self.assertNotEqual(start_failed.returncode, 0)
+        self.assertEqual(binary.read_bytes(), before_binary)
+        self.assertEqual(config.read_bytes(), before_config)
+        self.assertEqual((self.root / "systemctl.state").read_text().strip(), "active")
+
+        cache = self.data_home / "voxtype/binaries/1.0.1" / self.fake_vulkan_binary.name
+        maps = Path(environment["VANHYPRARCH_PROC_ROOT"]) / "4242/maps"
+        complete_maps = maps.read_text()
+        maps.write_text("7f000000-7f001000 r-xp /usr/lib/libvulkan.so.1\n")
+        evidence_failed = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            check=False, extra_env=environment)
+        self.assertNotEqual(evidence_failed.returncode, 0)
+        self.assertIn("did not become healthy", evidence_failed.stderr)
+        self.assertEqual(binary.read_bytes(), before_binary)
+        self.assertEqual(config.read_bytes(), before_config)
+        self.assertEqual((self.root / "systemctl.state").read_text().strip(), "active")
+        maps.write_text(complete_maps)
+
+        health_failed = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120",
+            check=False, extra_env={**environment,
+                "VOXTYPE_FIXTURE_HEALTH_FAIL_DIGEST": digest(cache)})
+        self.assertNotEqual(health_failed.returncode, 0)
+        self.assertIn("did not become healthy", health_failed.stderr)
+        self.assertEqual(binary.read_bytes(), before_binary)
+        self.assertEqual(config.read_bytes(), before_config)
+        self.assertEqual((self.root / "systemctl.state").read_text().strip(), "active")
+
+    def test_corrupt_cache_is_reverified_and_never_activated(self) -> None:
+        self.install()
+        environment = self.vulkan_environment()
+        cache = self.data_home / "voxtype/binaries/1.0.1" / self.fake_vulkan_binary.name
+        cache.write_bytes(b"corrupt cache\n")
+        self.manager("apply", "--model", "small.en", "--language-mode", "specific",
+            "--language", "en", "--acceleration", "vulkan",
+            "--max-duration", "120", extra_env=environment)
+        self.assertEqual(cache.read_bytes(), self.fake_vulkan_binary.read_bytes())
+        self.assertEqual((self.home / ".local/bin/voxtype").read_bytes(),
+            self.fake_vulkan_binary.read_bytes())
+
+    def test_failed_switch_restores_previously_inactive_service(self) -> None:
+        self.install()
+        (self.root / "systemctl.state").write_text("inactive\n")
+        start_once = self.root / "inactive-start-failed-once"
+        failed = self.manager("apply", "--model", "small.en",
+            "--language-mode", "specific", "--language", "en",
+            "--acceleration", "vulkan", "--max-duration", "120", check=False,
+            extra_env={**self.vulkan_environment(),
+                "SYSTEMCTL_FAIL_START_ONCE_FILE": str(start_once)})
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual((self.root / "systemctl.state").read_text().strip(), "inactive")
+        self.assertEqual((self.home / ".local/bin/voxtype").read_bytes(),
+            self.fake_binary.read_bytes())
+
     def test_all_multilingual_language_modes_and_three_language_selection(self) -> None:
         self.install()
         (self.root / "systemctl.state").write_text("active\n")
@@ -816,7 +1381,7 @@ class DictationManagerTest(unittest.TestCase):
             "--language-mode", "specific", "--language", "en",
             "--acceleration", "cpu", "--max-duration", "60", check=False)
         self.assertNotEqual(failed.returncode, 0)
-        self.assertIn("not the managed CPU artifact", failed.stderr)
+        self.assertIn("not a reviewed managed artifact", failed.stderr)
         self.assertEqual(config.read_bytes(), config_before)
         self.assertEqual(log.read_bytes() if log.exists() else b"", log_before)
 

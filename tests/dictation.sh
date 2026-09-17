@@ -8,6 +8,7 @@ component_dir=$repository_dir/install/dictation
 manager=$repository_dir/bin/vanhyprarch-dictation
 config=$component_dir/config.toml
 service=$component_dir/vanhyprarch-voxtype.service
+binary_manifest=$component_dir/binaries.toml
 official_manifest=$repository_dir/packages/official.txt
 aur_manifest=$repository_dir/packages/aur.txt
 optional_manifest=$repository_dir/packages/optional-dictation-official.txt
@@ -69,20 +70,27 @@ grep -Fq 'hl.dsp.exec_cmd("voxtype record stop"), { release = true })' "$binding
 grep -Fq 'hl.env("PATH", prependPathOnce(inheritedPath, sessionHome .. "/.local/bin"))' \
     "$hyprland_config" || fail 'session PATH policy changed'
 
-grep -Fq 'voxtype-1.0.1-linux-x86_64-avx2' "$manager" ||
-    fail 'manager does not pin the AVX2 asset'
-grep -Fq 'cb3843a894ef47aca230b30bb1c45c2ef8e0d015adf2fa754d60e55123165fd0' "$manager" ||
-    fail 'manager does not pin the binary digest'
-grep -Fq '9CCF7915B750CAE8B095ED1AA3FC9F33FD209279' "$manager" ||
-    fail 'manager does not pin the signing fingerprint'
-grep -Fq 'for feature in ("avx2", "fma", "bmi1", "bmi2", "f16c", "movbe")' "$manager" ||
-    fail 'manager does not enforce the x86-64-v3 feature floor'
+grep -Fq 'voxtype-1.0.1-linux-x86_64-avx2' "$binary_manifest" ||
+    fail 'binary manifest does not pin the AVX2 asset'
+grep -Fq 'cb3843a894ef47aca230b30bb1c45c2ef8e0d015adf2fa754d60e55123165fd0' "$binary_manifest" ||
+    fail 'binary manifest does not pin the CPU digest'
+grep -Fq 'voxtype-1.0.1-linux-x86_64-vulkan' "$binary_manifest" ||
+    fail 'binary manifest does not pin the Vulkan asset'
+grep -Fq 'c569d038057464aa60290296794bcbd79b928ee0efd038e33062a4c015558ed8' "$binary_manifest" ||
+    fail 'binary manifest does not pin the Vulkan digest'
+grep -Fq 'size = 64913912' "$binary_manifest" ||
+    fail 'binary manifest does not pin the Vulkan asset size'
+grep -Fq '9CCF7915B750CAE8B095ED1AA3FC9F33FD209279' "$binary_manifest" ||
+    fail 'binary manifest does not pin the signing fingerprint'
+grep -Fq 'required_cpu_features = ["avx2", "fma", "bmi1", "bmi2", "f16c", "movbe"]' "$binary_manifest" ||
+    fail 'binary manifest does not enforce the x86-64-v3 feature floor'
+! grep -Fiq latest "$binary_manifest" || fail 'binary manifest contains a floating URL'
 grep -Fq '"setup", "--download", "--model"' "$manager" ||
     fail 'manager does not use the stable Voxtype model downloader'
 grep -Fq 'os.replace(candidate, path_map["config"])' "$manager" ||
     fail 'manager does not atomically publish candidate config'
-grep -Fq 'expected_digest = managed_cpu_digest(path_map["binary"], resources)' "$manager" ||
-    fail 'Apply does not validate the managed CPU artifact digest'
+grep -Fq 'acceleration_identity(path_map["binary"], binaries)' "$manager" ||
+    fail 'manager does not derive acceleration from the active digest'
 grep -Fq 'Local Dictation service is running and healthy.' "$manager" ||
     fail 'successful installation does not report healthy service state'
 ! grep -Fq 'The service was not enabled or started' "$manager" ||
@@ -95,8 +103,8 @@ grep -Fq 'remove_voxtype_tree(path_map["config_home"], path_map["config_dir"]' "
     fail 'uninstall does not remove the complete Voxtype config directory'
 grep -Fq 'remove_voxtype_tree(path_map["data_home"], path_map["data_dir"]' "$manager" ||
     fail 'uninstall does not remove the complete Voxtype data directory'
-! grep -Eqi 'setup[[:space:]]+gpu|--enable.*gpu|x86_64-vulkan|cuda|rocm|onnx' "$manager" ||
-    fail 'manager implements a forbidden acceleration backend'
+! grep -Eqi 'setup[[:space:]]+gpu|--enable.*gpu|cuda|rocm|onnx' "$manager" "$binary_manifest" ||
+    fail 'manager contains a forbidden upstream GPU setup or unrelated backend'
 
 if grep -RFiq --exclude-dir=.git \
     -e 'Normal uninstall preserves' \

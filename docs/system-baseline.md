@@ -67,7 +67,7 @@ and unresolved choices are maintained in the canonical
 | Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
 | Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The independently released native client owns layer-shell output coverage, input absorption, and animation. |
-| Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1 | CPU-only local Whisper; Hyprland supplies F9 press/release and starts the project user service only when installed. |
+| Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 

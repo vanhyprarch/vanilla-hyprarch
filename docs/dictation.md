@@ -19,16 +19,23 @@ The managed default is local/offline, English-only transcription:
   notification and OSD output disabled.
 
 There is no evdev hotkey, input-group membership, uinput, ydotool, clipboard
-fallback, cloud API, custom recorder, custom Whisper wrapper, GPU setup, or
-Quickshell indicator.
+fallback, cloud API, custom recorder, custom Whisper wrapper, automatic GPU
+selection, upstream GPU setup, or Quickshell indicator.
 
 ## Audited inputs and verification
 
-`install/dictation/voxtype.conf` pins release 1.0.1, asset
-`voxtype-1.0.1-linux-x86_64-avx2`, its release URL, and SHA-256
-`cb3843a894ef47aca230b30bb1c45c2ef8e0d015adf2fa754d60e55123165fd0`.
-The matching detached `.asc` file is downloaded separately. No production URL
-uses GitHub's `latest` redirect.
+`install/dictation/binaries.toml` is the immutable binary security manifest.
+It pins release 1.0.1 and exactly two x86_64 artifacts:
+
+- public-default CPU: `voxtype-1.0.1-linux-x86_64-avx2`, 18,245,408 bytes,
+  SHA-256 `cb3843a894ef47aca230b30bb1c45c2ef8e0d015adf2fa754d60e55123165fd0`;
+- explicit opt-in Vulkan: `voxtype-1.0.1-linux-x86_64-vulkan`, 64,913,912
+  bytes, SHA-256
+  `c569d038057464aa60290296794bcbd79b928ee0efd038e33062a4c015558ed8`.
+
+Each record contains its exact release URL, detached `.asc` URL, version,
+architecture, and CPU feature requirements. No production URL uses GitHub's
+`latest` redirect.
 
 `voxtype-ci-signing-key.asc` is an audited armored copy of the upstream CI
 release-signing public key. It was retrieved by exact fingerprint from the
@@ -43,10 +50,15 @@ confirms that the vendored file contains exactly one primary key with that full
 fingerprint, imports it, and requires a valid detached signature from that
 primary key or one of its signing subkeys.
 
-Only after independent SHA-256 and signature verification does the staged
-binary become executable, solely for exact `--version` validation. A successful
-candidate is atomically installed at `$HOME/.local/bin/voxtype` with mode
-`0755`; it is never installed as root or under `/usr/local/bin`.
+Only after independent size, SHA-256, and signature verification does a newly
+downloaded candidate become executable, solely for exact `--version`
+validation. It is then cached under
+`$XDG_DATA_HOME/voxtype/binaries/1.0.1/` by its exact asset name. CPU and Vulkan
+may coexist there. Every cached candidate is checked again for regular-file
+type, current-user ownership, size, digest, and version before activation. The
+active `$HOME/.local/bin/voxtype` is atomically replaced with mode `0755` and
+always remains a regular file, never a symlink; nothing is installed as root or
+under `/usr/local/bin`.
 
 `install/dictation/models.toml` is the sole reviewed model security manifest.
 It contains all ten selectable stable models with exact filenames, byte sizes,
@@ -75,9 +87,10 @@ Vanilla isolates the setup subprocess with a private temporary
 model reaches its reviewed final path. The setup-generated `base.en` default
 never reaches live user configuration.
 
-The AVX2 release follows upstream's x86-64-v3 baseline. Before downloading,
-the installer requires x86_64 plus `avx2`, `fma`, `bmi1`, `bmi2`, `f16c`, and
-`movbe`. It performs no GPU discovery or activation.
+Both reviewed releases follow upstream's x86-64-v3 baseline. Before
+downloading, the manager requires x86_64 plus `avx2`, `fma`, `bmi1`, `bmi2`,
+`f16c`, and `movbe`. Fresh installation always activates CPU and performs no
+GPU discovery or activation.
 
 ## Install and activate
 
@@ -154,16 +167,62 @@ The stable public command supports:
 vanhyprarch-dictation status --json
 vanhyprarch-dictation catalog --json
 vanhyprarch-dictation install
-vanhyprarch-dictation apply --model MODEL --language-mode MODE --language CODE ... --acceleration cpu --max-duration SECONDS
+vanhyprarch-dictation apply --model MODEL --language-mode MODE --language CODE ... --acceleration cpu|vulkan --max-duration SECONDS
 vanhyprarch-dictation remove-model MODEL
 vanhyprarch-dictation uninstall
 ```
 
-Status and catalog use schema version 1 and work with no installed component.
+Status and catalog use schema version 2 and work with no installed component.
 JSON goes only to stdout; mutations give human-readable progress and errors.
-Every selection is allowlisted. Acceleration accepts only `cpu` in this
-milestone: Vulkan remains a planned explicit opt-in, not a displayed or working
-selection.
+Every selection is allowlisted. The CLI and SuperSpace accept exactly `cpu`
+and `vulkan`; SuperSpace labels them `CPU` and `Vulkan GPU`. CPU is the public
+default, there is no Auto mode, and selecting a row changes only proposed state
+until Apply runs the complete transaction in the visible terminal.
+
+Acceleration identity is the exact active executable digest. Voxtype's
+`backend` text, tooltip, filenames, and logs do not determine it. An unknown
+digest makes the component state explicit error/incomplete.
+
+Schema 2's `vulkan` status object has the exact hardware fields `state`,
+`vendor`, `vendor_id`, `driver`, `render_node`, `render_node_accessible`,
+`loader_present`, `icd_manifest_present`, `required_packages`, and
+`missing_packages`. Its nested `runtime_evidence` object reports `collected`,
+`pid`, `executable_matches`, `vulkan_loader_mapped`, `vendor_icd_mapped`,
+`render_node_open`, `device_runtime_evidence_valid`, and
+`device_runtime_evidence_rule`. Missing or inaccessible evidence remains false
+or null; the manager does not guess.
+
+Vendor discovery reads `/sys/class/drm/renderD*`, the numeric PCI vendor, and
+the kernel driver symlink, then validates the matching `/dev/dri/renderD*`
+character device and current-user access. Supported vendor IDs are AMD
+`0x1002`, Intel `0x8086`, and NVIDIA `0x10de`. The allowlisted official package
+mapping is `vulkan-icd-loader` plus respectively `vulkan-radeon`,
+`vulkan-intel`, or `nvidia-utils`. Zero usable devices, unsupported hardware,
+or multiple usable supported devices fail before the daemon is stopped. A
+missing package is offered through the existing visible terminal and direct
+`sudo pacman` argv; QML never installs packages. CUDA, ROCm, ONNX, AUR packages,
+and unrelated vendor ICDs are outside this architecture.
+
+For a running Vulkan artifact, health resolves the service `MainPID`, confirms
+`/proc/PID/exe` against the managed command, and requires mappings for the
+Vulkan loader and reviewed vendor ICD. AMD and Intel additionally require the
+selected accessible DRM render node to remain open. NVIDIA accepts either its
+reviewed GLX or EGL Vulkan ICD mapping but does not treat a DRM-render-node fd
+as universal; `device_runtime_evidence_rule = "not-established"` records that
+a reliable NVIDIA-specific device invariant remains future work. The common
+evidence is still mandatory. All checks participate in the bounded startup
+retry and a failed requirement rolls the transaction back.
+Human journal messages remain useful diagnostics but are not part of this
+health API or its permanent proof contract.
+
+An acceleration change verifies the model, packages, target cached artifact,
+and any config candidate while the old daemon remains running. It then retains
+same-filesystem executable/config rollback material, stops the service,
+atomically publishes changed files, starts the daemon, and requires bounded
+health with the requested model and exact artifact digest. Failure restores
+the old executable, config, and prior active/inactive service state. An
+acceleration-only change leaves model, language, and duration untouched; no-op
+Apply does not restart anything and acceleration changes never reload Hyprland.
 
 ## Configuration and customization boundary
 
@@ -202,6 +261,48 @@ Manual edits remain supported. Symlink, non-regular, foreign-owned, malformed,
 or ambiguous config targets fail closed instead of being rewritten. Changing
 current settings never changes the tracked Vanilla default template.
 
+## Vulkan validation and explicit selection
+
+The development Radeon 680M passed repeated CPU-to-Vulkan and Vulkan-to-CPU
+transactions, verified-cache reuse, real F9 inference, and persistence of all
+four AMD runtime signals before and after inference. SuperSpace therefore
+offers Vulkan GPU as an explicit selection while CPU remains the public
+default. The equivalent CLI validation path is:
+
+```sh
+vanhyprarch-dictation status --json
+vanhyprarch-dictation apply --model small.en --language-mode specific --language en --acceleration vulkan --max-duration 120
+vanhyprarch-dictation status --json
+systemctl --user status vanhyprarch-voxtype.service
+```
+
+Inspect the resulting `acceleration`, `binary_sha256`, `service_state`, and full
+`vulkan.runtime_evidence` object. On AMD, executable, loader, vendor ICD, render
+node, and derived device evidence must all be true. Then test F9 in a
+disposable text field. Return through the same verified transaction with:
+
+```sh
+vanhyprarch-dictation apply --model small.en --language-mode specific --language en --acceleration cpu --max-duration 120
+vanhyprarch-dictation status --json
+systemctl --user status vanhyprarch-voxtype.service
+```
+
+One live `small.en` F9 test on the Ryzen 7 7735HS/Radeon 680M observed correct
+transcription with approximately 0.3 seconds perceived post-release latency,
+compared with an earlier approximate 1–2 seconds on CPU. This is one
+development-machine observation, not a general performance guarantee or a
+broad GPU recommendation.
+
+The same machine also passed real Italian and English F9 dictation with one
+unchanged `small` multilingual profile constrained to `en` and `it`. A later
+SuperSpace transaction activated `large-v3-turbo` with the same languages,
+Vulkan, and 120-second maximum; both languages transcribed with excellent
+observed accuracy, correct punctuation, competitive latency, and a responsive
+desktop. The runtime reported approximately 1623.92 MB for that model. These
+are development-machine observations and a personal profile choice, not
+changes to the tracked `small.en`/English/CPU/120-second default or universal
+performance promises.
+
 ## Update and uninstall
 
 There are no automatic updates. An update is a reviewed repository change with
@@ -225,9 +326,10 @@ The uninstaller requires the user manager to stop the service first and removes
 nothing if that stop fails. It then removes the exact managed binary, unit, and
 marker plus the complete `$XDG_CONFIG_HOME/voxtype` configuration directory and
 `$XDG_DATA_HOME/voxtype` persistent-data directory. That data deletion includes
-the active model, every unused model, and Voxtype-owned metadata such as
-`CACHEDIR.TAG`. Recursive removal fails closed on unexpected paths, symlinks,
-foreign ownership, or unsupported filesystem entries.
+the active model, every unused model, verified cached CPU and Vulkan binaries,
+and Voxtype-owned metadata such as `CACHEDIR.TAG`. Recursive removal fails
+closed on unexpected paths, symlinks, foreign ownership, or unsupported
+filesystem entries.
 
 Stable Voxtype 1.0.1 documents those config and data roots as its persistent
 user locations. With the tracked `state_file = "auto"`, transient daemon state
@@ -235,8 +337,9 @@ uses `$XDG_RUNTIME_DIR/voxtype`; it is session runtime rather than persistent
 user data. The stable CPU workflow documents no additional XDG cache or state
 root. The independently deployed `vanhyprarch-dictation` manager and its
 immutable Vanilla resources remain available, and generic system packages such
-as `gnupg` and `wtype` are not removed. A later Install therefore starts fresh:
-it recreates the tracked `small.en`, English, CPU, 120-second configuration and
+as `gnupg`, `wtype`, `vulkan-icd-loader`, and vendor ICDs are not removed. A
+later Install therefore starts fresh: it recreates the tracked `small.en`,
+English, CPU, 120-second configuration and
 downloads the verified default model again. While the component remains
 installed, `remove-model` still removes individual unused models and refuses
 the active model.

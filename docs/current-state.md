@@ -122,20 +122,20 @@ Num Lock is enabled by default when the graphical session starts.
 The repository contains one opt-in component under `install/dictation/`; its
 official-package deltas are `gnupg` and `wtype` in
 `packages/optional-dictation-official.txt`. Neither package nor Voxtype is in
-the normal baseline or AUR manifest. The installer pins the official Voxtype
-1.0.1 x86_64 AVX2 CPU binary, verifies its SHA-256 and detached signature in a
-dedicated GPG home, verifies the full primary-key fingerprint, executes only
-the verified staged binary's `--version`, and atomically publishes it as
-`$HOME/.local/bin/voxtype`.
+the normal baseline or AUR manifest. An immutable manifest pins the official
+Voxtype 1.0.1 x86_64 AVX2 CPU and Vulkan binaries. A dedicated GPG home,
+detached signature, full primary fingerprint, size, SHA-256, and exact version
+gate the component-owned versioned cache and atomic publication of the active
+regular file at `$HOME/.local/bin/voxtype`.
 
 The component asks Voxtype itself to download `small.en`, then independently
 requires the pinned size and SHA-256 for
 `$XDG_DATA_HOME/voxtype/models/ggml-small.en.bin`. Its default configuration
-is English-only local Whisper, CPU-only, built-in hotkeys off, and `wtype` as
+is English-only local Whisper, CPU-default, built-in hotkeys off, and `wtype` as
 the sole output driver. Hyprland registers F9 press/release bindings and starts
 the non-enabled `vanhyprarch-voxtype.service` only when the exact managed
-component marker exists. No evdev listener, input-group access, GPU backend,
-Quickshell indicator, OSD, or notification is part of the milestone.
+component marker exists. No evdev listener, input-group access, automatic GPU
+selection, Quickshell indicator, OSD, or notification is part of the milestone.
 
 The optional installer completed on the development machine with the verified
 Voxtype 1.0.1 binary and pinned `small.en` model. Short and longer English
@@ -153,7 +153,26 @@ and transactional CPU model/language/maximum-duration changes. Its versioned
 JSON status and catalog remain available when Voxtype is absent. The public
 default is still `small.en`, English, and CPU AVX2; the maximum recording time
 is now 120 seconds. Ten model digests and the curated language catalog are
-tracked, while Vulkan switching is deliberately not implemented yet.
+tracked. The schema-2 manager can switch exact CPU/Vulkan artifacts through
+the CLI or SuperSpace with binary/config/service rollback. Status derives
+acceleration only from the active digest and separately reports sysfs/package
+and required vendor-aware `/proc` runtime evidence. CPU remains the public
+default; Vulkan GPU is an explicit selection and is never activated
+automatically.
+
+The Radeon 680M development machine passed repeated CPU-to-Vulkan and
+Vulkan-to-CPU transactions. The verified Vulkan daemon retained its executable,
+loader, RADV ICD, and render-node evidence before and after real F9 inference.
+One `small.en` utterance had approximately 0.3 seconds perceived post-release
+latency versus the earlier approximate 1–2 second CPU observation on this one
+machine; this is validation evidence, not a general performance guarantee.
+The same Vulkan machine successfully ran one constrained English/Italian
+`small` multilingual profile and then `large-v3-turbo` with English and
+Italian. Real F9 dictation passed in both languages for both profiles; the
+larger model showed excellent observed accuracy and punctuation with slightly
+higher but still competitive latency while the desktop remained responsive.
+Those are personal development-machine results. The public default remains
+`small.en`, English, CPU, and 120 seconds.
 An installation now reloads the user-unit catalog, starts the non-enabled
 service, validates bounded daemon health, and publishes the component marker
 only after success. Model download runs with an isolated temporary XDG config

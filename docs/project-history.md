@@ -242,6 +242,40 @@ while retaining the final model data root. Fresh rollback also validates and
 removes complete transaction-created config, data, and safely stopped runtime
 trees instead of requiring a new config directory to be empty.
 
+## 2026-09-17: Vulkan backend foundation and diagnostic gate
+
+The dictation manager gained a reviewed two-artifact Voxtype 1.0.1 manifest,
+component-owned verified CPU/Vulkan cache, exact-digest acceleration identity,
+official Arch Vulkan prerequisite detection, and transactional CLI switching
+with executable/config/service rollback. Schema version 2 reports Vulkan
+hardware capability and non-authoritative runtime evidence from the daemon's
+executable, mapped loader/vendor ICD, and open DRM render node.
+
+CPU remains the public default. SuperSpace can display a manually active
+Vulkan artifact but cannot select it. Radeon 680M inference, persistence of the
+reported `/proc` evidence, latency, and memory behavior must pass controlled
+live validation before Vulkan becomes a user-facing choice; no performance
+recommendation is recorded yet.
+
+## 2026-09-17: Explicit Vulkan acceleration validated and enabled
+
+Repeated Radeon 680M tests validated signed CPU-to-Vulkan and Vulkan-to-CPU
+transactions, verified-cache reuse, retained AMD loader/ICD/render-node
+evidence, and correct real F9 inference. SuperSpace now offers CPU and Vulkan
+GPU as explicit acceleration choices while keeping CPU as the Vanilla default
+and providing no Auto mode. Vulkan health promotes common executable, loader,
+and vendor-ICD evidence to a transaction requirement; AMD and Intel also
+require the selected DRM render node. NVIDIA remains portable by not treating
+the DRM fd as universal before a reviewed NVIDIA-specific rule exists. One
+`small.en` Radeon 680M test observed about 0.3 seconds perceived post-release
+latency; this is a machine-specific observation, not a general recommendation.
+Subsequent SuperSpace tests also validated constrained English/Italian
+dictation with the multilingual `small` and `large-v3-turbo` models on Vulkan.
+Both languages worked without profile changes; the larger model delivered
+excellent observed accuracy and competitive latency while keeping the desktop
+responsive. These personal validation results do not change the tracked
+`small.en`/English/CPU/120-second public default.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

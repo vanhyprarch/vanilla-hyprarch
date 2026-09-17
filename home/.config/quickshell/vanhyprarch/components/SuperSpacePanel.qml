@@ -313,6 +313,7 @@ PopupWindow {
                         : root.controller.componentSubview === "language-specific" ? "Choose a language"
                         : root.controller.componentSubview === "language-selected" ? "Choose two or three languages"
                         : root.controller.componentSubview === "duration" ? "Maximum recording"
+                        : root.controller.componentSubview === "acceleration" ? "Choose acceleration"
                         : root.controller.componentSubview === "uninstall" ? "Uninstall Local Dictation?"
                         : root.controller.currentComponentId === "local-dictation" ? "Local Dictation"
                         : "Additional system components"

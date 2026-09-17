@@ -536,10 +536,16 @@ and bounded recording duration preserve unrelated Voxtype configuration and
 are published only after model, config, daemon, and rollback checks succeed.
 
 The public default remains CPU AVX2, `small.en`, English, and a 120-second
-maximum. CPU/Vulkan is an extensible backend dimension, but Vulkan is not a
-selectable or implemented mode in this milestone. Local Dictation uninstall
-removes the complete Voxtype config and data roots; generic packages such as
-`gnupg` and `wtype` are not automatically removed.
+maximum. CPU and Vulkan are exact signed-artifact identities selected only by
+the active binary digest. The manager and SuperSpace switch them
+transactionally after explicit user selection; there is no automatic
+acceleration. Vulkan success additionally requires vendor-aware runtime proof
+from the managed daemon. AMD and Intel require the selected DRM render node;
+NVIDIA requires common executable/loader/vendor-ICD proof but does not assume
+a DRM-render-node fd until a reliable NVIDIA-specific invariant is reviewed.
+Local Dictation uninstall removes the complete Voxtype config and data roots,
+including verified binary caches; generic packages such as `gnupg`, `wtype`,
+the Vulkan loader, and vendor ICDs are not automatically removed.
 
 Install starts and health-validates the non-enabled service before its marker
 becomes authoritative. SuperSpace, not the compositor-independent manager,

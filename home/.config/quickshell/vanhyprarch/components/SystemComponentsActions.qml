@@ -12,7 +12,7 @@ Scope {
     property string errorMessage: ""
     property string lifecycleErrorMessage: ""
     property var statusData: ({
-        schema_version: 1,
+        schema_version: 2,
         component: "local-dictation",
         state: "unknown",
         installed: false,
@@ -24,12 +24,24 @@ Scope {
         acceleration: "cpu",
         max_duration: 120,
         service_state: "unknown",
-        matches_defaults: true
+        matches_defaults: true,
+        vulkan: ({
+            state: "unavailable", vendor: null, vendor_id: null, driver: null,
+            render_node: null, render_node_accessible: false,
+            loader_present: false, icd_manifest_present: false,
+            required_packages: ["vulkan-icd-loader"], missing_packages: [],
+            runtime_evidence: ({ collected: false, pid: null,
+                executable_matches: false, vulkan_loader_mapped: false,
+                vendor_icd_mapped: false, render_node_open: false,
+                device_runtime_evidence_valid: null,
+                device_runtime_evidence_rule: null })
+        })
     })
     property var catalogData: null
     property string proposedModel: "small.en"
     property string proposedLanguageMode: "specific"
     property var proposedLanguages: ["en"]
+    property string proposedAcceleration: "cpu"
     property int proposedMaxDuration: 120
     property string pendingOperationKind: ""
     property string pendingReloadOperationKind: ""
@@ -41,6 +53,7 @@ Scope {
         proposedModel !== statusData.model
         || proposedLanguageMode !== statusData.language_mode
         || proposedLanguages.join(",") !== statusData.languages.join(",")
+        || proposedAcceleration !== statusData.acceleration
         || proposedMaxDuration !== statusData.max_duration)
     property string footExecutable: "/usr/bin/foot"
     property string terminalOperation:
@@ -66,11 +79,53 @@ Scope {
             "installed", "errors", "voxtype_version", "acceleration",
             "binary_sha256", "model", "model_integrity", "language_mode",
             "languages", "max_duration", "service_state",
-            "missing_dependencies", "marker", "matches_defaults"
+            "missing_dependencies", "marker", "matches_defaults", "vulkan"
         ])
+        const vulkanObject = exact && document.vulkan !== null
+            && typeof document.vulkan === "object" && !Array.isArray(document.vulkan)
+        const validEvidence = vulkanObject && hasExactKeys(document.vulkan.runtime_evidence, [
+            "collected", "pid", "executable_matches", "vulkan_loader_mapped",
+            "vendor_icd_mapped", "render_node_open",
+            "device_runtime_evidence_valid", "device_runtime_evidence_rule"
+        ]) && typeof document.vulkan.runtime_evidence.collected === "boolean"
+            && (document.vulkan.runtime_evidence.pid === null
+                || Number.isInteger(document.vulkan.runtime_evidence.pid))
+            && ["executable_matches", "vulkan_loader_mapped", "vendor_icd_mapped",
+                "render_node_open"].every(key =>
+                    typeof document.vulkan.runtime_evidence[key] === "boolean")
+            && (document.vulkan.runtime_evidence.device_runtime_evidence_valid === null
+                || typeof document.vulkan.runtime_evidence.device_runtime_evidence_valid
+                    === "boolean")
+            && (document.vulkan.runtime_evidence.device_runtime_evidence_rule === null
+                || ["drm-render-node", "not-established"].indexOf(
+                    document.vulkan.runtime_evidence.device_runtime_evidence_rule) >= 0)
+        const validVulkan = vulkanObject && hasExactKeys(document.vulkan, [
+            "state", "vendor", "vendor_id", "driver", "render_node",
+            "render_node_accessible", "loader_present", "icd_manifest_present",
+            "required_packages", "missing_packages", "runtime_evidence"
+        ]) && ["ready", "missing-prerequisites", "unavailable", "unsupported",
+            "inaccessible", "ambiguous"].indexOf(document.vulkan.state) >= 0
+            && (document.vulkan.vendor === null
+                || ["amd", "intel", "nvidia"].indexOf(document.vulkan.vendor) >= 0)
+            && (document.vulkan.vendor_id === null
+                || /^0x[0-9a-f]{4}$/.test(document.vulkan.vendor_id))
+            && (document.vulkan.driver === null || typeof document.vulkan.driver === "string")
+            && (document.vulkan.render_node === null
+                || typeof document.vulkan.render_node === "string")
+            && typeof document.vulkan.render_node_accessible === "boolean"
+            && typeof document.vulkan.loader_present === "boolean"
+            && typeof document.vulkan.icd_manifest_present === "boolean"
+            && Array.isArray(document.vulkan.required_packages)
+            && Array.isArray(document.vulkan.missing_packages)
+            && document.vulkan.required_packages.every(packageName =>
+                ["vulkan-icd-loader", "vulkan-radeon", "vulkan-intel", "nvidia-utils"]
+                    .indexOf(packageName) >= 0)
+            && document.vulkan.missing_packages.every(packageName =>
+                document.vulkan.required_packages.indexOf(packageName) >= 0)
+            && validEvidence
         return exact
-            && document.schema_version === 1
-            && document.manager_version === 1
+            && document.schema_version === 2
+            && document.manager_version === 2
             && document.component === "local-dictation"
             && ["not-installed", "installed", "incomplete", "error"]
                 .indexOf(document.state) >= 0
@@ -90,13 +145,14 @@ Scope {
                 || ["specific", "automatic", "selected"].indexOf(document.language_mode) >= 0)
             && (document.languages === null || (Array.isArray(document.languages)
                 && document.languages.every(language => typeof language === "string")))
-            && (document.acceleration === null || document.acceleration === "cpu")
+            && (document.acceleration === null
+                || ["cpu", "vulkan"].indexOf(document.acceleration) >= 0)
             && (document.max_duration === null
                 || [30, 60, 120, 300].indexOf(document.max_duration) >= 0)
             && ((document.state === "installed" || document.state === "not-installed")
                 ? document.model !== null && document.model_integrity !== null
                     && document.language_mode !== null && document.languages !== null
-                    && document.acceleration === "cpu" && document.max_duration !== null
+                    && document.acceleration !== null && document.max_duration !== null
                 : true)
             && typeof document.service_state === "string"
             && ["absent", "valid", "invalid"].indexOf(document.marker) >= 0
@@ -104,13 +160,14 @@ Scope {
             && document.missing_dependencies.every(dependency =>
                 dependency === "gnupg" || dependency === "wtype")
             && typeof document.matches_defaults === "boolean"
+            && validVulkan
     }
 
     function validCatalog(document): bool {
         const exact = hasExactKeys(document, [
             "schema_version", "manager_version", "component", "defaults",
             "accelerations", "durations", "languages", "models",
-            "future_capabilities"
+            "ui_policy"
         ])
         const validModels = exact && Array.isArray(document.models)
             && document.models.length === 10
@@ -130,8 +187,8 @@ Scope {
         const expectedLanguages = ["ar", "de", "en", "es", "fr", "it",
             "ja", "ko", "nl", "pl", "pt", "ru", "zh"]
         return exact
-            && document.schema_version === 1
-            && document.manager_version === 1
+            && document.schema_version === 2
+            && document.manager_version === 2
             && document.component === "local-dictation"
             && hasExactKeys(document.defaults, ["model", "language_mode",
                 "languages", "acceleration", "max_duration"])
@@ -157,12 +214,24 @@ Scope {
             && document.durations.map(duration => duration.seconds).sort(
                 (left, right) => left - right).join(",") === "30,60,120,300"
             && Array.isArray(document.accelerations)
-            && document.accelerations.length === 1
-            && hasExactKeys(document.accelerations[0], ["id", "label"])
+            && document.accelerations.length === 2
+            && document.accelerations.every(acceleration => hasExactKeys(acceleration,
+                ["id", "label", "ui_selectable", "hardware_validation"])
+                && ["cpu", "vulkan"].indexOf(acceleration.id) >= 0
+                && typeof acceleration.label === "string"
+                && typeof acceleration.ui_selectable === "boolean"
+                && acceleration.hardware_validation === "complete")
             && document.accelerations[0].id === "cpu"
             && document.accelerations[0].label === "CPU"
-            && hasExactKeys(document.future_capabilities, ["vulkan"])
-            && document.future_capabilities.vulkan === "not-implemented"
+            && document.accelerations[0].ui_selectable === true
+            && document.accelerations[1].id === "vulkan"
+            && document.accelerations[1].label === "Vulkan GPU"
+            && document.accelerations[1].ui_selectable === true
+            && document.accelerations[1].hardware_validation === "complete"
+            && hasExactKeys(document.ui_policy, ["selectable_accelerations", "vulkan"])
+            && Array.isArray(document.ui_policy.selectable_accelerations)
+            && document.ui_policy.selectable_accelerations.join(",") === "cpu,vulkan"
+            && document.ui_policy.vulkan === "supported-explicit-opt-in"
     }
 
     function acceptStatusJson(text: string): bool {
@@ -177,10 +246,12 @@ Scope {
             errorMessage = lifecycleErrorMessage !== ""
                 ? lifecycleErrorMessage : statusError
             if (document.model !== null && document.language_mode !== null
-                    && document.languages !== null && document.max_duration !== null) {
+                    && document.languages !== null && document.acceleration !== null
+                    && document.max_duration !== null) {
                 proposedModel = document.model
                 proposedLanguageMode = document.language_mode
                 proposedLanguages = document.languages.slice()
+                proposedAcceleration = document.acceleration
                 proposedMaxDuration = document.max_duration
             }
             return true
@@ -254,9 +325,42 @@ Scope {
         return seconds + " seconds"
     }
 
+    function accelerationLabel(accelerationId: string): string {
+        if (!catalogData)
+            return accelerationId === "vulkan" ? "Vulkan GPU" : "CPU"
+        for (const acceleration of catalogData.accelerations) {
+            if (acceleration.id === accelerationId)
+                return acceleration.label
+        }
+        return accelerationId
+    }
+
+    function acceleration(accelerationId: string): var {
+        if (!catalogData)
+            return null
+        for (const candidate of catalogData.accelerations) {
+            if (candidate.id === accelerationId)
+                return candidate
+        }
+        return null
+    }
+
+    function accelerationReadiness(accelerationId: string): string {
+        if (accelerationId === "cpu")
+            return "Vanilla default"
+        if (statusData.vulkan && statusData.vulkan.state === "ready")
+            return "Ready"
+        if (statusData.vulkan && statusData.vulkan.state === "missing-prerequisites")
+            return "Requirements will be installed when applied"
+        return "Supported accessible Vulkan device required"
+    }
+
     function validateProposal(): bool {
         const selectedModel = model(proposedModel)
-        if (!selectedModel || [30, 60, 120, 300].indexOf(proposedMaxDuration) < 0)
+        const selectedAcceleration = acceleration(proposedAcceleration)
+        if (!selectedModel || !selectedAcceleration
+                || selectedAcceleration.ui_selectable !== true
+                || [30, 60, 120, 300].indexOf(proposedMaxDuration) < 0)
             return false
         if (selectedModel.family === "english")
             return proposedLanguageMode === "specific"
@@ -291,6 +395,14 @@ Scope {
         return true
     }
 
+    function selectAcceleration(accelerationId: string): bool {
+        const selectedAcceleration = acceleration(accelerationId)
+        if (!selectedAcceleration || selectedAcceleration.ui_selectable !== true)
+            return false
+        proposedAcceleration = accelerationId
+        return true
+    }
+
     function commandForInstall(): var {
         return [terminalOperation, "--supervise-foot", footExecutable,
             "Vanilla HyprArch Local Dictation", "--",
@@ -313,7 +425,7 @@ Scope {
             "--language-mode", proposedLanguageMode]
         for (const language of proposedLanguages)
             command.push("--language", language)
-        command.push("--acceleration", "cpu",
+        command.push("--acceleration", proposedAcceleration,
             "--max-duration", String(proposedMaxDuration))
         return command
     }

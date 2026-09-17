@@ -114,8 +114,8 @@ ShellRoot {
                     label: code === "en" ? "English" : code === "it" ? "Italian" : code.toUpperCase()
                 }))
             const catalog = {
-                schema_version: 1,
-                manager_version: 1,
+                schema_version: 2,
+                manager_version: 2,
                 component: "local-dictation",
                 defaults: {
                     model: "small.en",
@@ -132,14 +132,22 @@ ShellRoot {
                     { seconds: 120, label: "2 minutes" },
                     { seconds: 300, label: "5 minutes" }
                 ],
-                accelerations: [{ id: "cpu", label: "CPU" }],
-                future_capabilities: { vulkan: "not-implemented" }
+                accelerations: [
+                    { id: "cpu", label: "CPU", ui_selectable: true,
+                        hardware_validation: "complete" },
+                    { id: "vulkan", label: "Vulkan GPU", ui_selectable: true,
+                        hardware_validation: "complete" }
+                ],
+                ui_policy: {
+                    selectable_accelerations: ["cpu", "vulkan"],
+                    vulkan: "supported-explicit-opt-in"
+                }
             }
             root.check(componentActions.acceptCatalogJson(JSON.stringify(catalog)),
                 "valid catalog was rejected")
             const status = {
-                schema_version: 1,
-                manager_version: 1,
+                schema_version: 2,
+                manager_version: 2,
                 component: "local-dictation",
                 state: "installed",
                 installed: true,
@@ -155,7 +163,29 @@ ShellRoot {
                 max_duration: 120,
                 service_state: "active",
                 missing_dependencies: [],
-                matches_defaults: true
+                matches_defaults: true,
+                vulkan: {
+                    state: "ready",
+                    vendor: "amd",
+                    vendor_id: "0x1002",
+                    driver: "amdgpu",
+                    render_node: "/dev/dri/renderD128",
+                    render_node_accessible: true,
+                    loader_present: true,
+                    icd_manifest_present: true,
+                    required_packages: ["vulkan-icd-loader", "vulkan-radeon"],
+                    missing_packages: [],
+                    runtime_evidence: {
+                        collected: false,
+                        pid: null,
+                        executable_matches: false,
+                        vulkan_loader_mapped: false,
+                        vendor_icd_mapped: false,
+                        render_node_open: false,
+                        device_runtime_evidence_valid: null,
+                        device_runtime_evidence_rule: null
+                    }
+                }
             }
             const absentStatus = Object.assign({}, status, {
                 state: "not-installed",
@@ -203,6 +233,91 @@ ShellRoot {
             superSpace.openComponent("local-dictation")
             root.check(superSpace.currentComponentId === "local-dictation",
                 "Local Dictation page did not open")
+            const vulkanStatus = Object.assign({}, status, {
+                acceleration: "vulkan",
+                matches_defaults: false
+            })
+            root.check(componentActions.acceptStatusJson(JSON.stringify(vulkanStatus)),
+                "manually active Vulkan status was rejected")
+            const accelerationEntry = superSpace.visibleEntries.find(entry =>
+                entry.label === "Acceleration")
+            root.check(accelerationEntry && accelerationEntry.detail === "Vulkan GPU",
+                "manually active Vulkan acceleration is not displayed")
+            root.check(accelerationEntry.kind === "dictationAccelerationView",
+                "Acceleration did not become a nested selector")
+            superSpace.componentSubview = "acceleration"
+            root.check(!superSpace.visibleEntries[0].active
+                    && superSpace.visibleEntries[1].active,
+                "current Vulkan acceleration was not selected")
+            superSpace.goBack()
+            root.check(superSpace.componentSubview === "",
+                "Acceleration selector Back did not return to Local Dictation")
+            superSpace.componentSubview = "acceleration"
+            superSpace.activate(superSpace.visibleEntries[0])
+            root.check(componentActions.proposedAcceleration === "cpu"
+                    && componentActions.statusData.acceleration === "vulkan",
+                "selecting CPU mutated the current Vulkan state")
+            root.check(componentActions.commandForApply()[
+                    componentActions.commandForApply().indexOf("--acceleration") + 1]
+                    === "cpu",
+                "CPU proposal was not carried in Apply argv")
+            componentActions.acceptStatusJson(JSON.stringify(vulkanStatus))
+            componentActions.proposedMaxDuration = 60
+            root.check(componentActions.commandForApply().indexOf("vulkan") >= 0,
+                "settings Apply would silently replace a manually active Vulkan artifact")
+            componentActions.acceptStatusJson(JSON.stringify(status))
+            superSpace.componentSubview = "acceleration"
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "CPU,Vulkan GPU",
+                "Acceleration selector does not contain exactly CPU and Vulkan GPU")
+            root.check(!superSpace.visibleEntries.some(entry => entry.label === "Auto"),
+                "Acceleration selector exposed an Auto choice")
+            root.check(superSpace.visibleEntries[0].active
+                    && !superSpace.visibleEntries[1].active,
+                "current CPU acceleration was not selected")
+            root.check(superSpace.visibleEntries[0].detail === "Vanilla default"
+                    && superSpace.visibleEntries[1].detail === "Ready",
+                "acceleration readiness copy is wrong")
+            const liveAcceleration = componentActions.statusData.acceleration
+            superSpace.activate(superSpace.visibleEntries[1])
+            root.check(componentActions.proposedAcceleration === "vulkan"
+                    && componentActions.statusData.acceleration === liveAcceleration,
+                "selecting Vulkan mutated live state instead of proposed state")
+            root.check(componentActions.proposalChanged,
+                "Vulkan proposal did not enable Apply")
+            const vulkanCommand = componentActions.commandForApply()
+            root.check(vulkanCommand[vulkanCommand.indexOf("--acceleration") + 1]
+                    === "vulkan",
+                "Apply argv does not contain the proposed Vulkan acceleration")
+            root.check(vulkanCommand.indexOf("sh") < 0
+                    && vulkanCommand.indexOf("bash") < 0
+                    && vulkanCommand.indexOf("eval") < 0,
+                "Vulkan Apply uses shell evaluation")
+            superSpace.componentSubview = "acceleration"
+            superSpace.activate(superSpace.visibleEntries[0])
+            root.check(componentActions.proposedAcceleration === "cpu"
+                    && componentActions.statusData.acceleration === "cpu",
+                "selecting CPU did not remain proposal-only")
+            root.check(!componentActions.proposalChanged,
+                "unchanged CPU proposal left Apply enabled")
+            const missingVulkan = Object.assign({}, status, {
+                vulkan: Object.assign({}, status.vulkan, {
+                    state: "missing-prerequisites",
+                    missing_packages: ["vulkan-radeon"]
+                })
+            })
+            root.check(componentActions.acceptStatusJson(JSON.stringify(missingVulkan)),
+                "missing-prerequisite Vulkan status was rejected")
+            superSpace.componentSubview = "acceleration"
+            root.check(superSpace.visibleEntries[1].detail
+                    === "Requirements will be installed when applied",
+                "missing Vulkan requirements are not explained")
+            const missingLiveAcceleration = componentActions.statusData.acceleration
+            superSpace.activate(superSpace.visibleEntries[1])
+            root.check(componentActions.statusData.acceleration === missingLiveAcceleration
+                    && componentActions.proposedAcceleration === "vulkan",
+                "missing-prerequisite selection mutated live acceleration")
+            componentActions.acceptStatusJson(JSON.stringify(status))
             superSpace.componentSubview = "uninstall"
             root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
                     === "Uninstall Local Dictation?,Vanilla component manager,Cancel,Confirm uninstall",

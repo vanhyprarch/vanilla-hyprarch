@@ -144,10 +144,14 @@ the chosen AVX2 artifact, missing dependencies, symlink destinations, invalid
 signatures, unexpected fingerprints, checksum mismatches, and version
 mismatches.
 
-The installer uses private temporary state and a dedicated GPG home. It stages
-the fixed Voxtype 1.0.1 AVX2 binary and signature, verifies the pinned SHA-256,
-signature, full primary fingerprint, and exact `voxtype 1.0.1` version output,
-then atomically deploys mode `0755` to `$HOME/.local/bin/voxtype`. It installs
+The installer uses private temporary state and a dedicated GPG home. One
+immutable `binaries.toml` manifest pins both stable Voxtype 1.0.1 artifacts:
+the public-default AVX2 CPU build and the explicit opt-in Vulkan build. A new
+candidate's SHA-256, detached signature, full primary fingerprint, size, and
+exact `voxtype 1.0.1` version output are verified before it enters the
+component-owned `$XDG_DATA_HOME/voxtype/binaries/1.0.1` cache. Every cached
+candidate is rechecked before activation, then atomically deployed mode `0755`
+as the regular file `$HOME/.local/bin/voxtype`. It installs
 the default config only if the user has no Voxtype config; a differing config
 before the first managed install requires explicit review, while later updates
 preserve customization. Stable 1.0.1 setup writes a default config as a side
@@ -165,7 +169,7 @@ is stopped and no live lock PID remains. Failure restores the previous payload
 and service state.
 Hyprland remains the cold-session startup owner at later logins.
 
-The manager and its immutable `voxtype.conf`, signing key, default template,
+The manager and its immutable `binaries.toml`, signing key, default template,
 unit, and model manifest are production deployment artifacts. They must be
 installed under `$HOME/.local/bin` and the project XDG data directory rather
 than referring to a source checkout. Its versioned JSON status and catalog are
@@ -173,13 +177,16 @@ the authority consumed by SuperSpace. The ten reviewed models are downloaded
 only through the tagged Voxtype workflow and then independently checked by
 filename, size, and SHA-256 before selection.
 
-An apply transaction prepares and verifies a model and candidate config while
-the existing daemon remains available. It validates stable Voxtype schema and
-resolved values, stops the service only when a daemon-read setting changes,
-atomically publishes the config, and requires both the service and Voxtype
-status to become healthy. Failure restores the exact config and prior service
-state. Allowed recording limits are 30, 60, 120, and 300 seconds; 120 is the
-public default. Vulkan is not implemented or selectable yet.
+An apply transaction prepares and verifies the target model, binary artifact,
+runtime prerequisites, and candidate config while the existing daemon remains
+available. It stops the service only after those checks, atomically publishes
+only changed files, and requires both the service and Voxtype status to become
+healthy with the requested model and exact artifact digest. Failure restores
+the exact executable, config, and prior service state. Allowed recording limits
+are 30, 60, 120, and 300 seconds; 120 is the public default. SuperSpace offers
+CPU and Vulkan GPU without an Auto mode. Vulkan Apply verifies supported
+hardware, official runtime packages, the exact signed artifact, and
+vendor-aware process evidence before committing the transaction.
 
 Updates are reviewed repository changes: select an explicit stable version and
 asset, review the signing fingerprint, update the expected binary digest, run
@@ -197,7 +204,8 @@ deletion requires exact XDG-child paths, current-user ownership, ordinary
 directories/files, and a symlink-safe platform implementation. A failed stop
 or unsafe tree removes nothing. The independently deployed manager and its
 immutable project resources remain so SuperSpace can offer Install again.
-Generic packages such as `gnupg` and `wtype` are not automatically removed.
+Generic packages such as `gnupg`, `wtype`, `vulkan-icd-loader`, and a vendor
+ICD are not automatically removed.
 For SuperSpace Install and Uninstall, the terminal helper publishes the manager
 child's exit status inside a private runtime directory and a supervisor waits
 for the real Foot process to finish. A successful result then triggers one

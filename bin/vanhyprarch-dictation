@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any, NoReturn, Sequence
 
 
-SCHEMA_VERSION = 1
-MANAGER_VERSION = 1
+SCHEMA_VERSION = 2
+MANAGER_VERSION = 2
 COMPONENT_MARKER = b"vanhyprarch-dictation-v1\n"
 DEFAULT_MODEL = "small.en"
 DEFAULT_LANGUAGE_MODE = "specific"
@@ -48,15 +48,18 @@ LANGUAGES = {
     "ar": "Arabic",
 }
 EXPECTED_PROVENANCE_REVISION = "5359861c739e955e79d9a303bcbc70fb988958b1"
-EXPECTED_RELEASE = {
-    "VANHYPRARCH_VOXTYPE_VERSION": "1.0.1",
-    "VANHYPRARCH_VOXTYPE_ARCHITECTURE": "x86_64",
-    "VANHYPRARCH_VOXTYPE_ASSET": "voxtype-1.0.1-linux-x86_64-avx2",
-    "VANHYPRARCH_VOXTYPE_SHA256": "cb3843a894ef47aca230b30bb1c45c2ef8e0d015adf2fa754d60e55123165fd0",
-    "VANHYPRARCH_VOXTYPE_SIGNING_FINGERPRINT": "9CCF7915B750CAE8B095ED1AA3FC9F33FD209279",
-    "VANHYPRARCH_VOXTYPE_RELEASE_URL": "https://github.com/peteonrails/voxtype/releases/tag/v1.0.1",
-    "VANHYPRARCH_VOXTYPE_DOWNLOAD_URL": "https://github.com/peteonrails/voxtype/releases/download/v1.0.1/voxtype-1.0.1-linux-x86_64-avx2",
-    "VANHYPRARCH_VOXTYPE_SIGNATURE_URL": "https://github.com/peteonrails/voxtype/releases/download/v1.0.1/voxtype-1.0.1-linux-x86_64-avx2.asc",
+EXPECTED_SIGNING_FINGERPRINT = "9CCF7915B750CAE8B095ED1AA3FC9F33FD209279"
+SUPPORTED_GPU_VENDORS = {
+    "0x1002": {"vendor": "amd", "package": "vulkan-radeon",
+        "icd_manifest": "radeon_icd.json", "icd_libraries": ("libvulkan_radeon",),
+        "device_evidence": "drm-render-node"},
+    "0x8086": {"vendor": "intel", "package": "vulkan-intel",
+        "icd_manifest": "intel_icd.x86_64.json", "icd_libraries": ("libvulkan_intel",),
+        "device_evidence": "drm-render-node"},
+    "0x10de": {"vendor": "nvidia", "package": "nvidia-utils",
+        "icd_manifest": "nvidia_icd.json",
+        "icd_libraries": ("libGLX_nvidia", "libEGL_nvidia"),
+        "device_evidence": "not-established"},
 }
 
 
@@ -128,6 +131,7 @@ def paths() -> dict[str, Path]:
         "marker": data_home / "vanhyprarch/components/dictation",
         "data_dir": data_home / "voxtype",
         "models": data_home / "voxtype/models",
+        "binary_cache": data_home / "voxtype/binaries/1.0.1",
         "managed_data": data_home / "vanhyprarch/dictation",
         "runtime_home": runtime_home,
         "runtime_dir": runtime_home / "voxtype" if runtime_home is not None else None,
@@ -142,7 +146,7 @@ def resource_dir() -> Path:
         candidate = Path(override)
     else:
         candidate = paths()["managed_data"]
-        if not (candidate / "models.toml").is_file():
+        if not (candidate / "models.toml").is_file() or not (candidate / "binaries.toml").is_file():
             source_candidate = Path(__file__).resolve().parent.parent / "install/dictation"
             if (source_candidate / "models.toml").is_file():
                 candidate = source_candidate
@@ -151,32 +155,72 @@ def resource_dir() -> Path:
     return candidate
 
 
-def read_metadata(resources: Path) -> dict[str, str]:
-    override = os.environ.get("VANHYPRARCH_VOXTYPE_METADATA")
-    path = Path(override) if override else resources / "voxtype.conf"
+def load_binaries(resources: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    override = os.environ.get("VANHYPRARCH_VOXTYPE_BINARY_MANIFEST")
+    path = Path(override) if override else resources / "binaries.toml"
     if override and not test_overrides_allowed():
-        fail("metadata overrides are allowed only for isolated tests")
-    require_regular(path, "release metadata")
-    result: dict[str, str] = {}
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not raw or raw.startswith("#"):
-            continue
-        if not re.fullmatch(r"[A-Z0-9_]+=[^\s]+", raw):
-            fail(f"invalid release metadata at line {number}")
-        key, value = raw.split("=", 1)
-        if key in result:
-            fail(f"duplicate release metadata key: {key}")
-        result[key] = value
-    for key in EXPECTED_RELEASE:
-        if key not in result:
-            fail(f"missing release metadata: {key}")
-    if not test_overrides_allowed():
-        for key, expected in EXPECTED_RELEASE.items():
-            if result[key] != expected:
-                fail(f"unexpected production release metadata: {key}")
-    if "latest" in result["VANHYPRARCH_VOXTYPE_DOWNLOAD_URL"].lower():
-        fail("floating release URLs are forbidden")
-    return result
+        fail("binary-manifest overrides are allowed only for isolated tests")
+    require_regular(path, "binary manifest")
+    try:
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        fail(f"invalid binary manifest: {error}")
+    if document.get("schema_version") != 1:
+        fail("unsupported binary manifest schema")
+    if document.get("signing_fingerprint") != EXPECTED_SIGNING_FINGERPRINT and not test_overrides_allowed():
+        fail("unexpected Voxtype signing fingerprint")
+    release_url = document.get("release_url")
+    if not isinstance(release_url, str) or not release_url.startswith("https://") or "latest" in release_url.lower():
+        fail("invalid or floating Voxtype release URL")
+    required = {"id", "label", "version", "architecture", "asset", "size", "sha256",
+        "download_url", "signature_asset", "signature_url", "required_cpu_features",
+        "ui_selectable"}
+    records = document.get("binaries")
+    if not isinstance(records, list):
+        fail("binary manifest is empty")
+    by_id: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if not isinstance(record, dict) or set(record) != required:
+            fail("binary manifest record has unexpected fields")
+        artifact_id = record.get("id")
+        if artifact_id not in ("cpu", "vulkan") or artifact_id in by_id:
+            fail("binary manifest contains an invalid or duplicate id")
+        if not isinstance(record["label"], str) or not record["label"]:
+            fail(f"invalid binary label for {artifact_id}")
+        if not isinstance(record["version"], str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", record["version"]):
+            fail(f"invalid binary version for {artifact_id}")
+        if record["architecture"] != "x86_64":
+            fail(f"unsupported binary architecture for {artifact_id}")
+        if not isinstance(record["asset"], str) or not re.fullmatch(r"voxtype-[A-Za-z0-9._-]+", record["asset"]):
+            fail(f"invalid binary asset for {artifact_id}")
+        if not isinstance(record["size"], int) or record["size"] <= 0:
+            fail(f"invalid binary size for {artifact_id}")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(record["sha256"])):
+            fail(f"invalid binary digest for {artifact_id}")
+        for key in ("download_url", "signature_url"):
+            value = record[key]
+            if not isinstance(value, str) or not value.startswith("https://") or "latest" in value.lower():
+                fail(f"invalid or floating {key} for {artifact_id}")
+        if not record["download_url"].endswith("/" + record["asset"]):
+            fail(f"binary URL does not match asset for {artifact_id}")
+        if record["signature_asset"] != record["asset"] + ".asc" or not record["signature_url"].endswith("/" + record["signature_asset"]):
+            fail(f"signature URL does not match asset for {artifact_id}")
+        features = record["required_cpu_features"]
+        if not isinstance(features, list) or any(not isinstance(item, str) for item in features):
+            fail(f"invalid CPU requirements for {artifact_id}")
+        if not isinstance(record["ui_selectable"], bool):
+            fail(f"invalid UI policy for {artifact_id}")
+        by_id[artifact_id] = record
+    if set(by_id) != {"cpu", "vulkan"}:
+        fail("binary manifest must contain exactly CPU and Vulkan artifacts")
+    if len({record["sha256"] for record in by_id.values()}) != 2:
+        fail("binary manifest artifacts must have distinct digests")
+    if len({record["version"] for record in by_id.values()}) != 1:
+        fail("binary manifest artifacts must use one stable version")
+    if any(by_id[artifact_id]["ui_selectable"] is not True
+            for artifact_id in ("cpu", "vulkan")):
+        fail("binary manifest UI policy must expose both reviewed accelerations")
+    return document, by_id
 
 
 def load_models(resources: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -375,7 +419,7 @@ def run(argv: Sequence[str], *, check: bool = True, timeout: float | None = None
     return result
 
 
-def cpu_features() -> None:
+def cpu_features(required: Sequence[str] = ("avx2", "fma", "bmi1", "bmi2", "f16c", "movbe")) -> None:
     architecture_override = os.environ.get("VANHYPRARCH_TARGET_ARCHITECTURE")
     if architecture_override is not None and not test_overrides_allowed():
         fail("architecture overrides are allowed only for isolated tests")
@@ -396,7 +440,7 @@ def cpu_features() -> None:
         if not match:
             fail("cannot inspect CPU capabilities")
         flags = set(match.group(1).split())
-    for feature in ("avx2", "fma", "bmi1", "bmi2", "f16c", "movbe"):
+    for feature in required:
         if feature not in flags:
             fail(f"CPU does not provide required feature: {feature}")
 
@@ -436,6 +480,139 @@ def ensure_dependencies() -> None:
     run(["/usr/bin/sudo", "/usr/bin/pacman", "-S", "--needed", "--", *missing])
     if dependency_state():
         fail("optional dependency installation completed but required executables remain unavailable")
+
+
+def test_path_override(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if not test_overrides_allowed():
+        fail(f"{name} overrides are allowed only for isolated tests")
+    path = Path(value)
+    if not path.is_absolute():
+        fail(f"{name} must be absolute")
+    return path
+
+
+def package_installed(package: str) -> bool:
+    if package not in {"vulkan-icd-loader", "vulkan-radeon", "vulkan-intel", "nvidia-utils"}:
+        fail("refusing to inspect an unapproved Vulkan package")
+    pacman = (os.environ.get("VANHYPRARCH_PACMAN_EXECUTABLE", "/usr/bin/pacman")
+        if test_overrides_allowed() else "/usr/bin/pacman")
+    if not os.access(pacman, os.X_OK):
+        return False
+    return run([pacman, "-Q", "--", package], check=False, timeout=3).returncode == 0
+
+
+def render_node_usable(path: Path) -> bool:
+    override = os.environ.get("VANHYPRARCH_TEST_ACCESSIBLE_RENDER_NODES")
+    if override is not None:
+        if not test_overrides_allowed():
+            fail("render-node accessibility overrides are allowed only for isolated tests")
+        return path.name in override.split(",")
+    try:
+        return stat.S_ISCHR(path.stat().st_mode) and os.access(path, os.R_OK | os.W_OK)
+    except OSError:
+        return False
+
+
+def vulkan_devices() -> list[dict[str, Any]]:
+    sysfs_root = test_path_override("VANHYPRARCH_DRM_SYSFS_ROOT", Path("/sys/class/drm"))
+    dev_root = test_path_override("VANHYPRARCH_DRI_DEV_ROOT", Path("/dev/dri"))
+    devices: list[dict[str, Any]] = []
+    try:
+        entries = sorted(sysfs_root.glob("renderD*"), key=lambda path: path.name)
+    except OSError:
+        return devices
+    for entry in entries:
+        try:
+            device = entry.resolve(strict=True) / "device"
+            vendor_id = (device / "vendor").read_text(encoding="utf-8").strip().lower()
+            definition = SUPPORTED_GPU_VENDORS.get(vendor_id)
+            if definition is None:
+                devices.append({"vendor": "unsupported", "vendor_id": vendor_id,
+                    "driver": None, "render_node": str(dev_root / entry.name),
+                    "render_node_accessible": False, "supported": False})
+                continue
+            driver_path = device / "driver"
+            driver = driver_path.resolve(strict=True).name if driver_path.exists() else None
+            render_node = dev_root / entry.name
+            devices.append({"vendor": definition["vendor"], "vendor_id": vendor_id,
+                "driver": driver, "render_node": str(render_node),
+                "render_node_accessible": render_node_usable(render_node), "supported": True})
+        except (OSError, RuntimeError):
+            continue
+    return devices
+
+
+def empty_runtime_evidence() -> dict[str, Any]:
+    return {"collected": False, "pid": None, "executable_matches": False,
+        "vulkan_loader_mapped": False, "vendor_icd_mapped": False,
+        "render_node_open": False, "device_runtime_evidence_valid": None,
+        "device_runtime_evidence_rule": None}
+
+
+def vulkan_capability() -> dict[str, Any]:
+    devices = vulkan_devices()
+    usable = [device for device in devices if device["supported"] and device["render_node_accessible"]]
+    supported = [device for device in devices if device["supported"]]
+    selected: dict[str, Any] | None = usable[0] if len(usable) == 1 else None
+    if len(usable) > 1:
+        state = "ambiguous"
+    elif selected is not None:
+        state = "ready"
+    elif supported:
+        state = "inaccessible"
+        selected = supported[0] if len(supported) == 1 else None
+    elif devices:
+        state = "unsupported"
+    else:
+        state = "unavailable"
+    vendor_definition = (SUPPORTED_GPU_VENDORS.get(selected["vendor_id"])
+        if selected is not None else None)
+    required = (["vulkan-icd-loader", vendor_definition["package"]]
+        if vendor_definition is not None else ["vulkan-icd-loader"])
+    missing = [package for package in required if not package_installed(package)]
+    icd_root = test_path_override("VANHYPRARCH_VULKAN_ICD_ROOT", Path("/usr/share/vulkan/icd.d"))
+    library_root = test_path_override("VANHYPRARCH_VULKAN_LIBRARY_ROOT", Path("/usr/lib"))
+    loader_present = package_installed("vulkan-icd-loader") and any(
+        (library_root / name).exists() for name in ("libvulkan.so", "libvulkan.so.1"))
+    icd_present = (vendor_definition is not None
+        and package_installed(vendor_definition["package"])
+        and (icd_root / vendor_definition["icd_manifest"]).exists())
+    if state == "ready" and (missing or not loader_present or not icd_present):
+        state = "missing-prerequisites"
+    return {"state": state,
+        "vendor": selected["vendor"] if selected is not None else None,
+        "vendor_id": selected["vendor_id"] if selected is not None else None,
+        "driver": selected["driver"] if selected is not None else None,
+        "render_node": selected["render_node"] if selected is not None else None,
+        "render_node_accessible": (selected["render_node_accessible"]
+            if selected is not None else False),
+        "loader_present": loader_present,
+        "icd_manifest_present": bool(icd_present),
+        "required_packages": required,
+        "missing_packages": missing,
+        "runtime_evidence": empty_runtime_evidence()}
+
+
+def ensure_vulkan_prerequisites(capability: dict[str, Any]) -> dict[str, Any]:
+    if capability["state"] in ("unavailable", "unsupported", "inaccessible", "ambiguous"):
+        fail(f"Vulkan requires exactly one accessible supported render node ({capability['state']})")
+    missing = capability["missing_packages"]
+    if missing:
+        print("Missing Vulkan requirements: " + ", ".join(missing) + ".")
+        if not sys.stdin.isatty():
+            fail("install the reported official Vulkan requirements first")
+        answer = input("Install them from the official Arch repositories now? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            fail("install the reported official Vulkan requirements first")
+        progress("Installing Vulkan requirements: " + ", ".join(missing) + "...")
+        run(["/usr/bin/sudo", "/usr/bin/pacman", "-S", "--needed", "--", *missing])
+        capability = vulkan_capability()
+    if capability["state"] != "ready":
+        fail("Vulkan runtime requirements are not ready")
+    return capability
 
 
 def model_path(model: dict[str, Any], path_map: dict[str, Path]) -> Path:
@@ -528,7 +705,7 @@ def service_state() -> str:
     return value if value in ("active", "inactive", "failed", "activating", "deactivating") else "unknown"
 
 
-def catalog_document(models: list[dict[str, Any]]) -> dict[str, Any]:
+def catalog_document(models: list[dict[str, Any]], binaries: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "manager_version": MANAGER_VERSION,
@@ -540,7 +717,10 @@ def catalog_document(models: list[dict[str, Any]]) -> dict[str, Any]:
             "acceleration": DEFAULT_ACCELERATION,
             "max_duration": DEFAULT_MAX_DURATION,
         },
-        "accelerations": [{"id": "cpu", "label": "CPU"}],
+        "accelerations": [{"id": artifact_id, "label": binaries[artifact_id]["label"],
+            "ui_selectable": binaries[artifact_id]["ui_selectable"],
+            "hardware_validation": "complete"}
+            for artifact_id in ("cpu", "vulkan")],
         "durations": [
             {"seconds": 30, "label": "30 seconds"},
             {"seconds": 60, "label": "1 minute"},
@@ -549,11 +729,89 @@ def catalog_document(models: list[dict[str, Any]]) -> dict[str, Any]:
         ],
         "languages": [{"id": code, "label": label} for code, label in LANGUAGES.items()],
         "models": models,
-        "future_capabilities": {"vulkan": "not-implemented"},
+        "ui_policy": {"selectable_accelerations": ["cpu", "vulkan"],
+            "vulkan": "supported-explicit-opt-in"},
     }
 
 
-def status_document(resources: Path, models: list[dict[str, Any]], by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def acceleration_identity(binary: Path, binaries: dict[str, dict[str, Any]]) -> tuple[str, str]:
+    require_regular(binary, "Voxtype binary", owner=True)
+    digest = sha256_file(binary)
+    matches = [artifact_id for artifact_id, record in binaries.items()
+        if record["sha256"] == digest]
+    if len(matches) != 1:
+        fail("installed Voxtype binary is not a reviewed managed artifact")
+    return matches[0], digest
+
+
+def systemd_main_pid() -> int | None:
+    systemctl = (os.environ.get("VANHYPRARCH_SYSTEMCTL_EXECUTABLE", "/usr/bin/systemctl")
+        if test_overrides_allowed() else "/usr/bin/systemctl")
+    if not os.access(systemctl, os.X_OK):
+        return None
+    result = run([systemctl, "--user", "show", "vanhyprarch-voxtype.service",
+        "--property", "MainPID", "--value"], check=False, timeout=3)
+    if result.returncode != 0:
+        return None
+    try:
+        pid = int(result.stdout.strip())
+    except ValueError:
+        return None
+    return pid if pid > 1 else None
+
+
+def collect_vulkan_runtime_evidence(binary: Path, capability: dict[str, Any]) -> dict[str, Any]:
+    evidence = empty_runtime_evidence()
+    pid = systemd_main_pid()
+    render_node = capability.get("render_node")
+    vendor_id = capability.get("vendor_id")
+    definition = SUPPORTED_GPU_VENDORS.get(vendor_id)
+    if pid is None or definition is None or not isinstance(render_node, str):
+        return evidence
+    proc_root = test_path_override("VANHYPRARCH_PROC_ROOT", Path("/proc"))
+    process = proc_root / str(pid)
+    try:
+        executable_path = (process / "exe").resolve(strict=True)
+        managed_path = binary.resolve(strict=True)
+        maps = (process / "maps").read_text(encoding="utf-8", errors="replace")
+        fd_targets = []
+        for descriptor in (process / "fd").iterdir():
+            try:
+                fd_targets.append(os.readlink(descriptor))
+            except OSError:
+                continue
+    except OSError:
+        return evidence
+    render_node_open = render_node in fd_targets
+    evidence_rule = definition["device_evidence"]
+    device_valid = render_node_open if evidence_rule == "drm-render-node" else None
+    return {"collected": True, "pid": pid,
+        "executable_matches": executable_path == managed_path,
+        "vulkan_loader_mapped": "libvulkan.so" in maps,
+        "vendor_icd_mapped": any(library in maps
+            for library in definition["icd_libraries"]),
+        "render_node_open": render_node_open,
+        "device_runtime_evidence_valid": device_valid,
+        "device_runtime_evidence_rule": evidence_rule}
+
+
+def valid_vulkan_runtime_evidence(evidence: Any, capability: dict[str, Any]) -> bool:
+    if not isinstance(evidence, dict) or evidence.get("collected") is not True \
+            or not all(evidence.get(field) is True for field in (
+                "executable_matches", "vulkan_loader_mapped", "vendor_icd_mapped")):
+        return False
+    definition = SUPPORTED_GPU_VENDORS.get(capability.get("vendor_id"))
+    if definition is None:
+        return False
+    if definition["device_evidence"] == "drm-render-node":
+        return evidence.get("render_node_open") is True \
+            and evidence.get("device_runtime_evidence_valid") is True
+    return definition["vendor"] == "nvidia" \
+        and evidence.get("device_runtime_evidence_rule") == "not-established"
+
+
+def status_document(resources: Path, models: list[dict[str, Any]],
+        by_id: dict[str, dict[str, Any]], binaries: dict[str, dict[str, Any]]) -> dict[str, Any]:
     path_map = paths()
     marker = marker_state(path_map["marker"])
     installed = marker == "valid"
@@ -579,15 +837,15 @@ def status_document(resources: Path, models: list[dict[str, Any]], by_id: dict[s
         try:
             require_regular(path_map["binary"], "Voxtype binary", owner=True)
             binary_digest = sha256_file(path_map["binary"])
-            metadata = read_metadata(resources)
-            if binary_digest != metadata["VANHYPRARCH_VOXTYPE_SHA256"]:
-                fail("installed Voxtype binary is not the managed CPU artifact")
-            version = metadata["VANHYPRARCH_VOXTYPE_VERSION"]
+            acceleration, verified_digest = acceleration_identity(path_map["binary"], binaries)
+            if binary_digest != verified_digest:
+                fail("installed Voxtype binary changed during status inspection")
+            version = binaries[acceleration]["version"]
             require_regular(path_map["service"], "Voxtype service", owner=True)
             if path_map["service"].read_bytes() != (resources / "vanhyprarch-voxtype.service").read_bytes():
                 fail("installed Voxtype service differs from the managed unit")
             parsed = read_config(path_map["config"], by_id)
-            settings = {**parsed, "acceleration": DEFAULT_ACCELERATION}
+            settings = {**parsed, "acceleration": acceleration}
             integrity = model_integrity(by_id[parsed["model"]], path_map)
             if integrity != "verified":
                 fail("active model is not verified")
@@ -601,6 +859,10 @@ def status_document(resources: Path, models: list[dict[str, Any]], by_id: dict[s
             errors.append("managed payload exists without a valid component marker")
 
     defaults_equal = settings == default_settings if settings is not None else False
+    vulkan = vulkan_capability()
+    if installed and settings is not None and settings["acceleration"] == "vulkan" \
+            and state == "installed":
+        vulkan["runtime_evidence"] = collect_vulkan_runtime_evidence(path_map["binary"], vulkan)
     return {
         "schema_version": SCHEMA_VERSION,
         "manager_version": MANAGER_VERSION,
@@ -620,10 +882,25 @@ def status_document(resources: Path, models: list[dict[str, Any]], by_id: dict[s
         "missing_dependencies": dependency_state(),
         "marker": marker,
         "matches_defaults": defaults_equal,
+        "vulkan": vulkan,
     }
 
 
-def download_and_verify_binary(resources: Path, metadata: dict[str, str], work: Path) -> Path:
+def validate_binary_candidate(path: Path, artifact: dict[str, Any], *, owner: bool) -> None:
+    require_regular(path, f"{artifact['label']} Voxtype candidate", owner=owner)
+    if path.stat().st_size != artifact["size"]:
+        fail(f"{artifact['label']} Voxtype candidate has the wrong size")
+    if sha256_file(path) != artifact["sha256"]:
+        fail(f"{artifact['label']} Voxtype candidate checksum verification failed")
+    if not os.access(path, os.X_OK):
+        fail(f"{artifact['label']} Voxtype candidate is not executable")
+    version = run([str(path), "--version"]).stdout.strip()
+    if version != f"voxtype {artifact['version']}":
+        fail(f"unexpected Voxtype version output: {version}")
+
+
+def download_and_verify_binary(resources: Path, manifest: dict[str, Any],
+        artifact: dict[str, Any], work: Path) -> Path:
     curl = executable("VANHYPRARCH_CURL_EXECUTABLE", "/usr/bin/curl")
     gpg = executable("VANHYPRARCH_GPG_EXECUTABLE", "/usr/bin/gpg")
     key_override = os.environ.get("VANHYPRARCH_VOXTYPE_SIGNING_KEY")
@@ -631,21 +908,24 @@ def download_and_verify_binary(resources: Path, metadata: dict[str, str], work: 
     if key_override and not test_overrides_allowed():
         fail("signing-key overrides are allowed only for isolated tests")
     require_regular(key, "signing key")
-    staged = work / metadata["VANHYPRARCH_VOXTYPE_ASSET"]
-    signature = work / (staged.name + ".asc")
-    test_binary = os.environ.get("VANHYPRARCH_TEST_BINARY")
-    test_signature = os.environ.get("VANHYPRARCH_TEST_SIGNATURE")
+    staged = work / artifact["asset"]
+    signature = work / artifact["signature_asset"]
+    suffix = artifact["id"].upper()
+    test_binary = (os.environ.get(f"VANHYPRARCH_TEST_BINARY_{suffix}")
+        or os.environ.get("VANHYPRARCH_TEST_BINARY"))
+    test_signature = (os.environ.get(f"VANHYPRARCH_TEST_SIGNATURE_{suffix}")
+        or os.environ.get("VANHYPRARCH_TEST_SIGNATURE"))
     if test_binary or test_signature:
         if not test_overrides_allowed() or not test_binary or not test_signature:
             fail("both test payload overrides are required")
         shutil.copyfile(test_binary, staged)
         shutil.copyfile(test_signature, signature)
     else:
-        progress("Downloading verified Voxtype 1.0.1 CPU component...")
-        run([curl, "--fail", "--location", "--proto", "=https", "--tlsv1.2", "--output", str(staged), metadata["VANHYPRARCH_VOXTYPE_DOWNLOAD_URL"]])
-        run([curl, "--fail", "--location", "--proto", "=https", "--tlsv1.2", "--output", str(signature), metadata["VANHYPRARCH_VOXTYPE_SIGNATURE_URL"]])
+        progress(f"Downloading verified Voxtype {artifact['version']} {artifact['label']} component...")
+        run([curl, "--fail", "--location", "--proto", "=https", "--tlsv1.2", "--output", str(staged), artifact["download_url"]])
+        run([curl, "--fail", "--location", "--proto", "=https", "--tlsv1.2", "--output", str(signature), artifact["signature_url"]])
     progress("Verifying Voxtype release integrity...")
-    if sha256_file(staged) != metadata["VANHYPRARCH_VOXTYPE_SHA256"]:
+    if staged.stat().st_size != artifact["size"] or sha256_file(staged) != artifact["sha256"]:
         fail("Voxtype binary checksum verification failed")
 
     gpg_home = work / "gnupg"
@@ -660,11 +940,12 @@ def download_and_verify_binary(resources: Path, metadata: dict[str, str], work: 
         elif awaiting and fields[0] == "fpr":
             primary_fingerprints.append(fields[9])
             awaiting = False
-    if primary_fingerprints != [metadata["VANHYPRARCH_VOXTYPE_SIGNING_FINGERPRINT"]]:
+    fingerprint = manifest["signing_fingerprint"]
+    if primary_fingerprints != [fingerprint]:
         fail("vendored signing key fingerprint mismatch")
     run([gpg, "--batch", "--homedir", str(gpg_home), "--import", str(key)])
     verified = run([gpg, "--batch", "--homedir", str(gpg_home), "--status-fd", "1", "--verify", str(signature), str(staged)]).stdout
-    expected = metadata["VANHYPRARCH_VOXTYPE_SIGNING_FINGERPRINT"]
+    expected = fingerprint
     valid = False
     for line in verified.splitlines():
         fields = line.split()
@@ -673,10 +954,28 @@ def download_and_verify_binary(resources: Path, metadata: dict[str, str], work: 
     if not valid:
         fail("signature was not made by the expected primary key")
     os.chmod(staged, 0o700)
-    version = run([str(staged), "--version"]).stdout.strip()
-    if version != f"voxtype {metadata['VANHYPRARCH_VOXTYPE_VERSION']}":
-        fail(f"unexpected Voxtype version output: {version}")
+    validate_binary_candidate(staged, artifact, owner=True)
     return staged
+
+
+def cached_binary(resources: Path, manifest: dict[str, Any], artifact: dict[str, Any],
+        path_map: dict[str, Path]) -> Path:
+    cache = path_map["binary_cache"] / artifact["asset"]
+    if path_present(cache):
+        try:
+            validate_binary_candidate(cache, artifact, owner=True)
+            progress(f"Reusing verified Voxtype {artifact['label']} component.")
+            return cache
+        except ManagerError:
+            require_regular(cache, "invalid cached Voxtype binary", owner=True)
+            cache.unlink()
+    path_map["binary_cache"].mkdir(parents=True, exist_ok=True)
+    require_owned_directory(path_map["binary_cache"], "Voxtype binary cache")
+    with tempfile.TemporaryDirectory(prefix="vanhyprarch-voxtype-release.") as temporary:
+        staged = download_and_verify_binary(resources, manifest, artifact, Path(temporary))
+        atomic_copy(staged, cache, 0o755)
+    validate_binary_candidate(cache, artifact, owner=True)
+    return cache
 
 
 def ensure_model(binary: Path, model: dict[str, Any], path_map: dict[str, Path]) -> bool:
@@ -709,11 +1008,12 @@ def ensure_model(binary: Path, model: dict[str, Any], path_map: dict[str, Path])
     return True
 
 
-def command_install(resources: Path, by_id: dict[str, dict[str, Any]]) -> None:
+def command_install(resources: Path, by_id: dict[str, dict[str, Any]],
+        binary_manifest: dict[str, Any], binaries: dict[str, dict[str, Any]]) -> None:
     if os.geteuid() == 0:
         fail("do not install Voxtype as root")
-    cpu_features()
-    metadata = read_metadata(resources)
+    artifact = binaries["cpu"]
+    cpu_features(artifact["required_cpu_features"])
     path_map = paths()
     progress("Preparing Local Dictation installation...")
     ensure_dependencies()
@@ -740,13 +1040,22 @@ def command_install(resources: Path, by_id: dict[str, dict[str, Any]]) -> None:
     if config_existed and marker != "valid" and path_map["config"].read_bytes() != config_template.read_bytes():
         fail("existing Voxtype config needs review before first managed installation")
 
+    install_acceleration = "cpu"
+    install_vulkan: dict[str, Any] | None = None
+    existing_digest: str | None = None
+    existing_settings: dict[str, Any] | None = None
     if marker == "valid":
-        managed_cpu_digest(path_map["binary"], resources)
+        existing_acceleration, existing_digest = acceleration_identity(
+            path_map["binary"], binaries)
+        install_acceleration = existing_acceleration
+        artifact = binaries[existing_acceleration]
         require_regular(path_map["service"], "Voxtype service", owner=True)
         if path_map["service"].read_bytes() != service_template.read_bytes():
             fail("installed Voxtype service differs from the managed unit")
         existing_settings = read_config(path_map["config"], by_id)
         install_model = by_id[existing_settings["model"]]
+        if existing_acceleration == "vulkan":
+            install_vulkan = ensure_vulkan_prerequisites(vulkan_capability())
     else:
         install_model = by_id[DEFAULT_MODEL]
 
@@ -765,7 +1074,7 @@ def command_install(resources: Path, by_id: dict[str, dict[str, Any]]) -> None:
     with tempfile.TemporaryDirectory(prefix="vanhyprarch-dictation.") as temporary:
         work = Path(temporary)
         try:
-            staged = download_and_verify_binary(resources, metadata, work)
+            staged = cached_binary(resources, binary_manifest, artifact, path_map)
             model_downloaded = ensure_model(staged, install_model, path_map)
             if was_active:
                 systemctl_action("stop")
@@ -783,8 +1092,9 @@ def command_install(resources: Path, by_id: dict[str, dict[str, Any]]) -> None:
             progress("Starting Local Dictation service...")
             systemctl_action("start")
             progress("Validating Local Dictation...")
-            expected_digest = metadata["VANHYPRARCH_VOXTYPE_SHA256"]
+            expected_digest = artifact["sha256"]
             if not daemon_healthy(path_map["binary"], install_model["id"], expected_digest,
+                    acceleration=install_acceleration, vulkan=install_vulkan,
                     timeout_seconds=health_timeout_seconds()):
                 fail("Voxtype service did not become healthy after installation")
             atomic_bytes(COMPONENT_MARKER, path_map["marker"], 0o644)
@@ -841,7 +1151,17 @@ def command_install(resources: Path, by_id: dict[str, dict[str, Any]]) -> None:
                 run([systemctl, "--user", "daemon-reload"])
                 if was_active:
                     restored = systemctl_action("start", check=False)
-                    if restored.returncode != 0 or service_state() != "active":
+                    restored_healthy = restored.returncode == 0
+                    if restored_healthy and existing_digest is not None \
+                            and existing_settings is not None:
+                        restored_healthy = daemon_healthy(path_map["binary"],
+                            existing_settings["model"], existing_digest,
+                            acceleration=install_acceleration,
+                            vulkan=install_vulkan,
+                            timeout_seconds=health_timeout_seconds())
+                    elif restored_healthy:
+                        restored_healthy = service_state() == "active"
+                    if not restored_healthy:
                         fail("could not restore the previous active service state")
             except (ManagerError, OSError) as restore_error:
                 rollback_error = str(restore_error)
@@ -915,14 +1235,6 @@ def systemctl_action(action: str, check: bool = True) -> subprocess.CompletedPro
     return run([systemctl, "--user", action, "vanhyprarch-voxtype.service"], check=check)
 
 
-def managed_cpu_digest(binary: Path, resources: Path) -> str:
-    require_regular(binary, "Voxtype binary", owner=True)
-    expected = read_metadata(resources)["VANHYPRARCH_VOXTYPE_SHA256"]
-    if sha256_file(binary) != expected:
-        fail("installed Voxtype binary is not the managed CPU artifact")
-    return expected
-
-
 def valid_daemon_status(document: Any, expected_model: str) -> bool:
     if not isinstance(document, dict) or document.get("model") != expected_model:
         return False
@@ -942,7 +1254,13 @@ def valid_daemon_status(document: Any, expected_model: str) -> bool:
 
 
 def daemon_healthy(binary: Path, expected_model: str, expected_digest: str,
-        *, timeout_seconds: float = 8.0, retry_interval: float = 0.2) -> bool:
+        *, acceleration: str = "cpu", vulkan: dict[str, Any] | None = None,
+        timeout_seconds: float = 8.0, retry_interval: float = 0.2) -> bool:
+    if acceleration not in ("cpu", "vulkan"):
+        return False
+    if acceleration == "vulkan" and (not isinstance(vulkan, dict)
+            or vulkan.get("state") != "ready"):
+        return False
     try:
         require_regular(binary, "Voxtype binary", owner=True)
         if sha256_file(binary) != expected_digest:
@@ -960,104 +1278,168 @@ def daemon_healthy(binary: Path, expected_model: str, expected_digest: str,
                     document = None
                 if valid_daemon_status(document, expected_model):
                     try:
-                        return sha256_file(binary) == expected_digest
+                        digest_matches = sha256_file(binary) == expected_digest
                     except OSError:
                         return False
+                    if digest_matches and acceleration == "cpu":
+                        return True
+                    if digest_matches and acceleration == "vulkan" \
+                            and valid_vulkan_runtime_evidence(
+                                collect_vulkan_runtime_evidence(binary, vulkan), vulkan):
+                        return True
         time.sleep(retry_interval)
     return False
 
 
-def command_apply(args: argparse.Namespace, resources: Path, by_id: dict[str, dict[str, Any]]) -> None:
+def command_apply(args: argparse.Namespace, resources: Path, by_id: dict[str, dict[str, Any]],
+        binary_manifest: dict[str, Any], binaries: dict[str, dict[str, Any]]) -> None:
     if os.geteuid() == 0:
         fail("do not manage user dictation as root")
-    if args.acceleration != "cpu":
-        fail("only CPU acceleration is supported in this milestone")
+    if args.acceleration not in binaries:
+        fail("unsupported acceleration")
     if args.model not in by_id:
         fail("unsupported model")
     if args.max_duration not in ALLOWED_DURATIONS:
         fail("unsupported maximum recording duration")
     model = by_id[args.model]
     mode, languages = validate_language(args.language_mode, args.language, model["family"])
-    requested = {"model": args.model, "language_mode": mode, "languages": languages, "max_duration": args.max_duration}
+    requested = {"model": args.model, "language_mode": mode,
+        "languages": languages, "max_duration": args.max_duration}
     path_map = paths()
     if marker_state(path_map["marker"]) != "valid":
         fail("dictation component is not installed")
     progress("Preparing Local Dictation update...")
-    expected_digest = managed_cpu_digest(path_map["binary"], resources)
+    current_acceleration, current_digest = acceleration_identity(path_map["binary"], binaries)
+    target_artifact = binaries[args.acceleration]
+    cpu_features(target_artifact["required_cpu_features"])
     require_regular(path_map["config"], "Voxtype config", owner=True)
     ensure_model(path_map["binary"], model, path_map)
     current = read_config(path_map["config"], by_id)
-    if current == requested:
+    config_changed = current != requested
+    acceleration_changed = current_acceleration != args.acceleration
+    if not config_changed and not acceleration_changed:
         print("Dictation settings are already applied; service was not restarted.")
         return
 
+    target_vulkan: dict[str, Any] | None = None
+    if args.acceleration == "vulkan":
+        target_vulkan = ensure_vulkan_prerequisites(vulkan_capability())
+    rollback_vulkan: dict[str, Any] | None = None
+    if current_acceleration == "vulkan":
+        rollback_vulkan = vulkan_capability()
+        if rollback_vulkan.get("state") != "ready":
+            fail("current Vulkan runtime prerequisites cannot be validated safely")
+    target_binary = (cached_binary(resources, binary_manifest, target_artifact, path_map)
+        if acceleration_changed else path_map["binary"])
+    validate_binary_candidate(target_binary, target_artifact, owner=True)
+
     config_dir = path_map["config"].parent
-    descriptor, candidate_name = tempfile.mkstemp(prefix=".vanhyprarch-config-candidate.", dir=config_dir)
-    os.close(descriptor)
-    candidate = Path(candidate_name)
-    descriptor, rollback_name = tempfile.mkstemp(prefix=".vanhyprarch-config-rollback.", dir=config_dir)
-    os.close(descriptor)
-    rollback = Path(rollback_name)
-    published = False
+    candidate: Path | None = None
+    config_rollback: Path | None = None
+    binary_rollback: Path | None = None
+    if config_changed:
+        descriptor, candidate_name = tempfile.mkstemp(
+            prefix=".vanhyprarch-config-candidate.", dir=config_dir)
+        os.close(descriptor)
+        candidate = Path(candidate_name)
+        descriptor, rollback_name = tempfile.mkstemp(
+            prefix=".vanhyprarch-config-rollback.", dir=config_dir)
+        os.close(descriptor)
+        config_rollback = Path(rollback_name)
+    if acceleration_changed:
+        descriptor, rollback_name = tempfile.mkstemp(
+            prefix=".vanhyprarch-binary-rollback.", dir=path_map["binary"].parent)
+        os.close(descriptor)
+        binary_rollback = Path(rollback_name)
+    config_published = False
+    binary_published = False
     was_active = service_state() == "active"
     try:
-        progress("Preparing configuration...")
-        shutil.copy2(path_map["config"], candidate)
-        shutil.copy2(path_map["config"], rollback)
-        voxtype_set(path_map["binary"], candidate, "whisper.model", args.model)
-        voxtype_set(path_map["binary"], candidate, "audio.max_duration_secs", str(args.max_duration))
-        voxtype_set(path_map["binary"], candidate, "whisper.translate", "false")
-        if mode == "automatic":
-            voxtype_set(path_map["binary"], candidate, "whisper.language", "auto")
-        elif mode == "specific":
-            voxtype_set(path_map["binary"], candidate, "whisper.language", languages[0])
-        else:
-            voxtype_set(path_map["binary"], candidate, "whisper.language", "en")
-            replace_constrained_language(candidate, languages)
-        os.chmod(candidate, stat.S_IMODE(path_map["config"].stat().st_mode))
-        validate_candidate(path_map["binary"], candidate, requested, by_id)
+        if config_changed:
+            assert candidate is not None and config_rollback is not None
+            progress("Preparing configuration...")
+            shutil.copy2(path_map["config"], candidate)
+            shutil.copy2(path_map["config"], config_rollback)
+            voxtype_set(target_binary, candidate, "whisper.model", args.model)
+            voxtype_set(target_binary, candidate, "audio.max_duration_secs", str(args.max_duration))
+            voxtype_set(target_binary, candidate, "whisper.translate", "false")
+            if mode == "automatic":
+                voxtype_set(target_binary, candidate, "whisper.language", "auto")
+            elif mode == "specific":
+                voxtype_set(target_binary, candidate, "whisper.language", languages[0])
+            else:
+                voxtype_set(target_binary, candidate, "whisper.language", "en")
+                replace_constrained_language(candidate, languages)
+            os.chmod(candidate, stat.S_IMODE(path_map["config"].stat().st_mode))
+            validate_candidate(target_binary, candidate, requested, by_id)
+        if acceleration_changed:
+            assert binary_rollback is not None
+            shutil.copy2(path_map["binary"], binary_rollback)
         progress("Restarting Local Dictation service...")
-        systemctl_action("stop")
-        os.replace(candidate, path_map["config"])
-        published = True
+        if service_state() in ("active", "activating", "failed"):
+            systemctl_action("stop")
+        if acceleration_changed:
+            atomic_copy(target_binary, path_map["binary"], 0o755)
+            binary_published = True
+        if config_changed:
+            assert candidate is not None
+            os.replace(candidate, path_map["config"])
+            config_published = True
         systemctl_action("start")
         progress("Validating Local Dictation...")
-        if not daemon_healthy(path_map["binary"], args.model, expected_digest,
+        if not daemon_healthy(path_map["binary"], args.model, target_artifact["sha256"],
+                acceleration=args.acceleration, vulkan=target_vulkan,
                 timeout_seconds=health_timeout_seconds()):
             fail("Voxtype service did not become healthy with the requested settings")
+        active_acceleration, active_digest = acceleration_identity(path_map["binary"], binaries)
+        if active_acceleration != args.acceleration or active_digest != target_artifact["sha256"]:
+            fail("active Voxtype artifact does not match the requested acceleration")
     except Exception as error:
         rollback_error: str | None = None
-        if published:
+        if config_published or binary_published:
             systemctl_action("stop", check=False)
-            try:
-                os.replace(rollback, path_map["config"])
-                published = False
-            except OSError as restore_error:
-                rollback_error = f"could not restore the previous config: {restore_error}"
-        if rollback_error is None and was_active and service_state() != "active":
-            restored = systemctl_action("start", check=False)
-            if restored.returncode != 0 or service_state() != "active":
-                rollback_error = "could not restore the previous active service state"
+        try:
+            if config_published:
+                assert config_rollback is not None
+                os.replace(config_rollback, path_map["config"])
+                config_published = False
+            if binary_published:
+                assert binary_rollback is not None
+                atomic_copy(binary_rollback, path_map["binary"], 0o755)
+                binary_published = False
+            restored_acceleration, restored_digest = acceleration_identity(
+                path_map["binary"], binaries)
+            if restored_acceleration != current_acceleration or restored_digest != current_digest:
+                fail("could not restore the previous Voxtype artifact")
+            if was_active:
+                restored = systemctl_action("start", check=False)
+                if restored.returncode != 0 or not daemon_healthy(path_map["binary"],
+                        current["model"], current_digest,
+                        acceleration=current_acceleration, vulkan=rollback_vulkan,
+                        timeout_seconds=health_timeout_seconds()):
+                    fail("could not restore the previous active service state")
+            elif service_state() == "active":
+                systemctl_action("stop")
+        except (ManagerError, OSError) as restore_error:
+            rollback_error = str(restore_error)
         if rollback_error is not None:
             fail(f"apply failed ({error}); rollback also failed: {rollback_error}")
         raise
     finally:
-        candidate.unlink(missing_ok=True)
-        rollback.unlink(missing_ok=True)
+        for temporary in (candidate, config_rollback, binary_rollback):
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     progress("Applied dictation settings successfully.")
 
 
-def command_uninstall(resources: Path) -> None:
+def command_uninstall(resources: Path, binaries: dict[str, dict[str, Any]]) -> None:
     if os.geteuid() == 0:
         fail("do not uninstall user dictation as root")
     path_map = paths()
-    metadata = read_metadata(resources)
     service_template = resources / "vanhyprarch-voxtype.service"
     if marker_state(path_map["marker"]) != "valid":
         fail("component marker is not a valid managed installation")
-    require_regular(path_map["binary"], "Voxtype binary", owner=True)
-    if sha256_file(path_map["binary"]) != metadata["VANHYPRARCH_VOXTYPE_SHA256"]:
-        fail("installed Voxtype binary is not the managed CPU artifact")
+    acceleration_identity(path_map["binary"], binaries)
     require_regular(path_map["service"], "Voxtype service", owner=True)
     if path_map["service"].read_bytes() != service_template.read_bytes():
         fail("installed Voxtype service differs from the managed unit")
@@ -1090,7 +1472,8 @@ def command_uninstall(resources: Path) -> None:
         if path.exists() or path.is_symlink()]
     if remaining:
         fail("Local Dictation removal left component payload behind")
-    status = status_document(resources, *load_models(resources))
+    models, by_id = load_models(resources)
+    status = status_document(resources, models, by_id, binaries)
     if status["state"] != "not-installed" or status["installed"] or status["marker"] != "absent":
         fail("Local Dictation payload removal did not produce a clean not-installed state")
     progress("Uninstalled Local Dictation and removed all Voxtype data successfully.")
@@ -1129,7 +1512,7 @@ def parser() -> argparse.ArgumentParser:
     apply.add_argument("--model", required=True)
     apply.add_argument("--language-mode", required=True, choices=("specific", "automatic", "selected"))
     apply.add_argument("--language", action="append", default=[])
-    apply.add_argument("--acceleration", required=True, choices=("cpu",))
+    apply.add_argument("--acceleration", required=True, choices=("cpu", "vulkan"))
     apply.add_argument("--max-duration", required=True, type=int)
     commands.add_parser("uninstall")
     remove = commands.add_parser("remove-model")
@@ -1142,16 +1525,17 @@ def main(argv: Sequence[str]) -> int:
         arguments = parser().parse_args(argv[1:])
         resources = resource_dir()
         models, by_id = load_models(resources)
+        binary_manifest, binaries = load_binaries(resources)
         if arguments.command == "status":
-            print(json.dumps(status_document(resources, models, by_id), sort_keys=True, separators=(",", ":")))
+            print(json.dumps(status_document(resources, models, by_id, binaries), sort_keys=True, separators=(",", ":")))
         elif arguments.command == "catalog":
-            print(json.dumps(catalog_document(models), sort_keys=True, separators=(",", ":")))
+            print(json.dumps(catalog_document(models, binaries), sort_keys=True, separators=(",", ":")))
         elif arguments.command == "install":
-            command_install(resources, by_id)
+            command_install(resources, by_id, binary_manifest, binaries)
         elif arguments.command == "apply":
-            command_apply(arguments, resources, by_id)
+            command_apply(arguments, resources, by_id, binary_manifest, binaries)
         elif arguments.command == "uninstall":
-            command_uninstall(resources)
+            command_uninstall(resources, binaries)
         elif arguments.command == "remove-model":
             command_remove_model(arguments.model, by_id)
         return 0
