@@ -52,10 +52,12 @@ The shared bootstrap will eventually:
   `install/configure-flatpak` to establish the required system Flathub remote;
 - deploy tracked home and system configuration without personal paths;
 - deploy the main `vanhyprarch` named Quickshell configuration;
-- install project commands, including the screensaver lifecycle controller, in
-  an appropriate user or system PATH;
+- atomically install regular executable files for public project commands,
+  including `vanhyprarch-idle`, `vanhyprarch-screensaver`, and
+  `vanhyprarch-screenshot`, under `$HOME/.local/bin` without depending on a Git
+  checkout;
 - invoke the pinned external-player installer so
-  `vanhyprarch-zig-player` is available in that same PATH;
+  `vanhyprarch-zig-player` is installed in that same directory;
 - establish required symlinks and enable or disable documented services;
 - deploy the minimal `system/etc/bluetooth/main.conf` before starting or
   enabling `bluetooth.service`, preserving exact rollback material if an
@@ -70,6 +72,13 @@ For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and
 validation must be recoverable from the canonical repository. Development-
 machine behavior alone is not complete integration.
+
+The bootstrap must create `$HOME/.local/bin` as a user-owned directory when
+needed, preserve rollback material before replacing a managed command, and
+verify executable ownership, mode, and content after publication. Repository
+development may use symlinks into `bin/`; production deployment uses regular
+files. Quickshell-private helpers stay inside the deployed named configuration
+and are not copied into the session command directory.
 
 Post-install validation must verify that `/usr/bin/flatpak` is executable,
 that an enabled system remote named `flathub` exists, and that its URL is

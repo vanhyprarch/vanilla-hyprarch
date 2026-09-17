@@ -21,6 +21,10 @@ required session processes. Quickshell provides the desktop UI. Power & Idle
 state belongs to `vanhyprarch-idle`, while Hyprland directly owns one
 `hypridle` process.
 
+The graphical session prepends `$HOME/.local/bin` exactly once to its inherited
+`PATH`. Public `vanhyprarch-*` session commands are installed there and invoked
+by name; helpers private to Quickshell remain inside its deployed configuration.
+
 Screensaver rendering is delegated to the independent
 [Vanilla HyprArch Zig Player](https://github.com/vanhyprarch/vanhyprarch-zig-player).
 This repository provides a pinned installer component and lifecycle control
@@ -38,6 +42,8 @@ Matrix, Doom, and Game of Life.
 - persistent Power & Idle preferences, Caffeine, automatic locking, display
   power-off, suspend/resume, and the independent native screensaver;
 - direct-session PolicyKit and clean Hyprland logout integration;
+- Print Screen smart region/window/monitor screenshots saved under
+  `Pictures/Screenshots` and copied as `image/png` for normal Ctrl+V pasting;
 - keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update, and
   Power workflows with native catalogs and interactive package-manager
   transactions;
@@ -60,6 +66,10 @@ an existing administrator configuration without review and rollback. See the
 [installation strategy](docs/installation-strategy.md) and
 [system baseline](docs/system-baseline.md).
 
+For development, public commands may be symlinked from `bin/` into
+`$HOME/.local/bin`. The future production bootstrap will install regular
+executables there atomically and will not depend on a Git checkout.
+
 ## Alpha limitations
 
 Clean-install and first-reboot validation, portable monitor/Hyprlock/Hyprpaper
@@ -67,9 +77,10 @@ configuration, final light/dark wallpaper integration, and an update-safe user
 override layer remain future work. The pinned Zig Player release is currently
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
-and Vanilla HyprArch self-update, the screenshot-to-clipboard workflow, and
-local F9 push-to-talk dictation are not implemented. Project self-update
-remains unavailable until a MANAGED / USER OVERRIDE / STATE deployment
+and Vanilla HyprArch self-update and local F9 push-to-talk dictation are not
+implemented. Screenshot runtime acceptance, including the development
+machine's 10-bit output and real Ctrl+V paste behavior, remains pending.
+Project self-update remains unavailable until a MANAGED / USER OVERRIDE / STATE deployment
 architecture exists. The detailed status and roadmap are in
 [current state](docs/current-state.md).
 

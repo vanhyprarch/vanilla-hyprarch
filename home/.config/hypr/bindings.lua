@@ -18,6 +18,9 @@ bind(mainMod .. " + K", "Shell", "Show shortcuts",
 bind(mainMod .. " + SPACE", "Shell", "Open Super + Space",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.superSpace toggle"))
 
+-- Capture
+bind("PRINT", "Capture", "Screenshot", hl.dsp.exec_cmd("vanhyprarch-screenshot"))
+
 -- Window state
 bind(mainMod .. " + W", "Window", "Close window", hl.dsp.window.close())
 bind(mainMod .. " + Q", "Window", "Close window", hl.dsp.window.close())

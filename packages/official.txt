@@ -8,6 +8,7 @@ ddcutil
 firefox
 flatpak
 foot
+grim
 gvfs
 hypridle
 hyprland
@@ -32,6 +33,7 @@ python-dbus
 python-gobject
 qt6-svg
 quickshell
+slurp
 system-config-printer
 thunar
 ttf-dejavu
@@ -39,6 +41,7 @@ ttf-liberation
 tumbler
 wayland
 wireplumber
+wl-clipboard
 xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-desktop-portal-hyprland

@@ -45,8 +45,9 @@ The live Quickshell path is a symlink to:
 
 `$HOME/Projects/vanilla-hyprarch/home/.config/quickshell/vanhyprarch`
 
-The two live Hyprland Lua files were byte-identical to their repository copies
-when this snapshot was prepared.
+The live Hyprland files have not received the repository-only Print Screen
+binding or graphical-session PATH policy added on the screenshot branch. They
+have not been deployed or reloaded in the live session.
 
 The tracked `hyprland.lua` is the current development-machine profile, not a
 portable Vanilla HyprArch default. It contains the development system's
@@ -79,6 +80,13 @@ The graphical session remains the direct
 `Ly -> /usr/bin/start-hyprland -> Hyprland` path. UWSM is not part of the
 Vanilla HyprArch architecture.
 
+Before registering its startup children, the tracked Lua configuration reads
+`HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
+any existing `$HOME/.local/bin` entries, and prepends exactly one such entry
+while preserving every other entry and its order. Public session commands use
+stable `vanhyprarch-*` names from that directory. This repository-only policy
+has not yet been deployed or validated in a restarted graphical session.
+
 Hyprland starts these processes on `hyprland.start`:
 
 1. `hyprpaper`
@@ -95,6 +103,12 @@ The temporary shell only constructs the user-local `PATH`; `exec` replaces it
 with `/usr/bin/hypridle`, so the final daemon remains directly parented by
 Hyprland while being able to resolve Vanilla HyprArch executables from
 `$HOME/.local/bin`.
+
+That validated hypridle wrapper, Quickshell's explicit Power & Idle backend and
+process PATH, and the backend's transactional daemon-PATH capture/reuse remain
+intentionally unchanged. They are removed only in a separate architecture
+cleanup after a real cold-start test proves the unified PATH for Hyprland,
+Quickshell, Foot, hypridle, screensaver, and screenshot processes.
 
 `-n` prevents a duplicate instance of the named Quickshell configuration.
 Bindings are loaded from `~/.config/hypr/bindings.lua` with Lua `dofile()`, so a
@@ -263,6 +277,55 @@ display-passkey, and service-authorization matrix; multi-monitor incoming
 prompt routing; and shell reload during active pairing remain pending
 real-hardware validation.
 
+## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATION PARTIAL
+
+Print Screen invokes the project-owned `vanhyprarch-screenshot` Python helper
+through the described Hyprland binding architecture. The helper uses fixed
+argument vectors and no shell evaluation. It parses `hyprctl monitors -j` and
+`clients -j` with the Python standard library, filters out hidden, unmapped,
+and non-visible clients, removes duplicate rectangles, and supplies visible
+window rectangles followed by monitor rectangles to unrestricted `slurp`.
+Dragging therefore remains freeform, while a click can select a visible window
+or the monitor behind wallpaper, gaps, and layer-shell bars. Invalid or
+unavailable Hyprland JSON degrades to ordinary unrestricted region selection.
+
+The canonical deployment target for the tracked
+`bin/vanhyprarch-screenshot` source is
+`$HOME/.local/bin/vanhyprarch-screenshot`. Development may use a symlink;
+production bootstrap will publish a regular executable there atomically. It is
+not deployed on the development machine in this branch.
+
+After a valid selection, `grim` writes PNG data to a temporary file under the
+final directory. The helper validates the PNG signature, publishes it without
+overwriting an existing filename, and passes the saved bytes to
+`/usr/bin/wl-copy --type image/png`. The directory is the safely resolved XDG
+Pictures directory, falling back to `$HOME/Pictures`, with `Screenshots`
+appended. Names use `screenshot-YYYY-MM-DD_HH-MM-SS.png` and a numeric suffix
+on collision. Escape cancellation creates no screenshot and does not invoke
+the clipboard command; a clipboard failure preserves the completed PNG and
+reports the saved path.
+
+The first milestone deliberately has no screen freeze, notification, editor,
+additional capture shortcuts, or Quickshell image-processing responsibility.
+A nonblocking XDG runtime lock rejects concurrent selections. Deterministic
+tests cover geometry, fractional scale, transformed monitors, client filters,
+selection construction, cancellation, capture and clipboard arguments,
+collisions, locking, and clipboard-failure preservation without opening a
+real graphical picker.
+
+`grim`, `slurp`, and `wl-clipboard` are installed on the development machine.
+The tracked binding has not been deployed or reloaded. A real capture confirmed
+that the PNG is saved and published to the clipboard as `image/png`. It also
+exposed a `wl-copy` lifecycle bug: a daemonized clipboard provider inherited a
+captured stderr pipe, so the helper retained its runtime lock until the
+clipboard changed. The helper now gives `wl-copy` an anonymous temporary file
+for stderr, allowing its launcher to return while its normal background
+provider continues serving repeated paste requests. A deterministic lifecycle
+test verifies that a second screenshot session can acquire the lock while the
+first provider remains alive. Real smart-selection behavior, 10-bit color and
+resolution, application Ctrl+V paste, and multi-output behavior remain manual
+acceptance items.
+
 ## Power and idle — IMPLEMENTED, POWER/LOCK LIFECYCLE VALIDATED
 
 `bin/vanhyprarch-idle` owns persistent preferences, validation, managed
@@ -383,7 +446,6 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Build the screenshot-to-clipboard workflow as a separate feature.
 - Add local F9 push-to-talk dictation without introducing a hosted dependency.
 - Design an update-safe customization/override layer rather than asking users
   to edit future managed defaults in place.
@@ -401,5 +463,4 @@ workaround. Physical two-monitor validation remains pending.
 - Remove Application ownership mapping
 - Vanilla HyprArch self-update, pending the MANAGED / USER OVERRIDE / STATE
   deployment architecture
-- Screenshot-to-clipboard workflow
 - Local F9 push-to-talk dictation

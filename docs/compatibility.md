@@ -22,10 +22,55 @@ and removable local mitigations. Package selection belongs in
 | Flatpak | 1.18.2 (`flatpak 1:1.18.2-1`) | Locally validated official package for interactive app/runtime updates; required but not version-pinned |
 | hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Wallpaper process launched by Hyprland; portable tracked configuration remains open work |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
+| grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic command tests pass, real 10-bit capture pending |
+| slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer acceptance pending |
+| wl-clipboard | 2.3.0 (`wl-clipboard 1:2.3.0-1`) | Installed clipboard publisher; deterministic MIME and byte-stream tests pass, real paste acceptance pending |
 
 This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
 separately when required.
+
+## Screenshot capture validation boundary
+
+**Affected components:** Hyprland 0.56.2, grim 1.5.0, slurp 1.5.0, and
+wl-clipboard 2.3.0
+
+The screenshot helper has deterministic coverage for Hyprland JSON parsing,
+logical monitor geometry at scale 1.25, rotated and flipped transforms, visible
+client filtering, duplicate removal, unrestricted `slurp` input, PNG capture
+arguments, collision-safe publication, runtime locking, cancellation, and the
+exact `wl-copy --type image/png` clipboard operation. These tests use mocks and
+an isolated forked clipboard-provider stand-in; they do not invoke a real
+graphical picker.
+
+A real capture with wl-clipboard 2.3.0 showed that its default `wl-copy`
+launcher forks a background provider. When the helper captured launcher stderr
+with `subprocess.PIPE`, that provider inherited the pipe and delayed EOF, so
+Python waited and retained the screenshot lock for the clipboard selection's
+lifetime. Clipboard publication now uses an anonymous temporary file as the
+stderr sink: immediate nonzero launcher errors remain readable, while the
+helper can return without changing `wl-copy`'s normal repeated-paste daemon
+behavior. The regression test requires the helper lock to become reusable
+while the isolated provider is still alive. Retest this boundary after a
+wl-clipboard upgrade; remove the mitigation only if the launcher no longer
+daemonizes or guarantees that descendants close captured descriptors.
+
+The development output currently uses `3840x2160` at scale 1.25 with the
+10-bit `XRGB2101010` format and the `wide` color-management preset.
+All three screenshot packages are installed, and the manifest also represents
+them as clean-install requirements. A real capture confirmed saved PNG output
+and `image/png` clipboard publication. Real region, window, and monitor
+selection; PNG color and resolution; application Ctrl+V paste; and multi-output
+behavior remain pending manual validation after deployment. Apart from the
+bounded `wl-copy` descriptor mitigation above, the helper does not freeze the
+screen or change cursor, scale, bit depth, or color-management settings. Retest
+these paths after Hyprland, grim, slurp, or wl-clipboard upgrades.
+
+The tracked Hyprland configuration now establishes the user-local session PATH,
+but the running session has not been restarted with it. Manual acceptance must
+also verify PATH inheritance in Hyprland, Quickshell, Foot, hypridle, the
+screensaver controller, and the screenshot binding. Existing Power & Idle PATH
+workarounds remain until that separate cold-start validation succeeds.
 
 ## Quickshell Bluetooth pairing-agent boundary
 

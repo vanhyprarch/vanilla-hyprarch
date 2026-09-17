@@ -475,3 +475,21 @@ remotes, reset Flatpak state, or install applications.
 Vanilla HyprArch self-update remains intentionally unavailable. Repository
 updates must wait for a transactional MANAGED / USER OVERRIDE / STATE
 deployment architecture; `git pull` is not a deployment mechanism.
+
+## ADR-027: Put public session commands in the user-local PATH
+
+**Status:** Accepted
+**Date:** 2026-09-17
+
+Public Vanilla HyprArch session commands use stable `vanhyprarch-*` names and
+are deployed as regular executables under `$HOME/.local/bin`. Hyprland prepends
+that directory exactly once to the inherited graphical-session `PATH` before
+starting session children. Development deployments may use symlinks; the
+future production bootstrap must install commands atomically without depending
+on a Git checkout.
+
+Quickshell-private helpers remain beneath `Quickshell.shellDir` and are invoked
+by their resolved configuration-relative paths rather than being exported as
+public commands. Fixed or sensitive system dependencies may use explicit
+`/usr/bin/...` paths. Independently managed systemd user units must not rely on
+Hyprland having started early enough to supply their command path.

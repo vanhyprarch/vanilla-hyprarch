@@ -58,6 +58,7 @@ and unresolved choices are maintained in the canonical
 | Project shell | `quickshell`, `qt6-svg` | Quickshell owns the main desktop shell. |
 | Graphical authorization | `hyprpolkitagent` | Hyprland starts its packaged systemd user service for the direct graphical session. |
 | Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
+| Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
 | Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The independently released native client owns layer-shell output coverage, input absorption, and animation. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
@@ -65,11 +66,27 @@ and unresolved choices are maintained in the canonical
 The project uses upstream Hyprland and Quickshell rather than a downstream
 desktop distribution layer.
 
+## Session command path
+
+Hyprland constructs the graphical-session `PATH` before starting children by
+reading `HOME` and the inherited `PATH`, then prepending `$HOME/.local/bin`
+exactly once. Public project commands use stable `vanhyprarch-*` names and are
+deployed as regular executable files in that directory. Quickshell-private
+helpers remain under `Quickshell.shellDir`; fixed or sensitive packaged tools
+may be addressed through `/usr/bin/...`.
+
+Development may symlink public commands from the repository into
+`$HOME/.local/bin`. Production bootstrap must create the user-owned directory
+when needed and atomically install regular files without requiring the source
+checkout. The existing hypridle and Power & Idle PATH handling remains in place
+until separate cold-start validation covers every session consumer.
+
 The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
-configuration for the main shell. It will install `vanhyprarch-screensaver`
-from `bin/` and invoke the existing pinned player installer so the separately
-released `vanhyprarch-zig-player` is available in the same inherited PATH.
-Production screensaver presentation does not use Quickshell or Foot.
+configuration for the main shell. It will install `vanhyprarch-idle`,
+`vanhyprarch-screensaver`, and `vanhyprarch-screenshot` from `bin/` under
+`$HOME/.local/bin`, then invoke the existing pinned player installer so the
+separately released `vanhyprarch-zig-player` is available there too. Production
+screensaver presentation does not use Quickshell or Foot.
 
 ## Flatpak applications
 
@@ -230,6 +247,25 @@ The tracked alpha `hyprland.lua` still carries the development machine's
 `DP-1` mode, scale, color, and keyboard choices, and the scale writer is tied to
 that connector. It is not a portable baseline file and must be reviewed before
 manual deployment. General overrides belong to the planned customization layer.
+
+## Screenshots
+
+`grim`, `slurp`, and `wl-clipboard` are unpinned required packages from the
+official Arch repositories. The project-owned Python helper uses Hyprland JSON
+only to offer current visible window and monitor rectangles to `slurp`; JSON is
+parsed with the standard library and does not require `jq`. Selection remains
+unrestricted so dragging always captures a freeform region. If smart rectangle
+discovery fails, the helper retains ordinary drag selection.
+
+Print Screen saves a PNG under the XDG Pictures directory's `Screenshots`
+subdirectory, or `$HOME/Pictures/Screenshots` when no valid XDG Pictures value
+exists. It then supplies the exact saved bytes to `wl-copy` with MIME type
+`image/png`, allowing normal Ctrl+V paste in applications that accept images.
+Escape cancellation neither publishes a file nor changes the clipboard.
+
+This first implementation intentionally has no screen freeze, screenshot
+editor, notification, or Quickshell image-processing path. It also does not
+change monitor scale, bit depth, color management, or cursor settings.
 
 ## Printing
 

@@ -1,0 +1,539 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+"""Capture, save, and copy one smart-selected Wayland screenshot."""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import math
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Iterator
+
+
+HYPRCTL = "/usr/bin/hyprctl"
+SLURP = "/usr/bin/slurp"
+GRIM = "/usr/bin/grim"
+WL_COPY = "/usr/bin/wl-copy"
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+GEOMETRY_PATTERN = re.compile(
+    r"^(-?[0-9]+),(-?[0-9]+)[ ]([1-9][0-9]*)x([1-9][0-9]*)$"
+)
+MAX_GEOMETRY_VALUE = 2**31 - 1
+CommandRunner = Callable[..., subprocess.CompletedProcess[Any]]
+
+
+class ScreenshotError(RuntimeError):
+    """A screenshot operation failed without publishing an incomplete file."""
+
+
+class ScreenshotBusy(ScreenshotError):
+    """Another screenshot selection already owns the runtime lock."""
+
+
+class ClipboardCopyError(ScreenshotError):
+    """The screenshot was saved, but could not be copied to the clipboard."""
+
+    def __init__(self, saved_path: Path, detail: str) -> None:
+        super().__init__(detail)
+        self.saved_path = saved_path
+
+
+@dataclass(frozen=True)
+class Rectangle:
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def geometry(self) -> str:
+        return f"{self.x},{self.y} {self.width}x{self.height}"
+
+
+def command_error(result: subprocess.CompletedProcess[Any]) -> str:
+    stderr = result.stderr
+    if isinstance(stderr, bytes):
+        return stderr.decode("utf-8", errors="replace").strip()
+    if isinstance(stderr, str):
+        return stderr.strip()
+    return ""
+
+
+def integer(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def positive_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def monitor_rectangles(monitors: Any) -> list[Rectangle]:
+    rectangles: list[Rectangle] = []
+    if not isinstance(monitors, list):
+        return rectangles
+
+    for monitor in monitors:
+        if not isinstance(monitor, dict) or monitor.get("disabled") is True:
+            continue
+
+        x = integer(monitor.get("x"))
+        y = integer(monitor.get("y"))
+        width = integer(monitor.get("width"))
+        height = integer(monitor.get("height"))
+        transform = integer(monitor.get("transform", 0))
+        scale = positive_number(monitor.get("scale"))
+        if (
+            x is None
+            or y is None
+            or width is None
+            or height is None
+            or width <= 0
+            or height <= 0
+            or transform is None
+            or transform not in range(8)
+            or scale is None
+        ):
+            continue
+
+        logical_width = math.floor(width / scale)
+        logical_height = math.floor(height / scale)
+        if transform in {1, 3, 5, 7}:
+            logical_width, logical_height = logical_height, logical_width
+        if logical_width <= 0 or logical_height <= 0:
+            continue
+
+        rectangles.append(Rectangle(x, y, logical_width, logical_height))
+
+    return rectangles
+
+
+def visible_workspace_ids(monitors: Any) -> set[int]:
+    workspace_ids: set[int] = set()
+    if not isinstance(monitors, list):
+        return workspace_ids
+
+    for monitor in monitors:
+        if not isinstance(monitor, dict) or monitor.get("disabled") is True:
+            continue
+        for key in ("activeWorkspace", "specialWorkspace"):
+            workspace = monitor.get(key)
+            if not isinstance(workspace, dict):
+                continue
+            workspace_id = integer(workspace.get("id"))
+            if workspace_id is not None and workspace_id != 0:
+                workspace_ids.add(workspace_id)
+    return workspace_ids
+
+
+def enabled_monitor_ids(monitors: Any) -> set[int]:
+    monitor_ids: set[int] = set()
+    if not isinstance(monitors, list):
+        return monitor_ids
+    for monitor in monitors:
+        if not isinstance(monitor, dict) or monitor.get("disabled") is True:
+            continue
+        monitor_id = integer(monitor.get("id"))
+        if monitor_id is not None:
+            monitor_ids.add(monitor_id)
+    return monitor_ids
+
+
+def window_rectangles(clients: Any, monitors: Any) -> list[Rectangle]:
+    rectangles: list[Rectangle] = []
+    if not isinstance(clients, list):
+        return rectangles
+
+    workspace_ids = visible_workspace_ids(monitors)
+    monitor_ids = enabled_monitor_ids(monitors)
+    for client in clients:
+        if not isinstance(client, dict):
+            continue
+        if client.get("mapped") is not True or client.get("hidden") is True:
+            continue
+        if "visible" in client and client.get("visible") is not True:
+            continue
+
+        workspace = client.get("workspace")
+        workspace_id = (
+            integer(workspace.get("id")) if isinstance(workspace, dict) else None
+        )
+        monitor_id = integer(client.get("monitor"))
+        pinned_and_visible = client.get("pinned") is True and monitor_id in monitor_ids
+        if workspace_id not in workspace_ids and not pinned_and_visible:
+            continue
+
+        position = client.get("at")
+        size = client.get("size")
+        if (
+            not isinstance(position, list)
+            or len(position) != 2
+            or not isinstance(size, list)
+            or len(size) != 2
+        ):
+            continue
+        x, y = (integer(position[0]), integer(position[1]))
+        width, height = (integer(size[0]), integer(size[1]))
+        if (
+            x is None
+            or y is None
+            or width is None
+            or height is None
+            or width <= 0
+            or height <= 0
+        ):
+            continue
+        rectangles.append(Rectangle(x, y, width, height))
+
+    return rectangles
+
+
+def unique_rectangles(rectangles: Sequence[Rectangle]) -> list[Rectangle]:
+    unique: list[Rectangle] = []
+    seen: set[Rectangle] = set()
+    for rectangle in rectangles:
+        if rectangle in seen:
+            continue
+        seen.add(rectangle)
+        unique.append(rectangle)
+    return unique
+
+
+def query_hyprctl_json(
+    request: str, runner: CommandRunner = subprocess.run
+) -> Any | None:
+    try:
+        result = runner(
+            [HYPRCTL, request, "-j"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=2,
+            check=False,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def smart_rectangles(runner: CommandRunner = subprocess.run) -> list[Rectangle]:
+    monitors = query_hyprctl_json("monitors", runner)
+    if monitors is None:
+        return []
+    clients = query_hyprctl_json("clients", runner)
+    windows = window_rectangles(clients, monitors) if clients is not None else []
+    return unique_rectangles(windows + monitor_rectangles(monitors))
+
+
+def slurp_input(rectangles: Sequence[Rectangle]) -> str:
+    if not rectangles:
+        return ""
+    return "".join(f"{rectangle.geometry()}\n" for rectangle in rectangles)
+
+
+def validate_geometry(value: str) -> str:
+    match = GEOMETRY_PATTERN.fullmatch(value.strip())
+    if match is None:
+        raise ScreenshotError("slurp returned invalid geometry")
+    x, y, width, height = (int(part) for part in match.groups())
+    if any(abs(value) > MAX_GEOMETRY_VALUE for value in (x, y)) or any(
+        value > MAX_GEOMETRY_VALUE for value in (width, height)
+    ):
+        raise ScreenshotError("slurp returned out-of-range geometry")
+    return Rectangle(x, y, width, height).geometry()
+
+
+def select_geometry(
+    rectangles: Sequence[Rectangle], runner: CommandRunner = subprocess.run
+) -> str | None:
+    try:
+        result = runner(
+            [SLURP],
+            input=slurp_input(rectangles),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            shell=False,
+        )
+    except OSError as error:
+        raise ScreenshotError(f"could not start slurp: {error}") from error
+
+    output = result.stdout.strip()
+    if not output and result.returncode in (0, 1):
+        if result.returncode == 1 and command_error(result):
+            raise ScreenshotError(command_error(result))
+        return None
+    if result.returncode != 0:
+        detail = command_error(result) or f"slurp exited with status {result.returncode}"
+        raise ScreenshotError(detail)
+    if not output:
+        return None
+    return validate_geometry(output)
+
+
+def resolve_configured_directory(value: str, home: Path) -> Path | None:
+    if "\x00" in value or "\n" in value or "\r" in value:
+        return None
+    if value == "$HOME":
+        resolved = home
+    elif value.startswith("$HOME/"):
+        resolved = home / value[len("$HOME/") :]
+    elif value == "${HOME}":
+        resolved = home
+    elif value.startswith("${HOME}/"):
+        resolved = home / value[len("${HOME}/") :]
+    else:
+        resolved = Path(value)
+    if "$" in str(resolved) or not resolved.is_absolute():
+        return None
+    return resolved
+
+
+def configured_pictures_directory(
+    home: Path, environ: Mapping[str, str]
+) -> Path | None:
+    environment_value = environ.get("XDG_PICTURES_DIR")
+    if environment_value:
+        resolved = resolve_configured_directory(environment_value, home)
+        if resolved is not None:
+            return resolved
+
+    config_home_value = environ.get("XDG_CONFIG_HOME")
+    config_home = Path(config_home_value) if config_home_value else home / ".config"
+    if not config_home.is_absolute():
+        return None
+    user_dirs = config_home / "user-dirs.dirs"
+    try:
+        if not user_dirs.is_file() or user_dirs.stat().st_size > 65536:
+            return None
+        contents = user_dirs.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+
+    for line in contents.splitlines():
+        match = re.fullmatch(r'XDG_PICTURES_DIR="([^"\\]*)"', line.strip())
+        if match is None:
+            continue
+        return resolve_configured_directory(match.group(1), home)
+    return None
+
+
+def screenshot_directory(environ: Mapping[str, str]) -> Path:
+    home_value = environ.get("HOME")
+    if not home_value:
+        raise ScreenshotError("HOME is not set")
+    home = Path(home_value)
+    if not home.is_absolute():
+        raise ScreenshotError("HOME must be an absolute path")
+    pictures = configured_pictures_directory(home, environ) or home / "Pictures"
+    return pictures / "Screenshots"
+
+
+def filename_for(moment: datetime, suffix: int = 0) -> str:
+    stem = moment.strftime("screenshot-%Y-%m-%d_%H-%M-%S")
+    if suffix:
+        stem = f"{stem}-{suffix}"
+    return f"{stem}.png"
+
+
+def validate_png(path: Path) -> None:
+    try:
+        file_stat = path.stat()
+        with path.open("rb") as screenshot:
+            signature = screenshot.read(len(PNG_SIGNATURE))
+    except OSError as error:
+        raise ScreenshotError(f"could not inspect grim output: {error}") from error
+    if not stat.S_ISREG(file_stat.st_mode) or signature != PNG_SIGNATURE:
+        raise ScreenshotError("grim did not produce a valid PNG")
+
+
+def publish_screenshot(temporary_path: Path, directory: Path, moment: datetime) -> Path:
+    for suffix in range(10000):
+        destination = directory / filename_for(moment, suffix)
+        try:
+            os.link(temporary_path, destination)
+        except FileExistsError:
+            continue
+        except OSError as error:
+            raise ScreenshotError(f"could not publish screenshot: {error}") from error
+        # A same-directory hard link publishes the completed inode atomically;
+        # FileExistsError lets the collision loop preserve existing captures.
+        try:
+            temporary_path.unlink()
+        except OSError:
+            # capture_png's finalizer retries cleanup without invalidating the
+            # already published screenshot.
+            pass
+        return destination
+    raise ScreenshotError("could not choose an unused screenshot filename")
+
+
+def capture_png(
+    geometry: str,
+    directory: Path,
+    moment: datetime,
+    runner: CommandRunner = subprocess.run,
+) -> Path:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise ScreenshotError(f"could not create {directory}: {error}") from error
+    if not directory.is_dir():
+        raise ScreenshotError(f"screenshot destination is not a directory: {directory}")
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".vanhyprarch-screenshot-", suffix=".png", dir=directory
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        try:
+            result = runner(
+                [GRIM, "-t", "png", "-g", geometry, str(temporary_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                shell=False,
+            )
+        except OSError as error:
+            raise ScreenshotError(f"could not start grim: {error}") from error
+        if result.returncode != 0:
+            detail = command_error(result) or f"grim exited with status {result.returncode}"
+            raise ScreenshotError(detail)
+        validate_png(temporary_path)
+        return publish_screenshot(temporary_path, directory, moment)
+    finally:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def copy_png(
+    screenshot_path: Path, runner: CommandRunner = subprocess.run
+) -> None:
+    try:
+        with (
+            screenshot_path.open("rb") as screenshot,
+            tempfile.TemporaryFile() as error_output,
+        ):
+            result = runner(
+                [WL_COPY, "--type", "image/png"],
+                stdin=screenshot,
+                stdout=subprocess.DEVNULL,
+                stderr=error_output,
+                check=False,
+                shell=False,
+            )
+            if result.returncode != 0:
+                error_output.flush()
+                error_output.seek(0)
+                immediate_error = error_output.read().decode(
+                    "utf-8", errors="replace"
+                ).strip()
+    except OSError as error:
+        raise ClipboardCopyError(screenshot_path, str(error)) from error
+    if result.returncode != 0:
+        detail = (
+            immediate_error
+            or command_error(result)
+            or f"wl-copy exited with status {result.returncode}"
+        )
+        raise ClipboardCopyError(screenshot_path, detail)
+
+
+@contextmanager
+def runtime_lock(environ: Mapping[str, str]) -> Iterator[None]:
+    runtime_value = environ.get("XDG_RUNTIME_DIR")
+    if not runtime_value:
+        raise ScreenshotError("XDG_RUNTIME_DIR is not set")
+    runtime_directory = Path(runtime_value)
+    if not runtime_directory.is_absolute() or not runtime_directory.is_dir():
+        raise ScreenshotError("XDG_RUNTIME_DIR must be an existing absolute directory")
+
+    flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    lock_path = runtime_directory / "vanhyprarch-screenshot.lock"
+    try:
+        descriptor = os.open(lock_path, flags, 0o600)
+    except OSError as error:
+        raise ScreenshotError(f"could not open screenshot lock: {error}") from error
+    try:
+        lock_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != os.geteuid():
+            raise ScreenshotError("screenshot lock is not a user-owned regular file")
+        os.fchmod(descriptor, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ScreenshotBusy("another screenshot selection is already active") from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def run_screenshot(
+    environ: Mapping[str, str] = os.environ,
+    runner: CommandRunner = subprocess.run,
+    moment: datetime | None = None,
+) -> Path | None:
+    with runtime_lock(environ):
+        rectangles = smart_rectangles(runner)
+        geometry = select_geometry(rectangles, runner)
+        if geometry is None:
+            return None
+
+        output_directory = screenshot_directory(environ)
+        saved_path = capture_png(
+            geometry, output_directory, moment or datetime.now(), runner
+        )
+        copy_png(saved_path, runner)
+        return saved_path
+
+
+def main() -> int:
+    try:
+        saved_path = run_screenshot()
+    except ClipboardCopyError as error:
+        print(
+            f"vanhyprarch-screenshot: screenshot saved to {error.saved_path}, "
+            f"but clipboard copy failed: {error}",
+            file=sys.stderr,
+        )
+        return 1
+    except ScreenshotError as error:
+        print(f"vanhyprarch-screenshot: {error}", file=sys.stderr)
+        return 1
+    if saved_path is not None:
+        print(saved_path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

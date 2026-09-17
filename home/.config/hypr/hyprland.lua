@@ -38,6 +38,35 @@ hl.monitor({
 })
 
 
+-------------------------------
+---- ENVIRONMENT VARIABLES ----
+-------------------------------
+
+-- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Environment-variables/
+
+local function prependPathOnce(inheritedPath, entry)
+    local entries = { entry }
+    if inheritedPath == "" then
+        return entry
+    end
+
+    for inheritedEntry in (inheritedPath .. ":"):gmatch("(.-):") do
+        if inheritedEntry ~= entry then
+            table.insert(entries, inheritedEntry)
+        end
+    end
+    return table.concat(entries, ":")
+end
+
+local sessionHome = os.getenv("HOME")
+assert(sessionHome ~= nil and sessionHome ~= "", "HOME is not set")
+local inheritedPath = os.getenv("PATH") or ""
+hl.env("PATH", prependPathOnce(inheritedPath, sessionHome .. "/.local/bin"))
+
+hl.env("XCURSOR_SIZE", "24")
+hl.env("HYPRCURSOR_SIZE", "24")
+
+
 -------------------
 ---- AUTOSTART ----
 -------------------
@@ -59,15 +88,6 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd([[sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v']])
     hl.exec_cmd("qs -n -c vanhyprarch")
 end)
-
--------------------------------
----- ENVIRONMENT VARIABLES ----
--------------------------------
-
--- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Environment-variables/
-
-hl.env("XCURSOR_SIZE", "24")
-hl.env("HYPRCURSOR_SIZE", "24")
 
 
 -----------------------

@@ -156,6 +156,27 @@ component leaves an existing correct remote untouched, creates a missing remote
 with `--if-not-exists`, and fails closed on a conflicting URL without modifying
 user remotes or installing applications.
 
+## 2026-09-17: Screenshot capture
+
+Print Screen gained one project-owned Python workflow using official `grim`,
+`slurp`, and `wl-clipboard` packages. Hyprland monitor and client JSON supplies
+optional smart rectangles without adding `jq`: dragging remains unrestricted,
+visible windows can be selected by their logical rectangle, and wallpaper,
+bar, or gap clicks can resolve to the containing monitor. Invalid smart-target
+state falls back to ordinary region selection.
+
+Successful captures are validated as PNG, atomically published under
+`Pictures/Screenshots` with collision-safe names, and copied explicitly as
+`image/png`. Cancellation changes neither screenshots nor clipboard state, and
+clipboard failure preserves the saved image. The deliberately small first
+milestone has no screen freeze, editor, notifications, temporary picker
+keybindings, or Quickshell image processing.
+
+The graphical session now prepends `$HOME/.local/bin` exactly once before
+starting its children. This establishes the canonical command location needed
+by the name-based Print Screen binding. Existing Power & Idle PATH safeguards
+remain pending a separate cold-start cleanup and validation pass.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate
