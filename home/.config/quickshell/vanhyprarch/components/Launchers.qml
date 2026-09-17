@@ -9,6 +9,7 @@ Item {
 
     required property var theme
     required property var metrics
+    required property LauncherStore store
     readonly property int contentWidth: root.metrics.dockContentWidth
     readonly property int buttonSize: root.metrics.dockLauncherTarget
     readonly property int iconSize: root.metrics.applicationLauncherIconSize
@@ -340,10 +341,6 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    LauncherStore {
-        id: store
-    }
-
     Column {
         id: content
 
@@ -479,14 +476,14 @@ Item {
         theme: root.theme
         metrics: root.metrics
         popupAnchorItem: appPickerPopupAnchor
-        launcherStore: store
+        launcherStore: root.store
     }
 
     LauncherContextMenu {
         id: launcherContextMenu
         theme: root.theme
         metrics: root.metrics
-        launcherStore: store
+        launcherStore: root.store
         popupAnchorItem: launcherContextPopupAnchor
         onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)
     }

@@ -47,6 +47,10 @@ ShellRoot {
         id: bluetoothPowerController
     }
 
+    LauncherStore {
+        id: launcherStore
+    }
+
     readonly property var globalTextSizeController: textSizeController
     readonly property int dockWidth: visualMetrics.dockWidth
     readonly property int cornerRadius: visualMetrics.legacyPopupRadius
@@ -107,6 +111,7 @@ ShellRoot {
         }
 
         Launchers {
+            store: launcherStore
             theme: shellTheme
             metrics: visualMetrics
             anchors.verticalCenter: parent.verticalCenter

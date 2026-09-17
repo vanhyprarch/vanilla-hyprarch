@@ -12,7 +12,7 @@ tracked in the [compatibility register](compatibility.md).
 
 - Public name: **Vanilla HyprArch**
 - Repository: `~/Projects/vanilla-hyprarch`
-- Development branch: `visual-foundation`
+- Development branch: `main`
 - Technical namespace and named Quickshell config: `vanhyprarch`
 - Hyprland: 0.56.2 (`hyprland` package 0.56.2-2)
 - Quickshell: 0.3.1 (`quickshell` package 0.3.1-1)
@@ -103,10 +103,12 @@ Num Lock is enabled by default when the graphical session starts.
 
 ## Shell architecture — IMPLEMENTED
 
-`ShellRoot` owns global state and controllers. A `Variants` instance models
-`Quickshell.screens`; each delegate owns the permanent dock and transparent
-shortcut-anchor surfaces for one screen. This screen lifecycle structure is
-the validated fix for dock loss after suspend and resume.
+`ShellRoot` owns global state and controllers, including the single
+`LauncherStore` used by every dock. A `Variants` instance models
+`Quickshell.screens`; each delegate owns its per-screen `Launchers`
+presentation, permanent dock, and transparent shortcut-anchor surfaces. This
+screen lifecycle structure is the validated fix for dock loss after suspend
+and resume.
 
 Current IPC targets are:
 
