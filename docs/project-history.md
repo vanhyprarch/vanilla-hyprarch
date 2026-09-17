@@ -276,6 +276,17 @@ excellent observed accuracy and competitive latency while keeping the desktop
 responsive. These personal validation results do not change the tracked
 `small.en`/English/CPU/120-second public default.
 
+## 2026-09-17: Consistent scrolling and circular list navigation
+
+Qt Quick's native Flickable wheel deceleration is now set to `10000` at shell
+process start, applying one consistent tuning to the six project-owned vertical
+lists while leaving input-device handling to Qt. A thin, project-owned
+persistent right-side thumb makes overflow and position visible without adding
+scrollbar interaction or changing row width as filtering crosses the overflow
+threshold. Existing Up/Down selection in Super+Space and Shortcuts is circular,
+skips disabled entries, and keeps the wrapped row visible; Shortcuts paging
+remains clamped.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

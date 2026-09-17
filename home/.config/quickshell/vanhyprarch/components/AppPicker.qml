@@ -35,6 +35,12 @@ DockPopup {
             boundsBehavior: Flickable.StopAtBounds
             model: DesktopEntries.applications
 
+            VerticalScrollIndicator {
+                view: applicationsView
+                metrics: root.metrics
+                theme: root.theme
+            }
+
             delegate: PanelActionRow {
                 id: appRow
 
@@ -45,6 +51,7 @@ DockPopup {
                     root.launcherStore.ready && !alreadyAdded
 
                 width: applicationsView.width
+                    - root.metrics.scrollIndicatorGutter
                 metrics: root.metrics
                 theme: root.theme
                 primaryText: modelData.name

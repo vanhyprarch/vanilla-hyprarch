@@ -1,5 +1,6 @@
 //@ pragma UseQApplication
 //@ pragma IconTheme Papirus
+//@ pragma Env QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000
 
 import QtQuick
 import Quickshell

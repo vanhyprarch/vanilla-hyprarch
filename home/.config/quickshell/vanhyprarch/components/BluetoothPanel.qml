@@ -942,8 +942,16 @@ DockPopup {
                 boundsBehavior: Flickable.StopAtBounds
                 model: root.pairedDevices
 
+                VerticalScrollIndicator {
+                    view: pairedList
+                    metrics: root.metrics
+                    theme: root.theme
+                }
+
                 delegate: DeviceRow {
                     required property var modelData
+                    width: pairedList.width
+                        - root.metrics.scrollIndicatorGutter
                     device: modelData
                     pairedSection: true
                 }
@@ -1008,8 +1016,16 @@ DockPopup {
                 boundsBehavior: Flickable.StopAtBounds
                 model: root.availableDevices
 
+                VerticalScrollIndicator {
+                    view: availableList
+                    metrics: root.metrics
+                    theme: root.theme
+                }
+
                 delegate: DeviceRow {
                     required property var modelData
+                    width: availableList.width
+                        - root.metrics.scrollIndicatorGutter
                     device: modelData
                     pairedSection: false
                 }

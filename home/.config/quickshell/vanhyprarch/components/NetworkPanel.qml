@@ -857,6 +857,12 @@ DockPopup {
                 boundsBehavior: Flickable.StopAtBounds
                 model: root.wifiNetworks
 
+                VerticalScrollIndicator {
+                    view: wifiNetworkList
+                    metrics: root.metrics
+                    theme: root.theme
+                }
+
                 delegate: Rectangle {
                     id: networkRow
 
@@ -873,6 +879,7 @@ DockPopup {
                         && root.failureSsid === networkRow.modelData.ssid
 
                     width: wifiNetworkList.width
+                        - root.metrics.scrollIndicatorGutter
                     height: root.metrics.compactRowHeight
                     radius: root.metrics.rowRadius
                     color: networkRow.selected ? root.theme.activeFill

@@ -56,6 +56,15 @@ QtObject {
     readonly property int controlOutlineThickness: 1
     readonly property int separatorThickness: 1
 
+    // Persistent vertical scroll position indicator.
+    readonly property int scrollIndicatorWidth: scaled(3)
+    readonly property int scrollIndicatorInset: scaled(2)
+    readonly property int scrollIndicatorMinimumThumbHeight: scaled(24)
+    readonly property int scrollIndicatorContentGap: scaled(6)
+    readonly property int scrollIndicatorGutter: scrollIndicatorWidth
+        + scrollIndicatorInset + scrollIndicatorContentGap
+    readonly property real scrollOverflowTolerance: 0.5
+
     // Typography. The application keeps Qt's current system/default family.
     readonly property int captionFontSize: fontPixels(0.833)
     readonly property int detailFontSize: fontPixels(0.917)

@@ -52,20 +52,7 @@ PopupWindow {
     }
 
     function moveSelection(offset: int): void {
-        if (entriesView.count === 0)
-            return
-        let candidate = entriesView.currentIndex
-        for (let attempts = 0; attempts < entriesView.count; ++attempts) {
-            candidate = Math.max(0, Math.min(entriesView.count - 1,
-                candidate + offset))
-            if (controller.visibleEntries[candidate].enabled !== false)
-                break
-            if (candidate === 0 || candidate === entriesView.count - 1)
-                return
-        }
-        entriesView.currentIndex = candidate
-        entriesView.positionViewAtIndex(entriesView.currentIndex,
-            ListView.Contain)
+        entriesNavigation.move(offset)
     }
 
     function activateSelection(): void {
@@ -334,10 +321,26 @@ PopupWindow {
                 topMargin: root.metrics.contentGap
                 bottomMargin: root.metrics.contentGap
             }
+
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: root.metrics.rowSpacing
             model: root.controller.visibleEntries
+
+            WrappedListNavigation {
+                id: entriesNavigation
+
+                view: entriesView
+                isSelectable: function(index) {
+                    return root.controller.visibleEntries[index].enabled !== false
+                }
+            }
+
+            VerticalScrollIndicator {
+                view: entriesView
+                metrics: root.metrics
+                theme: root.theme
+            }
 
             onCountChanged: {
                 if (count === 0)
@@ -352,7 +355,7 @@ PopupWindow {
                 required property var modelData
                 required property int index
 
-                width: entriesView.width
+                width: entriesView.width - root.metrics.scrollIndicatorGutter
                 metrics: root.metrics
                 theme: root.theme
                 primaryText: modelData.label

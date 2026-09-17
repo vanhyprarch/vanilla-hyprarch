@@ -235,7 +235,14 @@ The current Quickshell UI includes:
 - a Local Dictation component page with nested reviewed model, language, and
   maximum-recording selectors backed by the public management command;
 - a searchable, read-only shortcut viewer populated from described Hyprland
-  bindings.
+  bindings;
+- consistent long-list navigation: Qt Quick's native Flickable wheel tuning is
+  configured process-wide with `QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000`,
+  scrollable views retain a thin project-owned persistent position indicator,
+  and existing Up/Down selection in Super+Space and Shortcuts wraps circularly.
+  Shortcuts Page Up/Page Down remain clamped. The wheel value is process-start
+  configuration, so live validation requires a full Quickshell process restart;
+  hot reload is insufficient.
 
 Super+Space uses `DesktopEntries.applications` directly and launches through
 the native `DesktopEntry.execute()` API. It has no project-owned application

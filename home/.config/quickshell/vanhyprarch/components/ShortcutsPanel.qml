@@ -198,16 +198,16 @@ PopupWindow {
                         root.controller.close()
                         event.accepted = true
                     } else if (event.key === Qt.Key_Up) {
-                        shortcutsView.moveSelection(-1)
+                        shortcutsNavigation.move(-1)
                         event.accepted = true
                     } else if (event.key === Qt.Key_Down) {
-                        shortcutsView.moveSelection(1)
+                        shortcutsNavigation.move(1)
                         event.accepted = true
                     } else if (event.key === Qt.Key_PageUp) {
-                        shortcutsView.moveSelection(-shortcutsView.pageStep())
+                        shortcutsNavigation.moveClamped(-shortcutsView.pageStep())
                         event.accepted = true
                     } else if (event.key === Qt.Key_PageDown) {
-                        shortcutsView.moveSelection(shortcutsView.pageStep())
+                        shortcutsNavigation.moveClamped(shortcutsView.pageStep())
                         event.accepted = true
                     }
                 }
@@ -224,6 +224,7 @@ PopupWindow {
                 topMargin: 10
                 leftMargin: root.panelPadding
                 rightMargin: root.panelPadding
+                    + root.metrics.scrollIndicatorGutter
             }
             height: root.columnHeaderHeight
 
@@ -286,15 +287,8 @@ PopupWindow {
             id: shortcutsView
 
             function pageStep(): int {
-                return Math.max(1, Math.floor(height / root.rowHeight) - 1)
-            }
-
-            function moveSelection(offset: int): void {
-                if (count === 0)
-                    return
-                const start = currentIndex < 0 ? 0 : currentIndex
-                currentIndex = Math.max(0, Math.min(count - 1, start + offset))
-                positionViewAtIndex(currentIndex, ListView.Contain)
+                return Math.max(1,
+                    Math.floor(height / root.rowHeight) - 1)
             }
 
             anchors {
@@ -307,11 +301,24 @@ PopupWindow {
                 leftMargin: root.panelPadding
                 rightMargin: root.panelPadding
             }
+            visible: !root.controller.loading
+                && root.controller.errorMessage === ""
+
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             model: root.controller.filteredEntries
-            visible: !root.controller.loading
-                && root.controller.errorMessage === ""
+
+            WrappedListNavigation {
+                id: shortcutsNavigation
+
+                view: shortcutsView
+            }
+
+            VerticalScrollIndicator {
+                view: shortcutsView
+                metrics: root.metrics
+                theme: root.theme
+            }
 
             onCountChanged: {
                 if (count === 0)
@@ -329,7 +336,7 @@ PopupWindow {
                     modelData.showCategory && index > 0
                         ? root.categorySectionTopGap : 0
 
-                width: shortcutsView.width
+                width: shortcutsView.width - root.metrics.scrollIndicatorGutter
                 height: root.rowHeight + sectionTopGap
                     + (modelData.showCategory ? root.categoryHeight : 0)
 
