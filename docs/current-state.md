@@ -141,6 +141,8 @@ The current Quickshell UI includes:
   timeout presets, screensaver-effect selection, and one automatic-lock
   selection;
 - a persistent light/dark shell theme using Papirus icons;
+- direct dock access to Super+Space from the logo and to the shortcut viewer
+  from a system-sized `dialog-information` control;
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
 - a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, Update,
@@ -213,8 +215,10 @@ geometry, font-size, and scale measurements were correct from the first visible
 event, the root cause is not proven, and the issue is currently non-blocking.
 
 From bottom to top, the dock's lower status/control area is Power,
-Clock/calendar, Theme, Power & Idle, Display, Audio, Network, Bluetooth, and
-System tray.
+Clock/calendar, Info/Shortcuts, Theme, Power & Idle, Display, Audio, Network,
+Bluetooth, and System tray.
+Manual pointer and visual validation of the two new dock affordances remains
+pending.
 
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent.

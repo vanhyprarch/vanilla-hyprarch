@@ -122,6 +122,14 @@ ShellRoot {
             height: logoSize
             fillMode: Image.PreserveAspectFit
             smooth: true
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: superSpace.toggle()
+            }
         }
 
         Workspaces {
@@ -169,6 +177,19 @@ ShellRoot {
 
         ThemeToggle {
             id: dockThemeToggle
+            theme: shellTheme
+            metrics: visualMetrics
+
+            anchors {
+                bottom: dockShortcutsButton.top
+                bottomMargin: visualMetrics.dockSystemControlGap
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
+        ShortcutsButton {
+            id: dockShortcutsButton
+            controller: shortcuts
             theme: shellTheme
             metrics: visualMetrics
 

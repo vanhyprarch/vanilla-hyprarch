@@ -138,13 +138,14 @@ The dock order is:
 
 1. Power
 2. Clock/calendar
-3. Theme
-4. Power & Idle
-5. Display
-6. Audio
-7. Network
-8. Bluetooth
-9. System tray
+3. Info/Shortcuts
+4. Theme
+5. Power & Idle
+6. Display
+7. Audio
+8. Network
+9. Bluetooth
+10. System tray
 
 This list follows the lower control area from bottom to top.
 
