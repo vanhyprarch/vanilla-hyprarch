@@ -7,7 +7,7 @@ enabled = false
 [audio]
 device = "default"
 sample_rate = 16000
-max_duration_secs = 60
+max_duration_secs = 120
 pause_media = true
 
 [audio.feedback]

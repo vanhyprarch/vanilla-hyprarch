@@ -32,11 +32,18 @@ ShellRoot {
         id: powerActions
     }
 
+    SystemComponentsActions {
+        id: systemComponentsActions
+        checksEnabled: false
+        executionEnabled: false
+    }
+
     SuperSpace {
         id: superSpace
         installActions: installActions
         removeActions: removeActions
         updateActions: updateActions
+        systemComponentsActions: systemComponentsActions
         powerActions: powerActions
     }
 
@@ -126,7 +133,7 @@ ShellRoot {
             }).length === 0, "option-like input became a yay target")
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Power",
+                === "Apps,Install,Remove,Update,Additional system components,Power",
                 "root section order is wrong")
 
             for (const section of ["apps", "install", "update", "power"]) {

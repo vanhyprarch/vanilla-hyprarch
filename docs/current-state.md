@@ -147,11 +147,31 @@ Voxtype daemon automatically, and required no manual service start. See [Local
 push-to-talk dictation](dictation.md) for the installation and validation
 contract.
 
+The tracked `bin/vanhyprarch-dictation` command is now the single management
+backend for installation, removal, state reporting, reviewed model downloads,
+and transactional CPU model/language/maximum-duration changes. Its versioned
+JSON status and catalog remain available when Voxtype is absent. The public
+default is still `small.en`, English, and CPU AVX2; the maximum recording time
+is now 120 seconds. Ten model digests and the curated language catalog are
+tracked, while Vulkan switching is deliberately not implemented yet.
+An installation now reloads the user-unit catalog, starts the non-enabled
+service, validates bounded daemon health, and publishes the component marker
+only after success. Model download runs with an isolated temporary XDG config
+root because stable Voxtype setup otherwise creates its own `base.en` default;
+the tracked `small.en`/English/120-second template is published only after model
+verification. SuperSpace reloads Hyprland once after successful Install
+or Uninstall so the current session's F9 bindings immediately match the marker;
+failed operations and settings Apply never request that reload.
+Local Dictation's explicit Uninstall action stops the managed service and then
+removes Voxtype, `$XDG_CONFIG_HOME/voxtype`, and `$XDG_DATA_HOME/voxtype`
+completely. The Vanilla manager and immutable component resources remain, so
+SuperSpace returns to a clean not-installed state and can offer a fresh install.
+
 ## Shell architecture — IMPLEMENTED
 
 `ShellRoot` owns global state and controllers, including the single
-`LauncherStore`, typed Install, Remove, Update, and Power actions, and the
-Super+Space controller. A `Variants`
+`LauncherStore`, typed Install, Remove, Update, Additional system components,
+and Power actions, and the Super+Space controller. A `Variants`
 instance models `Quickshell.screens`; each delegate owns its per-screen
 `Launchers` presentation, permanent dock, Super+Space and Shortcuts popup
 presentations, and transparent popup-anchor surface. This screen lifecycle
@@ -190,8 +210,11 @@ The current Quickshell UI includes:
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
 - a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, Update,
-  and Power sections, in-process search over `DesktopEntries.applications` and
-  typed action metadata, and confirmation for logout, reboot, and power off;
+  Additional system components, and Power sections, in-process search over
+  `DesktopEntries.applications` and typed action metadata, and confirmation for
+  logout, reboot, power off, and optional-component removal;
+- a Local Dictation component page with nested reviewed model, language, and
+  maximum-recording selectors backed by the public management command;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
 
@@ -234,6 +257,13 @@ no forced ordering, noninteractive confirmation, database-force, downgrade,
 or shell option. One startup-time executable check reports a missing required
 Flatpak command in the panel and blocks that activation. There is no Everything
 action and no Vanilla HyprArch self-update action.
+
+Local Dictation Install, Apply, and Uninstall use a supervised form of that
+terminal helper. A private runtime result carries the manager child's status,
+and the supervisor remains alive until the real Foot process exits. Successful
+Install and Uninstall then run exactly one direct `hyprctl reload` and refresh
+component status only after reload completion; failures, Apply, Refresh, and
+model removal never reload bindings.
 
 Flatpak is an unpinned required entry in the official package manifest. The
 development machine has a correct system `flathub` remote. The reusable

@@ -32,13 +32,19 @@ PopupWindow {
     }
 
     function resetSelection(): void {
-        entriesView.currentIndex = entriesView.count > 0 ? 0 : -1
+        entriesView.currentIndex = -1
+        for (let index = 0; index < controller.visibleEntries.length; ++index) {
+            if (controller.visibleEntries[index].enabled !== false) {
+                entriesView.currentIndex = index
+                break
+            }
+        }
         entriesView.positionViewAtBeginning()
     }
 
     function focusPrimaryControl(): void {
         Qt.callLater(function() {
-            if (root.confirming)
+            if (root.confirming || root.controller.currentComponentId !== "")
                 panelSurface.forceActiveFocus()
             else
                 searchInput.forceActiveFocus()
@@ -48,10 +54,16 @@ PopupWindow {
     function moveSelection(offset: int): void {
         if (entriesView.count === 0)
             return
-        const start = entriesView.currentIndex < 0
-            ? 0 : entriesView.currentIndex
-        entriesView.currentIndex = Math.max(0,
-            Math.min(entriesView.count - 1, start + offset))
+        let candidate = entriesView.currentIndex
+        for (let attempts = 0; attempts < entriesView.count; ++attempts) {
+            candidate = Math.max(0, Math.min(entriesView.count - 1,
+                candidate + offset))
+            if (controller.visibleEntries[candidate].enabled !== false)
+                break
+            if (candidate === 0 || candidate === entriesView.count - 1)
+                return
+        }
+        entriesView.currentIndex = candidate
         entriesView.positionViewAtIndex(entriesView.currentIndex,
             ListView.Contain)
     }
@@ -118,6 +130,20 @@ PopupWindow {
             root.focusPrimaryControl()
         }
 
+        function onCurrentComponentIdChanged(): void {
+            root.resetSelection()
+            root.focusPrimaryControl()
+        }
+
+        function onComponentSubviewChanged(): void {
+            root.resetSelection()
+            root.focusPrimaryControl()
+        }
+
+        function onVisibleEntriesChanged(): void {
+            root.resetSelection()
+        }
+
         function onSearchTextChanged(): void {
             root.resetSelection()
         }
@@ -149,7 +175,9 @@ PopupWindow {
                 rightMargin: root.metrics.contentGap
             }
             height: root.metrics.scaled(34)
-            text: root.confirming ? "Confirm power action" : "Super + Space"
+            text: root.confirming ? "Confirm power action"
+                : root.controller.currentComponentId === "local-dictation"
+                    ? "Local Dictation" : "Super + Space"
             textFormat: Text.PlainText
             color: root.theme.text
             font.pixelSize: root.metrics.prominentValueFontSize
@@ -203,7 +231,7 @@ PopupWindow {
                 topMargin: root.metrics.contentGap
             }
             height: root.metrics.scaled(44)
-            visible: !root.confirming
+            visible: !root.confirming && root.controller.currentComponentId === ""
             color: root.theme.surface
             border.width: searchInput.activeFocus
                 ? root.metrics.controlOutlineThickness : 0
@@ -224,6 +252,8 @@ PopupWindow {
                         ? "Search installed packages"
                     : root.controller.currentSection === "update"
                         ? "Search update actions"
+                    : root.controller.currentSection === "components"
+                        ? "Search optional components"
                     : root.controller.currentSection === "power"
                         ? "Search power actions" : "Search apps and actions"
                 textFormat: Text.PlainText
@@ -261,7 +291,8 @@ PopupWindow {
             id: sectionHeading
 
             anchors {
-                top: root.confirming ? titleText.bottom : searchBox.bottom
+                top: root.confirming || !searchBox.visible
+                    ? titleText.bottom : searchBox.bottom
                 left: parent.left
                 right: parent.right
                 topMargin: root.metrics.sectionGap
@@ -276,6 +307,15 @@ PopupWindow {
                     : root.controller.currentSection === "remove"
                         ? "Remove packages"
                     : root.controller.currentSection === "update" ? "Update"
+                    : root.controller.currentSection === "components"
+                        ? root.controller.componentSubview === "model" ? "Choose a model"
+                        : root.controller.componentSubview === "language-mode" ? "Choose language mode"
+                        : root.controller.componentSubview === "language-specific" ? "Choose a language"
+                        : root.controller.componentSubview === "language-selected" ? "Choose two or three languages"
+                        : root.controller.componentSubview === "duration" ? "Maximum recording"
+                        : root.controller.componentSubview === "uninstall" ? "Uninstall Local Dictation?"
+                        : root.controller.currentComponentId === "local-dictation" ? "Local Dictation"
+                        : "Additional system components"
                     : root.controller.currentSection === "power" ? "Power"
                         : root.controller.searchText.trim() === ""
                             ? "Choose a section" : "Results"
@@ -318,6 +358,8 @@ PopupWindow {
                 secondaryText: modelData.detail || ""
                 keyboardSelected: index === entriesView.currentIndex
                 danger: modelData.danger === true
+                enabled: modelData.enabled !== false
+                active: modelData.active === true
                 leading: entryIcon
                 activeFocusOnTab: false
                 onActivated: {
@@ -367,10 +409,16 @@ PopupWindow {
                             : "No matching installed packages"
                 : root.controller.currentSection === "update"
                     ? "No matching update actions"
+                : root.controller.currentSection === "components"
+                    ? root.controller.systemComponentsActions.errorMessage !== ""
+                        ? root.controller.systemComponentsActions.errorMessage
+                        : "No matching optional components"
                 : "No matching apps or actions"
             textFormat: Text.PlainText
             color: root.controller.currentSection === "remove"
                     && root.controller.removeActions.errorMessage !== ""
+                    || root.controller.currentSection === "components"
+                    && root.controller.systemComponentsActions.errorMessage !== ""
                 ? root.theme.danger : root.theme.textMuted
             font.pixelSize: root.metrics.overlayFontSize
             horizontalAlignment: Text.AlignHCenter
@@ -399,6 +447,11 @@ PopupWindow {
                                 ? "1 installed package"
                                 : root.controller.visibleEntries.length
                                     + " installed packages"
+                : root.controller.currentSection === "components"
+                    ? root.controller.systemComponentsActions.operationRunning
+                        ? "Operation running in Foot"
+                        : root.controller.currentComponentId === "local-dictation"
+                            ? "Enter or click to choose" : "Optional components"
                 : root.controller.visibleEntries.length === 1
                     ? "1 result"
                     : root.controller.visibleEntries.length + " results"

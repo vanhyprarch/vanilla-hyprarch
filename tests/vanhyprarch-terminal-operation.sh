@@ -6,7 +6,11 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 helper=$repository_dir/home/.config/quickshell/vanhyprarch/helpers/vanhyprarch_terminal_operation
 pty_test=$script_dir/vanhyprarch-terminal-operation-pty.py
+foot_fixture=$script_dir/terminal-operation-foot-fixture.py
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-terminal-operation-test.XXXXXX")
+test_runtime_dir=$test_dir/runtime
+mkdir -m 0700 -- "$test_runtime_dir"
+export XDG_RUNTIME_DIR=$test_runtime_dir
 
 cleanup()
 {
@@ -25,8 +29,10 @@ fail()
 
 command -v python >/dev/null 2>&1 || fail 'python is unavailable'
 [ -x "$helper" ] || fail 'helper is not executable'
+[ -x "$foot_fixture" ] || fail 'Foot supervision fixture is not executable'
 
-PYTHONPYCACHEPREFIX=$test_dir/pycache python -m py_compile "$helper"
+PYTHONPYCACHEPREFIX=$test_dir/pycache python -m py_compile \
+    "$helper" "$foot_fixture"
 
 success_log=$test_dir/success.log
 printf '\n' | "$helper" /usr/bin/true > "$success_log" 2>&1 ||
@@ -81,6 +87,46 @@ grep -Fxq 'Press Enter to close.' "$cancel_log" ||
     fail 'cancelled child did not reach the final Enter prompt'
 
 PYTHONPYCACHEPREFIX=$test_dir/pycache python "$pty_test" "$helper"
+
+reported_result=$test_dir/reported-result
+printf '\n' | "$helper" --result-file "$reported_result" -- /usr/bin/true \
+    > "$test_dir/reported-result.log" 2>&1 ||
+    fail 'reported child result did not preserve status 0'
+[ "$(cat "$reported_result")" = 0 ] ||
+    fail 'reported child result content is invalid'
+[ "$(stat -c '%a' "$reported_result")" = 600 ] ||
+    fail 'reported child result is not private'
+
+supervised_success_log=$test_dir/supervised-success.log
+VANHYPRARCH_TEST_FOOT_STATUS=23 "$helper" --supervise-foot \
+    "$foot_fixture" 'Lifecycle test' -- /usr/bin/true \
+    > "$supervised_success_log" 2>&1 ||
+    fail 'supervisor trusted Foot status instead of successful child result'
+grep -Fxq 'Operation finished.' "$supervised_success_log" ||
+    fail 'supervised terminal did not retain the normal completion experience'
+
+supervised_failure_log=$test_dir/supervised-failure.log
+set +e
+VANHYPRARCH_TEST_FOOT_STATUS=0 "$helper" --supervise-foot \
+    "$foot_fixture" 'Lifecycle test' -- /usr/bin/false \
+    > "$supervised_failure_log" 2>&1
+supervised_failure_status=$?
+set -e
+[ "$supervised_failure_status" -eq 1 ] ||
+    fail 'supervisor trusted Foot status instead of failing child result'
+
+missing_result_log=$test_dir/missing-result.log
+set +e
+VANHYPRARCH_TEST_FOOT_SKIP_CHILD=1 "$helper" --supervise-foot \
+    "$foot_fixture" 'Lifecycle test' -- /usr/bin/true \
+    > "$missing_result_log" 2>&1
+missing_result_status=$?
+set -e
+[ "$missing_result_status" -ne 0 ] ||
+    fail 'supervisor accepted a launcher exit without an operation result'
+grep -Fq 'Terminal closed before the operation result was available.' \
+    "$missing_result_log" ||
+    fail 'missing supervised operation result was not explained'
 
 if grep -Eq 'shell[[:space:]]*=[[:space:]]*True|(/bin|/usr/bin)/(ba)?sh' "$helper"; then
     fail 'helper contains a forbidden shell invocation'

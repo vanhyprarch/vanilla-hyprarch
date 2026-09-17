@@ -134,9 +134,11 @@ rewrites user remotes, resets Flatpak state, or installs Flatpak applications.
 ## Optional dictation installation
 
 Dictation is not a responsibility of the normal baseline bootstrap. An
-explicit opt-in first installs only the official package deltas listed in
-`packages/optional-dictation-official.txt`, then runs
-`install/dictation/install` as the target user. The component refuses root,
+explicit opt-in runs the independently deployed `vanhyprarch-dictation`
+manager, also reached through the compatibility entry point
+`install/dictation/install`. Missing `gnupg` or `wtype` package deltas from
+`packages/optional-dictation-official.txt` are offered through a visible
+interactive pacman transaction. The component refuses root,
 unsupported architectures, CPUs without the x86-64-v3 features required by
 the chosen AVX2 artifact, missing dependencies, symlink destinations, invalid
 signatures, unexpected fingerprints, checksum mismatches, and version
@@ -148,10 +150,36 @@ signature, full primary fingerprint, and exact `voxtype 1.0.1` version output,
 then atomically deploys mode `0755` to `$HOME/.local/bin/voxtype`. It installs
 the default config only if the user has no Voxtype config; a differing config
 before the first managed install requires explicit review, while later updates
-preserve customization. The installed binary runs the stable upstream model
-workflow for `small.en`; Vanilla then verifies
-the fixed filename, byte size, and SHA-256 before publishing the service and
-component marker. No service is started or enabled by the installer.
+preserve customization. Stable 1.0.1 setup writes a default config as a side
+effect, so model acquisition runs with a private temporary `XDG_CONFIG_HOME`
+and the intended final `XDG_DATA_HOME`; an explicit `--config` path alone is
+not sufficient in this version. The installed binary runs the stable upstream
+model workflow for `small.en`; Vanilla then verifies
+the fixed filename, byte size, and SHA-256 before publishing the binary,
+configuration, and service. Installation reloads the user-unit catalog, starts
+the non-enabled service, requires active/healthy extended status for the exact
+model and managed CPU digest, and publishes the component marker only after
+health succeeds. Fresh-install failure safely removes complete transaction-
+created config and data trees, plus a new runtime tree only after the service
+is stopped and no live lock PID remains. Failure restores the previous payload
+and service state.
+Hyprland remains the cold-session startup owner at later logins.
+
+The manager and its immutable `voxtype.conf`, signing key, default template,
+unit, and model manifest are production deployment artifacts. They must be
+installed under `$HOME/.local/bin` and the project XDG data directory rather
+than referring to a source checkout. Its versioned JSON status and catalog are
+the authority consumed by SuperSpace. The ten reviewed models are downloaded
+only through the tagged Voxtype workflow and then independently checked by
+filename, size, and SHA-256 before selection.
+
+An apply transaction prepares and verifies a model and candidate config while
+the existing daemon remains available. It validates stable Voxtype schema and
+resolved values, stops the service only when a daemon-read setting changes,
+atomically publishes the config, and requires both the service and Voxtype
+status to become healthy. Failure restores the exact config and prior service
+state. Allowed recording limits are 30, 60, 120, and 300 seconds; 120 is the
+public default. Vulkan is not implemented or selectable yet.
 
 Updates are reviewed repository changes: select an explicit stable version and
 asset, review the signing fingerprint, update the expected binary digest, run
@@ -160,11 +188,22 @@ the project service only after validation. Configuration and models stay in
 place, and rollback material is retained until the replacement daemon is
 healthy. No automatic or `latest` update path exists.
 
-`install/dictation/uninstall` requires the project service to stop successfully,
-then removes only an exact managed marker, service file, and pinned binary. A
-failed stop removes nothing. It also fails closed instead of deleting modified
-or unknown files. Configuration and model data are preserved; deleting them
-belongs to a future explicit purge operation.
+`vanhyprarch-dictation uninstall` (and its compatibility entry point) requires
+the project service to stop successfully, then removes the exact managed
+marker, service file, pinned binary, complete `$XDG_CONFIG_HOME/voxtype`
+configuration root, and complete `$XDG_DATA_HOME/voxtype` data root. This is
+the component's only uninstall mode; there is no separate purge. Recursive
+deletion requires exact XDG-child paths, current-user ownership, ordinary
+directories/files, and a symlink-safe platform implementation. A failed stop
+or unsafe tree removes nothing. The independently deployed manager and its
+immutable project resources remain so SuperSpace can offer Install again.
+Generic packages such as `gnupg` and `wtype` are not automatically removed.
+For SuperSpace Install and Uninstall, the terminal helper publishes the manager
+child's exit status inside a private runtime directory and a supervisor waits
+for the real Foot process to finish. A successful result then triggers one
+direct `hyprctl reload` before status refresh so F9 bindings match the marker in
+the current session. Failure and settings Apply refresh status without reload;
+Foot's window-close status alone is never treated as the transaction result.
 
 ## Verified archinstall 4.4 capabilities
 

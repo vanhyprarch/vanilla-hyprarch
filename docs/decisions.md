@@ -511,6 +511,45 @@ Voxtype-owned and Vanilla independently verifies the resulting model digest.
 GPU acceleration is never selected automatically. Hyprland owns only F9 press
 and release bindings and conditionally starts a fixed, non-enabled project user
 service. Voxtype's evdev hotkey is disabled, so dictation requires neither the
-`input` group nor uinput/ydotool. User configuration and model data survive a
-normal uninstall. Future model/language or GPU customization must preserve
-this binding and service architecture.
+`input` group nor uinput/ydotool. Local Dictation uses an explicit clean-
+uninstall contract: removing the component deletes Voxtype configuration and
+all downloaded models, while leaving the Vanilla manager and its immutable
+resources available for reinstall. Future model/language or GPU customization
+must preserve this binding and service architecture.
+
+## ADR-029: Manage optional components through a stable backend and SuperSpace
+
+**Status:** Accepted
+**Date:** 2026-09-17
+
+SuperSpace exposes one root-level `Additional system components` catalog. The
+catalog is deliberately small and explicit rather than a plugin framework;
+Local Dictation is its first component. QML presents state and selections, but
+does not download, verify, edit configuration, or control services itself.
+
+The independently deployed `vanhyprarch-dictation` command is the state and
+transaction authority. It consumes immutable resources from the project XDG
+data directory, provides versioned strict JSON for readers, and remains
+installed when Voxtype is removed. Model identity, byte size, digest, and
+pinned provenance are one reviewed manifest. User changes to model, language,
+and bounded recording duration preserve unrelated Voxtype configuration and
+are published only after model, config, daemon, and rollback checks succeed.
+
+The public default remains CPU AVX2, `small.en`, English, and a 120-second
+maximum. CPU/Vulkan is an extensible backend dimension, but Vulkan is not a
+selectable or implemented mode in this milestone. Local Dictation uninstall
+removes the complete Voxtype config and data roots; generic packages such as
+`gnupg` and `wtype` are not automatically removed.
+
+Install starts and health-validates the non-enabled service before its marker
+becomes authoritative. SuperSpace, not the compositor-independent manager,
+reloads Hyprland after successful Install or Uninstall so current-session F9
+bindings follow the marker. The shared terminal helper records the manager
+child's status in a private runtime directory, and a supervising process waits
+for the real Foot process to exit before that status drives reload and refresh;
+Foot's own exit status is not treated as the manager result. Apply does not
+reload Hyprland. Model acquisition isolates stable Voxtype 1.0.1's
+setup-generated config under a temporary
+`XDG_CONFIG_HOME`; only the reviewed Vanilla config may become the live fresh-
+install configuration. Rollback removes a whole newly created Voxtype tree only
+after hardened path, ownership, entry-type, and symlink validation.

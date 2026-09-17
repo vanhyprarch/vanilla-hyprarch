@@ -5,15 +5,20 @@
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
+import tempfile
 import termios
 from collections.abc import Sequence
+from pathlib import Path
 
 
 EX_USAGE = 64
 EX_NOT_FOUND = 127
+SUPERVISE_OPTION = "--supervise-foot"
+RESULT_OPTION = "--result-file"
 
 
 def normalized_exit_status(returncode: int) -> int:
@@ -66,7 +71,88 @@ def wait_to_close(returncode: int, interrupted: bool) -> None:
         print()
 
 
+def publish_result(path: Path, returncode: int) -> None:
+    status = normalized_exit_status(returncode)
+    file_descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    with os.fdopen(file_descriptor, "w", encoding="ascii") as descriptor:
+        descriptor.write(f"{status}\n")
+        descriptor.flush()
+        os.fsync(descriptor.fileno())
+
+
+def supervise_foot(argv: Sequence[str]) -> int:
+    if len(argv) < 6 or argv[4] != "--":
+        print("vanhyprarch-terminal-operation: invalid Foot supervision arguments",
+              file=sys.stderr)
+        return EX_USAGE
+
+    foot_executable = argv[2]
+    title = argv[3]
+    child_argv = list(argv[5:])
+    runtime_parent = os.environ.get("XDG_RUNTIME_DIR")
+    temporary_parent = runtime_parent if runtime_parent else None
+
+    with tempfile.TemporaryDirectory(
+            prefix="vanhyprarch-terminal-operation.",
+            dir=temporary_parent) as temporary_directory:
+        result_path = Path(temporary_directory) / "result"
+        command = [
+            foot_executable,
+            f"--title={title}",
+            os.path.abspath(argv[0]),
+            RESULT_OPTION,
+            str(result_path),
+            "--",
+            *child_argv,
+        ]
+        try:
+            terminal_status = subprocess.run(command, check=False).returncode
+        except OSError as error:
+            print(f"Could not start terminal operation: {error}", file=sys.stderr)
+            return EX_NOT_FOUND
+
+        try:
+            text = result_path.read_text(encoding="ascii")
+            if not text.endswith("\n") or not text[:-1].isdigit():
+                raise ValueError("invalid result")
+            child_status = int(text[:-1])
+            if not 0 <= child_status <= 255:
+                raise ValueError("invalid result")
+            return child_status
+        except (OSError, ValueError):
+            terminal_status = normalized_exit_status(terminal_status)
+            print("Terminal closed before the operation result was available.",
+                  file=sys.stderr)
+            return terminal_status if terminal_status != 0 else 1
+
+
+def run_reported_child(argv: Sequence[str]) -> int:
+    if len(argv) < 5 or argv[3] != "--":
+        print("vanhyprarch-terminal-operation: invalid result-file arguments",
+              file=sys.stderr)
+        return EX_USAGE
+
+    result_path = Path(argv[2])
+    returncode, interrupted = run_child(argv[4:])
+    try:
+        publish_result(result_path, returncode)
+    except OSError as error:
+        print(f"Could not publish operation result: {error}", file=sys.stderr)
+        returncode = 1
+    wait_to_close(returncode, interrupted)
+    return normalized_exit_status(returncode)
+
+
 def main(argv: Sequence[str]) -> int:
+    if len(argv) > 1 and argv[1] == SUPERVISE_OPTION:
+        return supervise_foot(argv)
+    if len(argv) > 1 and argv[1] == RESULT_OPTION:
+        return run_reported_child(argv)
+
     child_argv = list(argv[1:])
     if not child_argv:
         print("vanhyprarch-terminal-operation: missing child command", file=sys.stderr)

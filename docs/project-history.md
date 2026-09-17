@@ -199,13 +199,48 @@ The first milestone is English-only and CPU-only. A fixed non-enabled systemd
 user service owns the daemon after Hyprland conditionally starts it. F9 press
 starts recording and F9 release stops, transcribes, and types. Voxtype's evdev
 hotkey, input-group access, GPU setup, ydotool, clipboard fallback, OSD,
-notifications, and Quickshell UI are absent. Normal uninstall preserves user
-configuration and the large downloaded model.
+notifications, and Quickshell UI are absent. The initial removal policy kept
+user configuration and the large downloaded model. That policy was later
+superseded by Local Dictation's clean-uninstall contract: explicit Uninstall
+now removes Voxtype configuration and every downloaded model.
 
 Live validation then confirmed the verified installer and model, short and
 longer English dictation through `wtype`, approximately 1–2 second short-input
 latency, audible `default` feedback at volume `1.0`, and a cold logout/login
 with both F9 bindings, automatic service startup, and exactly one daemon.
+
+## 2026-09-17: Additional system components and managed dictation settings
+
+SuperSpace gained `Additional system components` between Update and Power,
+with Local Dictation as its first explicit catalog entry. A public
+`vanhyprarch-dictation` backend now owns versioned status/catalog JSON and all
+installation, configuration, model-integrity, service, and rollback
+transactions; it remains available after Voxtype is uninstalled.
+
+The CPU-only settings milestone exposes ten manifest-pinned models, a curated
+13-language catalog, explicit/automatic/two-or-three-language detection for
+multilingual models, and bounded recording limits of 30, 60, 120, or 300
+seconds. English-only models force English. The public default changed to a
+120-second maximum while remaining `small.en`, English, CPU AVX2. Settings
+preserve unrelated manual configuration while the component is installed, and
+unused models remain cached until explicitly removed or the component is
+uninstalled. Uninstall now deletes the complete Voxtype config and data roots;
+the Vanilla manager remains available for a fresh reinstall. Vulkan selection
+and Radeon 680M performance validation were deferred to the next milestone.
+
+Fresh-install validation then confirmed destructive removal and a clean
+default reinstall, while exposing that installation left the service inactive.
+The manager now starts and health-validates the non-enabled service before
+publishing success. SuperSpace reloads Hyprland only after successful Install
+or Uninstall completion, immediately synchronizing F9 bindings with the marker.
+
+A following live fresh install exposed a stable-1.0.1 setup side effect: model
+download created upstream's `base.en`/60-second default config before Vanilla
+could publish its `small.en` template, so the daemon requested a model that had
+not been downloaded. Setup now receives a private temporary `XDG_CONFIG_HOME`
+while retaining the final model data root. Fresh rollback also validates and
+removes complete transaction-created config, data, and safely stopped runtime
+trees instead of requiring a new config directory to be empty.
 
 ## Project maintenance contract
 

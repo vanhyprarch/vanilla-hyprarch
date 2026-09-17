@@ -46,15 +46,17 @@ Matrix, Doom, and Game of Life.
 - direct-session PolicyKit and clean Hyprland logout integration;
 - Print Screen smart region/window/monitor screenshots saved under
   `Pictures/Screenshots` and copied as `image/png` for normal Ctrl+V pasting;
-- keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update, and
-  Power workflows with native catalogs and interactive package-manager
-  transactions;
+- keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update,
+  Additional system components, and Power workflows with native catalogs and
+  visible terminal transactions;
 - official Arch package manifests and a pinned, checksummed Zig Player
   installer component;
 - required, unpinned Flatpak from the official Arch repositories, with an
   idempotent bootstrap component for the required system Flathub remote;
-- optional, offline F9 push-to-talk dictation using verified upstream Voxtype
-  1.0.1, the English-only `small.en` model, and official-repository `wtype`.
+- optional, offline F9 push-to-talk dictation managed through Additional system
+  components using verified upstream Voxtype 1.0.1, the default English-only
+  `small.en` model, a two-minute recording maximum, and official-repository
+  `wtype`.
 
 ## Installation status
 
@@ -76,10 +78,18 @@ executables there atomically and will not depend on a Git checkout.
 
 Dictation is a separate opt-in component, not part of the baseline. Its
 installer, dependencies, exact verification chain, runtime activation, and
-conservative uninstall procedure are documented in
+clean-uninstall procedure are documented in
 [Local push-to-talk dictation](docs/dictation.md). The default is CPU-only,
 English-only, local/offline transcription: hold F9 to record and release it to
 transcribe and type through `wtype`.
+The independently deployed `vanhyprarch-dictation` manager remains available
+when Voxtype is absent, so Super+Space can report state and offer installation.
+It exposes ten reviewed Whisper models, curated language choices, and recording
+limits of 30, 60, 120, or 300 seconds. Vulkan remains a future explicit opt-in
+and is not selectable in the current implementation.
+Local Dictation uses clean uninstall semantics: removing it deletes Voxtype's
+configuration and every downloaded speech model, but keeps the Vanilla manager
+available so the component can be installed again later.
 
 ## Alpha limitations
 

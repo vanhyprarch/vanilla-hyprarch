@@ -30,11 +30,18 @@ ShellRoot {
         id: powerActions
     }
 
+    SystemComponentsActions {
+        id: systemComponentsActions
+        checksEnabled: false
+        executionEnabled: false
+    }
+
     SuperSpace {
         id: superSpace
         installActions: installActions
         removeActions: removeActions
         updateActions: updateActions
+        systemComponentsActions: systemComponentsActions
         powerActions: powerActions
     }
 
@@ -44,7 +51,7 @@ ShellRoot {
         repeat: false
         onTriggered: {
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Power",
+                === "Apps,Install,Remove,Update,Additional system components,Power",
                 "root section order is wrong")
             root.check(updateActions.actions.map(action => action.label).join(",")
                 === "System,Flatpak", "Update action order is wrong")

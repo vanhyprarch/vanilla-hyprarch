@@ -51,11 +51,16 @@ ShellRoot {
         id: updateActions
     }
 
+    SystemComponentsActions {
+        id: systemComponentsActions
+    }
+
     SuperSpace {
         id: superSpace
         installActions: installActions
         removeActions: removeActions
         updateActions: updateActions
+        systemComponentsActions: systemComponentsActions
         powerActions: powerActions
     }
 

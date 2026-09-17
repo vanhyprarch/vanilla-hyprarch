@@ -30,11 +30,18 @@ ShellRoot {
         id: powerActions
     }
 
+    SystemComponentsActions {
+        id: systemComponentsActions
+        checksEnabled: false
+        executionEnabled: false
+    }
+
     SuperSpace {
         id: superSpace
         installActions: controller
         removeActions: removeActions
         updateActions: updateActions
+        systemComponentsActions: systemComponentsActions
         powerActions: powerActions
     }
 
@@ -77,7 +84,7 @@ ShellRoot {
                     "unsafe Install argument present: " + forbidden)
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Power",
+                === "Apps,Install,Remove,Update,Additional system components,Power",
                 "root section order changed")
             superSpace.enterSection("install")
             root.check(superSpace.currentSection === "install",

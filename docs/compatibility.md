@@ -38,10 +38,16 @@ PipeWire, and `wtype`
 
 Tagged Voxtype 1.0.1 supports `record start`, `record stop`, `-q daemon`, the
 `small.en` model name, and `setup --download --model small.en --quiet
---no-post-install`. Its setup path creates missing Voxtype directories and a
-default config but does not install a service unless the separate systemd setup
-action is requested. Vanilla installs its template before model setup when no
-user config exists and deliberately never invokes `voxtype setup systemd`.
+--no-post-install`. Its `run_setup()` always creates the XDG Voxtype directories
+and writes `Config::default_path()` when absent; a global `--config` path does
+not redirect that write. Vanilla therefore runs every model setup/download with
+a private temporary `XDG_CONFIG_HOME` while retaining the intended
+`XDG_DATA_HOME`. Any upstream-generated default config is discarded with that
+staging directory, and only Vanilla's tracked template is published afterward
+on a fresh install. The separate systemd setup action is never invoked. Retest
+this isolation after a Voxtype upgrade and remove it only if setup gains a
+documented side-effect-free download path or honors an explicit config target
+for every write.
 
 The upstream service assumes graphical-session enablement and may include an
 optional ydotool dependency. That does not match the direct
@@ -60,6 +66,49 @@ Live testing confirmed short and longer microphone capture, approximately 1–2
 second short-transcription latency, focused-application `wtype` injection,
 audible `default` feedback at volume `1.0`, automatic F9 registration and
 service startup after logout/login, and exactly one running daemon.
+
+Stable 1.0.1 also accepts a string language code, `"auto"`, or a constrained
+array of language codes. Vanilla exposes only 13 reviewed language codes and
+ten manifest-pinned models. Its candidate-config path uses `voxtype config set`
+for supported scalar fields and a narrow editor only for the language array,
+then requires TOML parsing, upstream schema validation, resolved-value
+readback, service activation, and daemon status before committing. Retest that
+complete editing and status contract on any Voxtype upgrade.
+
+The manager currently accepts only the CPU backend. Vulkan artifact selection,
+runtime packages, switching, rollback, and real Radeon 680M benchmarking are
+deliberately deferred. The UI must not expose Vulkan until that transaction is
+implemented and validated; no performance claim exists yet.
+
+Stable Voxtype 1.0.1 can report `backend = "unknown"` in extended status even
+while its managed AVX2 build is running successfully with `use gpu = 0`.
+Vanilla therefore does not infer acceleration identity from `backend` or
+tooltip text. Apply health requires the user service to become active, valid
+extended status with the requested model and a non-error runtime state, and an
+unchanged pinned managed-binary digest. Retest this status behavior on a
+Voxtype upgrade; future Vulkan identity must likewise come from its verified
+artifact plus backend-specific runtime validation, not this advisory field.
+
+## Foot completion boundary for component transactions
+
+**Affected components:** Foot 1.28.0 and Quickshell 0.3.1
+
+A live Local Dictation install completed successfully and published a valid
+marker, but the current-session F9 bindings remained absent until a manual
+`hyprctl reload`. The original deterministic test called the controller's
+completion helper directly and counted a reload-intent signal without running
+either real `Process`. The live path also used Foot's process exit as if it were
+the manager child's transaction result; closing a completed terminal window is
+not that contract.
+
+Local Dictation operations now use the shared terminal helper's supervised
+mode. The in-terminal helper records the manager child's normalized status in a
+private runtime directory before its final Enter prompt, while the supervisor
+waits for the real Foot process. Only that result can trigger the tracked
+`/usr/bin/hyprctl reload`; reload completion precedes status refresh, and a
+missing result fails closed. Other SuperSpace package operations retain their
+existing terminal behavior. Retest this boundary after a Foot or Quickshell
+process-lifecycle upgrade, or before replacing the shared terminal helper.
 
 ## Screenshot capture validation boundary
 

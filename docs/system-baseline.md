@@ -94,10 +94,13 @@ replacement and rollback.
 
 The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
 configuration for the main shell. It will install `vanhyprarch-idle`,
-`vanhyprarch-screensaver`, and `vanhyprarch-screenshot` from `bin/` under
-`$HOME/.local/bin`, then invoke the existing pinned player installer so the
-separately released `vanhyprarch-zig-player` is available there too. Production
-screensaver presentation does not use Quickshell or Foot.
+`vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
+available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`.
+It will deploy immutable dictation metadata under
+`${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
+existing pinned player installer so the separately released
+`vanhyprarch-zig-player` is available there too. Production screensaver
+presentation does not use Quickshell or Foot.
 
 ## Flatpak applications
 
