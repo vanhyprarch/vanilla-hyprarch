@@ -16,8 +16,9 @@ and removable local mitigations. Package selection belongs in
 | Quickshell | 0.3.1 (`quickshell 0.3.1-1`) | Main desktop shell; no longer part of screensaver rendering |
 | Qt | 6.11.2 (`qt6-base 6.11.2-3`) | Main Quickshell runtime |
 | `vanhyprarch-zig-player` | v0.1.1 | Native layer-shell screensaver renderer; idle continuity and input routing validated, physical two-monitor testing pending |
-| Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal and held interactive Install surface |
-| yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR package selection and installation |
+| Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal for interactive Install/Remove operations; a shared helper retains final output until Enter without `--hold` |
+| pacman | 7.1.0 (`pacman 7.1.0.r9.g54d9411-2`) | Local installed-package catalog and authoritative removal transaction semantics |
+| yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR installation and package removal wrapper |
 | hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Wallpaper process launched by Hyprland; portable tracked configuration remains open work |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
 

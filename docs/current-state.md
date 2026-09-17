@@ -141,7 +141,7 @@ The current Quickshell UI includes:
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
-- a keyboard-and-mouse Super+Space surface with Apps, Install, and Power
+- a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, and Power
   sections, in-process search over `DesktopEntries.applications` and typed
   action metadata, and confirmation for logout, reboot, and power off;
 - a searchable, read-only shortcut viewer populated from described Hyprland
@@ -155,11 +155,28 @@ commands and confirmation policy; the PowerMenu presentation is unchanged.
 Install accepts package search terms only after the user enters its section
 and explicitly activates the typed action. It closes Super+Space and launches
 the installed yay 13.0.1 workflow visibly in Foot 1.28.0 with a direct argument
-vector, an option boundary, and terminal hold. No result-ordering option is
-supplied, so yay retains the user's configured or default ordering. Empty
-searches are rejected, user text never enters a shell command, and yay retains
-all interactive selection, review, authentication, and confirmation prompts.
-No package catalog or yay-output parser is maintained by the project.
+vector and an option boundary. One shared executable Python helper inherits the
+terminal streams while yay runs, then reports completion and waits for Enter
+before Foot closes; Foot itself does not use `--hold`. No result-ordering
+option is supplied, so yay retains the user's configured or default ordering.
+Empty searches are rejected, user text never enters a shell command, and yay
+retains all interactive selection, review, authentication, cancellation, and
+confirmation prompts. Install maintains no package catalog or yay-output
+parser.
+Remove refreshes a transient installed-package catalog by running
+`/usr/bin/pacman -Q` whenever its section is entered. Package name and version
+are parsed into in-memory objects and filtered without another subprocess. Only
+an activated object from that catalog can start removal; search text is never
+a removal target. Activation closes Super+Space and visibly starts
+`/usr/bin/yay -Rns -- <selected-package>` through that same terminal helper and
+a direct argument vector. The selected clean-uninstall policy removes the
+target, recursively removes dependencies that become unnecessary according to
+pacman, and does not retain `.pacsave` files. Yay/pacman still presents the
+complete transaction and normal confirmation prompt; after completion or
+cancellation, Enter closes the terminal. Remove Application is deliberately
+absent because Quickshell's `DesktopEntry` does not expose enough source-path
+provenance to prove package ownership safely.
+
 The surface opens on the focused monitor through Super+Space or the named IPC
 target, supports pointer activation plus Up, Down, Enter, and Escape, and uses
 the shared panel, row, theme, metric, and global text-size foundations. The
@@ -343,8 +360,8 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Extend Super+Space with deliberately designed Remove and Update sections;
-  no inactive placeholders are currently shown.
+- Extend Super+Space with a deliberately designed Update section; no inactive
+  placeholder is currently shown.
 - Build the screenshot-to-clipboard workflow as a separate feature.
 - Add local F9 push-to-talk dictation without introducing a hosted dependency.
 - Design an update-safe customization/override layer rather than asking users
@@ -360,6 +377,6 @@ workaround. Physical two-monitor validation remains pending.
 ### NOT IMPLEMENTED
 
 - Shared bootstrap and optional archinstall integration
-- Super+Space Remove and Update sections
+- Super+Space Update section and Remove Application ownership mapping
 - Screenshot-to-clipboard workflow
 - Local F9 push-to-talk dictation

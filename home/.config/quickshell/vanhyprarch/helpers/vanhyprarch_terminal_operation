@@ -1,0 +1,81 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+"""Run one interactive terminal operation and pause before closing."""
+
+from __future__ import annotations
+
+import signal
+import subprocess
+import sys
+import termios
+from collections.abc import Sequence
+
+
+EX_USAGE = 64
+EX_NOT_FOUND = 127
+
+
+def normalized_exit_status(returncode: int) -> int:
+    if returncode < 0:
+        return 128 - returncode
+    return returncode
+
+
+def run_child(child_argv: Sequence[str]) -> tuple[int, bool]:
+    try:
+        child = subprocess.Popen(list(child_argv), shell=False)
+    except OSError as error:
+        print(f"Could not start operation: {error}", file=sys.stderr)
+        return EX_NOT_FOUND, False
+
+    interrupted = False
+    while True:
+        try:
+            return child.wait(), interrupted
+        except KeyboardInterrupt:
+            # The terminal delivers Ctrl+C to both this wrapper and the child.
+            # Let the child handle it, then retain the terminal for its output.
+            interrupted = True
+
+
+def discard_pending_terminal_input() -> None:
+    try:
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (OSError, ValueError):
+        # A missing or unsuitable terminal must not hide the operation result.
+        pass
+
+
+def wait_to_close(returncode: int, interrupted: bool) -> None:
+    discard_pending_terminal_input()
+    status = normalized_exit_status(returncode)
+    print()
+    if status == 0:
+        print("Operation finished.")
+    elif interrupted or status == 128 + signal.SIGINT:
+        print("Operation cancelled.")
+    else:
+        print(f"Operation finished with status {status}.")
+    print("Press Enter to close.", flush=True)
+
+    try:
+        sys.stdin.readline()
+    except KeyboardInterrupt:
+        print()
+
+
+def main(argv: Sequence[str]) -> int:
+    child_argv = list(argv[1:])
+    if not child_argv:
+        print("vanhyprarch-terminal-operation: missing child command", file=sys.stderr)
+        return EX_USAGE
+
+    returncode, interrupted = run_child(child_argv)
+    wait_to_close(returncode, interrupted)
+    return normalized_exit_status(returncode)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

@@ -220,6 +220,8 @@ PopupWindow {
                     ? "Search applications"
                     : root.controller.currentSection === "install"
                         ? "Enter package or search terms"
+                    : root.controller.currentSection === "remove"
+                        ? "Search installed packages"
                     : root.controller.currentSection === "power"
                         ? "Search power actions" : "Search apps and actions"
                 textFormat: Text.PlainText
@@ -269,6 +271,8 @@ PopupWindow {
                 : root.controller.currentSection === "apps" ? "Apps"
                     : root.controller.currentSection === "install"
                         ? "Install packages"
+                    : root.controller.currentSection === "remove"
+                        ? "Remove packages"
                     : root.controller.currentSection === "power" ? "Power"
                         : root.controller.searchText.trim() === ""
                             ? "Choose a section" : "Results"
@@ -352,9 +356,17 @@ PopupWindow {
             visible: root.controller.visibleEntries.length === 0
             text: root.controller.currentSection === "install"
                 ? "Enter package terms to search with yay"
+                : root.controller.currentSection === "remove"
+                    ? root.controller.removeActions.loading
+                        ? "Loading installed packages…"
+                        : root.controller.removeActions.errorMessage !== ""
+                            ? root.controller.removeActions.errorMessage
+                            : "No matching installed packages"
                 : "No matching apps or actions"
             textFormat: Text.PlainText
-            color: root.theme.textMuted
+            color: root.controller.currentSection === "remove"
+                    && root.controller.removeActions.errorMessage !== ""
+                ? root.theme.danger : root.theme.textMuted
             font.pixelSize: root.metrics.overlayFontSize
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -373,6 +385,15 @@ PopupWindow {
                 ? root.controller.searchText.trim() === ""
                     ? "Type package terms, then press Enter"
                     : "Enter or click to open yay in Foot"
+                : root.controller.currentSection === "remove"
+                    ? root.controller.removeActions.loading
+                        ? "Reading pacman's local package database"
+                        : root.controller.removeActions.errorMessage !== ""
+                            ? "Back, then reopen Remove to retry"
+                            : root.controller.visibleEntries.length === 1
+                                ? "1 installed package"
+                                : root.controller.visibleEntries.length
+                                    + " installed packages"
                 : root.controller.visibleEntries.length === 1
                     ? "1 result"
                     : root.controller.visibleEntries.length + " results"

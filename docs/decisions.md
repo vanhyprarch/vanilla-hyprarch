@@ -405,8 +405,8 @@ adapters as one user-facing Bluetooth radio policy.
 
 **Status:** Accepted
 **Date:** 2026-09-17
-**Implementation:** Apps, Install, and Power implemented and loaded by the
-live shell; visual and interaction behavior pending manual validation
+**Implementation:** Apps, Install, Remove Package, and Power implemented;
+visual and interaction behavior pending manual validation
 
 Super+Space has one global navigation/search controller and one presentation
 surface per Quickshell screen. Installed applications come directly from
@@ -424,10 +424,27 @@ into arbitrary shell command strings.
 
 Install is an explicit typed action which accepts non-empty search terms only.
 Activation closes Super+Space and starts `/usr/bin/yay -Y -- <terms>` inside
-`/usr/bin/foot --hold` through one direct argument vector. No result-ordering
-option is supplied, so yay retains the user's configured or default ordering.
-No shell parses user text, `--` prevents yay option injection, and yay retains
-its normal package selection, PKGBUILD, provider, dependency, conflict,
-authentication, and confirmation prompts. Super+Space neither parses yay
-output nor owns a package catalog. Remove and Update remain unimplemented and
-must not be exposed as placeholders.
+Foot through one direct argument vector. Foot does not use `--hold`; a shared
+executable Python terminal-operation helper runs yay with inherited terminal
+streams, reports its final status, and waits for Enter before returning so Foot
+closes normally. No result-ordering option is supplied, so yay retains the
+user's configured or default ordering. No shell parses user text, `--`
+prevents yay option injection, and yay retains its normal package selection,
+PKGBUILD, provider, dependency, conflict, authentication, cancellation, and
+confirmation prompts. Super+Space neither parses yay output nor owns a
+persistent package catalog.
+
+Remove Package refreshes installed package names and versions from the local
+pacman database with `/usr/bin/pacman -Q` whenever the section is entered. The
+transient objects are filtered in-process. Activation is possible only from a
+stored catalog object, never from raw search text, and starts the fixed command
+`/usr/bin/yay -Rns -- <selected-package>` through the same terminal helper and
+a direct argument vector. The `-Rns` policy intentionally removes the target,
+dependencies that become unnecessary under pacman semantics, and retained
+`.pacsave` files while keeping normal transaction review and confirmation
+visible. No shell, cascade, dependency bypass, or noninteractive confirmation
+option is permitted.
+
+Remove Application and Update remain unimplemented and must not be exposed as
+placeholders. Application display names, desktop IDs, Exec fields, and
+executable names are not package-ownership evidence.

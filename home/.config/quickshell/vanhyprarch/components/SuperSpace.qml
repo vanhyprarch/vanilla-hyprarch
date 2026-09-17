@@ -7,6 +7,7 @@ Scope {
     id: root
 
     required property InstallActions installActions
+    required property RemoveActions removeActions
     required property PowerActions powerActions
 
     property bool isOpen: false
@@ -29,6 +30,14 @@ Scope {
             detail: "Find and install software with yay",
             icon: "system-software-install",
             keywords: ["install", "package", "packages", "software", "yay"]
+        },
+        {
+            kind: "section",
+            sectionId: "remove",
+            label: "Remove",
+            detail: "Cleanly uninstall an installed package",
+            icon: "edit-delete",
+            keywords: ["remove", "uninstall", "package", "packages", "yay"]
         },
         {
             kind: "section",
@@ -85,10 +94,12 @@ Scope {
 
     function enterSection(sectionId: string): void {
         if (sectionId !== "apps" && sectionId !== "install"
-                && sectionId !== "power")
+                && sectionId !== "remove" && sectionId !== "power")
             return
         currentSection = sectionId
         searchText = ""
+        if (sectionId === "remove")
+            removeActions.refreshPackages()
     }
 
     function normalize(value): string {
@@ -217,6 +228,43 @@ Scope {
         ]
     }
 
+    function removeEntries(query: string): var {
+        const result = []
+        if (removeActions.loading || removeActions.errorMessage !== "")
+            return result
+        const packages = removeActions.packages
+
+        for (let index = 0; index < packages.length; ++index) {
+            const packageObject = packages[index]
+            const searchable = normalize(packageObject.name + " "
+                + packageObject.version)
+            const rank = query === "" ? 0
+                : matchRank(packageObject.name, searchable, query)
+            if (rank < 0)
+                continue
+
+            result.push({
+                kind: "removePackage",
+                label: packageObject.name,
+                detail: "Installed " + packageObject.version,
+                icon: "package-x-generic",
+                packageObject: packageObject,
+                danger: true,
+                rank: rank,
+                sourceIndex: index
+            })
+        }
+
+        result.sort(function(left, right) {
+            if (left.rank !== right.rank)
+                return left.rank - right.rank
+            const labelOrder = left.label.localeCompare(right.label)
+            return labelOrder !== 0 ? labelOrder
+                : left.sourceIndex - right.sourceIndex
+        })
+        return result
+    }
+
     function buildVisibleEntries(): var {
         // Keep the upstream model as a direct binding dependency while it scans.
         DesktopEntries.applications.values
@@ -247,6 +295,8 @@ Scope {
             return applicationEntries(query)
         if (currentSection === "install")
             return installEntries(query)
+        if (currentSection === "remove")
+            return removeEntries(query)
         if (currentSection === "power")
             return powerEntries(query)
         if (query === "")
@@ -288,6 +338,14 @@ Scope {
                 return
             close()
             installActions.executeSearch(search)
+            break
+        }
+        case "removePackage": {
+            const packageObject = entry.packageObject
+            if (removeActions.commandForPackage(packageObject).length === 0)
+                return
+            close()
+            removeActions.executePackage(packageObject)
             break
         }
         case "power":

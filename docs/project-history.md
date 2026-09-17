@@ -123,6 +123,26 @@ Display lock without a password, and cleanup without residual lock/player
 state or a double-lock. The current scope and remaining combinations are kept
 in `current-state.md`.
 
+## 2026-09-17: Typed Super+Space actions
+
+Super+Space first shipped Apps, Install, and Power using one global controller,
+one presentation per screen, native desktop entries, and typed action metadata.
+Install retained yay's complete interactive workflow without turning search
+text into shell syntax.
+
+Remove Package then added a transient installed-package catalog read directly
+from pacman's local database on every section entry. Search remains in-process,
+and only the exact stored package object can launch the deliberate clean
+uninstall command `yay -Rns -- <package>`. Pacman retains final
+transaction review and confirmation. Remove Application remains absent because
+a desktop entry is not sufficient package-ownership evidence.
+
+The initial Foot `--hold` integration preserved output but left no interactive
+process after yay exited. Install and Remove now share one Python terminal
+operation helper: it keeps yay attached to the terminal, retains the final
+output, and lets Enter close Foot cleanly after success, failure, or
+cancellation.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

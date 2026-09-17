@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import "components"
+import "../home/.config/quickshell/vanhyprarch/components"
 
 ShellRoot {
     id: root
@@ -14,6 +14,11 @@ ShellRoot {
         id: controller
     }
 
+    RemoveActions {
+        id: removeActions
+        enumerationEnabled: false
+    }
+
     PowerActions {
         id: powerActions
     }
@@ -21,6 +26,7 @@ ShellRoot {
     SuperSpace {
         id: superSpace
         installActions: controller
+        removeActions: removeActions
         powerActions: powerActions
     }
 
@@ -38,8 +44,8 @@ ShellRoot {
                 "--noconfirm firefox; touch /tmp/not-a-command")
             root.check(command.join("\n") === [
                 "/usr/bin/foot",
-                "--hold",
                 "--title=Vanilla HyprArch Install",
+                controller.terminalOperation,
                 "/usr/bin/yay",
                 "-Y",
                 "--",
@@ -48,11 +54,22 @@ ShellRoot {
                 "touch",
                 "/tmp/not-a-command"
             ].join("\n"), "search terms did not remain argv data")
+            root.check(controller.terminalOperation
+                    === removeActions.terminalOperation,
+                "Install and Remove do not share the terminal wrapper")
+            root.check(command[2] === controller.terminalOperation
+                    && command[3] === "/usr/bin/yay"
+                    && command[4] === "-Y",
+                "Install did not place the exact yay argv after the wrapper")
             root.check(command[5] === "--",
                 "yay option boundary is missing")
+            for (const forbidden of ["--hold", "/bin/sh", "/usr/bin/sh", "sh",
+                    "/bin/bash", "/usr/bin/bash", "bash", "eval"])
+                root.check(command.indexOf(forbidden) < 0,
+                    "unsafe Install argument present: " + forbidden)
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Power", "root section order changed")
+                === "Apps,Install,Remove,Power", "root section order changed")
             superSpace.enterSection("install")
             root.check(superSpace.currentSection === "install",
                 "Install section was rejected")

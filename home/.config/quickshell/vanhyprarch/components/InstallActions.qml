@@ -6,6 +6,8 @@ Scope {
 
     readonly property string footExecutable: "/usr/bin/foot"
     readonly property string yayExecutable: "/usr/bin/yay"
+    readonly property string terminalOperation:
+        Quickshell.shellDir + "/helpers/vanhyprarch_terminal_operation"
 
     function searchTerms(searchText: string): var {
         const trimmed = searchText.trim()
@@ -19,8 +21,8 @@ Scope {
 
         const command = [
             footExecutable,
-            "--hold",
             "--title=Vanilla HyprArch Install",
+            terminalOperation,
             yayExecutable,
             "-Y",
             "--"
