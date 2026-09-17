@@ -88,10 +88,10 @@ PopupWindow {
             anchors {
                 top: parent.top
                 left: parent.left
-                right: escapeHint.left
+                right: closeAction.left
                 topMargin: root.panelPadding
                 leftMargin: root.panelPadding
-                rightMargin: 12
+                rightMargin: root.metrics.contentGap
             }
             height: 34
             text: "Keyboard shortcuts"
@@ -102,21 +102,40 @@ PopupWindow {
             verticalAlignment: Text.AlignVCenter
         }
 
-        Text {
-            id: escapeHint
+        Rectangle {
+            id: closeAction
 
             anchors {
                 top: titleText.top
                 right: parent.right
                 rightMargin: root.panelPadding
             }
+            width: closeLabel.implicitWidth
+                + root.metrics.rowSidePadding * 2
             height: titleText.height
-            text: "Esc to close"
-            textFormat: Text.PlainText
-            color: root.theme.text
-            opacity: 0.65
-            font.pixelSize: 14
-            verticalAlignment: Text.AlignVCenter
+            color: closeMouse.pressed ? root.theme.pressedFill
+                : closeMouse.containsMouse ? root.theme.hoverFill
+                    : "transparent"
+
+            Text {
+                id: closeLabel
+
+                anchors.centerIn: parent
+                text: "Close · Esc"
+                textFormat: Text.PlainText
+                color: closeMouse.containsMouse
+                    ? root.theme.text : root.theme.textMuted
+                font.pixelSize: root.metrics.detailFontSize
+            }
+
+            MouseArea {
+                id: closeMouse
+
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.controller.close()
+            }
         }
 
         Rectangle {
