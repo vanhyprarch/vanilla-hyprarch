@@ -493,3 +493,24 @@ invoked by their resolved configuration-relative paths rather than being
 exported as public commands. Fixed or sensitive system dependencies may use
 explicit `/usr/bin/...` paths. Independently managed systemd user units must not
 rely on Hyprland having started early enough to supply their command path.
+
+## ADR-028: Make local dictation an optional verified upstream component
+
+**Status:** Accepted
+**Date:** 2026-09-17
+
+Push-to-talk dictation is optional and outside the required package baseline.
+Vanilla installs the pinned official Voxtype 1.0.1 x86_64 AVX2 CPU binary
+directly under `$HOME/.local/bin`, after independent SHA-256, detached OpenPGP
+signature, full primary-fingerprint, and version checks. It does not use an AUR
+Voxtype package or a floating release URL. `gnupg` and `wtype` are explicit
+optional official-repository dependencies.
+
+The default model is English-only `small.en`; model transport remains
+Voxtype-owned and Vanilla independently verifies the resulting model digest.
+GPU acceleration is never selected automatically. Hyprland owns only F9 press
+and release bindings and conditionally starts a fixed, non-enabled project user
+service. Voxtype's evdev hotkey is disabled, so dictation requires neither the
+`input` group nor uinput/ydotool. User configuration and model data survive a
+normal uninstall. Future model/language or GPU customization must preserve
+this binding and service architecture.

@@ -63,6 +63,21 @@ assert(sessionHome ~= nil and sessionHome ~= "", "HOME is not set")
 local inheritedPath = os.getenv("PATH") or ""
 hl.env("PATH", prependPathOnce(inheritedPath, sessionHome .. "/.local/bin"))
 
+local function dictationComponentInstalled()
+    local dataHome = os.getenv("XDG_DATA_HOME")
+    if dataHome == nil or dataHome == "" or dataHome:sub(1, 1) ~= "/" then
+        dataHome = sessionHome .. "/.local/share"
+    end
+
+    local marker = io.open(dataHome .. "/vanhyprarch/components/dictation", "r")
+    if marker == nil then
+        return false
+    end
+    local content = marker:read("*a")
+    marker:close()
+    return content == "vanhyprarch-dictation-v1\n"
+end
+
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
 
@@ -87,6 +102,9 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("/usr/bin/hypridle -v")
     hl.exec_cmd("qs -n -c vanhyprarch")
+    if dictationComponentInstalled() then
+        hl.exec_cmd("systemctl --user start vanhyprarch-voxtype.service")
+    end
 end)
 
 

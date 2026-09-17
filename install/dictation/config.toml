@@ -1,0 +1,40 @@
+engine = "whisper"
+state_file = "auto"
+
+[hotkey]
+enabled = false
+
+[audio]
+device = "default"
+sample_rate = 16000
+max_duration_secs = 60
+pause_media = true
+
+[audio.feedback]
+enabled = true
+theme = "default"
+volume = 1.0
+
+[whisper]
+mode = "local"
+model = "small.en"
+language = "en"
+translate = false
+on_demand_loading = false
+
+[output]
+mode = "type"
+fallback_to_clipboard = false
+driver_order = ["wtype"]
+type_delay_ms = 1
+pre_type_delay_ms = 0
+wait_for_modifier_release = false
+
+[output.notification]
+on_recording_start = false
+on_recording_stop = false
+on_transcription = false
+show_engine_icon = false
+
+[osd]
+enabled = false

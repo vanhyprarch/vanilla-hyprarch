@@ -186,6 +186,27 @@ starting its children. This establishes the canonical command location needed
 by the name-based Print Screen binding. Existing Power & Idle PATH safeguards
 remain pending a separate cold-start cleanup and validation pass.
 
+## 2026-09-17: Optional local push-to-talk dictation
+
+Vanilla HyprArch gained a deliberately separate dictation component built on
+the signed upstream Voxtype 1.0.1 CPU AVX2 executable. The component verifies a
+pinned binary digest, detached signature, exact signing fingerprint and
+version, delegates resumable `small.en` transport to Voxtype, then independently
+verifies the model before publishing its marker. `gnupg` and `wtype` remain
+optional official-package deltas; Voxtype is not sourced from the AUR.
+
+The first milestone is English-only and CPU-only. A fixed non-enabled systemd
+user service owns the daemon after Hyprland conditionally starts it. F9 press
+starts recording and F9 release stops, transcribes, and types. Voxtype's evdev
+hotkey, input-group access, GPU setup, ydotool, clipboard fallback, OSD,
+notifications, and Quickshell UI are absent. Normal uninstall preserves user
+configuration and the large downloaded model.
+
+Live validation then confirmed the verified installer and model, short and
+longer English dictation through `wtype`, approximately 1–2 second short-input
+latency, audible `default` feedback at volume `1.0`, and a cold logout/login
+with both F9 bindings, automatic service startup, and exactly one daemon.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

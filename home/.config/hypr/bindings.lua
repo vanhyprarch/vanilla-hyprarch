@@ -6,6 +6,23 @@ end
 
 local mainMod = "SUPER"
 
+local function dictationComponentInstalled()
+    local sessionHome = os.getenv("HOME")
+    assert(sessionHome ~= nil and sessionHome ~= "", "HOME is not set")
+    local dataHome = os.getenv("XDG_DATA_HOME")
+    if dataHome == nil or dataHome == "" or dataHome:sub(1, 1) ~= "/" then
+        dataHome = sessionHome .. "/.local/share"
+    end
+
+    local marker = io.open(dataHome .. "/vanhyprarch/components/dictation", "r")
+    if marker == nil then
+        return false
+    end
+    local content = marker:read("*a")
+    marker:close()
+    return content == "vanhyprarch-dictation-v1\n"
+end
+
 -- Applications
 bind(mainMod .. " + RETURN", "Apps", "Terminal", hl.dsp.exec_cmd("foot"))
 bind(mainMod .. " + SHIFT + RETURN", "Apps", "Browser", hl.dsp.exec_cmd("firefox"))
@@ -20,6 +37,14 @@ bind(mainMod .. " + SPACE", "Shell", "Open Super + Space",
 
 -- Capture
 bind("PRINT", "Capture", "Screenshot", hl.dsp.exec_cmd("vanhyprarch-screenshot"))
+
+-- Optional local dictation
+if dictationComponentInstalled() then
+    bind("F9", "Dictation", "Start recording",
+        hl.dsp.exec_cmd("voxtype record start"))
+    bind("F9", "Dictation", "Stop and transcribe",
+        hl.dsp.exec_cmd("voxtype record stop"), { release = true })
+end
 
 -- Window state
 bind(mainMod .. " + W", "Window", "Close window", hl.dsp.window.close())

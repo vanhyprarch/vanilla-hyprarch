@@ -1,0 +1,11 @@
+[Unit]
+Description=Vanilla HyprArch Voxtype dictation daemon
+Documentation=https://github.com/peteonrails/voxtype
+After=pipewire.service pipewire-pulse.service
+ConditionFileIsExecutable=%h/.local/bin/voxtype
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/voxtype -q daemon
+Restart=on-failure
+RestartSec=5s

@@ -32,6 +32,7 @@ Repository-managed sources:
 - `home/.config/quickshell/vanhyprarch/`
 - `install/configure-flatpak`
 - `install/install-zig-player`
+- `install/dictation/`
 
 Live paths:
 
@@ -94,6 +95,8 @@ Hyprland starts these processes on `hyprland.start`:
 2. `systemctl --user start hyprpolkitagent`
 3. `/usr/bin/hypridle -v`
 4. `qs -n -c vanhyprarch`
+5. `vanhyprarch-voxtype.service`, only when the exact optional-component
+   marker is installed
 
 The official `hyprpolkitagent` package provides graphical PolicyKit
 authentication for GUI applications that require privileged authorization.
@@ -113,6 +116,36 @@ change only to that file requires an explicit `hyprctl reload`.
 
 Hyprland's existing input configuration sets `numlock_by_default = true`, so
 Num Lock is enabled by default when the graphical session starts.
+
+## Optional local dictation — IMPLEMENTED AND VALIDATED
+
+The repository contains one opt-in component under `install/dictation/`; its
+official-package deltas are `gnupg` and `wtype` in
+`packages/optional-dictation-official.txt`. Neither package nor Voxtype is in
+the normal baseline or AUR manifest. The installer pins the official Voxtype
+1.0.1 x86_64 AVX2 CPU binary, verifies its SHA-256 and detached signature in a
+dedicated GPG home, verifies the full primary-key fingerprint, executes only
+the verified staged binary's `--version`, and atomically publishes it as
+`$HOME/.local/bin/voxtype`.
+
+The component asks Voxtype itself to download `small.en`, then independently
+requires the pinned size and SHA-256 for
+`$XDG_DATA_HOME/voxtype/models/ggml-small.en.bin`. Its default configuration
+is English-only local Whisper, CPU-only, built-in hotkeys off, and `wtype` as
+the sole output driver. Hyprland registers F9 press/release bindings and starts
+the non-enabled `vanhyprarch-voxtype.service` only when the exact managed
+component marker exists. No evdev listener, input-group access, GPU backend,
+Quickshell indicator, OSD, or notification is part of the milestone.
+
+The optional installer completed on the development machine with the verified
+Voxtype 1.0.1 binary and pinned `small.en` model. Short and longer English
+dictation passed through `wtype`; short transcription latency was approximately
+1–2 seconds with the CPU backend. The approved `default` feedback theme at
+volume `1.0` remained audible during concurrent desktop audio. A full
+logout/login registered both F9 bindings, started exactly one service-owned
+Voxtype daemon automatically, and required no manual service start. See [Local
+push-to-talk dictation](dictation.md) for the installation and validation
+contract.
 
 ## Shell architecture — IMPLEMENTED
 
@@ -442,7 +475,6 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Add local F9 push-to-talk dictation without introducing a hosted dependency.
 - Design an update-safe customization/override layer rather than asking users
   to edit future managed defaults in place.
 
@@ -459,4 +491,3 @@ workaround. Physical two-monitor validation remains pending.
 - Remove Application ownership mapping
 - Vanilla HyprArch self-update, pending the MANAGED / USER OVERRIDE / STATE
   deployment architecture
-- Local F9 push-to-talk dictation

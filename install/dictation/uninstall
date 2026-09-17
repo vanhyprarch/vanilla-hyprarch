@@ -1,0 +1,73 @@
+#!/bin/sh
+
+set -eu
+
+program_name=${0##*/}
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+canonical_metadata=$script_dir/voxtype.conf
+metadata_file=${VANHYPRARCH_VOXTYPE_METADATA:-$canonical_metadata}
+service_template=$script_dir/vanhyprarch-voxtype.service
+
+fail()
+{
+    printf '%s: %s\n' "$program_name" "$*" >&2
+    exit 1
+}
+
+[ "$(id -u)" -ne 0 ] || fail 'do not uninstall user dictation integration as root'
+[ -f "$metadata_file" ] && [ ! -L "$metadata_file" ] || fail 'invalid metadata file'
+if [ "$metadata_file" != "$canonical_metadata" ]; then
+    [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" = 1 ] ||
+        fail 'alternate metadata is allowed only for isolated tests'
+fi
+# shellcheck disable=SC1090
+. "$metadata_file"
+
+[ -n "${HOME:-}" ] || fail 'HOME is not set'
+case $HOME in /*) ;; *) fail 'HOME must be absolute' ;; esac
+config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+case $config_home in /*) ;; *) fail 'XDG_CONFIG_HOME must be absolute' ;; esac
+case $data_home in /*) ;; *) fail 'XDG_DATA_HOME must be absolute' ;; esac
+
+target_binary=$HOME/.local/bin/voxtype
+service_path=$config_home/systemd/user/vanhyprarch-voxtype.service
+marker_path=$data_home/vanhyprarch/components/dictation
+
+if [ -e "$target_binary" ] || [ -L "$target_binary" ]; then
+    [ -f "$target_binary" ] && [ ! -L "$target_binary" ] ||
+        fail "refusing to remove non-regular binary: $target_binary"
+    binary_sha=$(sha256sum "$target_binary" | awk '{ print $1 }')
+    [ "$binary_sha" = "$VANHYPRARCH_VOXTYPE_SHA256" ] ||
+        fail 'installed Voxtype binary is not the managed pinned artifact'
+fi
+if [ -e "$service_path" ] || [ -L "$service_path" ]; then
+    [ -f "$service_path" ] && [ ! -L "$service_path" ] ||
+        fail "refusing to remove non-regular service: $service_path"
+    cmp -s "$service_template" "$service_path" ||
+        fail 'installed Voxtype user service differs from the managed service'
+fi
+if [ -e "$marker_path" ] || [ -L "$marker_path" ]; then
+    [ -f "$marker_path" ] && [ ! -L "$marker_path" ] ||
+        fail "refusing to remove non-regular marker: $marker_path"
+    printf 'vanhyprarch-dictation-v1\n' | cmp -s - "$marker_path" ||
+        fail 'dictation component marker has unexpected content'
+fi
+
+systemctl_executable=${VANHYPRARCH_SYSTEMCTL_EXECUTABLE:-/usr/bin/systemctl}
+if [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" != 1 ]; then
+    [ "$systemctl_executable" = /usr/bin/systemctl ] || fail 'invalid systemctl override'
+fi
+[ -x "$systemctl_executable" ] || fail 'systemctl is required to stop the managed service'
+"$systemctl_executable" --user stop vanhyprarch-voxtype.service >/dev/null 2>&1 ||
+    fail 'could not stop vanhyprarch-voxtype.service; no managed files were removed'
+
+rm -f -- "$marker_path" "$service_path" "$target_binary"
+
+if ! "$systemctl_executable" --user daemon-reload >/dev/null 2>&1; then
+    printf '%s: warning: managed files were removed but the user manager needs a daemon-reload\n' \
+        "$program_name" >&2
+fi
+
+printf 'removed managed Vanilla dictation integration\n'
+printf 'preserved Voxtype configuration and model data under the XDG directories\n'

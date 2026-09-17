@@ -25,10 +25,41 @@ and removable local mitigations. Package selection belongs in
 | grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic tests and the real 10-bit workflow pass |
 | slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer selection passes |
 | wl-clipboard | 2.3.0 (`wl-clipboard 1:2.3.0-1`) | Installed clipboard publisher; deterministic MIME/byte-stream tests and real paste acceptance pass |
+| Voxtype | 1.0.1 upstream AVX2 binary | Optional CPU-only local dictation; deterministic and live cold-session audio/transcription/typing validation pass |
 
 This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
 separately when required.
+
+## Voxtype 1.0.1 integration boundary
+
+**Affected components:** Voxtype 1.0.1, Hyprland 0.56.2, systemd user services,
+PipeWire, and `wtype`
+
+Tagged Voxtype 1.0.1 supports `record start`, `record stop`, `-q daemon`, the
+`small.en` model name, and `setup --download --model small.en --quiet
+--no-post-install`. Its setup path creates missing Voxtype directories and a
+default config but does not install a service unless the separate systemd setup
+action is requested. Vanilla installs its template before model setup when no
+user config exists and deliberately never invokes `voxtype setup systemd`.
+
+The upstream service assumes graphical-session enablement and may include an
+optional ydotool dependency. That does not match the direct
+`Ly -> start-hyprland -> Hyprland` session, so Vanilla owns a smaller unit with
+only PipeWire ordering, a fixed `%h/.local/bin/voxtype -q daemon` command, and
+restart-on-failure. It has no `[Install]` section. Hyprland conditionally starts
+it from the exact component marker.
+
+The built-in hotkey remains disabled. This avoids Voxtype's evdev/input-group
+boundary, including reported failures when group membership changes; F9 press
+and release are compositor bindings. Output disables modifier-key polling and
+clipboard fallback and selects only `wtype`, so no evdev, uinput, or ydotool
+access is required. Retest the tagged schema, CLI, service assumptions, model
+mapping/hash, and press/release Lua API before a Voxtype or Hyprland upgrade.
+Live testing confirmed short and longer microphone capture, approximately 1–2
+second short-transcription latency, focused-application `wtype` injection,
+audible `default` feedback at volume `1.0`, automatic F9 registration and
+service startup after logout/login, and exactly one running daemon.
 
 ## Screenshot capture validation boundary
 

@@ -131,6 +131,41 @@ same-named remote with another URL fails closed and is not modified. After an
 add, the component verifies the resulting name and URL. It never deletes or
 rewrites user remotes, resets Flatpak state, or installs Flatpak applications.
 
+## Optional dictation installation
+
+Dictation is not a responsibility of the normal baseline bootstrap. An
+explicit opt-in first installs only the official package deltas listed in
+`packages/optional-dictation-official.txt`, then runs
+`install/dictation/install` as the target user. The component refuses root,
+unsupported architectures, CPUs without the x86-64-v3 features required by
+the chosen AVX2 artifact, missing dependencies, symlink destinations, invalid
+signatures, unexpected fingerprints, checksum mismatches, and version
+mismatches.
+
+The installer uses private temporary state and a dedicated GPG home. It stages
+the fixed Voxtype 1.0.1 AVX2 binary and signature, verifies the pinned SHA-256,
+signature, full primary fingerprint, and exact `voxtype 1.0.1` version output,
+then atomically deploys mode `0755` to `$HOME/.local/bin/voxtype`. It installs
+the default config only if the user has no Voxtype config; a differing config
+before the first managed install requires explicit review, while later updates
+preserve customization. The installed binary runs the stable upstream model
+workflow for `small.en`; Vanilla then verifies
+the fixed filename, byte size, and SHA-256 before publishing the service and
+component marker. No service is started or enabled by the installer.
+
+Updates are reviewed repository changes: select an explicit stable version and
+asset, review the signing fingerprint, update the expected binary digest, run
+the same staged signature/hash/version checks, replace atomically, then restart
+the project service only after validation. Configuration and models stay in
+place, and rollback material is retained until the replacement daemon is
+healthy. No automatic or `latest` update path exists.
+
+`install/dictation/uninstall` requires the project service to stop successfully,
+then removes only an exact managed marker, service file, and pinned binary. A
+failed stop removes nothing. It also fails closed instead of deleting modified
+or unknown files. Configuration and model data are preserved; deleting them
+belongs to a future explicit purge operation.
+
 ## Verified archinstall 4.4 capabilities
 
 `archinstall` is not installed on the current development system. The local

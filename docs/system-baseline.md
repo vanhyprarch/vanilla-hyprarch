@@ -41,6 +41,13 @@ install the version currently available from the enabled official repositories,
 and normal `yay -Syu` system upgrades keep it current. Flatpak is not sourced
 from the AUR and its locally validated version is not an installation pin.
 
+Optional feature manifests are additive and are never consumed by the normal
+baseline bootstrap implicitly. `packages/optional-dictation-official.txt`
+contains `gnupg` and `wtype`, both from the official repositories. GnuPG
+verifies the detached upstream Voxtype signature; `wtype` is Voxtype's sole
+configured Wayland typing driver. The Voxtype executable itself is a pinned,
+verified upstream release artifact, not an Arch or AUR package.
+
 ## Installation reproducibility
 
 One future bootstrap will consume this baseline, the package manifests, and
@@ -60,6 +67,7 @@ and unresolved choices are maintained in the canonical
 | Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
 | Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The independently released native client owns layer-shell output coverage, input absorption, and animation. |
+| Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1 | CPU-only local Whisper; Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 

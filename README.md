@@ -50,9 +50,11 @@ Matrix, Doom, and Game of Life.
   Power workflows with native catalogs and interactive package-manager
   transactions;
 - official Arch package manifests and a pinned, checksummed Zig Player
-  installer component.
+  installer component;
 - required, unpinned Flatpak from the official Arch repositories, with an
-  idempotent bootstrap component for the required system Flathub remote.
+  idempotent bootstrap component for the required system Flathub remote;
+- optional, offline F9 push-to-talk dictation using verified upstream Voxtype
+  1.0.1, the English-only `small.en` model, and official-repository `wtype`.
 
 ## Installation status
 
@@ -72,6 +74,13 @@ For development, public commands may be symlinked from `bin/` into
 `$HOME/.local/bin`. The future production bootstrap will install regular
 executables there atomically and will not depend on a Git checkout.
 
+Dictation is a separate opt-in component, not part of the baseline. Its
+installer, dependencies, exact verification chain, runtime activation, and
+conservative uninstall procedure are documented in
+[Local push-to-talk dictation](docs/dictation.md). The default is CPU-only,
+English-only, local/offline transcription: hold F9 to record and release it to
+transcribe and type through `wtype`.
+
 ## Alpha limitations
 
 Clean-install and first-reboot validation, portable monitor/Hyprlock/Hyprpaper
@@ -79,8 +88,8 @@ configuration, final light/dark wallpaper integration, and an update-safe user
 override layer remain future work. The pinned Zig Player release is currently
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
-and Vanilla HyprArch self-update and local F9 push-to-talk dictation are not
-implemented. Physical multi-monitor screenshot behavior remains pending.
+and Vanilla HyprArch self-update are not implemented. Physical multi-monitor
+screensaver and screenshot validation remains pending.
 Project self-update remains unavailable until a MANAGED / USER OVERRIDE / STATE
 deployment architecture exists. The detailed status and roadmap are in
 [current state](docs/current-state.md).
