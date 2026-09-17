@@ -117,6 +117,15 @@ Hyprland ownership. A second reboot then passed the normal Power & Idle UI apply
 and the complete 2-minute screensaver / 5-minute display-off / 10-minute suspend
 sequence with normal resume.
 
+The later unified graphical-session PATH prepended `$HOME/.local/bin` exactly
+once and passed a full logout/login test in Foot and Quickshell. The public
+screenshot command resolved by name and its workflow passed runtime testing;
+hypridle continued to operate, with the old wrapper visibly duplicating the
+same PATH entry. That evidence allowed startup to return to direct
+`/usr/bin/hypridle -v` and IdleController to use `vanhyprarch-idle` by name,
+while retaining the backend's captured-daemon-PATH restart and rollback
+transaction.
+
 Later controlled tests validated manual lock and password unlock, automatic
 lock at both the Screen saver and Display stages, dismissal before a later
 Display lock without a password, and cleanup without residual lock/player

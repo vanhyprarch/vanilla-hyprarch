@@ -492,7 +492,8 @@ daemon_is_owned()
     daemon_arguments=$(ps -o args= -p "$inspected_pid" 2>/dev/null) ||
         return 1
     [ "$daemon_arguments" = hypridle ] ||
-        [ "$daemon_arguments" = 'hypridle -v' ]
+        [ "$daemon_arguments" = 'hypridle -v' ] ||
+        [ "$daemon_arguments" = '/usr/bin/hypridle -v' ]
 }
 
 get_single_daemon()

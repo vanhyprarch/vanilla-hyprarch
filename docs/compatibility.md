@@ -22,9 +22,9 @@ and removable local mitigations. Package selection belongs in
 | Flatpak | 1.18.2 (`flatpak 1:1.18.2-1`) | Locally validated official package for interactive app/runtime updates; required but not version-pinned |
 | hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Wallpaper process launched by Hyprland; portable tracked configuration remains open work |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
-| grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic command tests pass, real 10-bit capture pending |
-| slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer acceptance pending |
-| wl-clipboard | 2.3.0 (`wl-clipboard 1:2.3.0-1`) | Installed clipboard publisher; deterministic MIME and byte-stream tests pass, real paste acceptance pending |
+| grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic tests and the real 10-bit workflow pass |
+| slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer selection passes |
+| wl-clipboard | 2.3.0 (`wl-clipboard 1:2.3.0-1`) | Installed clipboard publisher; deterministic MIME/byte-stream tests and real paste acceptance pass |
 
 This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
@@ -58,19 +58,22 @@ daemonizes or guarantees that descendants close captured descriptors.
 The development output currently uses `3840x2160` at scale 1.25 with the
 10-bit `XRGB2101010` format and the `wide` color-management preset.
 All three screenshot packages are installed, and the manifest also represents
-them as clean-install requirements. A real capture confirmed saved PNG output
-and `image/png` clipboard publication. Real region, window, and monitor
-selection; PNG color and resolution; application Ctrl+V paste; and multi-output
-behavior remain pending manual validation after deployment. Apart from the
-bounded `wl-copy` descriptor mitigation above, the helper does not freeze the
-screen or change cursor, scale, bit depth, or color-management settings. Retest
-these paths after Hyprland, grim, slurp, or wl-clipboard upgrades.
+them as clean-install requirements. The real name-based workflow passed after a
+full logout/login, including smart selection, saved PNG color and resolution,
+`image/png` clipboard publication, and application paste acceptance. Physical
+multi-output behavior remains pending. Apart from the bounded `wl-copy`
+descriptor mitigation above, the helper does not freeze the screen or change
+cursor, scale, bit depth, or color-management settings. Retest these paths after
+Hyprland, grim, slurp, or wl-clipboard upgrades.
 
-The tracked Hyprland configuration now establishes the user-local session PATH,
-but the running session has not been restarted with it. Manual acceptance must
-also verify PATH inheritance in Hyprland, Quickshell, Foot, hypridle, the
-screensaver controller, and the screenshot binding. Existing Power & Idle PATH
-workarounds remain until that separate cold-start validation succeeds.
+The user-local session PATH passed a full logout/login validation: new Foot and
+Quickshell processes saw `$HOME/.local/bin` first, the name-based screenshot
+command resolved, the complete screenshot workflow passed, and hypridle
+continued to resolve its project commands. The former hypridle startup wrapper
+and Quickshell-local PATH compensation are therefore removed. Retest direct
+hypridle ownership, one-daemon state, and a Power & Idle apply after deploying
+this cleanup; the backend's captured-daemon-PATH transaction is not part of the
+removed workaround.
 
 ## Quickshell Bluetooth pairing-agent boundary
 

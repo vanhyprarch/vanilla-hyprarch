@@ -78,7 +78,8 @@ needed, preserve rollback material before replacing a managed command, and
 verify executable ownership, mode, and content after publication. Repository
 development may use symlinks into `bin/`; production deployment uses regular
 files. Quickshell-private helpers stay inside the deployed named configuration
-and are not copied into the session command directory.
+at `Quickshell.shellDir/helpers` and are not copied into the session command
+directory.
 
 Post-install validation must verify that `/usr/bin/flatpak` is executable,
 that an enabled system remote named `flathub` exists, and that its URL is

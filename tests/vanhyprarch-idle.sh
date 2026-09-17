@@ -37,6 +37,16 @@ reject_command()
     fi
 }
 
+idle_source=$(cat -- "$idle")
+require_line "$idle_source" '        [ "$daemon_arguments" = '\''/usr/bin/hypridle -v'\'' ]'
+require_line "$idle_source" '    daemon_path=$(tr '\''\0'\'' '\''\n'\'' < "/proc/$daemon_pid/environ" |'
+require_line "$idle_source" '    PATH="$daemon_path" command -v hypridle >/dev/null'
+require_line "$idle_source" '    PATH="$daemon_path" command -v vanhyprarch-idle >/dev/null'
+require_line "$idle_source" '    PATH="$daemon_path" command -v vanhyprarch-screensaver >/dev/null'
+require_line "$idle_source" '    launch_hypridle "$daemon_path" "$hypridle_log"'
+require_line "$idle_source" '                if launch_hypridle "$daemon_path" "$rollback_log" &&'
+require_line "$idle_source" '    launch_command="exec env PATH=$quoted_path hypridle -v > $quoted_log 2>&1"'
+
 mkdir -p "$test_dir/home/.config/vanhyprarch" "$test_dir/runtime"
 export HOME=$test_dir/home
 export XDG_CONFIG_HOME=$HOME/.config

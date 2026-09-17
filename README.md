@@ -23,7 +23,9 @@ state belongs to `vanhyprarch-idle`, while Hyprland directly owns one
 
 The graphical session prepends `$HOME/.local/bin` exactly once to its inherited
 `PATH`. Public `vanhyprarch-*` session commands are installed there and invoked
-by name; helpers private to Quickshell remain inside its deployed configuration.
+by name; helpers private to Quickshell remain at
+`Quickshell.shellDir/helpers`, while fixed system dependencies may use explicit
+`/usr/bin/...` paths.
 
 Screensaver rendering is delegated to the independent
 [Vanilla HyprArch Zig Player](https://github.com/vanhyprarch/vanhyprarch-zig-player).
@@ -78,10 +80,9 @@ override layer remain future work. The pinned Zig Player release is currently
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
 and Vanilla HyprArch self-update and local F9 push-to-talk dictation are not
-implemented. Screenshot runtime acceptance, including the development
-machine's 10-bit output and real Ctrl+V paste behavior, remains pending.
-Project self-update remains unavailable until a MANAGED / USER OVERRIDE / STATE deployment
-architecture exists. The detailed status and roadmap are in
+implemented. Physical multi-monitor screenshot behavior remains pending.
+Project self-update remains unavailable until a MANAGED / USER OVERRIDE / STATE
+deployment architecture exists. The detailed status and roadmap are in
 [current state](docs/current-state.md).
 
 Architecture decisions, compatibility evidence, and version-specific retest

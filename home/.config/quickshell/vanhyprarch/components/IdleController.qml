@@ -20,18 +20,7 @@ Scope {
     readonly property bool busy: actionProcess.running || queuedAction !== null
     readonly property bool visualCaffeine: pendingCaffeine !== ""
         ? pendingCaffeine === "on" : caffeine
-    readonly property string backendCommand: {
-        const home = String(Quickshell.env("HOME") || "")
-        return home === "" ? "vanhyprarch-idle"
-            : home + "/.local/bin/vanhyprarch-idle"
-    }
-    readonly property string processPath: {
-        const home = String(Quickshell.env("HOME") || "")
-        const inherited = String(Quickshell.env("PATH") || "")
-        if (home === "")
-            return inherited
-        return home + "/.local/bin" + (inherited === "" ? "" : ":" + inherited)
-    }
+    readonly property string backendCommand: "vanhyprarch-idle"
     readonly property var timeoutPresets: ({
         screensaver: ["never", "120", "300", "600", "1200"],
         display: ["never", "300", "600", "1200", "1800"],
@@ -298,8 +287,6 @@ Scope {
     Process {
         id: statusProcess
 
-        environment: ({ "PATH": root.processPath })
-
         property string outputText: ""
         property string errorText: ""
         property bool exitReceived: false
@@ -389,8 +376,6 @@ Scope {
 
     Process {
         id: actionProcess
-
-        environment: ({ "PATH": root.processPath })
 
         property string outputText: ""
         property string errorText: ""

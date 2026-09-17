@@ -45,9 +45,10 @@ The live Quickshell path is a symlink to:
 
 `$HOME/Projects/vanilla-hyprarch/home/.config/quickshell/vanhyprarch`
 
-The live Hyprland files have not received the repository-only Print Screen
-binding or graphical-session PATH policy added on the screenshot branch. They
-have not been deployed or reloaded in the live session.
+The Print Screen binding and graphical-session PATH policy were deployed and
+validated after a full logout/login. New Foot and Quickshell processes both
+received `$HOME/.local/bin` first, and the name-based screenshot command
+resolved successfully.
 
 The tracked `hyprland.lua` is the current development-machine profile, not a
 portable Vanilla HyprArch default. It contains the development system's
@@ -84,14 +85,14 @@ Before registering its startup children, the tracked Lua configuration reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
 any existing `$HOME/.local/bin` entries, and prepends exactly one such entry
 while preserving every other entry and its order. Public session commands use
-stable `vanhyprarch-*` names from that directory. This repository-only policy
-has not yet been deployed or validated in a restarted graphical session.
+stable `vanhyprarch-*` names from that directory. A full logout/login validated
+this inheritance in new Foot and Quickshell processes.
 
 Hyprland starts these processes on `hyprland.start`:
 
 1. `hyprpaper`
 2. `systemctl --user start hyprpolkitagent`
-3. `sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v'`
+3. `/usr/bin/hypridle -v`
 4. `qs -n -c vanhyprarch`
 
 The official `hyprpolkitagent` package provides graphical PolicyKit
@@ -99,16 +100,12 @@ authentication for GUI applications that require privileged authorization.
 Its packaged user service is started by the direct Hyprland session and is not
 enabled as a separate login-time startup owner.
 
-The temporary shell only constructs the user-local `PATH`; `exec` replaces it
-with `/usr/bin/hypridle`, so the final daemon remains directly parented by
-Hyprland while being able to resolve Vanilla HyprArch executables from
-`$HOME/.local/bin`.
-
-That validated hypridle wrapper, Quickshell's explicit Power & Idle backend and
-process PATH, and the backend's transactional daemon-PATH capture/reuse remain
-intentionally unchanged. They are removed only in a separate architecture
-cleanup after a real cold-start test proves the unified PATH for Hyprland,
-Quickshell, Foot, hypridle, screensaver, and screenshot processes.
+The earlier shell wrapper was introduced after a real reboot showed that bare
+hypridle lacked the public-command path. The unified session PATH has now been
+validated across a full logout/login, so Hyprland launches the fixed packaged
+binary directly and Quickshell resolves `vanhyprarch-idle` by name from its
+inherited PATH. The backend's transactional daemon-PATH capture, validation,
+replacement, and rollback reuse remain unchanged.
 
 `-n` prevents a duplicate instance of the named Quickshell configuration.
 Bindings are loaded from `~/.config/hypr/bindings.lua` with Lua `dofile()`, so a
@@ -277,7 +274,7 @@ display-passkey, and service-authorization matrix; multi-monitor incoming
 prompt routing; and shell reload during active pairing remain pending
 real-hardware validation.
 
-## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATION PARTIAL
+## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATED
 
 Print Screen invokes the project-owned `vanhyprarch-screenshot` Python helper
 through the described Hyprland binding architecture. The helper uses fixed
@@ -292,8 +289,7 @@ unavailable Hyprland JSON degrades to ordinary unrestricted region selection.
 The canonical deployment target for the tracked
 `bin/vanhyprarch-screenshot` source is
 `$HOME/.local/bin/vanhyprarch-screenshot`. Development may use a symlink;
-production bootstrap will publish a regular executable there atomically. It is
-not deployed on the development machine in this branch.
+production bootstrap will publish a regular executable there atomically.
 
 After a valid selection, `grim` writes PNG data to a temporary file under the
 final directory. The helper validates the PNG signature, publishes it without
@@ -314,17 +310,17 @@ collisions, locking, and clipboard-failure preservation without opening a
 real graphical picker.
 
 `grim`, `slurp`, and `wl-clipboard` are installed on the development machine.
-The tracked binding has not been deployed or reloaded. A real capture confirmed
-that the PNG is saved and published to the clipboard as `image/png`. It also
-exposed a `wl-copy` lifecycle bug: a daemonized clipboard provider inherited a
-captured stderr pipe, so the helper retained its runtime lock until the
+The deployed name-based binding and complete screenshot workflow passed runtime
+testing after a full logout/login: the command resolved through the session
+PATH, saved the PNG, and published it to the clipboard as `image/png`. Testing
+also exposed a `wl-copy` lifecycle bug: a daemonized clipboard provider
+inherited a captured stderr pipe, so the helper retained its runtime lock until the
 clipboard changed. The helper now gives `wl-copy` an anonymous temporary file
 for stderr, allowing its launcher to return while its normal background
 provider continues serving repeated paste requests. A deterministic lifecycle
 test verifies that a second screenshot session can acquire the lock while the
-first provider remains alive. Real smart-selection behavior, 10-bit color and
-resolution, application Ctrl+V paste, and multi-output behavior remain manual
-acceptance items.
+first provider remains alive. Physical multi-output behavior remains a separate
+manual acceptance item.
 
 ## Power and idle — IMPLEMENTED, POWER/LOCK LIFECYCLE VALIDATED
 

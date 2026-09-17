@@ -397,10 +397,19 @@ os._exit(0)
                 self.assertIsNotNone(saved)
 
                 deadline = time.monotonic() + 1
-                while not provider_pid_file.exists() and time.monotonic() < deadline:
+                while provider_pid is None and time.monotonic() < deadline:
+                    try:
+                        candidate_pid = provider_pid_file.read_text(
+                            encoding="ascii"
+                        )
+                        if candidate_pid.isdigit():
+                            provider_pid = int(candidate_pid)
+                            break
+                    except FileNotFoundError:
+                        pass
                     time.sleep(0.01)
-                self.assertTrue(provider_pid_file.exists())
-                provider_pid = int(provider_pid_file.read_text(encoding="ascii"))
+                self.assertIsNotNone(provider_pid)
+                assert provider_pid is not None
                 self.assertTrue(provider_is_alive(provider_pid))
 
                 second = DaemonizingClipboardRunner()
@@ -505,25 +514,38 @@ assert(loadfile(arg[1]))()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("HOME is not set", result.stderr)
 
-    def test_screenshot_deployment_contract_keeps_transitional_workarounds(self) -> None:
+    def test_public_command_path_contract(self) -> None:
         installation = (
             REPOSITORY / "docs/installation-strategy.md"
         ).read_text(encoding="utf-8")
         self.assertIn("`vanhyprarch-screenshot`, under `$HOME/.local/bin`", installation)
         self.assertIn("production deployment uses regular\nfiles", installation)
+        self.assertIn("verify executable ownership, mode, and content", installation)
+        self.assertIn("Quickshell-private helpers stay inside", installation)
 
         hyprland = HYPRLAND_CONFIG.read_text(encoding="utf-8")
-        self.assertIn(
-            'sh -lc \'export PATH="$HOME/.local/bin:$PATH"; '
-            "exec hypridle -v'",
-            hyprland,
-        )
+        self.assertIn('hl.exec_cmd("/usr/bin/hypridle -v")', hyprland)
+        self.assertNotIn("sh -lc", hyprland)
+        self.assertNotIn("export PATH", hyprland)
+        self.assertNotIn("exec hypridle -v", hyprland)
+
         idle_controller = (
             REPOSITORY
             / "home/.config/quickshell/vanhyprarch/components/IdleController.qml"
         ).read_text(encoding="utf-8")
-        self.assertIn('home + "/.local/bin/vanhyprarch-idle"', idle_controller)
-        self.assertIn('environment: ({ "PATH": root.processPath })', idle_controller)
+        self.assertIn(
+            'readonly property string backendCommand: "vanhyprarch-idle"',
+            idle_controller,
+        )
+        self.assertNotIn("/.local/bin/vanhyprarch-idle", idle_controller)
+        self.assertNotIn("processPath", idle_controller)
+        self.assertNotIn('environment: ({ "PATH"', idle_controller)
+
+        screensaver = (
+            REPOSITORY / "bin/vanhyprarch-screensaver"
+        ).read_text(encoding="utf-8")
+        self.assertIn("command -v vanhyprarch-idle", screensaver)
+        self.assertIn("command -v vanhyprarch-zig-player", screensaver)
 
 
 if __name__ == "__main__":

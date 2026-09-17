@@ -103,32 +103,33 @@ making Lock `none` and Caffeine meaningful even for pre-sleep handling.
 
 ## Deployment and rollback
 
-During development, `~/.local/bin/vanhyprarch-idle` is a symlink to the tracked
-backend. The controller and separately installed `vanhyprarch-zig-player` must
-both be in hypridle's PATH; the pinned player installer defaults to
-`$HOME/.local/bin`. A future shared bootstrap must deploy the static main
+During development, `~/.local/bin/vanhyprarch-idle` may be a symlink to the
+tracked backend. The controller and separately installed
+`vanhyprarch-zig-player` must both be in hypridle's inherited PATH; production
+installs regular executables in `$HOME/.local/bin` without depending on a Git
+checkout. A future shared bootstrap must also deploy the static main
 configuration and initial generated fragment and create the default preference
-file without depending on a Git checkout.
+file.
 
-On normal Hyprland startup, hypridle is launched through
-`sh -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hypridle -v'`. The shell is
-replaced by `exec`, leaving `/usr/bin/hypridle` directly parented by Hyprland
-while exposing the user-local Vanilla HyprArch executables in its `PATH`.
-
-A real reboot validated this cold-start contract, followed by a successful
-Power & Idle apply and a complete 2-minute screensaver / 5-minute display-off /
-10-minute suspend sequence with normal resume.
+An earlier real reboot showed that bare hypridle did not inherit that directory,
+so startup temporarily used a shell to prepend it. After the unified Hyprland
+session PATH passed a full logout/login test in Foot, Quickshell, hypridle, and
+the screenshot workflow, normal startup became direct
+`/usr/bin/hypridle -v`. Hyprland remains the direct owner of exactly one daemon.
 
 The backend validates the candidate fragment with a disconnected verbose
 hypridle parse before deployment. It requires exactly one existing hypridle
-whose executable and parent identify it as the direct Hyprland-owned daemon,
-and requires the packaged user service to remain disabled and inactive.
+whose executable, exact supported argument vector, and parent identify it as
+the direct Hyprland-owned daemon, and requires the packaged user service to
+remain disabled and inactive.
 
-It saves the previous fragment, replaces the file atomically, stops only that
-validated daemon, and launches one replacement through Hyprland's Lua
-`hl.exec_cmd` API with the existing daemon PATH. The replacement log must show
+It reads PATH from that exact validated daemon, verifies the required commands
+against that PATH, saves the previous fragment, replaces the file atomically,
+stops only that daemon, and launches one replacement through Hyprland's Lua
+`hl.exec_cmd` API with the captured daemon PATH. The replacement log must show
 the exact expected listener count. Any failure restores the prior fragment and
-attempts to launch and validate one daemon against the previous count.
+attempts to launch and validate one daemon against the previous count using the
+same captured PATH.
 Preference and Caffeine updates are also rolled back if the effective
 configuration cannot be applied.
 

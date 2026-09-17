@@ -72,14 +72,17 @@ Hyprland constructs the graphical-session `PATH` before starting children by
 reading `HOME` and the inherited `PATH`, then prepending `$HOME/.local/bin`
 exactly once. Public project commands use stable `vanhyprarch-*` names and are
 deployed as regular executable files in that directory. Quickshell-private
-helpers remain under `Quickshell.shellDir`; fixed or sensitive packaged tools
-may be addressed through `/usr/bin/...`.
+helpers remain under `Quickshell.shellDir/helpers`; fixed or sensitive packaged
+tools may be addressed through `/usr/bin/...`.
 
 Development may symlink public commands from the repository into
 `$HOME/.local/bin`. Production bootstrap must create the user-owned directory
 when needed and atomically install regular files without requiring the source
-checkout. The existing hypridle and Power & Idle PATH handling remains in place
-until separate cold-start validation covers every session consumer.
+checkout, then validate their ownership and executable mode. After logout/login
+validation of the unified session PATH, Hyprland launches `/usr/bin/hypridle`
+directly and Quickshell resolves `vanhyprarch-idle` by name. Power & Idle still
+captures the validated daemon's exact PATH and reuses it for transactional
+replacement and rollback.
 
 The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
 configuration for the main shell. It will install `vanhyprarch-idle`,

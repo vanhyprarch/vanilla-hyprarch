@@ -488,8 +488,8 @@ starting session children. Development deployments may use symlinks; the
 future production bootstrap must install commands atomically without depending
 on a Git checkout.
 
-Quickshell-private helpers remain beneath `Quickshell.shellDir` and are invoked
-by their resolved configuration-relative paths rather than being exported as
-public commands. Fixed or sensitive system dependencies may use explicit
-`/usr/bin/...` paths. Independently managed systemd user units must not rely on
-Hyprland having started early enough to supply their command path.
+Quickshell-private helpers remain beneath `Quickshell.shellDir/helpers` and are
+invoked by their resolved configuration-relative paths rather than being
+exported as public commands. Fixed or sensitive system dependencies may use
+explicit `/usr/bin/...` paths. Independently managed systemd user units must not
+rely on Hyprland having started early enough to supply their command path.
