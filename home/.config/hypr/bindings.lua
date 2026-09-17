@@ -15,6 +15,8 @@ bind(mainMod .. " + SHIFT + F", "Apps", "File manager", hl.dsp.exec_cmd("thunar"
 -- Shell
 bind(mainMod .. " + K", "Shell", "Show shortcuts",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.shortcuts toggle"))
+bind(mainMod .. " + SPACE", "Shell", "Open Super + Space",
+    hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.superSpace toggle"))
 
 -- Window state
 bind(mainMod .. " + W", "Window", "Close window", hl.dsp.window.close())

@@ -1,13 +1,13 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 
 Item {
     id: root
 
     required property var theme
     required property var metrics
+    required property PowerActions powerActions
     readonly property int buttonSize: root.metrics.dockPowerButtonTarget
     property int bottomMargin: root.metrics.dockOuterInset
     property color iconColor: root.theme.accent
@@ -22,25 +22,25 @@ Item {
     height: implicitHeight
     anchors.bottomMargin: bottomMargin
 
-    function runAction(action: string): void {
-        popup.visible = false
-        switch (action) {
-        case "lock":
-            Quickshell.execDetached(["loginctl", "lock-session"])
-            break
-        case "suspend":
-            Quickshell.execDetached(["systemctl", "suspend"])
-            break
-        case "logout":
-            Quickshell.execDetached(["hyprshutdown"])
-            break
-        case "reboot":
-            Quickshell.execDetached(["systemctl", "reboot"])
-            break
-        case "poweroff":
-            Quickshell.execDetached(["systemctl", "poweroff"])
-            break
+    function requestAction(action: string): void {
+        if (powerActions.requiresConfirmation(action)) {
+            pendingAction = action
+            return
         }
+
+        popup.visible = false
+        powerActions.execute(action)
+    }
+
+    function actionLabel(action: string): string {
+        const candidate = powerActions.action(action)
+        return candidate ? candidate.label : ""
+    }
+
+    function confirmPendingAction(): void {
+        const action = pendingAction
+        popup.visible = false
+        powerActions.execute(action)
     }
 
     function clearTransientMenuFocus(): void {
@@ -176,24 +176,24 @@ Item {
                 visible: root.pendingAction === ""
 
                 CompactActionRow {
-                    primaryText: "Lock"
-                    onActivated: root.runAction("lock")
+                    primaryText: root.actionLabel("lock")
+                    onActivated: root.requestAction("lock")
                 }
                 CompactActionRow {
-                    primaryText: "Suspend"
-                    onActivated: root.runAction("suspend")
+                    primaryText: root.actionLabel("suspend")
+                    onActivated: root.requestAction("suspend")
                 }
                 CompactActionRow {
-                    primaryText: "Logout"
-                    onActivated: root.pendingAction = "logout"
+                    primaryText: root.actionLabel("logout")
+                    onActivated: root.requestAction("logout")
                 }
                 CompactActionRow {
-                    primaryText: "Reboot"
-                    onActivated: root.pendingAction = "reboot"
+                    primaryText: root.actionLabel("reboot")
+                    onActivated: root.requestAction("reboot")
                 }
                 CompactActionRow {
-                    primaryText: "Power off"
-                    onActivated: root.pendingAction = "poweroff"
+                    primaryText: root.actionLabel("poweroff")
+                    onActivated: root.requestAction("poweroff")
                 }
             }
 
@@ -207,8 +207,7 @@ Item {
                 Text {
                     width: parent.width
                     height: root.metrics.compactActionRowHeight
-                    text: root.pendingAction === "logout" ? "Logout?"
-                        : root.pendingAction === "reboot" ? "Reboot?" : "Power off?"
+                    text: root.actionLabel(root.pendingAction) + "?"
                     color: root.theme.text
                     font.pixelSize: root.metrics.informationLabelFontSize
                     font.weight: root.metrics.informationLabelFontWeight
@@ -232,7 +231,7 @@ Item {
                         label: "Confirm"
                         danger: true
                         buttonWidth: (parent.width - parent.spacing) / 2
-                        onActivated: root.runAction(root.pendingAction)
+                        onActivated: root.confirmPendingAction()
                     }
                 }
             }

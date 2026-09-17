@@ -103,6 +103,7 @@ The named Quickshell configuration and application state namespace are
 
 - `vanhyprarch.shell`
 - `vanhyprarch.shortcuts`
+- `vanhyprarch.superSpace`
 
 Future project-owned IPC targets use `vanhyprarch.<component>`. The intended
 managed idle fragment name is `vanhyprarch-idle.conf`.
@@ -399,3 +400,26 @@ OFF preference does not incur an automatic ON followed by a session-level OFF.
 An ON preference is restored when the shell and adapter are available. This
 keeps BlueZ and Quickshell upstream, does not poll, and treats multiple
 adapters as one user-facing Bluetooth radio policy.
+
+## ADR-025: Build Super+Space from native catalogs and typed actions
+
+**Status:** Accepted
+**Date:** 2026-09-17
+**Implementation:** Apps and Power foundation implemented and loaded by the
+live shell; visual and interaction behavior pending manual validation
+
+Super+Space has one global navigation/search controller and one presentation
+surface per Quickshell screen. Installed applications come directly from
+`DesktopEntries.applications` and launch through `DesktopEntry.execute()`;
+Vanilla HyprArch does not persist or wrap a second application catalog.
+
+Power operations are explicit project actions shared with PowerMenu. Lock and
+Suspend execute immediately. Logout, Reboot, and Power off require
+confirmation. The commands remain `loginctl lock-session`, `systemctl
+suspend`, `hyprshutdown`, `systemctl reboot`, and `systemctl poweroff`.
+
+Filtering is synchronous and in-process over native objects and typed action
+metadata. It does not invoke a subprocess per keystroke or turn search results
+into arbitrary shell command strings. The top-level section model is designed
+to accept later Install, Remove, and Update work, but unimplemented sections
+must not be exposed as placeholders.

@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-15.
+Snapshot date: 2026-09-17.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -104,16 +104,17 @@ Num Lock is enabled by default when the graphical session starts.
 ## Shell architecture — IMPLEMENTED
 
 `ShellRoot` owns global state and controllers, including the single
-`LauncherStore` used by every dock. A `Variants` instance models
-`Quickshell.screens`; each delegate owns its per-screen `Launchers`
-presentation, permanent dock, and transparent shortcut-anchor surfaces. This
-screen lifecycle structure is the validated fix for dock loss after suspend
-and resume.
+`LauncherStore`, `PowerActions`, and Super+Space controller. A `Variants`
+instance models `Quickshell.screens`; each delegate owns its per-screen
+`Launchers` presentation, permanent dock, Super+Space and Shortcuts popup
+presentations, and transparent popup-anchor surface. This screen lifecycle
+structure is the validated fix for dock loss after suspend and resume.
 
 Current IPC targets are:
 
 - `vanhyprarch.shell`, exposing `ping()`
 - `vanhyprarch.shortcuts`, exposing `open()`, `close()`, and `toggle()`
+- `vanhyprarch.superSpace`, exposing `open()`, `close()`, and `toggle()`
 
 ## User interface — IMPLEMENTED
 
@@ -139,8 +140,22 @@ The current Quickshell UI includes:
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
+- a keyboard-and-mouse Super+Space surface with Apps and Power sections,
+  in-process search over `DesktopEntries.applications` and typed power action
+  metadata, and confirmation for logout, reboot, and power off;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
+
+Super+Space uses `DesktopEntries.applications` directly and launches through
+the native `DesktopEntry.execute()` API. It has no project-owned application
+catalog and starts no search subprocess. One global `PowerActions` controller
+now supplies both Super+Space and the existing PowerMenu with the validated
+commands and confirmation policy; the PowerMenu presentation is unchanged.
+The surface opens on the focused monitor through Super+Space or the named IPC
+target, supports pointer activation plus Up, Down, Enter, and Escape, and uses
+the shared panel, row, theme, metric, and global text-size foundations. The
+live named configuration loaded cleanly and exposes the expected IPC methods;
+visual and interaction validation remain pending.
 
 The desktop uses 5-pixel inner and 10-pixel outer Hyprland gaps with square
 application windows. Network, Bluetooth, Audio, and Display use the centralized
@@ -319,8 +334,9 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Build the reserved Super+Space main menu and screenshot-to-clipboard
-  workflow as separate features.
+- Extend Super+Space with deliberately designed Install, Remove, and Update
+  sections; no inactive placeholders are currently shown.
+- Build the screenshot-to-clipboard workflow as a separate feature.
 - Add local F9 push-to-talk dictation without introducing a hosted dependency.
 - Design an update-safe customization/override layer rather than asking users
   to edit future managed defaults in place.
@@ -335,6 +351,6 @@ workaround. Physical two-monitor validation remains pending.
 ### NOT IMPLEMENTED
 
 - Shared bootstrap and optional archinstall integration
-- Super+Space main menu
+- Super+Space Install, Remove, and Update sections
 - Screenshot-to-clipboard workflow
 - Local F9 push-to-talk dictation

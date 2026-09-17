@@ -35,6 +35,15 @@ ShellRoot {
         id: shortcuts
     }
 
+    PowerActions {
+        id: powerActions
+    }
+
+    SuperSpace {
+        id: superSpace
+        powerActions: powerActions
+    }
+
     IdleController {
         id: idleController
     }
@@ -52,6 +61,7 @@ ShellRoot {
     }
 
     readonly property var globalTextSizeController: textSizeController
+    readonly property PowerActions globalPowerActions: powerActions
     readonly property int dockWidth: visualMetrics.dockWidth
     readonly property int cornerRadius: visualMetrics.legacyPopupRadius
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
@@ -122,6 +132,7 @@ ShellRoot {
             id: powerMenu
             theme: shellTheme
             metrics: visualMetrics
+            powerActions: root.globalPowerActions
 
             anchors {
                 bottom: parent.bottom
@@ -240,6 +251,17 @@ ShellRoot {
         screenHeight: screenScope.modelData.height
         dockWidth: root.dockWidth
         popupRadius: root.cornerRadius
+    }
+
+    SuperSpacePanel {
+        metrics: visualMetrics
+        controller: superSpace
+        theme: shellTheme
+        anchorItem: shortcutsAnchor
+        screenName: screenScope.modelData.name
+        screenWidth: screenScope.modelData.width
+        screenHeight: screenScope.modelData.height
+        dockWidth: root.dockWidth
     }
 
     PanelWindow {
