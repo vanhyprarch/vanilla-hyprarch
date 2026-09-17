@@ -6,6 +6,7 @@ import Quickshell.Io
 Scope {
     id: root
 
+    required property InstallActions installActions
     required property PowerActions powerActions
 
     property bool isOpen: false
@@ -20,6 +21,14 @@ Scope {
             label: "Apps",
             detail: "Launch an installed application",
             icon: "view-app-grid-symbolic"
+        },
+        {
+            kind: "section",
+            sectionId: "install",
+            label: "Install",
+            detail: "Find and install software with yay",
+            icon: "system-software-install",
+            keywords: ["install", "package", "packages", "software", "yay"]
         },
         {
             kind: "section",
@@ -75,7 +84,8 @@ Scope {
     }
 
     function enterSection(sectionId: string): void {
-        if (sectionId !== "apps" && sectionId !== "power")
+        if (sectionId !== "apps" && sectionId !== "install"
+                && sectionId !== "power")
             return
         currentSection = sectionId
         searchText = ""
@@ -168,6 +178,45 @@ Scope {
         return result
     }
 
+    function matchingSections(query: string): var {
+        const result = []
+
+        for (let index = 0; index < sections.length; ++index) {
+            const section = sections[index]
+            if (!section.keywords)
+                continue
+
+            const searchable = normalize(section.label + " "
+                + section.keywords.join(" "))
+            const rank = matchRank(section.label, searchable, query)
+            if (rank < 0)
+                continue
+
+            result.push(Object.assign({}, section, {
+                rank: rank,
+                sourceIndex: index
+            }))
+        }
+
+        return result
+    }
+
+    function installEntries(query: string): var {
+        if (query === "")
+            return []
+
+        return [
+            {
+                kind: "installSearch",
+                label: "Install with yay",
+                detail: "Search repositories and AUR for “"
+                    + searchText.trim() + "”",
+                icon: "system-software-install",
+                searchText: searchText
+            }
+        ]
+    }
+
     function buildVisibleEntries(): var {
         // Keep the upstream model as a direct binding dependency while it scans.
         DesktopEntries.applications.values
@@ -196,17 +245,22 @@ Scope {
         const query = normalize(searchText)
         if (currentSection === "apps")
             return applicationEntries(query)
+        if (currentSection === "install")
+            return installEntries(query)
         if (currentSection === "power")
             return powerEntries(query)
         if (query === "")
             return sections
 
-        const combined = applicationEntries(query).concat(powerEntries(query))
+        const combined = matchingSections(query)
+            .concat(applicationEntries(query), powerEntries(query))
         combined.sort(function(left, right) {
             if (left.rank !== right.rank)
                 return left.rank - right.rank
             if (left.kind !== right.kind)
-                return left.kind === "application" ? -1 : 1
+                return left.kind === "section" ? -1
+                    : right.kind === "section" ? 1
+                        : left.kind === "application" ? -1 : 1
             const labelOrder = left.label.localeCompare(right.label)
             return labelOrder !== 0 ? labelOrder
                 : left.sourceIndex - right.sourceIndex
@@ -228,6 +282,14 @@ Scope {
             close()
             entry.desktopEntry.execute()
             break
+        case "installSearch": {
+            const search = entry.searchText
+            if (installActions.commandForSearch(search).length === 0)
+                return
+            close()
+            installActions.executeSearch(search)
+            break
+        }
         case "power":
             if (powerActions.requiresConfirmation(entry.actionId))
                 pendingPowerAction = entry.actionId

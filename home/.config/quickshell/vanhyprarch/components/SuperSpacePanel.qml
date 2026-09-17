@@ -218,6 +218,8 @@ PopupWindow {
                 visible: searchInput.text.length === 0
                 text: root.controller.currentSection === "apps"
                     ? "Search applications"
+                    : root.controller.currentSection === "install"
+                        ? "Enter package or search terms"
                     : root.controller.currentSection === "power"
                         ? "Search power actions" : "Search apps and actions"
                 textFormat: Text.PlainText
@@ -265,6 +267,8 @@ PopupWindow {
             theme: root.theme
             text: root.confirming ? "Choose an action"
                 : root.controller.currentSection === "apps" ? "Apps"
+                    : root.controller.currentSection === "install"
+                        ? "Install packages"
                     : root.controller.currentSection === "power" ? "Power"
                         : root.controller.searchText.trim() === ""
                             ? "Choose a section" : "Results"
@@ -346,7 +350,9 @@ PopupWindow {
         Text {
             anchors.fill: entriesView
             visible: root.controller.visibleEntries.length === 0
-            text: "No matching apps or actions"
+            text: root.controller.currentSection === "install"
+                ? "Enter package terms to search with yay"
+                : "No matching apps or actions"
             textFormat: Text.PlainText
             color: root.theme.textMuted
             font.pixelSize: root.metrics.overlayFontSize
@@ -363,8 +369,13 @@ PopupWindow {
                 right: parent.right
             }
             height: root.metrics.captionLineHeight
-            text: root.controller.visibleEntries.length === 1
-                ? "1 result" : root.controller.visibleEntries.length + " results"
+            text: root.controller.currentSection === "install"
+                ? root.controller.searchText.trim() === ""
+                    ? "Type package terms, then press Enter"
+                    : "Enter or click to open yay in Foot"
+                : root.controller.visibleEntries.length === 1
+                    ? "1 result"
+                    : root.controller.visibleEntries.length + " results"
             textFormat: Text.PlainText
             color: root.theme.textMuted
             font.pixelSize: root.metrics.captionFontSize

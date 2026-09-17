@@ -104,7 +104,8 @@ Num Lock is enabled by default when the graphical session starts.
 ## Shell architecture — IMPLEMENTED
 
 `ShellRoot` owns global state and controllers, including the single
-`LauncherStore`, `PowerActions`, and Super+Space controller. A `Variants`
+`LauncherStore`, typed Install and Power actions, and the Super+Space
+controller. A `Variants`
 instance models `Quickshell.screens`; each delegate owns its per-screen
 `Launchers` presentation, permanent dock, Super+Space and Shortcuts popup
 presentations, and transparent popup-anchor surface. This screen lifecycle
@@ -140,9 +141,9 @@ The current Quickshell UI includes:
 - a persistent light/dark shell theme using Papirus icons;
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
-- a keyboard-and-mouse Super+Space surface with Apps and Power sections,
-  in-process search over `DesktopEntries.applications` and typed power action
-  metadata, and confirmation for logout, reboot, and power off;
+- a keyboard-and-mouse Super+Space surface with Apps, Install, and Power
+  sections, in-process search over `DesktopEntries.applications` and typed
+  action metadata, and confirmation for logout, reboot, and power off;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings.
 
@@ -151,6 +152,14 @@ the native `DesktopEntry.execute()` API. It has no project-owned application
 catalog and starts no search subprocess. One global `PowerActions` controller
 now supplies both Super+Space and the existing PowerMenu with the validated
 commands and confirmation policy; the PowerMenu presentation is unchanged.
+Install accepts package search terms only after the user enters its section
+and explicitly activates the typed action. It closes Super+Space and launches
+the installed yay 13.0.1 workflow visibly in Foot 1.28.0 with a direct argument
+vector, an option boundary, and terminal hold. No result-ordering option is
+supplied, so yay retains the user's configured or default ordering. Empty
+searches are rejected, user text never enters a shell command, and yay retains
+all interactive selection, review, authentication, and confirmation prompts.
+No package catalog or yay-output parser is maintained by the project.
 The surface opens on the focused monitor through Super+Space or the named IPC
 target, supports pointer activation plus Up, Down, Enter, and Escape, and uses
 the shared panel, row, theme, metric, and global text-size foundations. The
@@ -334,8 +343,8 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Extend Super+Space with deliberately designed Install, Remove, and Update
-  sections; no inactive placeholders are currently shown.
+- Extend Super+Space with deliberately designed Remove and Update sections;
+  no inactive placeholders are currently shown.
 - Build the screenshot-to-clipboard workflow as a separate feature.
 - Add local F9 push-to-talk dictation without introducing a hosted dependency.
 - Design an update-safe customization/override layer rather than asking users
@@ -351,6 +360,6 @@ workaround. Physical two-monitor validation remains pending.
 ### NOT IMPLEMENTED
 
 - Shared bootstrap and optional archinstall integration
-- Super+Space Install, Remove, and Update sections
+- Super+Space Remove and Update sections
 - Screenshot-to-clipboard workflow
 - Local F9 push-to-talk dictation

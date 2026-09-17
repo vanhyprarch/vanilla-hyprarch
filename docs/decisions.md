@@ -405,7 +405,7 @@ adapters as one user-facing Bluetooth radio policy.
 
 **Status:** Accepted
 **Date:** 2026-09-17
-**Implementation:** Apps and Power foundation implemented and loaded by the
+**Implementation:** Apps, Install, and Power implemented and loaded by the
 live shell; visual and interaction behavior pending manual validation
 
 Super+Space has one global navigation/search controller and one presentation
@@ -420,6 +420,14 @@ suspend`, `hyprshutdown`, `systemctl reboot`, and `systemctl poweroff`.
 
 Filtering is synchronous and in-process over native objects and typed action
 metadata. It does not invoke a subprocess per keystroke or turn search results
-into arbitrary shell command strings. The top-level section model is designed
-to accept later Install, Remove, and Update work, but unimplemented sections
+into arbitrary shell command strings.
+
+Install is an explicit typed action which accepts non-empty search terms only.
+Activation closes Super+Space and starts `/usr/bin/yay -Y -- <terms>` inside
+`/usr/bin/foot --hold` through one direct argument vector. No result-ordering
+option is supplied, so yay retains the user's configured or default ordering.
+No shell parses user text, `--` prevents yay option injection, and yay retains
+its normal package selection, PKGBUILD, provider, dependency, conflict,
+authentication, and confirmation prompts. Super+Space neither parses yay
+output nor owns a package catalog. Remove and Update remain unimplemented and
 must not be exposed as placeholders.

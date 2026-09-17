@@ -39,8 +39,13 @@ ShellRoot {
         id: powerActions
     }
 
+    InstallActions {
+        id: installActions
+    }
+
     SuperSpace {
         id: superSpace
+        installActions: installActions
         powerActions: powerActions
     }
 
