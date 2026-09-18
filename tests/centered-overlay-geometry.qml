@@ -6,8 +6,10 @@ TestCase {
     name: "CenteredOverlayGeometry"
 
     function verifyCentered(surfaceName, monitor, dockWidth, surface, popup) {
-        const left = Geometry.usableCoordinate(monitor.x, monitor.width,
-            dockWidth, surface.width)
+        const usableOriginX = monitor.x + dockWidth
+        const relativeLeft = Geometry.usableMargin(monitor.width, dockWidth,
+            surface.width)
+        const left = usableOriginX + relativeLeft
         const top = Geometry.coordinate(monitor.y, monitor.height, surface.height)
         const centerX = left + surface.width / 2
         const centerY = top + surface.height / 2
@@ -47,12 +49,32 @@ TestCase {
     }
 
     function test_marginUsesMonitorLocalGeometry() {
-        compare(Geometry.usableMargin(1920, 56, 900), 538)
-        compare(Geometry.usableMargin(2560, 72, 900), 866)
-        compare(Geometry.usableMargin(3840, 64, 900), 1502)
+        compare(Geometry.usableMargin(1920, 56, 900), 482)
+        compare(Geometry.usableMargin(2560, 72, 900), 794)
+        compare(Geometry.usableMargin(3840, 64, 900), 1438)
         compare(Geometry.margin(1080, 620), 230)
         compare(Geometry.usableCoordinate(-2560, 2560, 72, 900), -1694)
         compare(Geometry.usableCoordinate(1920, 3840, 64, 900), 3422)
+    }
+
+    function test_measuredLogicalGeometryUsesRelativeMargins() {
+        const monitorWidth = 3072
+        const dockWidth = 56
+        const usableOriginX = dockWidth
+        const expectedCenterX = 1564
+        const surfaces = [
+            { name: "Super+Space", width: 840, expectedMargin: 1088 },
+            { name: "Keyboard Shortcuts", width: 900, expectedMargin: 1058 }
+        ]
+
+        for (const surface of surfaces) {
+            const margin = Geometry.usableMargin(monitorWidth, dockWidth,
+                surface.width)
+            compare(margin, surface.expectedMargin,
+                surface.name + " relative margin is incorrect")
+            compare(usableOriginX + margin + surface.width / 2,
+                expectedCenterX, surface.name + " physical center is incorrect")
+        }
     }
 
     function test_noDockFallsBackToFullMonitorCenter() {

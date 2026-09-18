@@ -20,12 +20,11 @@ function surfaceVisible(requestedVisible, placementReady) {
     return Boolean(requestedVisible && placementReady)
 }
 
-function horizontalMargin(anchorX, anchorWidth, anchorParentWidth, gap,
-        panelWidth, screenWidth) {
-    const centeredInset = Math.max(0,
-        (anchorParentWidth - anchorWidth) / 2)
-    const preferred = anchorX + anchorWidth + centeredInset + gap
-    return clampMargin(preferred, panelWidth, screenWidth)
+function horizontalMargin(gap, panelWidth, screenWidth, persistentLeftInset) {
+    const leftInset = Math.max(0,
+        Math.min(persistentLeftInset, screenWidth))
+    // The compositor has already moved the PanelWindow origin past the dock.
+    return clampMargin(gap, panelWidth, screenWidth - leftInset)
 }
 
 function aboveMargin(anchorY, anchorHeight, parallelOffset, panelHeight,

@@ -128,49 +128,56 @@ TestCase {
         anchor.destroy()
     }
 
-    function test_systemPanelPlacementMatchesPopupAnchor(): void {
+    function test_systemPanelKeepsPhysicalDockGap(): void {
         const dockWidth = 56
         const historicalGap = 9
-        const expectedLeft = dockWidth + historicalGap
+        const monitorWidth = 1920
+        const dockRight = dockWidth
         const consumers = ["Display", "Audio", "Network", "Bluetooth",
             "Clock", "Power & Idle", "Power Menu"]
         for (const consumer of consumers) {
-            compare(Geometry.horizontalMargin(10, 36, dockWidth,
-                historicalGap, 384, 1920), expectedLeft,
-                consumer + " lost the historical dock gap")
+            const margin = Geometry.horizontalMargin(historicalGap, 384,
+                monitorWidth, dockWidth)
+            const physicalLeft = dockRight + margin
+            compare(physicalLeft - dockRight, historicalGap,
+                consumer + " lost the historical physical dock gap")
         }
         compare(Geometry.aboveMargin(700, 36, -2, 420, 1080), 318)
         compare(Geometry.aboveMargin(540, 36, -2, 310, 900), 268)
     }
 
-    function test_launcherPlacementMatchesPopupAnchor(): void {
+    function test_launcherPlacementKeepsPhysicalDockGap(): void {
         const dockWidth = 56
         const historicalGap = 9
-        const expectedLeft = dockWidth + historicalGap
+        const dockRight = dockWidth
         for (const consumer of ["App Picker", "Launcher Context Menu"]) {
-            compare(Geometry.horizontalMargin(8, 40, dockWidth,
-                historicalGap, 384, 1920), expectedLeft,
-                consumer + " lost its launcher-relative horizontal gap")
+            const margin = Geometry.horizontalMargin(historicalGap, 384,
+                1920, dockWidth)
+            compare(dockRight + margin, dockRight + historicalGap,
+                consumer + " lost its launcher-relative physical gap")
         }
         compare(Geometry.alignedTopMargin(240, 4, 180, 1080), 236)
     }
 
     function test_monitorOriginDoesNotEnterLocalMargins(): void {
-        const localMargin = Geometry.horizontalMargin(10, 36, 56, 9,
-            384, 1920)
-        compare(localMargin, 65)
-        compare(-2560 + localMargin, -2495)
-        compare(1920 + localMargin, 1985)
+        const dockWidth = 56
+        const localMargin = Geometry.horizontalMargin(9, 384, 1920,
+            dockWidth)
+        compare(localMargin, 9)
+        compare(-2560 + dockWidth + localMargin, -2495)
+        compare(1920 + dockWidth + localMargin, 1985)
     }
 
     function test_popupSlidesInsideSmallLogicalScreen(): void {
-        compare(Geometry.horizontalMargin(10, 36, 56, 9, 300, 360), 60)
+        const margin = Geometry.horizontalMargin(9, 300, 360, 56)
+        compare(margin, 4)
+        compare(56 + margin, 60)
         compare(Geometry.aboveMargin(120, 36, -2, 220, 240), 0)
         compare(Geometry.alignedTopMargin(210, 4, 80, 240), 160)
     }
 
     function test_varyingLogicalDimensions(): void {
-        compare(Geometry.horizontalMargin(22, 48, 72, 12, 420, 1600), 94)
+        compare(Geometry.horizontalMargin(12, 420, 1600, 72), 12)
         compare(Geometry.aboveMargin(850, 48, -4, 500, 900), 400)
         compare(Geometry.alignedTopMargin(32, 6, 260, 720), 26)
         compare(Geometry.clampMargin(-18, 200, 720), 0)

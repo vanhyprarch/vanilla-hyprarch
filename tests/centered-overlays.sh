@@ -118,6 +118,15 @@ grep -Fq 'visible: DockGeometry.surfaceVisible(root.requestedVisible,' \
     || fail 'dock native visibility is not gated on valid placement'
 grep -Fq 'window.windowTransform' "$components_dir/DockPopup.qml" \
     || fail 'dock placement does not react to window or output transforms'
+grep -Fq '? DockGeometry.horizontalMargin(root.metrics.dockPopupGap,' \
+    "$components_dir/DockPopup.qml" \
+    || fail 'dock horizontal margin is not relative to the usable origin'
+grep -Fq 'root.metrics.dockWidth)' "$components_dir/DockPopup.qml" \
+    || fail 'dock horizontal clamping does not use the persistent inset'
+if grep -Fq 'anchorParentWidth' "$components_dir/DockPopup.qml"
+then
+    fail 'dock horizontal placement still adds the dock anchor inset'
+fi
 grep -Fq 'function onDestroyed()' "$components_dir/DockPopup.qml" \
     || fail 'destroyed popup anchors can leave orphaned dock surfaces'
 dock_zone_line=$(grep -Fn 'exclusiveZone: 0' \

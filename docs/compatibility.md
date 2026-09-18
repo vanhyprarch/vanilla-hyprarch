@@ -285,9 +285,14 @@ Dock-owned popup presentations now also use monitor-bound, non-exclusive
 `PanelWindow` surfaces while preserving their prior monitor-local placement
 and sliding an out-of-bounds edge placement back inside the logical screen.
 The pre-migration popup expanded its anchor rectangle by the centered dock
-inset plus `VisualMetrics.dockPopupGap`; the layer-surface projection retains
-that exact token-derived right-of-dock relationship. One
-shell-level focus coordinator owns the Hyprland grab and whitelists the visible
+inset plus `VisualMetrics.dockPopupGap`. Live `hyprctl layers -j` measurement
+with the validated versions showed that a left-anchored `PanelWindow` margin is
+applied from the compositor-provided usable origin after the persistent dock's
+exclusive region. The layer-surface projection therefore uses
+`VisualMetrics.dockPopupGap` as its relative margin and centers central surfaces
+within the remaining logical width; adding `dockWidth` to either margin counts
+the exclusive region twice. One shell-level focus coordinator owns the
+Hyprland grab and whitelists the visible
 central and dock surfaces together, plus the dock host while one of its panels
 is visible. A newly opened central surface is prioritized for the opening
 event-loop turn and then shares the whitelist with the still-visible dock

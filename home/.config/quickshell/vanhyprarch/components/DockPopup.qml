@@ -41,10 +41,6 @@ PanelWindow {
     }
     readonly property bool placementReady: root.anchorReady
         && root.anchorRect !== null
-    readonly property int anchorParentWidth:
-        root.popupAnchorItem && root.popupAnchorItem.parent
-            ? root.popupAnchorItem.parent.width : root.metrics.dockWidth
-
     function dismissFromCoordinator(): void {
         root.requestedVisible = false
     }
@@ -55,10 +51,9 @@ PanelWindow {
         left: true
     }
     margins.left: root.placementReady
-        ? DockGeometry.horizontalMargin(root.anchorRect.x,
-            root.anchorRect.width, root.anchorParentWidth,
-            root.metrics.dockPopupGap, root.implicitWidth,
-            root.targetScreen.width)
+        ? DockGeometry.horizontalMargin(root.metrics.dockPopupGap,
+            root.implicitWidth, root.targetScreen.width,
+            root.metrics.dockWidth)
         : 0
     margins.top: root.placementReady
         ? (root.alignToAnchorTop

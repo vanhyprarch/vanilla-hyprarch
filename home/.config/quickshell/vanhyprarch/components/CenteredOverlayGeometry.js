@@ -14,7 +14,9 @@ function usableCoordinate(origin, extent, persistentLeftInset, surfaceExtent) {
 }
 
 function usableMargin(extent, persistentLeftInset, surfaceExtent) {
-    return usableCoordinate(0, extent, persistentLeftInset, surfaceExtent)
+    const leftInset = Math.max(0, Math.min(persistentLeftInset, extent))
+    // PanelWindow margins are relative to the compositor's usable origin.
+    return margin(extent - leftInset, surfaceExtent)
 }
 
 function usableCenter(origin, extent, persistentLeftInset, surfaceExtent) {
