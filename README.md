@@ -67,10 +67,12 @@ currently be reviewed and deployed manually.
 
 The repository now separates managed portable Hyprland configuration from
 create-once machine configuration and a user-owned customization override.
-That repository structure has not yet been migrated onto the development
-machine. The tracked BlueZ `main.conf` is also a complete system-file
-replacement and must not overwrite an existing administrator configuration
-without review and rollback. See the
+The controlled live migration has placed that split architecture on the
+current development machine. This was a reviewed development-machine
+migration, not a production installer or the final distribution mechanism.
+The tracked BlueZ `main.conf` is also a complete system-file replacement and
+must not overwrite an existing administrator configuration without review and
+rollback. See the
 [deployment ownership contract](docs/deployment-ownership.md),
 [installation strategy](docs/installation-strategy.md), and
 [system baseline](docs/system-baseline.md).
@@ -99,11 +101,12 @@ available so the component can be installed again later.
 ## Alpha limitations
 
 Vanilla HyprArch Alpha releases are for testing and feedback, not
-production-stable use. Ownership boundaries now exist, but clean installation,
-first-reboot deployment, live migration, project self-update, and complete
-rollback machinery do not. User-owned files are preserved by ownership class;
-their Alpha interfaces may still change with release-note disclosure and
-practical migration guidance.
+production-stable use. Ownership boundaries and the controlled
+development-machine migration now exist, but automated clean installation,
+first-reboot deployment, project self-update, and general migration, update,
+and rollback infrastructure do not. User-owned files are preserved by
+ownership class; their Alpha interfaces may still change with release-note
+disclosure and practical migration guidance.
 
 Portable Hyprpaper and wallpaper integration remain future work. The Zig
 Screensaver's move to an optional Additional system component is also deferred;
