@@ -294,13 +294,22 @@ validation criteria have been met.
 **Status:** Accepted
 **Date:** 2026-09-08
 **Implementation:** Backend and Quickshell control implemented and reviewed;
-runtime suppression is regression-tested and remaining manual combinations are
-tracked in `current-state.md`
+runtime suppression and reboot reconciliation are regression-tested and live
+validated; remaining manual combinations are tracked in `current-state.md`
 
 Caffeine temporarily suppresses every automatic Power & Idle action without
 altering the user's stored timeouts or lock point. Its marker is session-scoped
-under `XDG_RUNTIME_DIR`, is absent after login or reboot, and can be reconciled
-idempotently by reapplying either state.
+under `XDG_RUNTIME_DIR` and can be reconciled idempotently by reapplying either
+state. Every fresh Hyprland session must authoritatively remove the marker and
+regenerate the Caffeine-off fragment from durable preferences before directly
+execing hypridle. Marker disappearance alone is insufficient because the
+generated fragment persists across reboot.
+
+The startup callback is not required to wait for Hyprland's global instance
+registry. Its leading shell `exec` establishes a direct parent relationship,
+and the startup-only backend path proves that parent's exact executable, UID,
+and stable `/proc` start time. Later manual daemon transactions continue to use
+normal Hyprland instance discovery for targeted replacement.
 
 Caffeine does not disable manual locking or other explicit power actions.
 Listeners that perform screensaver, display, lock, or suspend actions remain
@@ -487,6 +496,18 @@ that directory exactly once to the inherited graphical-session `PATH` before
 starting session children. Development deployments may use symlinks; the
 future production bootstrap must install commands atomically without depending
 on a Git checkout.
+
+This child-environment policy is distinct from Hyprland's own inherited process
+environment. Controlled reboot evidence showed that Hyprland's `/proc` PATH can
+lack `$HOME/.local/bin` even while normal launched applications receive the
+configured session PATH. Security-critical Hyprland autostart of a user-local
+project command therefore uses the absolute installed path constructed from the
+validated `sessionHome`; it does not move the command into a system PATH or add
+a per-process PATH override. Current `hl.exec_cmd` behavior uses a transient
+`/bin/sh -c`, so this security-sensitive idle startup begins its command string
+with the shell builtin `exec`. That replaces the executor shell before the
+backend validates direct Hyprland ownership. This is not a general requirement
+for every autostart command.
 
 Quickshell-private helpers remain beneath `Quickshell.shellDir/helpers` and are
 invoked by their resolved configuration-relative paths rather than being

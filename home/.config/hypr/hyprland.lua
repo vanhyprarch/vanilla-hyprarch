@@ -100,7 +100,7 @@ hl.env("HYPRCURSOR_SIZE", "24")
 hl.on("hyprland.start", function ()
     hl.exec_cmd("hyprpaper")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
-    hl.exec_cmd("/usr/bin/hypridle -v")
+    hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-idle session-start")
     hl.exec_cmd("qs -n -c vanhyprarch")
     if dictationComponentInstalled() then
         hl.exec_cmd("systemctl --user start vanhyprarch-voxtype.service")

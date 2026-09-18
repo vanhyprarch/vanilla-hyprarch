@@ -37,7 +37,10 @@ Caffeine is runtime-only. An atomic file containing `on` at
 `${XDG_RUNTIME_DIR}/vanhyprarch/caffeine` means enabled; absence means off. It
 never changes the durable preference file. Reapplying `caffeine on` or
 `caffeine off` is idempotent and reconciles the generated configuration after
-an interrupted operation. The default after login is off.
+an interrupted operation. Every fresh Hyprland session runs the backend's
+`session-start` path before hypridle parses its configuration. That path removes
+any marker, regenerates the fragment from durable preferences with Caffeine
+off, and only then replaces itself with the packaged hypridle executable.
 
 The deployed version-2 state is Screen saver `never`, Display `never`, Suspend
 `never`, Lock `none`, effect `colormix`, and Caffeine off. This produces zero
@@ -48,6 +51,7 @@ while defaulting the new effect field to `colormix`.
 
 ```text
 vanhyprarch-idle status
+vanhyprarch-idle session-start
 vanhyprarch-idle apply
 vanhyprarch-idle configure <screensaver> <display> <suspend> <lock>
 vanhyprarch-idle set <screensaver|display|suspend|lock|effect> <value>
@@ -55,7 +59,12 @@ vanhyprarch-idle caffeine <on|off>
 vanhyprarch-idle screensaver-effect
 ```
 
-`status` emits stable `key=value` lines for later QML parsing. `configure`
+`status` emits stable `key=value` lines for later QML parsing. Before reporting
+them, it compares the deployed fragment with the expected fragment for current
+preferences and runtime Caffeine state; the non-operational effect annotation
+is ignored because effect-only changes deliberately do not apply the fragment.
+An incoherent fragment produces an error instead of a misleading logical
+listener count. `configure`
 updates all durable fields as one validated transaction; `set` changes one
 field and rejects the result if it breaks ordering or lock ownership. `apply`
 regenerates runtime configuration without changing preferences. Effect-only
@@ -112,10 +121,59 @@ configuration and initial generated fragment and create the default preference
 file.
 
 An earlier real reboot showed that bare hypridle did not inherit that directory,
-so startup temporarily used a shell to prepend it. After the unified Hyprland
-session PATH passed a full logout/login test in Foot, Quickshell, hypridle, and
-the screenshot workflow, normal startup became direct
-`/usr/bin/hypridle -v`. Hyprland remains the direct owner of exactly one daemon.
+so startup temporarily used a shell to prepend it. The unified Hyprland session
+PATH subsequently passed a full logout/login test in Foot, Quickshell,
+hypridle, and the screenshot workflow, and per-process PATH compensation was
+removed. That policy continues to expose `$HOME/.local/bin` to normal launched
+session applications.
+
+The first controlled Caffeine reboot validation established a narrower startup
+fact: the Hyprland process's own inherited `/proc` environment did not contain
+`$HOME/.local/bin`, even though the interactive shell did. Hyprland therefore
+invokes the backend through
+`"exec " .. sessionHome .. "/.local/bin/vanhyprarch-idle session-start"`. This is the
+deterministic installed public-command path, not a hardcoded user's home, a
+system-PATH relocation, or a per-process PATH override. Current `hl.exec_cmd`
+behavior runs command strings through a transient `/bin/sh -c`; the leading
+shell builtin `exec` replaces that shell in place with the backend. The backend
+therefore sees Hyprland as its direct parent. Because `hyprland.start` can run
+before Hyprland publishes its runtime instance lock, `session-start` does not
+call `hyprctl instances`. It reads its actual PPID from `/proc`, requires that
+process to be the current user's exact `/usr/bin/Hyprland`, and verifies the
+parent start time before and after the executable and UID checks to reject PID
+reuse. Normal manual apply and Caffeine transactions retain global instance
+discovery because their replacement launch uses `hyprctl -i` after startup.
+The command rejects root, acquires the normal backend lock, validates durable
+preferences, forces the new session's Caffeine state off,
+validates and atomically publishes the resulting fragment, and verifies that no
+hypridle is already running while `hypridle.service` remains disabled and
+inactive. It explicitly unlocks and closes the backend lock descriptor, then
+uses direct `exec /usr/bin/hypridle -v`. No wrapper or additional process
+remains: the resulting daemon retains Hyprland as its direct parent and inherits
+the session environment and PATH unchanged. Failure returns nonzero without
+starting hypridle against the prior fragment. A startup failure also atomically
+overwrites one mode-0600 diagnostic line at
+`${XDG_RUNTIME_DIR}/vanhyprarch/session-start-error.log`; successful
+reconciliation removes a stale record before publication. The record is
+runtime-only, bounded, and leaves no open descriptor across the final exec.
+
+This startup reconciliation closes a security-relevant lifecycle gap: a
+successful prior-session Caffeine ON transaction had persisted its zero-listener
+projection after the runtime marker disappeared at reboot. The UI could report
+OFF while screensaver, display, suspend, and their selected automatic-lock path
+were absent from the newly started daemon. Durable timeout, lock, and effect
+preferences remain unchanged.
+
+The final controlled acceptance test enabled Caffeine, confirmed its
+zero-listener projection, and rebooted without disabling it. Before any Power &
+Idle interaction after login, the runtime marker and startup-error record were
+absent, the fragment had a new login-time modification time and contained the
+configured 120-second screensaver, 300-second display/lock, and 600-second
+suspend listeners, and status reported Caffeine off with three effective
+listeners. One `/usr/bin/hypridle -v` remained the direct child of
+`/usr/bin/Hyprland`, with the packaged service disabled and inactive. The
+screensaver fired after 120 seconds without a manual Caffeine or timeout
+transaction, directly validating the original failure scenario.
 
 The backend validates the candidate fragment with a disconnected verbose
 hypridle parse before deployment. It requires exactly one existing hypridle

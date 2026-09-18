@@ -126,6 +126,62 @@ same PATH entry. That evidence allowed startup to return to direct
 while retaining the backend's captured-daemon-PATH restart and rollback
 transaction.
 
+A later reproduced reboot exposed a separate Caffeine lifecycle defect. A
+successful Caffeine ON transaction correctly used a runtime marker but also
+persisted its zero-listener generated fragment under the user configuration
+directory. Reboot removed the marker while the fragment survived, so the UI
+reported Caffeine off even though the fresh hypridle had no automatic
+screensaver, display, suspend, or associated lock actions. Manual ON then OFF
+reconciled the daemon. Startup now invokes the backend's `session-start` path,
+which forces Caffeine off, validates and atomically publishes the fragment from
+durable preferences, explicitly closes its flock, and directly execs the
+packaged hypridle. Deterministic tests cover the stale projection, all three
+lock points, direct exec, manual transactions, and rollback.
+
+The first controlled reboot of that lifecycle fix exposed a startup lookup
+blocker before reconciliation could run: the interactive session PATH included
+`$HOME/.local/bin`, but Hyprland's inherited `/proc` PATH did not, so its bare
+`vanhyprarch-idle session-start` command never executed. The generated fragment
+kept its old timestamp and no hypridle process existed. Startup now constructs
+the installed backend path from the already validated `sessionHome` and invokes
+`$HOME/.local/bin/vanhyprarch-idle session-start` without PATH lookup.
+
+The second controlled reboot established that current `hl.exec_cmd` behavior
+still places a transient `/bin/sh -c` between Hyprland and the backend. The
+absolute user-local path resolved, but the backend correctly rejected the shell
+as its immediate parent before publishing the fragment. The startup string now
+begins with the shell builtin `exec`, replacing that transient shell in place
+before backend ownership validation. The backend then replaces itself with
+`/usr/bin/hypridle -v`, leaving Hyprland as the final daemon's direct parent and
+no wrapper alive. Public commands remain under `$HOME/.local/bin`, and neither
+session PATH policy nor the strict ownership checks changed. A separate live
+parent probe proved that process chain. The third controlled reboot still
+exited before fragment publication, isolating the remaining early-start
+dependency: the `hyprland.start` callback can run before Hyprland has published
+its runtime instance lock, so `hyprctl instances` can report no usable
+instance. The startup-only ownership check now reads its real PPID from
+`/proc`, requires the current user's exact
+`/usr/bin/Hyprland`, and rechecks the parent's start time around executable and
+UID validation. It uses no arbitrary delay and no global instance lookup;
+later manual transactions keep the existing discovery path. Startup failures
+overwrite a single runtime-only diagnostic line, which successful
+reconciliation removes.
+
+Final live acceptance then repeated the original failure scenario end to end.
+Caffeine was enabled before reboot, its runtime marker contained `on`, and the
+persistent generated fragment contained zero listeners. Immediately after the
+new login, before Power & Idle was opened or Caffeine or any timeout was
+touched, the marker and runtime error record were absent and the fragment had
+been republished as Caffeine off with the durable 120-second screensaver,
+300-second display/lock, and 600-second suspend listeners. Backend status
+agreed with that state and reported three effective listeners. The single
+`/usr/bin/hypridle -v` process had PID 762 and direct Hyprland parent PID 713;
+both executables resolved to their packaged paths, while `hypridle.service`
+remained disabled and inactive. Most importantly, the screensaver started at
+120 seconds without opening the panel or applying any transaction. This live
+reboot-with-Caffeine-ON result resolves the original security-relevant
+lifecycle bug.
+
 Later controlled tests validated manual lock and password unlock, automatic
 lock at both the Screen saver and Display stages, dismissal before a later
 Display lock without a password, and cleanup without residual lock/player

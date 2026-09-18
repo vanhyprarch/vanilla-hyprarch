@@ -167,6 +167,46 @@ hypridle ownership, one-daemon state, and a Power & Idle apply after deploying
 this cleanup; the backend's captured-daemon-PATH transaction is not part of the
 removed workaround.
 
+## Hyprland idle-start ownership boundary
+
+**Affected component:** Hyprland 0.56.2
+
+Current `hl.exec_cmd` execution ultimately passes command strings through
+`/bin/sh -c`. Most autostart commands do not require special handling, but the
+Power & Idle session initializer deliberately requires its immediate parent to
+be Hyprland before publishing a reconciled fragment and becoming hypridle. Its
+startup string therefore uses
+`exec $HOME/.local/bin/vanhyprarch-idle session-start`: the absolute
+`sessionHome`-derived path avoids dependence on Hyprland's inherited PATH, and
+the shell builtin replaces the transient executor shell before backend
+validation. The backend then directly execs `/usr/bin/hypridle -v`, leaving no
+shell or wrapper alive and preserving direct Hyprland ownership.
+
+On this version, the `hyprland.start` callback can also precede publication of
+`$XDG_RUNTIME_DIR/hypr/.../hyprland.lock`; `hyprctl instances` can consequently
+report no usable instance even though the callback's real Hyprland parent is
+already valid. The initializer therefore proves startup ownership directly
+from `/proc`: immediate PPID, exact `/usr/bin/Hyprland` executable, matching
+user UID, and unchanged process start time around those checks. This exception
+is confined to `session-start`; later manual transactions retain instance
+discovery for targeted `hyprctl -i` replacement. No readiness sleep or retry is
+used.
+
+Live acceptance on Hyprland 0.56.2 rebooted with Caffeine enabled and a
+zero-listener persistent fragment. Before any panel interaction, startup
+republished the configured Caffeine-off listeners, left one direct
+Hyprland-owned `/usr/bin/hypridle -v`, and the 120-second screensaver fired.
+The runtime error record remained absent. This validates the mitigation for the
+observed command-executor and instance-lock timing behavior.
+
+Retest both command execution and instance-lock timing after a Hyprland upgrade.
+The leading `exec` can be reconsidered if a future Lua API provides direct
+argument-vector execution with the same parent contract. The `/proc` ownership
+proof can be reconsidered only if the startup lifecycle guarantees registry
+readiness before callbacks. Public commands remain deployed under
+`$HOME/.local/bin`; this mitigation does not move them into a system PATH and
+is not generalized to unrelated autostart commands.
+
 ## Quickshell Bluetooth pairing-agent boundary
 
 **Affected component:** Quickshell 0.3.1 with BlueZ 5.87

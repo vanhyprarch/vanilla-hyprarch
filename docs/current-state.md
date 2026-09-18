@@ -87,13 +87,18 @@ Before registering its startup children, the tracked Lua configuration reads
 any existing `$HOME/.local/bin` entries, and prepends exactly one such entry
 while preserving every other entry and its order. Public session commands use
 stable `vanhyprarch-*` names from that directory. A full logout/login validated
-this inheritance in new Foot and Quickshell processes.
+this propagated environment in new Foot and Quickshell processes. It does not
+imply that Hyprland's own inherited `/proc` environment was retroactively
+changed.
 
 Hyprland starts these processes on `hyprland.start`:
 
 1. `hyprpaper`
 2. `systemctl --user start hyprpolkitagent`
-3. `/usr/bin/hypridle -v`
+3. `exec $HOME/.local/bin/vanhyprarch-idle session-start`, constructed from the
+   validated `sessionHome`; the leading shell builtin replaces Hyprland's
+   transient executor shell before the backend validates its parent, and the
+   backend directly execs `/usr/bin/hypridle -v` after reconciliation
 4. `qs -n -c vanhyprarch`
 5. `vanhyprarch-voxtype.service`, only when the exact optional-component
    marker is installed
@@ -104,11 +109,25 @@ Its packaged user service is started by the direct Hyprland session and is not
 enabled as a separate login-time startup owner.
 
 The earlier shell wrapper was introduced after a real reboot showed that bare
-hypridle lacked the public-command path. The unified session PATH has now been
-validated across a full logout/login, so Hyprland launches the fixed packaged
-binary directly and Quickshell resolves `vanhyprarch-idle` by name from its
-inherited PATH. The backend's transactional daemon-PATH capture, validation,
-replacement, and rollback reuse remain unchanged.
+hypridle lacked the public-command path. The unified session PATH remains
+validated for normal launched session applications, including Quickshell,
+which resolves `vanhyprarch-idle` by name. A later controlled reboot showed
+that Hyprland's own inherited `/proc` environment still lacked
+`$HOME/.local/bin`; the security-critical idle autostart therefore uses the
+`sessionHome`-derived absolute public-command path without a per-process PATH
+override. Current `hl.exec_cmd` execution passes the string through a transient
+`/bin/sh -c`; the startup string intentionally begins with the shell builtin
+`exec`, so that shell is replaced by the backend before its strict direct-parent
+validation. The startup backend reconciles Caffeine OFF and then replaces
+itself with the fixed packaged binary; no wrapper remains. The start callback
+can precede publication of Hyprland's runtime instance lock, so this startup-only
+path validates its actual parent through `/proc` instead of calling
+`hyprctl instances`: PPID, exact `/usr/bin/Hyprland` executable, current-user
+ownership, and a stable parent start time are required. Manual transactions
+retain their later-session instance discovery, daemon-PATH capture, validation,
+replacement, and rollback behavior. Startup failures leave one overwritten
+mode-0600 line in the session-runtime `session-start-error.log`; a successful
+reconciliation removes it.
 
 `-n` prevents a duplicate instance of the named Quickshell configuration.
 Bindings are loaded from `~/.config/hypr/bindings.lua` with Lua `dofile()`, so a
@@ -411,7 +430,7 @@ test verifies that a second screenshot session can acquire the lock while the
 first provider remains alive. Physical multi-output behavior remains a separate
 manual acceptance item.
 
-## Power and idle — IMPLEMENTED, POWER/LOCK LIFECYCLE VALIDATED
+## Power and idle — CAFFEINE REBOOT-SYNC LIVE VALIDATED / RESOLVED
 
 `bin/vanhyprarch-idle` owns persistent preferences, validation, managed
 hypridle generation, runtime Caffeine state, and transactional daemon restart.
@@ -429,6 +448,48 @@ session-only marker under `${XDG_RUNTIME_DIR}/vanhyprarch/`; enabling it
 generates no automatic actions without changing stored preferences. The CLI
 provides deterministic status output and atomic configure, set, apply, and
 Caffeine operations for the Quickshell UI.
+
+A reproduced reboot exposed a security-relevant mismatch: Caffeine's runtime
+marker disappeared as intended, but its persistent generated zero-listener
+fragment survived. The UI therefore reported Caffeine off while the fresh
+hypridle had no screensaver, display, suspend, or selected automatic-lock
+listener. Manual Caffeine ON then OFF repaired it by reapplying the fragment.
+
+Hyprland now starts the `sessionHome`-derived
+`exec $HOME/.local/bin/vanhyprarch-idle session-start`. Before the first hypridle
+parses configuration, that path rejects root, removes any runtime marker,
+renders Caffeine off from the current durable preferences, validates and
+atomically publishes the fragment, verifies pre-start ownership and service
+state, explicitly releases and closes its flock descriptor, and directly execs
+`/usr/bin/hypridle -v`. Deterministic namespace tests cover fresh and retained
+runtime markers, an old zero-listener fragment, idempotence, all three lock
+points, exact exec arguments and PATH, descriptor closure, validation failure,
+manual ON/OFF, and rollback. The first controlled reboot exposed the bare-name
+lookup blocker before reconciliation ran. The second proved the absolute path
+resolved but exposed the transient executor shell as the backend's immediate
+parent, so strict ownership validation correctly rejected startup. The third
+reboot still failed after a separate live parent probe had proved the leading
+`exec` chain. That isolated an earlier-callback race: `hyprctl instances` could
+not discover Hyprland before its runtime lock was published. Startup ownership
+now uses the already-established direct `/proc` parent identity and has no
+instance-registry, IPC, sleep, or retry dependency.
+
+Final live acceptance reproduced the original case by enabling Caffeine and
+rebooting while its runtime marker contained `on` and the persistent generated
+fragment had zero listeners. Immediately after login, before opening Power &
+Idle or toggling Caffeine, the marker and startup-error record were absent, the
+fragment had been republished with Caffeine off and the configured 120/300/600
+second screensaver, display/lock, and suspend listeners, and backend status
+reported three effective listeners. Exactly one `/usr/bin/hypridle -v` ran as
+a direct child of `/usr/bin/Hyprland`; the packaged service remained disabled
+and inactive. With no settings interaction, the screensaver then started at
+120 seconds. The original security-relevant reboot mismatch is resolved.
+
+Backend status also rejects a deployed fragment that disagrees with the
+current preferences and runtime Caffeine marker instead of reporting a logical
+listener count that is not represented on disk. It does not parse live daemon
+logs. The existing status path still prepares and locks the runtime directory;
+that broader observational-side-effect issue was not refactored here.
 
 ## hypridle — PRODUCTION BACKEND, ZERO LISTENERS
 

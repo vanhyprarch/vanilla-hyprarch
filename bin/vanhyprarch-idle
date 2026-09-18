@@ -9,6 +9,7 @@ caffeine_name=caffeine
 lock_name=idle.lock
 managed_fragment_name=vanhyprarch-idle.conf
 hypridle_log_name=hypridle-managed.log
+session_start_error_name=session-start-error.log
 validation_dir_name=idle-validation
 maximum_timeout=2147483647
 
@@ -17,6 +18,7 @@ usage()
     cat >&2 <<EOF
 Usage:
   $program_name status
+  $program_name session-start
   $program_name apply
   $program_name configure <screensaver> <display> <suspend> <lock>
   $program_name set <screensaver|display|suspend|lock|effect> <value>
@@ -33,8 +35,29 @@ EOF
 
 fail()
 {
-    printf '%s: %s\n' "$program_name" "$*" >&2
+    failure_message=$*
+    write_session_start_error "$failure_message"
+    printf '%s: %s\n' "$program_name" "$failure_message" >&2
     exit 1
+}
+
+write_session_start_error()
+{
+    [ "${command:-}" = session-start ] || return 0
+    [ -n "${session_start_error:-}" ] || return 0
+    if [ -d "$session_start_error" ] && [ ! -L "$session_start_error" ]; then
+        return 0
+    fi
+
+    error_temporary=$runtime_dir/.$session_start_error_name.$$
+    rm -f -- "$error_temporary" 2>/dev/null || true
+    if ! {
+        printf '%s: %s\n' "$program_name" "$1" > "$error_temporary" &&
+            chmod 600 -- "$error_temporary" &&
+            mv -f -- "$error_temporary" "$session_start_error"
+    }; then
+        rm -f -- "$error_temporary" 2>/dev/null || true
+    fi
 }
 
 is_unsigned_integer()
@@ -76,6 +99,7 @@ prepare_paths()
     caffeine_file=$runtime_dir/$caffeine_name
     backend_lock=$runtime_dir/$lock_name
     hypridle_log=$runtime_dir/$hypridle_log_name
+    session_start_error=$runtime_dir/$session_start_error_name
     validation_dir=$runtime_dir/$validation_dir_name.$$
 
     umask 077
@@ -88,7 +112,7 @@ prepare_paths()
     fi
     runtime_owner=$(stat -c '%u' -- "$runtime_dir") ||
         fail "could not inspect $runtime_dir"
-    current_uid=$(id -u) || fail 'could not determine the current user ID'
+    current_uid=$(/usr/bin/id -u) || fail 'could not determine the current user ID'
     [ "$runtime_owner" = "$current_uid" ] ||
         fail "$runtime_dir is not owned by the current user"
     chmod 700 -- "$runtime_dir" ||
@@ -790,6 +814,21 @@ print_status()
     printf 'effective_listeners=%s\n' "$listener_count"
 }
 
+validate_fragment_coherence()
+{
+    [ -f "$managed_fragment" ] ||
+        fail "$managed_fragment does not exist"
+    [ ! -L "$managed_fragment" ] ||
+        fail "$managed_fragment must not be a symbolic link"
+
+    expected_fragment=$(render_fragment | sed 's/ effect=[^ ]*$//') ||
+        fail 'could not render expected hypridle configuration'
+    deployed_fragment=$(sed 's/ effect=[^ ]*$//' "$managed_fragment") ||
+        fail "could not read $managed_fragment"
+    [ "$deployed_fragment" = "$expected_fragment" ] ||
+        fail 'deployed hypridle configuration does not match current Power & Idle state'
+}
+
 apply_preferences_update()
 {
     validate_preferences
@@ -806,7 +845,147 @@ command_status()
     load_preferences
     validate_preferences
     load_caffeine
+    validate_fragment_coherence
     print_status
+}
+
+cleanup_session_start()
+{
+    cleanup_status=$?
+    trap - 0 HUP INT TERM
+    if [ -n "${session_candidate:-}" ]; then
+        rm -f -- "$session_candidate" 2>/dev/null || true
+    fi
+    exit "$cleanup_status"
+}
+
+read_process_identity()
+{
+    inspected_process=$1
+    is_unsigned_integer "$inspected_process" || return 1
+    [ "$inspected_process" -gt 0 ] || return 1
+    [ -r "/proc/$inspected_process/stat" ] || return 1
+    IFS= read -r process_stat < "/proc/$inspected_process/stat" || return 1
+    process_fields=${process_stat##*) }
+    [ "$process_fields" != "$process_stat" ] || return 1
+    set -- $process_fields
+    [ "$#" -ge 20 ] || return 1
+    process_parent=$2
+    shift 19
+    process_start_time=$1
+    is_unsigned_integer "$process_parent" || return 1
+    is_unsigned_integer "$process_start_time" || return 1
+    printf '%s %s\n' "$process_parent" "$process_start_time"
+}
+
+read_process_uid()
+{
+    /usr/bin/stat -c '%u' -- "/proc/$1"
+}
+
+validate_session_start_ownership()
+{
+    session_identity=$(read_process_identity $$) ||
+        fail 'could not inspect the session-start parent process'
+    set -- $session_identity
+    [ "$#" -eq 2 ] || fail 'invalid session-start process identity'
+    session_parent=$1
+    is_unsigned_integer "$session_parent" && [ "$session_parent" -gt 1 ] ||
+        fail 'session-start has an invalid parent process'
+    [ -d "/proc/$session_parent" ] ||
+        fail 'session-start parent process does not exist'
+
+    parent_identity_before=$(read_process_identity "$session_parent") ||
+        fail 'could not inspect the Hyprland parent identity'
+    set -- $parent_identity_before
+    [ "$#" -eq 2 ] || fail 'invalid Hyprland parent identity'
+    parent_start_before=$2
+
+    parent_executable=$(/usr/bin/readlink -f "/proc/$session_parent/exe" 2>/dev/null) ||
+        fail 'could not resolve the session-start parent executable'
+    [ "$parent_executable" = /usr/bin/Hyprland ] ||
+        fail 'session-start parent executable is not /usr/bin/Hyprland'
+    parent_uid=$(read_process_uid "$session_parent") ||
+        fail 'could not inspect the session-start parent user'
+    [ "$parent_uid" = "$current_uid" ] ||
+        fail 'session-start parent is not owned by the current user'
+
+    parent_identity_after=$(read_process_identity "$session_parent") ||
+        fail 'could not recheck the Hyprland parent identity'
+    set -- $parent_identity_after
+    [ "$#" -eq 2 ] && [ "$2" = "$parent_start_before" ] ||
+        fail 'session-start parent identity changed during validation'
+    session_identity_after=$(read_process_identity $$) ||
+        fail 'could not recheck the session-start parent process'
+    set -- $session_identity_after
+    [ "$#" -eq 2 ] && [ "$1" = "$session_parent" ] ||
+        fail 'session-start parent changed during validation'
+    hyprland_pid=$session_parent
+
+    [ -z "$(pgrep -x hypridle 2>/dev/null || true)" ] ||
+        fail 'hypridle is already running before session initialization'
+    [ "$(systemctl --user is-enabled hypridle.service 2>/dev/null || true)" = disabled ] ||
+        fail 'hypridle.service must remain disabled'
+    [ "$(systemctl --user is-active hypridle.service 2>/dev/null || true)" = inactive ] ||
+        fail 'hypridle.service must remain inactive'
+    [ -x /usr/bin/hypridle ] || fail '/usr/bin/hypridle is not executable'
+}
+
+release_backend_lock()
+{
+    flock -u 8 || fail 'could not release the Power & Idle backend lock'
+    exec 8>&- || fail 'could not close the Power & Idle backend lock descriptor'
+}
+
+command_session_start()
+{
+    [ "$#" -eq 0 ] || fail 'session-start takes no arguments'
+    [ "$current_uid" -ne 0 ] || fail 'session-start must not run as root'
+
+    session_candidate=
+    trap cleanup_session_start 0 HUP INT TERM
+
+    load_preferences
+    validate_preferences
+    caffeine=off
+    write_caffeine off || fail 'could not reset Caffeine for the new session'
+
+    [ -d "$hypr_dir" ] || fail "$hypr_dir does not exist"
+    [ ! -L "$hypr_dir" ] || fail "$hypr_dir must not be a symbolic link"
+    [ -f "$hypridle_main" ] || fail "$hypridle_main does not exist"
+    [ ! -L "$hypridle_main" ] ||
+        fail "$hypridle_main must be a deployed regular file"
+    if [ -e "$managed_fragment" ] || [ -L "$managed_fragment" ]; then
+        [ -f "$managed_fragment" ] && [ ! -L "$managed_fragment" ] ||
+            fail "$managed_fragment must be a regular file"
+    fi
+
+    candidate_fragment=$hypr_dir/.$managed_fragment_name.$$
+    session_candidate=$candidate_fragment
+    [ ! -e "$candidate_fragment" ] && [ ! -L "$candidate_fragment" ] ||
+        fail "$candidate_fragment already exists"
+    render_fragment > "$candidate_fragment" ||
+        fail 'could not render the session hypridle configuration'
+    chmod 600 -- "$candidate_fragment" ||
+        fail 'could not secure the session hypridle configuration'
+    effective_listener_count
+    validate_generated_fragment "$candidate_fragment" "$listener_count"
+    validate_session_start_ownership
+
+    if [ -d "$session_start_error" ] && [ ! -L "$session_start_error" ]; then
+        fail "$session_start_error must not be a directory"
+    fi
+    rm -f -- "$session_start_error" ||
+        fail 'could not clear the previous session-start error record'
+
+    mv -f -- "$candidate_fragment" "$managed_fragment" ||
+        fail 'could not publish the session hypridle configuration'
+    session_candidate=
+    trap - 0 HUP INT TERM
+
+    release_backend_lock
+    exec /usr/bin/hypridle -v
+    fail 'could not execute /usr/bin/hypridle -v'
 }
 
 command_apply()
@@ -925,6 +1104,11 @@ command_before_sleep()
 command=$1
 shift
 
+if [ "$command" = session-start ]; then
+    session_uid=$(/usr/bin/id -u) || fail 'could not determine the current user ID'
+    [ "$session_uid" -ne 0 ] || fail 'session-start must not run as root'
+fi
+
 case $command in
     validate)
         command_validate "$@"
@@ -940,6 +1124,7 @@ prepare_paths
 
 case $command in
     status) command_status "$@" ;;
+    session-start) command_session_start "$@" ;;
     apply) command_apply "$@" ;;
     configure) command_configure "$@" ;;
     set) command_set "$@" ;;

@@ -87,10 +87,30 @@ Development may symlink public commands from the repository into
 `$HOME/.local/bin`. Production bootstrap must create the user-owned directory
 when needed and atomically install regular files without requiring the source
 checkout, then validate their ownership and executable mode. After logout/login
-validation of the unified session PATH, Hyprland launches `/usr/bin/hypridle`
-directly and Quickshell resolves `vanhyprarch-idle` by name. Power & Idle still
-captures the validated daemon's exact PATH and reuses it for transactional
-replacement and rollback.
+validation of the unified session PATH, normal launched session applications
+receive the user-local command directory and Quickshell resolves
+`vanhyprarch-idle` by name. Controlled reboot evidence showed that Hyprland's
+own inherited `/proc` PATH can still lack that directory. The critical idle
+autostart therefore launches the `sessionHome`-derived absolute path
+with `exec $HOME/.local/bin/vanhyprarch-idle session-start`. Current
+`hl.exec_cmd` behavior creates a transient `/bin/sh -c`; the leading shell
+builtin replaces it with the backend before ownership validation. That command
+validates the direct current-user `/usr/bin/Hyprland` parent and stable process
+start time through `/proc`, without requiring the early Hyprland instance
+registry to exist. It reconciles Caffeine off from durable preferences,
+explicitly releases its backend lock, and directly execs
+`/usr/bin/hypridle -v`; the resulting daemon remains Hyprland's direct child
+with no surviving wrapper or per-process PATH override. Public project commands
+remain under `$HOME/.local/bin`. A failed initializer writes one bounded
+session-runtime diagnostic; success removes any stale record.
+Power & Idle still captures the validated daemon's exact PATH and reuses it for
+transactional replacement and rollback.
+
+This startup contract passed a controlled reboot with Caffeine enabled and a
+persisted zero-listener fragment. The new session republished the configured
+three-listener Caffeine-off fragment before starting one direct
+Hyprland-owned hypridle, and the 120-second screensaver fired without any panel
+interaction or manual reapplication.
 
 The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
 configuration for the main shell. It will install `vanhyprarch-idle`,
@@ -243,12 +263,14 @@ Player; Ly itself is not run inside the graphical session.
 - `hyprlock` provides session locking.
 - `hypridle` provides idle and pre-sleep event handling.
 
-Hyprland currently starts hypridle directly. The packaged `hypridle.service`
-user unit is disabled and inactive. The static configuration has a
-`pidof hyprlock || hyprlock` lock command, delegates conditional pre-sleep
-locking to `vanhyprarch-idle`, and sources the project-generated listener
-fragment. The migration defaults produce zero listeners: Screen saver, display
-off, and suspend are `Never`, automatic lock is `None`, and Caffeine is off.
+Hyprland starts the backend's session initialization command, which atomically
+reconciles Caffeine off and then directly execs hypridle. The packaged
+`hypridle.service` user unit is disabled and inactive. The static configuration
+has a `pidof hyprlock || hyprlock` lock command, delegates conditional
+pre-sleep locking to `vanhyprarch-idle`, and sources the project-generated
+listener fragment. The migration defaults produce zero listeners: Screen saver,
+display off, and suspend are `Never`, automatic lock is `None`, and Caffeine is
+off.
 
 ## Monitor control utilities
 

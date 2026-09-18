@@ -151,6 +151,41 @@ io.write(environment.PATH)
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 
+    def evaluated_startup_commands(self, inherited_path: str) -> list[str]:
+        harness = r'''
+local commands = {}
+local function noop(...)
+    return {}
+end
+
+hl = setmetatable({}, { __index = function() return noop end })
+hl.env = function(name, value) end
+hl.exec_cmd = function(command)
+    table.insert(commands, command)
+end
+hl.on = function(event, callback)
+    if event == "hyprland.start" then
+        callback()
+    end
+end
+dofile = function(path) end
+
+assert(loadfile(arg[1]))()
+io.write(table.concat(commands, "\n"))
+'''
+        result = subprocess.run(
+            ["/usr/bin/lua", "-", str(HYPRLAND_CONFIG)],
+            input=harness,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            shell=False,
+            env={"HOME": str(self.home), "PATH": inherited_path},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.splitlines()
+
     def test_screenshot_directory_uses_configured_xdg_pictures(self) -> None:
         config = self.home / ".config"
         config.mkdir()
@@ -514,6 +549,55 @@ assert(loadfile(arg[1]))()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("HOME is not set", result.stderr)
 
+    def test_idle_startup_path_does_not_depend_on_hyprland_parent_path(self) -> None:
+        parent_path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        local_bin = str(self.home / ".local/bin")
+        self.assertNotIn(local_bin, parent_path.split(":"))
+
+        commands = self.evaluated_startup_commands(parent_path)
+        self.assertIn(
+            f"exec {local_bin}/vanhyprarch-idle session-start",
+            commands,
+        )
+        self.assertNotIn(f"{local_bin}/vanhyprarch-idle session-start", commands)
+        self.assertNotIn("vanhyprarch-idle session-start", commands)
+
+    def test_executor_shell_exec_preserves_direct_parent(self) -> None:
+        local_bin = self.home / ".local/bin"
+        local_bin.mkdir(parents=True)
+        probe = local_bin / "vanhyprarch-idle"
+        probe.write_text(
+            "#!/usr/bin/python\n"
+            "import json\n"
+            "import os\n"
+            "import sys\n"
+            "print(json.dumps({\"pid\": os.getpid(), \"ppid\": os.getppid(), "
+            "\"argv\": sys.argv[1:]}))\n",
+            encoding="utf-8",
+        )
+        probe.chmod(0o700)
+
+        result = subprocess.run(
+            [
+                "/bin/sh",
+                "-c",
+                f'printf "%s\\n" "$$"; exec {probe} session-start',
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            shell=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = result.stdout.splitlines()
+        self.assertEqual(len(output), 2, result.stdout)
+        shell_pid = int(output[0])
+        observed = json.loads(output[1])
+        self.assertEqual(observed["pid"], shell_pid)
+        self.assertEqual(observed["ppid"], os.getpid())
+        self.assertEqual(observed["argv"], ["session-start"])
+
     def test_public_command_path_contract(self) -> None:
         installation = (
             REPOSITORY / "docs/installation-strategy.md"
@@ -524,10 +608,41 @@ assert(loadfile(arg[1]))()
         self.assertIn("Quickshell-private helpers stay inside", installation)
 
         hyprland = HYPRLAND_CONFIG.read_text(encoding="utf-8")
-        self.assertIn('hl.exec_cmd("/usr/bin/hypridle -v")', hyprland)
+        self.assertIn(
+            'hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-idle session-start")',
+            hyprland,
+        )
+        self.assertNotIn(
+            'hl.exec_cmd(sessionHome .. "/.local/bin/vanhyprarch-idle session-start")',
+            hyprland,
+        )
+        self.assertNotIn('hl.exec_cmd("vanhyprarch-idle session-start")', hyprland)
+        self.assertNotIn("/home/", hyprland)
         self.assertNotIn("sh -lc", hyprland)
         self.assertNotIn("export PATH", hyprland)
-        self.assertNotIn("exec hypridle -v", hyprland)
+        self.assertNotIn('exec_cmd("env PATH=', hyprland)
+        self.assertNotIn('hl.exec_cmd("/usr/bin/hypridle -v")', hyprland)
+
+        idle_backend = (REPOSITORY / "bin/vanhyprarch-idle").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("    exec /usr/bin/hypridle -v", idle_backend)
+        self.assertIn("    flock -u 8", idle_backend)
+        self.assertIn("    exec 8>&-", idle_backend)
+        startup_ownership = idle_backend.split(
+            "validate_session_start_ownership()", 1
+        )[1].split("release_backend_lock()", 1)[0]
+        self.assertNotIn("get_hyprland_instance", startup_ownership)
+        self.assertIn('read_process_identity $$', startup_ownership)
+        self.assertIn(
+            '[ "$parent_executable" = /usr/bin/Hyprland ]', startup_ownership
+        )
+        self.assertIn('[ "$parent_uid" = "$current_uid" ]', startup_ownership)
+        self.assertIn('/usr/bin/stat -c \'%u\'', idle_backend)
+        self.assertIn(
+            '[ "$2" = "$parent_start_before" ]', startup_ownership
+        )
+        self.assertIn("session-start-error.log", idle_backend)
 
         idle_controller = (
             REPOSITORY
