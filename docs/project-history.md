@@ -348,8 +348,8 @@ remains clamped.
 The first distribution-architecture milestone separated the tracked Hyprland
 configuration into a small managed XDG-aware loader, portable managed core,
 managed curated bindings, a create-once machine seed, and a header-only
-user-owned override seed. Development-machine monitor, keyboard, and device
-rules were excluded from public managed content. Hyprland 0.56.2 source and
+user-owned override seed. Development-machine monitor and keyboard choices
+were excluded from public managed content. Hyprland 0.56.2 source and
 documentation established intentional absolute-path `require()` support and
 required-file watch tracking.
 
@@ -364,10 +364,9 @@ step.
 
 The separately reviewed live migration created the machine and user-override
 layers before changing the symlinked Quickshell source. The development
-machine's active output, keyboard, and personal device rule moved into its
-machine-owned file. An isolated prospective tree passed Hyprland 0.56.2
-verification before the managed loader, core, and bindings were deployed as
-regular files.
+machine's active output and keyboard choices moved into its machine-owned file.
+An isolated prospective tree passed Hyprland 0.56.2 verification before the
+managed loader, core, and bindings were deployed as regular files.
 
 One controlled reload preserved monitor and keyboard behavior with no config
 errors. The Monitor panel scale writer moved from the old managed `dp1Scale`

@@ -73,10 +73,10 @@ absolute `require()` calls.
 
 The controlled live migration now runs the managed loader, core, and bindings
 as regular files. Its machine-owned file preserves the development machine's
-explicit `DP-1` profile, Italian keyboard setting, and personal
-`epic-mouse-v1` rule; none are public defaults. The user override remains the
-exact header-only seed. The old root `~/.config/hypr/bindings.lua` was removed
-only after validation and remains in the migration recovery material.
+explicit `DP-1` profile and transitional Italian keyboard setting; neither is
+a public default. The user override remains the exact header-only seed. The old
+root `~/.config/hypr/bindings.lua` was removed only after validation and
+remains in the migration recovery material.
 
 The Monitor panel now resolves `XDG_CONFIG_HOME`, targets only the regular
 user-owned machine file, matches the focused connector to its explicit output
