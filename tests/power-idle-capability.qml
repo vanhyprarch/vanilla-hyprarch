@@ -59,13 +59,15 @@ ShellRoot {
                     && absentState.lockPoint === "display"
                     && absentState.storedLockPoint === "screensaver",
                 "backend absence projection was not consumed exactly")
-            const installedState = idleParser.parseStatus("version=3\n" + stored
-                .replace("effective_listeners=2", "effective_listeners=3")
+            const firstReconciledStatus = "version=3\nscreensaver=120\n"
+                + "display=300\nsuspend=600\nlock=screensaver\n"
                 + "effective_screensaver=120\neffective_lock=screensaver\n"
-                + "screensaver_capability=installed\n")
+                + "effect=matrix\nscreensaver_capability=installed\n"
+                + "caffeine=off\neffective_listeners=3\n"
+            const installedState = idleParser.parseStatus(firstReconciledStatus)
             root.check(installedState.screensaverCapability === "installed"
                     && installedState.lockPoint === "screensaver",
-                "installed screensaver capability was not consumed")
+                "first reconciled status was not consumed strictly")
             root.check(!panel.screensaverControlsVisible,
                 "absent component retained screensaver controls")
             root.check(panel.automaticLockChoiceCount === 3,

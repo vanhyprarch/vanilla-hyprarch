@@ -925,7 +925,7 @@ command_status()
                 cursor_recovery_pending=true
             fi
         fi
-        apply_effective_configuration
+        apply_effective_configuration >/dev/null
         [ "$cursor_recovery_pending" = false ] ||
             fail 'screensaver process stopped, but cursor restoration remains pending'
     fi

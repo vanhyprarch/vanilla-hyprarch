@@ -488,7 +488,8 @@ EOF
 
 cat > "$session_bin/vanhyprarch-screensaver" <<'EOF'
 #!/bin/sh
-[ "${1-}" = component-capability ] && printf 'installed\n'
+[ "${1-}" = component-capability ] &&
+    printf '%s\n' "${MOCK_SCREENSAVER_CAPABILITY_VALUE:-installed}"
 exit 0
 EOF
 
@@ -899,7 +900,7 @@ set -eu
 printf '%s\n' "$!" > "$MOCK_DAEMON_PID_FILE"
 printf '0\n' > "$MOCK_PGREP_COUNT_FILE"
 printf '1\n' > "$MOCK_PGREP_LIMIT_FILE"
-"$IDLE_UNDER_TEST" status > "$LEGACY_STATUS_OUTPUT"
+"$IDLE_UNDER_TEST" "$BACKEND_OPERATION" > "$BACKEND_OUTPUT"
 EOF
 chmod 755 "$legacy_status_runner"
 write_session_preferences display
@@ -912,7 +913,8 @@ bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
     /usr/bin/env -i HOME="$session_home" \
         XDG_CONFIG_HOME="$session_home/.config" XDG_RUNTIME_DIR="$session_runtime" \
         PATH="$session_path" HYPRLAND_INSTANCE_SIGNATURE=test-signature \
-        IDLE_UNDER_TEST="$idle" LEGACY_STATUS_OUTPUT="$session_root/legacy-status.out" \
+        IDLE_UNDER_TEST="$idle" BACKEND_OPERATION=status \
+        BACKEND_OUTPUT="$session_root/legacy-status.out" \
         MOCK_DAEMON_PID_FILE="$session_root/daemon.pid" \
         MOCK_PGREP_COUNT_FILE="$session_root/pgrep-count" \
         MOCK_PGREP_LIMIT_FILE="$session_root/pgrep-limit" \
@@ -921,12 +923,106 @@ bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
         MOCK_FAIL_FIRST_LAUNCH=false MOCK_REAL_STAT="$session_real_stat" \
         MOCK_ALLOW_INSTANCES=true MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
         /bin/sh "$legacy_status_runner" >/dev/null
-require_line "$(cat "$session_root/legacy-status.out")" 'version=3'
+cat > "$session_root/legacy-status.expected" <<'EOF'
+version=3
+screensaver=37
+display=91
+suspend=143
+lock=display
+effective_screensaver=37
+effective_lock=display
+effect=matrix
+screensaver_capability=installed
+caffeine=off
+effective_listeners=3
+EOF
+cmp -s "$session_root/legacy-status.expected" "$session_root/legacy-status.out" ||
+    fail 'first installed legacy-fragment status output was not exact status v3'
+if grep -Fq 'applied (' "$session_root/legacy-status.out"; then
+    fail 'installed legacy-fragment status leaked transaction output'
+fi
 require_line "$(cat "$session_fragment")" \
     '# Effective: screensaver=37 lock=display capability=installed'
 [ "$legacy_preferences_digest" = \
     "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
     fail 'legacy generated-fragment reconciliation rewrote durable preferences'
+
+write_session_preferences display
+printf 'on\n' > "$session_runtime/vanhyprarch/caffeine"
+"$idle" render 37 91 143 display on matrix > "$session_fragment"
+sed -i '/^# Effective:/d' "$session_fragment"
+legacy_preferences_digest=$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')
+rm -f "$session_root/daemon.pid" "$session_root/launch-count"
+bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
+    --bind "$session_root" "$session_root" \
+    /usr/bin/env -i HOME="$session_home" \
+        XDG_CONFIG_HOME="$session_home/.config" XDG_RUNTIME_DIR="$session_runtime" \
+        PATH="$session_path" HYPRLAND_INSTANCE_SIGNATURE=test-signature \
+        IDLE_UNDER_TEST="$idle" BACKEND_OPERATION=status \
+        BACKEND_OUTPUT="$session_root/legacy-incomplete-status.out" \
+        MOCK_SCREENSAVER_CAPABILITY_VALUE=incomplete \
+        MOCK_DAEMON_PID_FILE="$session_root/daemon.pid" \
+        MOCK_PGREP_COUNT_FILE="$session_root/pgrep-count" \
+        MOCK_PGREP_LIMIT_FILE="$session_root/pgrep-limit" \
+        MOCK_LAUNCH_COUNT_FILE="$session_root/launch-count" \
+        MOCK_MANAGED_LOG="$session_runtime/vanhyprarch/hypridle-managed.log" \
+        MOCK_FAIL_FIRST_LAUNCH=false MOCK_REAL_STAT="$session_real_stat" \
+        MOCK_ALLOW_INSTANCES=true MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
+        /bin/sh "$legacy_status_runner" >/dev/null
+cat > "$session_root/legacy-incomplete-status.expected" <<'EOF'
+version=3
+screensaver=37
+display=91
+suspend=143
+lock=display
+effective_screensaver=never
+effective_lock=display
+effect=matrix
+screensaver_capability=incomplete
+caffeine=on
+effective_listeners=0
+EOF
+cmp -s "$session_root/legacy-incomplete-status.expected" \
+    "$session_root/legacy-incomplete-status.out" ||
+    fail 'first incomplete legacy-fragment status output was not exact status v3'
+if grep -Fq 'applied (' "$session_root/legacy-incomplete-status.out"; then
+    fail 'incomplete legacy-fragment status leaked transaction output'
+fi
+require_line "$(cat "$session_fragment")" \
+    '# Effective: screensaver=never lock=display capability=incomplete'
+require_line "$(cat "$session_fragment")" '# Caffeine: on'
+if grep -Fq 'vanhyprarch-screensaver start' "$session_fragment"; then
+    fail 'incomplete legacy reconciliation retained a screensaver action'
+fi
+[ "$(cat "$session_runtime/vanhyprarch/caffeine")" = on ] ||
+    fail 'incomplete legacy reconciliation changed Caffeine state'
+[ "$legacy_preferences_digest" = \
+    "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
+    fail 'incomplete legacy reconciliation rewrote durable preferences'
+
+rm -f "$session_runtime/vanhyprarch/caffeine" \
+    "$session_root/daemon.pid" "$session_root/launch-count"
+"$idle" render 37 91 143 display off matrix > "$session_fragment"
+bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
+    --bind "$session_root" "$session_root" \
+    /usr/bin/env -i HOME="$session_home" \
+        XDG_CONFIG_HOME="$session_home/.config" XDG_RUNTIME_DIR="$session_runtime" \
+        PATH="$session_path" HYPRLAND_INSTANCE_SIGNATURE=test-signature \
+        IDLE_UNDER_TEST="$idle" BACKEND_OPERATION=apply \
+        BACKEND_OUTPUT="$session_root/explicit-apply.out" \
+        MOCK_DAEMON_PID_FILE="$session_root/daemon.pid" \
+        MOCK_PGREP_COUNT_FILE="$session_root/pgrep-count" \
+        MOCK_PGREP_LIMIT_FILE="$session_root/pgrep-limit" \
+        MOCK_LAUNCH_COUNT_FILE="$session_root/launch-count" \
+        MOCK_MANAGED_LOG="$session_runtime/vanhyprarch/hypridle-managed.log" \
+        MOCK_FAIL_FIRST_LAUNCH=false MOCK_REAL_STAT="$session_real_stat" \
+        MOCK_ALLOW_INSTANCES=true MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
+        /bin/sh "$legacy_status_runner" >/dev/null
+[ "$(wc -l < "$session_root/explicit-apply.out")" -eq 1 ] ||
+    fail 'explicit apply output was not exactly one line'
+grep -Eq '^applied \(hypridle pid [0-9]+, listeners 3\)$' \
+    "$session_root/explicit-apply.out" ||
+    fail 'explicit apply lost its user-facing transaction result'
 
 remove_runner=$session_root/remove-screensaver-runner
 cat > "$remove_runner" <<'EOF'
