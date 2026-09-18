@@ -89,7 +89,7 @@ DockPopup {
                 primaryText: "Open new window"
                 onActivated: {
                     root.openNewWindow()
-                    root.visible = false
+                    root.requestedVisible = false
                 }
             }
 
@@ -101,7 +101,7 @@ DockPopup {
                         root.launcherStore.removeLauncher(root.desktopEntry.id)
                     else
                         root.launcherStore.addLauncher(root.desktopEntry.id)
-                    root.visible = false
+                    root.requestedVisible = false
                 }
             }
 
@@ -112,7 +112,7 @@ DockPopup {
                 danger: true
                 onActivated: {
                     root.closeAllRequested()
-                    root.visible = false
+                    root.requestedVisible = false
                 }
             }
         }

@@ -290,12 +290,24 @@ surface and host. A cleared grab dismisses only the foremost central surface
 and rearms for a remaining dock on the next turn. Hidden surfaces leave the
 whitelist, reserve no exclusive zone, and are not visible input targets.
 
+Quickshell 0.3.1 reports a critical error if `QsWindow.itemRect()` is called
+before its item belongs to a Quickshell window, and that mapping call is not
+itself reactive. Dock surfaces are instantiated before their dock anchors have
+necessarily joined a window, so `DockPopup` keeps requested-open state separate
+from native visibility. It maps and shows only after the anchor has an owning
+window on the target screen, and reads the owning window's `windowTransform` as
+the documented geometry invalidation source. An early open request remains
+pending until placement becomes valid; an invalidated placement immediately
+leaves both native visibility and the focus whitelist without a timer or
+polling.
+
 Retest first-press coexistence, focus transfer, dismissal, and central
-positioning with no popup and with Display, Audio, and Network open after a
-Quickshell, Qt Wayland, Hyprland focus-grab, or layer-shell upgrade. The
-dedicated layer surfaces and shared coordinator may be reconsidered only if a
-future popup implementation can prove both an independent monitor coordinate
-space and compatible nested focus ownership.
+positioning with no popup and with Display, Audio, and Network open, plus a
+fresh-process startup and monitor/delegate recreation, after a Quickshell, Qt
+Wayland, Hyprland focus-grab, or layer-shell upgrade. The dedicated layer
+surfaces and shared coordinator may be reconsidered only if a future popup
+implementation can prove both an independent monitor coordinate space and
+compatible nested focus ownership.
 
 ## Quickshell Bluetooth pairing-agent boundary
 

@@ -21,6 +21,7 @@ ShellRoot {
             property string role: "dock"
             property var coordinator: null
             property var focusCompanion: null
+            property bool requestedVisible: false
             property bool visible: false
             property int dismissCount: 0
 
@@ -178,6 +179,28 @@ ShellRoot {
                 "dock registration was lost")
         }
 
+        destroyWindows()
+
+        const pendingHost = createWindow("pending dock host", "host")
+        pendingHost.visible = true
+        const pendingDock = createWindow("pending anchor dock", "dock",
+            pendingHost)
+        pendingDock.requestedVisible = true
+        coordinator.windowVisibilityChanged(pendingDock, "dock")
+        verify(coordinator.focusWindows.length === 0
+                && !coordinator.grabRequested,
+            "unplaceable requested dock entered the focus whitelist")
+        showWindow(pendingDock)
+        verify(pendingDock.requestedVisible
+                && coordinator.focusWindows.indexOf(pendingDock) >= 0
+                && coordinator.focusWindows.indexOf(pendingHost) >= 0,
+            "placeable pending dock did not acquire focus ownership")
+        pendingDock.visible = false
+        coordinator.windowVisibilityChanged(pendingDock, "dock")
+        verify(pendingDock.requestedVisible
+                && coordinator.focusWindows.length === 0
+                && !coordinator.grabRequested,
+            "windowless dock retained focus ownership or lost its request")
         destroyWindows()
 
         const centralOnly = createWindow("Super+Space only", "central")

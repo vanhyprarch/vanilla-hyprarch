@@ -4,6 +4,22 @@ function clampMargin(preferredMargin, panelExtent, screenExtent) {
     return Math.max(0, Math.min(Math.round(preferredMargin), maximumMargin))
 }
 
+function anchorReady(anchorItem, anchorWindow, targetScreen) {
+    return Boolean(anchorItem && anchorWindow && targetScreen
+        && anchorWindow.screen === targetScreen)
+}
+
+function mapAnchorRect(anchorItem, anchorWindow, targetScreen, mapper) {
+    if (!anchorReady(anchorItem, anchorWindow, targetScreen))
+        return null
+
+    return mapper(anchorItem)
+}
+
+function surfaceVisible(requestedVisible, placementReady) {
+    return Boolean(requestedVisible && placementReady)
+}
+
 function horizontalMargin(anchorX, anchorWidth, anchorParentWidth, gap,
         panelWidth, screenWidth) {
     const centeredInset = Math.max(0,

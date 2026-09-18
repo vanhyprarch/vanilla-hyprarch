@@ -103,7 +103,16 @@ grep -Fq 'root.visibleDockCompanions' \
     || fail 'visible dock panels do not whitelist their dock host'
 grep -Fq 'popupAnchorItem.QsWindow.window' "$components_dir/DockPopup.qml" \
     || fail 'dock panel focus ownership is not tied to its real parent window'
-grep -Fq 'function onWindowTransformChanged()' "$components_dir/DockPopup.qml" \
+grep -Fq 'readonly property bool anchorReady: DockGeometry.anchorReady(' \
+    "$components_dir/DockPopup.qml" \
+    || fail 'dock placement does not guard the anchor window lifecycle'
+grep -Fq 'return DockGeometry.mapAnchorRect(item, window,' \
+    "$components_dir/DockPopup.qml" \
+    || fail 'dock placement bypasses the guarded itemRect mapping path'
+grep -Fq 'visible: DockGeometry.surfaceVisible(root.requestedVisible,' \
+    "$components_dir/DockPopup.qml" \
+    || fail 'dock native visibility is not gated on valid placement'
+grep -Fq 'window.windowTransform' "$components_dir/DockPopup.qml" \
     || fail 'dock placement does not react to window or output transforms'
 grep -Fq 'function onDestroyed()' "$components_dir/DockPopup.qml" \
     || fail 'destroyed popup anchors can leave orphaned dock surfaces'
@@ -119,8 +128,12 @@ grep -Fq 'top: true' "$components_dir/DockPopup.qml" \
     || fail 'dock popup replacement is not top anchored'
 grep -Fq 'left: true' "$components_dir/DockPopup.qml" \
     || fail 'dock popup replacement is not left anchored'
-grep -Fq 'visible: false' "$components_dir/DockPopup.qml" \
-    || fail 'dock popup replacement is not hidden by default'
+grep -Fq 'property bool requestedVisible: false' "$components_dir/DockPopup.qml" \
+    || fail 'dock popup replacement does not default to a closed request'
+if grep -Fq 'Timer {' "$components_dir/DockPopup.qml"
+then
+    fail 'dock anchor readiness uses a time-based delay'
+fi
 
 expected_consumers='AppPicker.qml
 AudioPanel.qml
@@ -139,14 +152,18 @@ actual_consumers=$(grep -l -E '^[[:space:]]*DockPopup[[:space:]]*\{' \
 grep -Fq 'alignToAnchorTop: true' \
     "$components_dir/LauncherContextMenu.qml" \
     || fail 'launcher context menu lost launcher-adjacent placement'
-grep -Fq 'launcherContextMenu.visible = false' \
+grep -Fq 'launcherContextMenu.requestedVisible = false' \
     "$components_dir/Launchers.qml" \
     || fail 'reopening the launcher context menu does not close the old target'
-grep -Fq 'launcherContextMenu.visible = true' \
+grep -Fq 'launcherContextMenu.requestedVisible = true' \
     "$components_dir/Launchers.qml" \
     || fail 'launcher context menu cannot be opened after retargeting'
-grep -Fq 'root.visible = false' "$components_dir/LauncherContextMenu.qml" \
+grep -Fq 'root.requestedVisible = false' \
+    "$components_dir/LauncherContextMenu.qml" \
     || fail 'launcher context actions do not close their menu'
+grep -Fq 'onContextMenuSourceAnchorChanged:' \
+    "$components_dir/Launchers.qml" \
+    || fail 'destroyed launcher anchors do not close their context menu'
 
 if grep -Fq 'Timer {' "$components_dir/OverlayFocusCoordinator.qml"
 then

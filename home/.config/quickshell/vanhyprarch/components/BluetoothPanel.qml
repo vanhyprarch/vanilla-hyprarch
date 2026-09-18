@@ -298,8 +298,8 @@ DockPopup {
     }
 
     function syncPromptVisibility(): void {
-        if (root.promptForScreen && !root.visible)
-            root.visible = true
+        if (root.promptForScreen && !root.requestedVisible)
+            root.requestedVisible = true
         if (root.promptForScreen && root.visible && root.controller.displayPrompt
                 && !root.controller.displayAcknowledged
                 && !root.controller.promptResponsePending) {

@@ -40,7 +40,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: bluetoothPanel.visible = !bluetoothPanel.visible
+        onClicked: bluetoothPanel.requestedVisible = !bluetoothPanel.requestedVisible
     }
 
     BluetoothPanel {

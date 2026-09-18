@@ -232,7 +232,7 @@ Item {
         if (!store.contains(desktopId))
             return
 
-        launcherContextMenu.visible = false
+        launcherContextMenu.requestedVisible = false
         activeDragDesktopId = desktopId
         pendingDropIndex = -1
     }
@@ -327,14 +327,18 @@ Item {
 
     function openContextMenu(desktopEntry: DesktopEntry, anchorItem: Item,
             pinned: bool, running: bool): void {
-        launcherContextMenu.visible = false
+        launcherContextMenu.requestedVisible = false
         launcherContextMenu.desktopEntry = desktopEntry
         contextMenuSourceAnchor = anchorItem
         launcherContextMenu.pinned = pinned
         launcherContextMenu.running = running
-        launcherContextMenu.visible = true
+        launcherContextMenu.requestedVisible = true
     }
 
+    onContextMenuSourceAnchorChanged: {
+        if (!root.contextMenuSourceAnchor)
+            launcherContextMenu.requestedVisible = false
+    }
     onOpenUnpinnedDesktopIdsChanged: reconcileRuntimeOrder()
     Component.onCompleted: reconcileRuntimeOrder()
 
@@ -389,7 +393,9 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: appPicker.visible = !appPicker.visible
+                onClicked: {
+                    appPicker.requestedVisible = !appPicker.requestedVisible
+                }
             }
         }
 

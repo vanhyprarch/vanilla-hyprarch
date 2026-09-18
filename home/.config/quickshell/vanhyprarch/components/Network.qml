@@ -104,7 +104,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: networkPanel.visible = !networkPanel.visible
+        onClicked: networkPanel.requestedVisible = !networkPanel.requestedVisible
     }
 
     NetworkPanel {

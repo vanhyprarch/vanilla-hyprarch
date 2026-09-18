@@ -36,8 +36,8 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-            powerIdlePanel.visible = !powerIdlePanel.visible
-            if (powerIdlePanel.visible)
+            powerIdlePanel.requestedVisible = !powerIdlePanel.requestedVisible
+            if (powerIdlePanel.requestedVisible)
                 root.controller.refreshStatus(false)
         }
     }

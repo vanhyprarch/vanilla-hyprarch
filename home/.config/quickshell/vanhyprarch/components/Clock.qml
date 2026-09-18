@@ -74,7 +74,10 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: monthCalendar.visible = !monthCalendar.visible
+                onClicked: {
+                    monthCalendar.requestedVisible
+                        = !monthCalendar.requestedVisible
+                }
             }
         }
 

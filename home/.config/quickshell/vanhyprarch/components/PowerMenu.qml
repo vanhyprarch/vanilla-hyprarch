@@ -30,7 +30,7 @@ Item {
             return
         }
 
-        popup.visible = false
+        popup.requestedVisible = false
         powerActions.execute(action)
     }
 
@@ -41,7 +41,7 @@ Item {
 
     function confirmPendingAction(): void {
         const action = pendingAction
-        popup.visible = false
+        popup.requestedVisible = false
         powerActions.execute(action)
     }
 
@@ -73,7 +73,7 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: popup.visible = !popup.visible
+            onClicked: popup.requestedVisible = !popup.requestedVisible
 
             containmentMask: QtObject {
                 function contains(point: point): bool {

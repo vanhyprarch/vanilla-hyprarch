@@ -52,7 +52,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: audioPanel.visible = !audioPanel.visible
+        onClicked: audioPanel.requestedVisible = !audioPanel.requestedVisible
     }
 
     AudioPanel {

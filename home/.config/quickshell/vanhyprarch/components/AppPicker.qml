@@ -65,7 +65,7 @@ DockPopup {
                     if (!appRow.canAdd)
                         return
                     root.launcherStore.addLauncher(appRow.modelData.id)
-                    root.visible = false
+                    root.requestedVisible = false
                 }
 
                 Component {

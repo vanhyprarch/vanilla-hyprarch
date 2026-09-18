@@ -32,7 +32,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: monitorPanel.visible = !monitorPanel.visible
+        onClicked: monitorPanel.requestedVisible = !monitorPanel.requestedVisible
     }
 
     MonitorPanel {
