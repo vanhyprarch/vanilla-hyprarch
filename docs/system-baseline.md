@@ -292,11 +292,12 @@ machine configuration, and user override layers. The managed files and public
 machine seed contain no development-machine connector, mode, scale, color, or
 keyboard choices. The seed's portable catch-all monitor rule uses preferred
 mode, automatic position, and automatic scale; it is machine-owned but is not a
-Monitor panel write target. A future scale writer may edit only a documented
-field in a specific explicit output profile. The live development
-configuration and current scale writer remain tied to `DP-1` until the
-separately reviewed migration; repository structure alone must not be copied
-over that live state. No general multi-monitor schema is promised during
+Monitor panel write target. The live ownership migration uses
+`vanhyprarchMonitorScale` only in the development machine's explicit output
+profile. The Monitor panel resolves the XDG configuration root, matches the
+focused output, and fails closed unless exactly that profile and field are
+present in the expected machine-owned file; it cannot edit the catch-all rule
+or managed Hyprland files. No general multi-monitor schema is promised during
 Alpha.
 
 ## Screenshots

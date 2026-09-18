@@ -93,8 +93,10 @@ class DeploymentOwnershipTests(unittest.TestCase):
         )
         self.assertEqual(machine["class"], "MACHINE_CONFIGURATION")
         self.assertTrue(machine["machine_specific"])
+        self.assertEqual(machine["mode"], "0600")
         self.assertEqual(override["class"], "USER_CUSTOMIZATION_OVERRIDE")
         self.assertFalse(override["machine_specific"])
+        self.assertEqual(override["mode"], "0600")
 
     def test_hyprland_loader_has_exact_order_and_xdg_policy(self) -> None:
         loader = LOADER_PATH.read_text(encoding="utf-8")

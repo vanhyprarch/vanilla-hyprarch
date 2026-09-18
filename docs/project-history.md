@@ -360,6 +360,24 @@ static ownership regression tests were added. No live migration or desktop
 reload occurred; the Monitor panel remains unchanged for the controlled next
 step.
 
+## 2026-09-18: Controlled Hyprland ownership migration
+
+The separately reviewed live migration created the machine and user-override
+layers before changing the symlinked Quickshell source. The development
+machine's active output, keyboard, and personal device rule moved into its
+machine-owned file. An isolated prospective tree passed Hyprland 0.56.2
+verification before the managed loader, core, and bindings were deployed as
+regular files.
+
+One controlled reload preserved monitor and keyboard behavior with no config
+errors. The Monitor panel scale writer moved from the old managed `dp1Scale`
+declaration to the explicit output profile's narrow machine-owned
+`vanhyprarchMonitorScale` field and now fails closed on unexpected structure.
+The old root bindings file was removed only after its recovery copy and lack of
+live references were verified. System Keyboard Synchronization and Monitor
+Control & Safe Apply were recorded as future milestones and were not
+implemented by this migration.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

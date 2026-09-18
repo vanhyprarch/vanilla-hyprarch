@@ -607,9 +607,11 @@ device-specific rules do not belong in the managed core. The machine seed has
 a portable catch-all rule with preferred mode, automatic position, and
 automatic scale. That fallback exposes no Monitor panel write field. A future
 Monitor panel may edit only a narrowly documented scale field belonging to a
-specific explicit output profile in the machine-owned file. The current panel
-is not changed until controlled live migration, and no general multi-monitor
-schema is promised during Alpha.
+specific explicit output profile in the machine-owned file. The controlled
+live migration established that narrow field and moved the scale writer to the
+machine layer. It fails closed instead of creating or guessing a profile, does
+not edit the catch-all rule, and exposes no general multi-monitor schema during
+Alpha.
 
 Create-once seeds are never normal managed-update payloads. Machine files and
 override files are preserved, but preservation of an override file does not
@@ -621,3 +623,47 @@ The Zig Screensaver is assigned future optional-component ownership so the
 baseline architecture does not depend on it permanently. This decision does
 not yet remove current Power & Idle UI choices or alter runtime behavior; that
 migration remains a separate milestone.
+
+## ADR-031: Synchronize graphical keyboard state from systemd-localed
+
+**Status:** Accepted
+**Date:** 2026-09-18
+**Implementation:** Future milestone; not implemented
+
+The system graphical/XKB configuration exposed by `systemd-localed` is the
+future source of truth for the Hyprland keyboard layout. Vanilla HyprArch will
+synchronize the relevant graphical properties at session start and subscribe
+to localed property changes rather than poll when practical. External changes
+made through normal `localectl`/localed configuration must therefore propagate
+to Hyprland.
+
+The synchronizer must distinguish graphical XKB changes from console-only
+changes: an explicit `localectl --no-convert` console-keymap operation must not
+be misread as a graphical-layout update. A future Vanilla keyboard UI will
+write the system source of truth instead of changing only Hyprland.
+Device-specific keyboard rules remain `MACHINE_CONFIGURATION`. The Italian
+layout preserved in the development machine file is transitional migration
+state, not a permanent public default. This decision records the ownership
+direction only; it does not define or implement the synchronization mechanism.
+
+## ADR-032: Require confirmation before persisting risky monitor changes
+
+**Status:** Accepted
+**Date:** 2026-09-18
+**Implementation:** Future milestone; not implemented
+
+Future monitor control is per explicit output profile and may cover resolution,
+refresh rate, scale, color depth, and brightness where the output and available
+capabilities support it. Text Size remains one global preference, even if the
+Monitor panel exposes that existing control for convenience.
+
+Risky display changes follow one invariant:
+
+`known-good configuration -> temporary runtime apply -> 10-second confirmation
+-> persist only on confirmation`
+
+Application failure or confirmation timeout automatically restores the
+known-good runtime configuration. An unconfirmed display configuration is
+never persisted. This decision does not implement Safe Apply, define a general
+multi-monitor schema, or add speculative interfaces; those belong to the
+separate Monitor Control & Safe Apply milestone.

@@ -35,20 +35,22 @@ written through its owning backend.
 Files below `seeds/` are installation inputs, not normal managed-update
 payloads. A future deployment step may copy a seed only when its target does
 not exist. Once created, the target takes the ownership class declared in the
-manifest and normal updates preserve it.
+manifest and normal updates preserve it. The live machine and override files
+are private user configuration with mode `0600`.
 
 The Hyprland machine seed contains one portable catch-all monitor rule. Any
 output without a more specific machine rule uses its preferred mode, automatic
 position, and automatic scale. This fallback is machine-owned and is not a
 Monitor panel write target; it exposes no project-owned scale token.
 
-A future Monitor panel may edit only an explicitly documented scale field in a
-specific explicit output profile in the machine-owned file. The controlled
-development-machine migration will establish that profile separately; the
-public seed contains no connector, fixed mode or scale, keyboard layout, bit
-depth, color profile, or device rule. No general multi-monitor schema is
-promised during Alpha. The override seed contains only its administrative
-header.
+The Monitor panel may edit only the explicitly documented
+`vanhyprarchMonitorScale` field associated with the focused monitor's specific
+explicit output profile in the machine-owned file. It fails closed when that
+profile, field, or expected file shape is absent or ambiguous and never edits
+the catch-all rule. The public seed contains no connector, fixed mode or scale,
+keyboard layout, bit depth, color profile, device rule, or UI-owned scale
+field. No general multi-monitor schema is promised during Alpha. The override
+seed contains only its administrative header.
 
 ## Hyprland configuration order
 

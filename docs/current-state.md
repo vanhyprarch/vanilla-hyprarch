@@ -47,7 +47,10 @@ mode-0600 generated projection with no manifest `source`.
 Live paths:
 
 - `~/.config/hypr/hyprland.lua`
-- `~/.config/hypr/bindings.lua`
+- `~/.config/hypr/vanhyprarch/core.lua`
+- `~/.config/hypr/vanhyprarch/bindings.lua`
+- `~/.config/vanhyprarch/machine/hyprland.lua`
+- `~/.config/vanhyprarch/overrides/hyprland.lua`
 - `~/.config/hypr/hypridle.conf`
 - `~/.config/hypr/vanhyprarch-idle.conf`
 - `~/.config/quickshell/vanhyprarch`
@@ -68,13 +71,20 @@ connector, mode, scale, bit-depth, color-management, keyboard-layout, or
 device rule. The loader resolves XDG configuration paths and uses four ordered
 absolute `require()` calls.
 
-This is repository structure only. The development machine still runs its
-pre-migration live Hyprland files, including its `DP-1` monitor profile,
-Italian keyboard setting, and personal `epic-mouse-v1` rule. The current
-Monitor panel still edits the old live `dp1Scale` declaration and remains
-enabled only for `DP-1`; it was deliberately left unchanged because the live
-Quickshell configuration is a symlink into this checkout. Its move to the
-machine-owned file belongs to the separately reviewed live migration.
+The controlled live migration now runs the managed loader, core, and bindings
+as regular files. Its machine-owned file preserves the development machine's
+explicit `DP-1` profile, Italian keyboard setting, and personal
+`epic-mouse-v1` rule; none are public defaults. The user override remains the
+exact header-only seed. The old root `~/.config/hypr/bindings.lua` was removed
+only after validation and remains in the migration recovery material.
+
+The Monitor panel now resolves `XDG_CONFIG_HOME`, targets only the regular
+user-owned machine file, matches the focused connector to its explicit output
+profile, and edits only that profile's documented
+`vanhyprarchMonitorScale` declaration. It fails closed on missing, ambiguous,
+symlinked, non-user-owned, or unexpected file structure and never edits the
+portable catch-all monitor rule or managed configuration. This is the narrow
+single-explicit-profile Alpha boundary, not a general multi-monitor schema.
 
 A deliberately authored portable managed `hyprlock.conf` baseline now exists
 in the repository. It was not copied from the live development configuration
@@ -142,11 +152,11 @@ replacement, and rollback behavior. Startup failures leave one overwritten
 mode-0600 line in the session-runtime `session-start-error.log`; a successful
 reconciliation removes it.
 
-`-n` prevents a duplicate instance of the named Quickshell configuration. In
-the repository architecture, managed bindings are loaded through Hyprland's
-tracked absolute-path `require()` mechanism. The live machine continues to use
-its old `~/.config/hypr/bindings.lua` and `dofile()` until the controlled
-migration.
+`-n` prevents a duplicate instance of the named Quickshell configuration.
+Managed bindings are loaded through Hyprland's tracked absolute-path
+`require()` mechanism. The controlled live migration removed the old root
+`~/.config/hypr/bindings.lua` after the new configuration passed isolated and
+runtime validation.
 
 Hyprland's existing input configuration sets `numlock_by_default = true`, so
 Num Lock is enabled by default when the graphical session starts.
@@ -606,10 +616,15 @@ workaround. Physical two-monitor validation remains pending.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Perform the controlled live Hyprland ownership migration and then update the
-  Monitor panel to write only the documented scale field of a specific explicit
-  output profile in the machine-owned file. It must not edit the portable
-  catch-all rule.
+- Implement System Keyboard Synchronization: graphical XKB state from
+  `systemd-localed` is the source of truth, synchronized at session start and
+  on relevant property changes. The current Italian machine-file block is
+  transitional; device-specific rules remain machine configuration.
+- Implement Monitor Control & Safe Apply for per-output resolution, refresh
+  rate, scale, color depth, and supported brightness. Risky changes must be
+  applied temporarily and confirmed within 10 seconds before persistence;
+  failure or timeout restores the known-good runtime configuration. Text Size
+  remains global.
 - Move the Zig Screensaver into optional Additional system component ownership
   without constraining the baseline when it is absent.
 

@@ -27,23 +27,79 @@ DockPopup {
     readonly property var scalePresets: ["1.00", "1.25", "1.50", "2.00"]
     readonly property string scaleEditScript: [
         "set -eu",
-        "target=\"$HOME/.config/hypr/hyprland.lua\"",
-        "value=\"$1\"",
+        "connector=\"$1\"",
+        "value=\"$2\"",
         "case \"$value\" in",
         "    1.00|1.25|1.50|2.00) ;;",
         "    *) exit 64 ;;",
         "esac",
-        "[ -f \"$target\" ] || exit 66",
-        "pattern='^[[:space:]]*local[[:space:]]+dp1Scale[[:space:]]*=[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*$'",
+        "case \"$connector\" in",
+        "    ''|*[!A-Za-z0-9_.:-]*) exit 64 ;;",
+        "esac",
+        "[ -n \"${HOME:-}\" ] || exit 68",
+        "case \"$HOME\" in /*) ;; *) exit 68 ;; esac",
+        "configHome=${XDG_CONFIG_HOME:-$HOME/.config}",
+        "case \"$configHome\" in /*) ;; *) exit 68 ;; esac",
+        "target=\"$configHome/vanhyprarch/machine/hyprland.lua\"",
+        "[ -f \"$target\" ] && [ ! -L \"$target\" ] || exit 66",
+        "[ \"$(stat -c %u -- \"$target\")\" = \"$(id -u)\" ] || exit 66",
+        "pattern='^[[:space:]]*local[[:space:]]+vanhyprarchMonitorScale[[:space:]]*=[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*$'",
         "grepStatus=0",
         "count=$(grep -Ec \"$pattern\" \"$target\") || grepStatus=$?",
         "[ \"$grepStatus\" -le 1 ] || exit \"$grepStatus\"",
         "[ \"$count\" -eq 1 ] || exit 65",
+        "awk -v connector=\"$connector\" '",
+        "    function resetBlock() { output = \"unset\"; scale = \"unset\"; outputCount = 0; scaleCount = 0 }",
+        "    BEGIN { inMonitor = 0; monitorCount = 0; explicitCount = 0; fallbackCount = 0; tokenPending = 0; resetBlock() }",
+        "    /^[[:space:]]*local[[:space:]]+vanhyprarchMonitorScale[[:space:]]*=/ {",
+        "        tokenPending = 1",
+        "        next",
+        "    }",
+        "    tokenPending && /^[[:space:]]*(--.*)?$/ { next }",
+        "    /^[[:space:]]*hl[.]monitor[[:space:]]*[(][[:space:]]*[{][[:space:]]*$/ {",
+        "        if (inMonitor) exit 65",
+        "        inMonitor = 1",
+        "        monitorCount++",
+        "        blockOwnsToken = tokenPending",
+        "        tokenPending = 0",
+        "        resetBlock()",
+        "        next",
+        "    }",
+        "    tokenPending { exit 65 }",
+        "    inMonitor && /^[[:space:]]*output[[:space:]]*=/ {",
+        "        line = $0",
+        "        sub(/^[[:space:]]*output[[:space:]]*=[[:space:]]*\"/, \"\", line)",
+        "        sub(/\"[[:space:]]*,?[[:space:]]*$/, \"\", line)",
+        "        output = line",
+        "        outputCount++",
+        "        next",
+        "    }",
+        "    inMonitor && /^[[:space:]]*scale[[:space:]]*=/ {",
+        "        line = $0",
+        "        sub(/^[[:space:]]*scale[[:space:]]*=[[:space:]]*/, \"\", line)",
+        "        sub(/[[:space:]]*,?[[:space:]]*$/, \"\", line)",
+        "        scale = line",
+        "        scaleCount++",
+        "        next",
+        "    }",
+        "    inMonitor && /^[[:space:]]*[}][[:space:]]*[)][[:space:]]*$/ {",
+        "        if (outputCount != 1 || scaleCount != 1) exit 65",
+        "        if (output == \"\" && scale == \"\\\"auto\\\"\" && !blockOwnsToken) fallbackCount++",
+        "        if (output == connector && scale == \"vanhyprarchMonitorScale\" && blockOwnsToken) explicitCount++",
+        "        inMonitor = 0",
+        "        next",
+        "    }",
+        "    END {",
+        "        if (inMonitor || tokenPending || monitorCount != 2 || fallbackCount != 1 || explicitCount != 1) exit 65",
+        "    }",
+        "' \"$target\" || exit 65",
+        "referenceCount=$(grep -Ec '^[[:space:]]*scale[[:space:]]*=[[:space:]]*vanhyprarchMonitorScale[[:space:]]*,?[[:space:]]*$' \"$target\")",
+        "[ \"$referenceCount\" -eq 1 ] || exit 65",
         "tmp=$(mktemp \"${target}.tmp.XXXXXX\")",
         "trap 'rm -f -- \"$tmp\"' EXIT HUP INT TERM",
-        "sed -E \"s|$pattern|local dp1Scale = $value|\" \"$target\" > \"$tmp\"",
+        "sed -E \"s|$pattern|local vanhyprarchMonitorScale = $value|\" \"$target\" > \"$tmp\"",
         "verifyStatus=0",
-        "count=$(grep -Fxc \"local dp1Scale = $value\" \"$tmp\") || verifyStatus=$?",
+        "count=$(grep -Fxc \"local vanhyprarchMonitorScale = $value\" \"$tmp\") || verifyStatus=$?",
         "[ \"$verifyStatus\" -le 1 ] || exit \"$verifyStatus\"",
         "[ \"$count\" -eq 1 ] || exit 67",
         "chmod --reference=\"$target\" \"$tmp\"",
@@ -424,8 +480,8 @@ DockPopup {
             console.warn("Rejected invalid monitor scale preset: " + preset)
             return
         }
-        if (root.connectorName !== "DP-1") {
-            console.warn("Monitor scale presets are only configured for DP-1")
+        if (root.connectorName === "") {
+            console.warn("Monitor scale update requires a focused output profile")
             return
         }
         if (scaleWriteProcess.running || root.scaleMatches(Number(preset)))
@@ -433,7 +489,7 @@ DockPopup {
 
         scaleWriteProcess.requestedScale = preset
         scaleWriteProcess.command = ["sh", "-c", root.scaleEditScript,
-            "quickshell-scale-edit", preset]
+            "quickshell-scale-edit", root.connectorName, preset]
         scaleWriteProcess.running = true
     }
 
