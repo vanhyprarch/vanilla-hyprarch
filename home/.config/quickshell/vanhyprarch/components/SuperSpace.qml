@@ -70,8 +70,6 @@ Scope {
         }
     ]
     readonly property var visibleEntries: buildVisibleEntries()
-    signal configurePowerIdleRequested(string screenName)
-
     function open(): void {
         if (isOpen)
             return
@@ -89,8 +87,6 @@ Scope {
         componentSubview = ""
         searchText = ""
         pendingPowerAction = ""
-        systemComponentsActions.refreshAll()
-        zigScreensaverActions.refreshAll()
         isOpen = true
     }
 
@@ -136,10 +132,6 @@ Scope {
         searchText = ""
         if (sectionId === "remove")
             removeActions.refreshPackages()
-        else if (sectionId === "components") {
-            systemComponentsActions.refreshAll()
-            zigScreensaverActions.refreshAll()
-        }
     }
 
     function openComponent(componentId: string): void {
@@ -149,8 +141,24 @@ Scope {
         currentComponentId = componentId
         componentSubview = ""
         searchText = ""
-        systemComponentsActions.refreshAll()
-        zigScreensaverActions.refreshAll()
+    }
+
+    function entryIdentity(entry: var): string {
+        if (!entry)
+            return ""
+        if (entry.componentId)
+            return "component:" + entry.componentId
+        if (entry.modelId)
+            return entry.kind + ":" + entry.modelId
+        if (entry.languageId)
+            return entry.kind + ":" + entry.languageId
+        if (entry.accelerationId)
+            return entry.kind + ":" + entry.accelerationId
+        if (entry.duration !== undefined)
+            return entry.kind + ":" + entry.duration
+        if (entry.actionId)
+            return entry.kind + ":" + entry.actionId
+        return entry.kind + ":" + (entry.label || "")
     }
 
     function normalize(value): string {
@@ -397,8 +405,18 @@ Scope {
             label: label,
             detail: detail,
             icon: danger ? "dialog-error" : "dialog-information",
-            enabled: false,
+            enabled: true,
+            selectable: false,
+            informational: true,
             danger: danger
+        }
+    }
+
+    function separatorEntry(): var {
+        return {
+            kind: "componentSeparator",
+            enabled: true,
+            selectable: false
         }
     }
 
@@ -425,6 +443,7 @@ Scope {
                     "Local/offline push-to-talk dictation using F9.", false),
                 infoEntry("Vanilla default",
                     "Small — English · English · CPU · 2 minutes", false),
+                separatorEntry(),
                 actionEntry("dictationInstall", "Install",
                     "Install optional official dependencies and verified Voxtype",
                     "system-software-install", !actions.operationRunning, false)
@@ -434,6 +453,7 @@ Scope {
             return [
                 infoEntry("Status", status.state === "error" ? "Error" : "Incomplete", true),
                 infoEntry("Details", actions.errorMessage || (status.errors || []).join("; "), true),
+                separatorEntry(),
                 actionEntry("dictationRefresh", "Refresh", "Read component state again",
                     "view-refresh", !actions.operationRunning, false),
                 actionEntry("dictationUninstallView", "Uninstall",
@@ -444,9 +464,10 @@ Scope {
         const model = actions.model(actions.proposedModel)
         const languageLocked = model && model.family === "english"
         return [
-            infoEntry("Current settings",
+            infoEntry("Current Settings",
                 status.matches_defaults ? "Matches the Vanilla default" : "Customized for this user", false),
             infoEntry("Status", "Installed · service " + status.service_state, false),
+            separatorEntry(),
             actionEntry("dictationAccelerationView", "Acceleration",
                 actions.accelerationLabel(actions.proposedAcceleration), "video-display",
                 !actions.operationRunning && actions.catalogData !== null, false),
@@ -596,6 +617,7 @@ Scope {
                 "This will remove Voxtype, its configuration, and all downloaded speech models.", true),
             infoEntry("Vanilla component manager",
                 "Will remain available so Local Dictation can be installed again later.", false),
+            separatorEntry(),
             actionEntry("dictationUninstallCancel", "Cancel",
                 "Return without removing Local Dictation", "dialog-cancel", true, false),
             actionEntry("dictationUninstallConfirm", "Confirm uninstall",
@@ -647,6 +669,7 @@ Scope {
             return [
                 infoEntry("Uninstall unavailable",
                     actions.errorMessage || "Could not calculate the preference transaction.", true),
+                separatorEntry(),
                 actionEntry("zigUninstallCancel", "Back", "Return without removing Zig Screensaver",
                     "go-previous", true, false)
             ]
@@ -659,6 +682,7 @@ Scope {
                     : "Unchanged (" + lockLabel(actions.uninstallPlan.resulting_lock) + ")", false),
             infoEntry("Preserved settings",
                 "Turn Off Display, Suspend, and Caffeine behavior are preserved.", false),
+            separatorEntry(),
             actionEntry("zigUninstallCancel", "Cancel", "Return without removing Zig Screensaver",
                 "dialog-cancel", true, false),
             actionEntry("zigUninstallConfirm", "Confirm uninstall",
@@ -683,6 +707,7 @@ Scope {
                 infoEntry("Zig Screensaver",
                     "Optional native screensaver effects for Power & Idle.", false),
                 infoEntry("Pinned release", status.version + " · Arch Linux x86_64", false),
+                separatorEntry(),
                 actionEntry("zigInstall", "Install", "Download and verify the pinned release",
                     "system-software-install", !actions.operationRunning, false)
             ]
@@ -690,6 +715,7 @@ Scope {
             const result = [
                 infoEntry("Status", status.state === "error" ? "Error" : "Incomplete", true),
                 infoEntry("Details", actions.errorMessage || status.errors.join("; "), true),
+                separatorEntry(),
                 actionEntry("zigRepair", "Repair/Reinstall",
                     "Stage and verify a complete pinned payload", "view-refresh",
                     !actions.operationRunning, false),
@@ -704,9 +730,7 @@ Scope {
         }
         return [
             infoEntry("Status", "Installed · " + status.version + " · " + status.architecture, false),
-            actionEntry("zigConfigure", "Configure in Power & Idle",
-                "Use Screen Saver Effect, Screensaver, and Automatic Lock",
-                "preferences-system-power", true, false),
+            separatorEntry(),
             actionEntry("zigRefresh", "Refresh", "Validate marker and complete payload again",
                 "view-refresh", !actions.operationRunning, false),
             actionEntry("zigReinstall", "Reinstall", "Replace from the pinned verified release",
@@ -902,11 +926,6 @@ Scope {
             break
         case "zigInstall":
             if (zigScreensaverActions.execute("install")) close()
-            break
-        case "zigConfigure":
-            const requestedScreen = activeScreenName
-            close()
-            configurePowerIdleRequested(requestedScreen)
             break
         case "zigRefresh":
             zigScreensaverActions.refreshAll()

@@ -33,12 +33,12 @@ DockPopup {
     readonly property var lockChoices: [
         { value: "none", label: "None" },
         { value: "screensaver", label: "Screensaver" },
-        { value: "display", label: "Display Off" },
+        { value: "display", label: "Display off" },
         { value: "suspend", label: "Suspend" }
     ]
     readonly property var lockChoicesWithoutScreensaver: [
         { value: "none", label: "None" },
-        { value: "display", label: "Display Off" },
+        { value: "display", label: "Display off" },
         { value: "suspend", label: "Suspend" }
     ]
     readonly property var effectChoices: [
@@ -268,7 +268,7 @@ DockPopup {
 
             Column {
                 id: effectSection
-                readonly property string sectionLabel: "Screen Saver Effect"
+                readonly property string sectionLabel: "Screen saver effect"
                 width: parent.width
                 visible: root.controller.screensaverAvailable
                 spacing: root.metrics.contentGap
@@ -277,7 +277,7 @@ DockPopup {
 
                 Text {
                     width: parent.width
-                    text: "Screen Saver Effect"
+                    text: "Screen saver effect"
                     color: root.theme.text
                     font.pixelSize: root.metrics.informationLabelFontSize
                     font.weight: root.metrics.informationLabelFontWeight
@@ -324,7 +324,7 @@ DockPopup {
             StageSection {
                 id: displaySection
                 stage: "display"
-                title: "Turn Off Display"
+                title: "Turn off display"
                 presets: root.displayPresets
             }
 
@@ -342,9 +342,9 @@ DockPopup {
 
             Text {
                 id: automaticLockSection
-                readonly property string sectionLabel: "Automatic Lock"
+                readonly property string sectionLabel: "Automatic lock"
                 width: parent.width
-                text: "Automatic Lock"
+                text: "Automatic lock"
                 color: root.theme.text
                 font.pixelSize: root.metrics.informationLabelFontSize
                 font.weight: root.metrics.informationLabelFontWeight

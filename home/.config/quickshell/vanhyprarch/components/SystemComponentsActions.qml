@@ -9,6 +9,8 @@ Scope {
     property bool executionEnabled: true
     property string managerExecutable: "vanhyprarch-dictation"
     property bool statusLoading: false
+    property int statusRefreshSerial: 0
+    property int catalogRefreshSerial: 0
     property string errorMessage: ""
     property string lifecycleErrorMessage: ""
     property var statusData: ({
@@ -463,6 +465,7 @@ Scope {
         if (!checksEnabled || statusProcess.running)
             return false
         statusLoading = true
+        statusRefreshSerial += 1
         errorMessage = lifecycleErrorMessage
         statusProcess.begin()
         return true
@@ -471,6 +474,7 @@ Scope {
     function refreshCatalog(): bool {
         if (!checksEnabled || catalogProcess.running)
             return false
+        catalogRefreshSerial += 1
         catalogProcess.begin()
         return true
     }

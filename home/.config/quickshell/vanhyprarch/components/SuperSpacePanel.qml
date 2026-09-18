@@ -19,6 +19,8 @@ PopupWindow {
         controller.activeScreenName === screenName
     readonly property bool confirming:
         controller.pendingPowerAction !== ""
+    property string selectedEntryIdentity: ""
+    readonly property int selectedEntryIndex: entriesView.currentIndex
     readonly property int panelWidth: Math.max(metrics.scaled(320),
         Math.min(metrics.wideOverlayMaximum,
             screenWidth - dockWidth - metrics.scaled(48)))
@@ -32,14 +34,47 @@ PopupWindow {
     }
 
     function resetSelection(): void {
-        entriesView.currentIndex = -1
+        selectedEntryIdentity = ""
         for (let index = 0; index < controller.visibleEntries.length; ++index) {
-            if (controller.visibleEntries[index].enabled !== false) {
-                entriesView.currentIndex = index
+            if (entrySelectable(index)) {
+                selectEntryAt(index)
+                entriesView.positionViewAtBeginning()
                 break
             }
         }
-        entriesView.positionViewAtBeginning()
+        if (selectedEntryIdentity === "")
+            entriesView.currentIndex = -1
+    }
+
+    function entrySelectable(index: int): bool {
+        return index >= 0 && index < controller.visibleEntries.length
+            && controller.visibleEntries[index].selectable !== false
+            && controller.visibleEntries[index].enabled !== false
+    }
+
+    function selectEntryAt(index: int): bool {
+        if (!entrySelectable(index))
+            return false
+        entriesView.currentIndex = index
+        selectedEntryIdentity = controller.entryIdentity(
+            controller.visibleEntries[index])
+        return true
+    }
+
+    function preserveSelection(): void {
+        const identity = selectedEntryIdentity
+        if (identity !== "") {
+            for (let index = 0; index < controller.visibleEntries.length; ++index) {
+                if (entrySelectable(index)
+                        && controller.entryIdentity(controller.visibleEntries[index])
+                            === identity) {
+                    entriesView.currentIndex = index
+                    entriesView.positionViewAtIndex(index, ListView.Contain)
+                    return
+                }
+            }
+        }
+        resetSelection()
     }
 
     function focusPrimaryControl(): void {
@@ -52,7 +87,9 @@ PopupWindow {
     }
 
     function moveSelection(offset: int): void {
-        entriesNavigation.move(offset)
+        if (entriesNavigation.move(offset))
+            selectedEntryIdentity = controller.entryIdentity(
+                controller.visibleEntries[entriesView.currentIndex])
     }
 
     function activateSelection(): void {
@@ -128,7 +165,7 @@ PopupWindow {
         }
 
         function onVisibleEntriesChanged(): void {
-            root.resetSelection()
+            root.preserveSelection()
         }
 
         function onSearchTextChanged(): void {
@@ -337,7 +374,7 @@ PopupWindow {
 
                 view: entriesView
                 isSelectable: function(index) {
-                    return root.controller.visibleEntries[index].enabled !== false
+                    return root.entrySelectable(index)
                 }
             }
 
@@ -350,30 +387,50 @@ PopupWindow {
             onCountChanged: {
                 if (count === 0)
                     currentIndex = -1
-                else if (currentIndex < 0 || currentIndex >= count)
-                    currentIndex = 0
+                else
+                    root.preserveSelection()
             }
 
-            delegate: PanelActionRow {
-                id: entryRow
+            delegate: Item {
+                id: entryDelegate
 
                 required property var modelData
                 required property int index
+                readonly property bool separator:
+                    modelData.kind === "componentSeparator"
 
                 width: entriesView.width - root.metrics.scrollIndicatorGutter
-                metrics: root.metrics
-                theme: root.theme
-                primaryText: modelData.label
-                secondaryText: modelData.detail || ""
-                keyboardSelected: index === entriesView.currentIndex
-                danger: modelData.danger === true
-                enabled: modelData.enabled !== false
-                active: modelData.active === true
-                leading: entryIcon
-                activeFocusOnTab: false
-                onActivated: {
-                    entriesView.currentIndex = index
-                    root.controller.activate(modelData)
+                height: separator ? root.metrics.sectionGap
+                    : entryRow.implicitHeight
+
+                PanelSeparator {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: entryDelegate.separator
+                    metrics: root.metrics
+                    theme: root.theme
+                }
+
+                PanelActionRow {
+                    id: entryRow
+
+                    width: parent.width
+                    visible: !entryDelegate.separator
+                    metrics: root.metrics
+                    theme: root.theme
+                    primaryText: entryDelegate.modelData.label || ""
+                    secondaryText: entryDelegate.modelData.detail || ""
+                    keyboardSelected: entryDelegate.index === entriesView.currentIndex
+                    danger: entryDelegate.modelData.danger === true
+                    enabled: entryDelegate.modelData.enabled !== false
+                    interactive: root.entrySelectable(entryDelegate.index)
+                    informational: entryDelegate.modelData.informational === true
+                    active: entryDelegate.modelData.active === true
+                    leading: entryIcon
+                    activeFocusOnTab: false
+                    onActivated: {
+                        if (root.selectEntryAt(entryDelegate.index))
+                            root.controller.activate(entryDelegate.modelData)
+                    }
                 }
 
                 Component {
@@ -384,7 +441,7 @@ PopupWindow {
 
                         property bool failed: false
                         readonly property string iconName:
-                            entryRow.modelData.icon || "application-x-executable"
+                            entryDelegate.modelData.icon || "application-x-executable"
 
                         width: root.metrics.heroIconSize
                         height: root.metrics.heroIconSize

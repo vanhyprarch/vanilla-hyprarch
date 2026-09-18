@@ -7,8 +7,6 @@ ShellRoot {
     property int reloadRequests: 0
     property int reloadCompletions: 0
     property int refreshRequests: 0
-    property int configurePowerIdleRequests: 0
-    property string configuredPowerIdleScreen: ""
     property int lifecyclePhase: 0
     property var lifecycleEvents: []
     readonly property string successFixture:
@@ -75,15 +73,12 @@ ShellRoot {
         systemComponentsActions: componentActions
         zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
-        onConfigurePowerIdleRequested: function(screenName) {
-            root.configurePowerIdleRequests += 1
-            root.configuredPowerIdleScreen = screenName
-        }
     }
     VisualMetrics { id: visualMetrics }
     Theme { id: shellTheme; metrics: visualMetrics }
     Item { id: panelAnchor }
     SuperSpacePanel {
+        id: superSpacePanel
         controller: superSpace
         metrics: visualMetrics
         theme: shellTheme
@@ -212,7 +207,8 @@ ShellRoot {
                 "valid not-installed status was rejected")
             superSpace.enterSection("components")
             superSpace.openComponent("local-dictation")
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Local Dictation,Vanilla default,Install",
                 "not-installed component page is wrong")
             superSpace.goBack()
@@ -255,7 +251,8 @@ ShellRoot {
                     === "Local Dictation,Zig Screensaver",
                 "optional components are not explicit siblings in product order")
             superSpace.openComponent("zig-screensaver")
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Zig Screensaver,Pinned release,Install",
                 "not-installed Zig Screensaver page is wrong")
             const zigInstalled = Object.assign({}, zigAbsent, {
@@ -264,15 +261,21 @@ ShellRoot {
             })
             root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigInstalled)),
                 "installed Zig Screensaver status was rejected")
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
-                    === "Status,Configure in Power & Idle,Refresh,Reinstall,Uninstall",
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.selectable !== false).map(entry => entry.label).join(",")
+                    === "Refresh,Reinstall,Uninstall",
                 "installed Zig Screensaver actions are not exact")
-            superSpace.activeScreenName = "test-screen"
-            superSpace.activate(superSpace.visibleEntries.find(entry =>
-                entry.kind === "zigConfigure"))
-            root.check(root.configurePowerIdleRequests === 1
-                    && root.configuredPowerIdleScreen === "test-screen",
-                "Configure in Power & Idle did not navigate through the shell request")
+            root.check(!superSpace.visibleEntries.some(entry =>
+                    entry.label === "Configure in Power & Idle"),
+                "removed Power & Idle shortcut remains on the Zig page")
+            const zigInfo = superSpace.visibleEntries[0]
+            const zigSeparator = superSpace.visibleEntries[1]
+            root.check(zigInfo.label === "Status" && zigInfo.informational === true
+                    && zigInfo.selectable === false && zigInfo.enabled === true,
+                "Zig Status is not normal non-selectable information")
+            root.check(zigSeparator.kind === "componentSeparator"
+                    && zigSeparator.selectable === false,
+                "Zig information/action separator is missing or navigable")
             superSpace.enterSection("components")
             superSpace.openComponent("zig-screensaver")
             zigScreensaverActions.uninstallPlan = {
@@ -282,7 +285,8 @@ ShellRoot {
             }
             zigScreensaverActions.uninstallPlanValid = true
             superSpace.componentSubview = "uninstall"
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Uninstall Zig Screensaver?,Automatic Lock after removal,Preserved settings,Cancel,Confirm uninstall"
                     && superSpace.visibleEntries[1].detail === "Display Off",
                 "bound uninstall confirmation did not disclose the exact lock destination")
@@ -293,7 +297,8 @@ ShellRoot {
             })
             root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigIncomplete)),
                 "incomplete Zig Screensaver status was rejected")
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Status,Details,Repair/Reinstall,Refresh",
                 "unsafe incomplete Zig Screensaver exposed Clean up")
             const zigErrorCleanable = Object.assign({}, zigIncomplete, {
@@ -301,7 +306,8 @@ ShellRoot {
             })
             root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigErrorCleanable)),
                 "cleanable Zig Screensaver error status was rejected")
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Status,Details,Repair/Reinstall,Refresh,Clean up",
                 "manager-proven Clean up action was not surfaced exactly")
             root.check(zigScreensaverActions.commandFor("uninstall", "").length === 0
@@ -316,6 +322,19 @@ ShellRoot {
             superSpace.openComponent("local-dictation")
             root.check(superSpace.currentComponentId === "local-dictation",
                 "Local Dictation page did not open")
+            const dictationInfo = superSpace.visibleEntries.slice(0, 2)
+            root.check(dictationInfo.map(entry => entry.label).join(",")
+                    === "Current Settings,Status"
+                    && dictationInfo.every(entry => entry.informational === true
+                        && entry.selectable === false && entry.enabled === true),
+                "Local Dictation information is not normal and non-selectable")
+            root.check(superSpace.visibleEntries[2].kind === "componentSeparator"
+                    && superSpace.visibleEntries[2].selectable === false,
+                "Local Dictation information/action separator is missing or navigable")
+            superSpacePanel.resetSelection()
+            root.check(superSpace.visibleEntries[superSpacePanel.selectedEntryIndex].label
+                    === "Acceleration",
+                "component navigation did not skip information and separator rows")
             const vulkanStatus = Object.assign({}, status, {
                 acceleration: "vulkan",
                 matches_defaults: false
@@ -402,7 +421,8 @@ ShellRoot {
                 "missing-prerequisite selection mutated live acceleration")
             componentActions.acceptStatusJson(JSON.stringify(status))
             superSpace.componentSubview = "uninstall"
-            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Uninstall Local Dictation?,Vanilla component manager,Cancel,Confirm uninstall",
                 "uninstall confirmation entries are wrong")
             root.check(superSpace.visibleEntries[0].detail
@@ -411,7 +431,8 @@ ShellRoot {
             root.check(superSpace.visibleEntries[1].detail
                     === "Will remain available so Local Dictation can be installed again later.",
                 "uninstall confirmation does not explain manager retention")
-            root.check(superSpace.visibleEntries[3].detail
+            root.check(superSpace.visibleEntries.find(entry =>
+                    entry.kind === "dictationUninstallConfirm").detail
                     === "Remove Local Dictation and all of its data",
                 "uninstall confirmation action is not destructive-explicit")
             superSpace.goBack()

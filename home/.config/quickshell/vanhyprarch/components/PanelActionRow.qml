@@ -12,18 +12,21 @@ Rectangle {
     property bool keyboardSelected: false
     property bool active: false
     property bool danger: false
+    property bool informational: false
+    property bool interactive: enabled && !informational
     property int primaryFontSize: root.metrics.overlayFontSize
     property int primaryFontWeight: root.metrics.overlayFontWeight
-    readonly property bool highlighted: root.keyboardSelected
-        || root.activeFocus || pointer.containsMouse
+    readonly property bool highlighted: root.interactive
+        && (root.keyboardSelected || root.activeFocus || pointer.containsMouse)
     signal activated()
 
-    activeFocusOnTab: root.enabled
+    activeFocusOnTab: root.interactive
     implicitHeight: root.secondaryText === ""
         ? root.metrics.navigationRowHeight
         : root.metrics.detailedNavigationRowHeight
     radius: root.metrics.rowRadius
-    opacity: root.enabled ? 1.0 : root.metrics.disabledInteractiveOpacity
+    opacity: root.informational || root.enabled
+        ? 1.0 : root.metrics.disabledInteractiveOpacity
     color: pointer.pressed
         ? (root.danger ? root.theme.dangerFill : root.theme.pressedFill)
         : root.highlighted
@@ -32,9 +35,9 @@ Rectangle {
     border.width: root.activeFocus ? root.metrics.controlOutlineThickness : 0
     border.color: root.theme.focus
 
-    Keys.onReturnPressed: root.activated()
-    Keys.onEnterPressed: root.activated()
-    Keys.onSpacePressed: root.activated()
+    Keys.onReturnPressed: if (root.interactive) root.activated()
+    Keys.onEnterPressed: if (root.interactive) root.activated()
+    Keys.onSpacePressed: if (root.interactive) root.activated()
 
     Loader {
         id: leadingLoader
@@ -92,9 +95,9 @@ Rectangle {
         id: pointer
 
         anchors.fill: parent
-        enabled: root.enabled
-        hoverEnabled: true
-        cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        enabled: root.interactive
+        hoverEnabled: root.interactive
+        cursorShape: root.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
             root.forceActiveFocus()
             root.activated()

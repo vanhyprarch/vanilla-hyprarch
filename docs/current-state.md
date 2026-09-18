@@ -267,8 +267,8 @@ The current Quickshell UI includes:
   control supporting every integer from 9 through 20 with a project default of
   12;
 - a compact capability-aware Power & Idle panel backed by the project
-  controller: Caffeine, Display, Suspend, and Automatic Lock are baseline;
-  Screensaver and Screen Saver Effect exist only with validated Zig
+  controller: Caffeine, Turn off display, Suspend, and Automatic lock are baseline;
+  Screensaver and Screen saver effect exist only with validated Zig
   Screensaver capability;
 - a persistent light/dark shell theme using Papirus icons;
 - direct dock access to Super+Space from the logo and to the shortcut viewer
@@ -337,6 +337,17 @@ and the supervisor remains alive until the real Foot process exits. Successful
 Install and Uninstall then run exactly one direct `hyprctl reload` and refresh
 component status only after reload completion; failures, Apply, Refresh, and
 model removal never reload bindings.
+
+The two Additional system components controllers perform one asynchronous
+authoritative refresh when the shell initializes and retain that last-known
+session state. Opening, closing, entering, or reopening the catalog and its
+detail pages reads the cache and starts no manager command. Explicit Refresh
+and every completed lifecycle operation request authoritative state again;
+Local Dictation also refreshes its reviewed catalog. Status updates preserve
+the selected component or action by stable identity. Component-page status and
+settings rows are normal non-interactive information, separated from actions
+with the shared panel separator. Zig Screensaver's installed actions are
+Refresh, Reinstall, and Uninstall.
 
 Flatpak is an unpinned required entry in the official package manifest. The
 development machine has a correct system `flathub` remote. The reusable

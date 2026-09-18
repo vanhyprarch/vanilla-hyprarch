@@ -232,14 +232,14 @@ The dock order is:
 
 This list follows the lower control area from bottom to top.
 
-The panel always shows Caffeine, Turn Off Display, Suspend, and Automatic Lock
-with None, Display Off, and Suspend. When Zig Screensaver is installed, Screen
-Saver Effect and Screensaver appear between Caffeine and Turn Off Display, and
-Screensaver is selectable as the Automatic Lock choice only while that stage is
+The panel always shows Caffeine, Turn off display, Suspend, and Automatic lock
+with None, Display off, and Suspend. When Zig Screensaver is installed, Screen
+saver effect and Screensaver appear between Caffeine and Turn off display, and
+Screensaver is selectable as the Automatic lock choice only while that stage is
 enabled.
 Absent and incomplete components leave no disabled row or empty placeholder.
 
-Automatic Lock is not a separate timeout. It selects which configured stage
+Automatic lock is not a separate timeout. It selects which configured stage
 locks the session: for example, Screensaver at 120 seconds and Display at 300
 seconds with `lock=display` starts the saver at 120 without locking and locks
 when Display begins at 300. Deliberate uninstall atomically persists

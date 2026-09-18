@@ -10,9 +10,6 @@ import "components"
 ShellRoot {
     id: root
 
-    property string powerIdleRequestScreen: ""
-    property int powerIdleRequestSerial: 0
-
     TextSizeController {
         id: textSizeController
     }
@@ -76,10 +73,6 @@ ShellRoot {
         systemComponentsActions: systemComponentsActions
         zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
-        onConfigurePowerIdleRequested: function(screenName) {
-            root.powerIdleRequestScreen = screenName
-            root.powerIdleRequestSerial += 1
-        }
     }
 
     IdleController {
@@ -228,9 +221,6 @@ ShellRoot {
             controller: idleController
             theme: shellTheme
             metrics: visualMetrics
-            screenName: screenScope.modelData.name
-            openRequestScreen: root.powerIdleRequestScreen
-            openRequestSerial: root.powerIdleRequestSerial
 
             anchors {
                 bottom: dockThemeToggle.top

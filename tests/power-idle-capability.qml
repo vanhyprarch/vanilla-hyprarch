@@ -73,10 +73,10 @@ ShellRoot {
             root.check(panel.automaticLockChoiceCount === 3,
                 "absent component did not expose exactly three lock choices")
             root.check(panel.visibleSectionLabels.join(",")
-                    === "Caffeine,Turn Off Display,Suspend,Automatic Lock",
+                    === "Caffeine,Turn off display,Suspend,Automatic lock",
                 "absent component section order is not exact")
             root.check(panel.visibleLockChoiceLabels.join(",")
-                    === "None,Display Off,Suspend",
+                    === "None,Display off,Suspend",
                 "absent component lock choices are not exact")
             root.check(panel.optionalLayoutContribution === 0,
                 "absent optional sections reserved layout contribution")
@@ -97,11 +97,16 @@ ShellRoot {
                 root.check(panel.automaticLockChoiceCount === 4,
                     "installed component did not restore Screensaver lock choice")
                 root.check(panel.visibleSectionLabels.join(",")
-                        === "Caffeine,Screen Saver Effect,Screensaver,Turn Off Display,Suspend,Automatic Lock",
+                        === "Caffeine,Screen saver effect,Screensaver,Turn off display,Suspend,Automatic lock",
                     "installed component section order is not exact")
                 root.check(panel.visibleLockChoiceLabels.join(",")
-                        === "None,Screensaver,Display Off,Suspend",
+                        === "None,Screensaver,Display off,Suspend",
                     "installed component lock choices are not exact")
+                root.check(panel.visibleSectionLabels.indexOf("Screen Saver Effect") < 0
+                        && panel.visibleSectionLabels.indexOf("Turn Off Display") < 0
+                        && panel.visibleSectionLabels.indexOf("Automatic Lock") < 0
+                        && panel.visibleLockChoiceLabels.indexOf("Display Off") < 0,
+                    "old Power & Idle label forms remain in the live fixture")
                 root.check(panel.optionalLayoutContribution > 0,
                     "installed optional sections did not enter layout")
                 idleParser.ready = true

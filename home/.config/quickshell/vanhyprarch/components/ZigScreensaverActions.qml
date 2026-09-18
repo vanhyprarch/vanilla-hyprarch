@@ -12,6 +12,7 @@ Scope {
     property string terminalOperation:
         Quickshell.shellDir + "/helpers/vanhyprarch_terminal_operation"
     property bool statusLoading: false
+    property int statusRefreshSerial: 0
     property bool planLoading: false
     property bool uninstallPlanValid: false
     property string errorMessage: ""
@@ -95,11 +96,13 @@ Scope {
         return true
     }
 
-    function refreshStatus(): void {
+    function refreshStatus(): bool {
         if (!checksEnabled || statusProcess.running)
-            return
+            return false
         statusLoading = true
+        statusRefreshSerial += 1
         statusProcess.begin()
+        return true
     }
 
     function refreshUninstallPlan(): void {

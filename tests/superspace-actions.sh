@@ -61,6 +61,11 @@ if grep -Fq 'Additional System Components' \
 then
     fail 'old Additional System Components capitalization remains in UI paths'
 fi
+if grep -Fq 'Configure in Power & Idle' \
+    "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
+then
+    fail 'removed Zig Screensaver Power & Idle shortcut remains'
+fi
 grep -Fq 'This will remove Voxtype, its configuration, and all downloaded speech models.' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml" ||
     fail 'Local Dictation uninstall confirmation does not disclose data deletion'
@@ -112,6 +117,7 @@ run_qml_test install-actions 'vanhyprarch Install action self-check passed'
 run_qml_test remove-actions 'vanhyprarch Remove action self-check passed'
 run_qml_test update-actions 'vanhyprarch Update action self-check passed'
 run_qml_test system-components 'vanhyprarch system-components self-check passed'
+run_qml_test component-ui-polish 'vanhyprarch component UI polish self-check passed'
 run_qml_test power-idle-capability 'vanhyprarch Power & Idle capability self-check passed'
 
 printf '%s\n' 'SuperSpace action/controller tests: PASS'
