@@ -119,8 +119,16 @@ run_qml_test()
     config_dir=$test_dir/$test_name
     runtime_dir=$config_dir/runtime
     mkdir -m 0700 -p -- "$runtime_dir"
-    ln -s "$repository_dir/home/.config/quickshell/vanhyprarch/components" \
-        "$config_dir/components"
+    if [ "$test_name" = power-idle-capability ]
+    then
+        cp -R "$repository_dir/home/.config/quickshell/vanhyprarch/components" \
+            "$config_dir/components"
+        cp "$script_dir/DockPopupTestHarness.qml" \
+            "$config_dir/components/DockPopup.qml"
+    else
+        ln -s "$repository_dir/home/.config/quickshell/vanhyprarch/components" \
+            "$config_dir/components"
+    fi
     ln -s "$script_dir/SuperSpacePanelHarness.qml" \
         "$config_dir/SuperSpacePanelHarness.qml"
     sed 's#import "../home/.config/quickshell/vanhyprarch/components"#import "components"#' \

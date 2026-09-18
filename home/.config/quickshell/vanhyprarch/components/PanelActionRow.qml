@@ -14,11 +14,30 @@ Rectangle {
     property bool danger: false
     property bool informational: false
     property bool interactive: enabled && !informational
+    property color navigationFill: root.theme.hoverFill
+    property color selectionFill: root.theme.activeFill
     property int primaryFontSize: root.metrics.overlayFontSize
     property int primaryFontWeight: root.metrics.overlayFontWeight
-    readonly property bool highlighted: root.interactive
-        && (root.keyboardSelected || root.activeFocus || pointer.containsMouse)
+    readonly property bool navigationCurrent: root.interactive
+        && (root.keyboardSelected || root.activeFocus)
+    readonly property bool pointerHovered: root.interactive
+        && pointer.containsMouse
+    readonly property bool highlighted: root.navigationCurrent
+        || root.pointerHovered
+    readonly property color resolvedFill: root.fillForState(pointer.pressed,
+        root.navigationCurrent, root.pointerHovered, root.active, root.danger)
     signal activated()
+
+    function fillForState(pressed: bool, current: bool, hovered: bool,
+            selected: bool, dangerState: bool): color {
+        if (pressed)
+            return dangerState ? root.theme.dangerFill : root.theme.pressedFill
+        if (current)
+            return root.navigationFill
+        if (hovered)
+            return root.theme.hoverFill
+        return selected ? root.selectionFill : "transparent"
+    }
 
     activeFocusOnTab: root.interactive
     implicitHeight: root.secondaryText === ""
@@ -27,11 +46,7 @@ Rectangle {
     radius: root.metrics.rowRadius
     opacity: root.informational || root.enabled
         ? 1.0 : root.metrics.disabledInteractiveOpacity
-    color: pointer.pressed
-        ? (root.danger ? root.theme.dangerFill : root.theme.pressedFill)
-        : root.highlighted
-            ? root.theme.hoverFill
-            : root.active ? root.theme.activeFill : "transparent"
+    color: root.resolvedFill
     border.width: root.activeFocus ? root.metrics.controlOutlineThickness : 0
     border.color: root.theme.focus
 

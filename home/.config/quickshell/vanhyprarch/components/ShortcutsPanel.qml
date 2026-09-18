@@ -355,9 +355,9 @@ CenteredOverlay {
                         bottom: parent.bottom
                     }
                     height: root.rowHeight
-                    radius: root.popupRadius
+                    radius: root.metrics.rowRadius
                     color: shortcutDelegate.index === shortcutsView.currentIndex
-                        ? root.theme.activeFill
+                        ? root.theme.navigationFill
                         : rowMouse.containsMouse ? root.theme.hoverFill
                             : "transparent"
 

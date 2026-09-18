@@ -99,6 +99,10 @@ ShellRoot {
     property int logoSize: 40
     readonly property int logoTopMargin: visualMetrics.dockOuterInset
 
+    OverlayFocusCoordinator {
+        id: overlayFocusCoordinator
+    }
+
     Variants {
         model: Quickshell.screens
 
@@ -163,6 +167,8 @@ ShellRoot {
             store: launcherStore
             theme: shellTheme
             metrics: visualMetrics
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
             anchors.verticalCenter: parent.verticalCenter
             anchors.horizontalCenter: parent.horizontalCenter
         }
@@ -172,6 +178,8 @@ ShellRoot {
             theme: shellTheme
             metrics: visualMetrics
             powerActions: root.globalPowerActions
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: parent.bottom
@@ -183,6 +191,8 @@ ShellRoot {
             id: dockClock
             theme: shellTheme
             metrics: visualMetrics
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: powerMenu.top
@@ -221,6 +231,8 @@ ShellRoot {
             controller: idleController
             theme: shellTheme
             metrics: visualMetrics
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: dockThemeToggle.top
@@ -234,6 +246,8 @@ ShellRoot {
             theme: shellTheme
             metrics: visualMetrics
             textSizeController: root.globalTextSizeController
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: dockPowerIdle.top
@@ -246,6 +260,8 @@ ShellRoot {
             id: dockAudio
             theme: shellTheme
             metrics: visualMetrics
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: dockMonitor.top
@@ -258,6 +274,8 @@ ShellRoot {
             id: dockNetwork
             theme: shellTheme
             metrics: visualMetrics
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: dockAudio.top
@@ -273,6 +291,8 @@ ShellRoot {
             theme: shellTheme
             metrics: visualMetrics
             screenName: screenScope.modelData.name
+            targetScreen: screenScope.modelData
+            focusCoordinator: overlayFocusCoordinator
 
             anchors {
                 bottom: dockNetwork.top
@@ -297,6 +317,7 @@ ShellRoot {
         metrics: visualMetrics
         controller: shortcuts
         theme: shellTheme
+        focusCoordinator: overlayFocusCoordinator
         targetScreen: screenScope.modelData
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
@@ -309,6 +330,7 @@ ShellRoot {
         metrics: visualMetrics
         controller: superSpace
         theme: shellTheme
+        focusCoordinator: overlayFocusCoordinator
         targetScreen: screenScope.modelData
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width

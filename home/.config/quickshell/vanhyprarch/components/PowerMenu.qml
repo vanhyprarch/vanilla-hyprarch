@@ -8,6 +8,8 @@ Item {
     required property var theme
     required property var metrics
     required property PowerActions powerActions
+    required property var targetScreen
+    required property var focusCoordinator
     readonly property int buttonSize: root.metrics.dockPowerButtonTarget
     property int bottomMargin: root.metrics.dockOuterInset
     property color iconColor: root.theme.accent
@@ -150,6 +152,8 @@ Item {
 
         metrics: root.metrics
         popupAnchorItem: root
+        targetScreen: root.targetScreen
+        focusCoordinator: root.focusCoordinator
         panelWidth: root.metrics.compactActionSurfaceWidth
         implicitHeight: (root.pendingAction === ""
             ? actionMenu.implicitHeight : confirmationMenu.implicitHeight)

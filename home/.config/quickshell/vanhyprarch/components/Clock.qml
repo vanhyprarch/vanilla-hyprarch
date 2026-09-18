@@ -6,6 +6,8 @@ Item {
 
     required property var theme
     required property var metrics
+    required property var targetScreen
+    required property var focusCoordinator
     property color textColor: root.theme.text
     readonly property int contentWidth: root.metrics.dockContentWidth
     property int iconSize: 28
@@ -43,6 +45,8 @@ Item {
         theme: root.theme
         metrics: root.metrics
         currentDate: clock.date
+        targetScreen: root.targetScreen
+        focusCoordinator: root.focusCoordinator
         popupAnchorItem: calendarPopupAnchor
     }
 

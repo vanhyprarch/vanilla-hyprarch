@@ -7,6 +7,8 @@ Item {
 
     required property var theme
     required property var metrics
+    required property var targetScreen
+    required property var focusCoordinator
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
     readonly property int iconSize: root.metrics.dockSystemIconSize
 
@@ -110,6 +112,8 @@ Item {
 
         theme: root.theme
         metrics: root.metrics
+        targetScreen: root.targetScreen
+        focusCoordinator: root.focusCoordinator
         popupAnchorItem: root
     }
 }

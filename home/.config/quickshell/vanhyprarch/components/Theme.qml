@@ -49,6 +49,8 @@ QtObject {
         metrics.pressedStrength)
     readonly property color dangerFill: withAlpha(danger,
         metrics.pressedStrength)
+    readonly property color navigationFill: activeFill
+    readonly property color selectionFill: hoverFill
 
     // Retained until legacy surfaces consume the state roles directly.
     readonly property color hover: hoverFill

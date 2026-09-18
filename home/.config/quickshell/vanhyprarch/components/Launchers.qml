@@ -10,6 +10,8 @@ Item {
     required property var theme
     required property var metrics
     required property LauncherStore store
+    required property var targetScreen
+    required property var focusCoordinator
     readonly property int contentWidth: root.metrics.dockContentWidth
     readonly property int buttonSize: root.metrics.dockLauncherTarget
     readonly property int iconSize: root.metrics.applicationLauncherIconSize
@@ -477,6 +479,8 @@ Item {
         metrics: root.metrics
         popupAnchorItem: appPickerPopupAnchor
         launcherStore: root.store
+        targetScreen: root.targetScreen
+        focusCoordinator: root.focusCoordinator
     }
 
     LauncherContextMenu {
@@ -485,6 +489,8 @@ Item {
         metrics: root.metrics
         launcherStore: root.store
         popupAnchorItem: launcherContextPopupAnchor
+        targetScreen: root.targetScreen
+        focusCoordinator: root.focusCoordinator
         onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)
     }
 }

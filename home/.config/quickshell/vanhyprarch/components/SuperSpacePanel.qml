@@ -411,6 +411,8 @@ CenteredOverlay {
                     primaryText: entryDelegate.modelData.label || ""
                     secondaryText: entryDelegate.modelData.detail || ""
                     keyboardSelected: entryDelegate.index === entriesView.currentIndex
+                    navigationFill: root.theme.navigationFill
+                    selectionFill: root.theme.selectionFill
                     danger: entryDelegate.modelData.danger === true
                     enabled: entryDelegate.modelData.enabled !== false
                     interactive: root.entrySelectable(entryDelegate.index)

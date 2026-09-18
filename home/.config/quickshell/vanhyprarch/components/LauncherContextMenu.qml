@@ -3,40 +3,23 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
-PopupWindow {
+DockPopup {
     id: root
 
     required property var theme
-    required property var metrics
     required property LauncherStore launcherStore
     property DesktopEntry desktopEntry
-    property Item popupAnchorItem
     property bool pinned: true
     property bool running: false
     property int popupVerticalOffset: 4
 
     signal closeAllRequested()
 
-    anchor {
-        item: root.popupAnchorItem
-        edges: Edges.Right | Edges.Top
-        gravity: Edges.Right | Edges.Bottom
-        margins.right: -Math.max(0,
-            ((root.popupAnchorItem && root.popupAnchorItem.parent
-                ? root.popupAnchorItem.parent.width
-                : root.metrics.dockWidth)
-                - (root.popupAnchorItem
-                    ? root.popupAnchorItem.width
-                    : root.metrics.dockLauncherTarget)) / 2)
-            - root.metrics.dockPopupGap
-        margins.top: -root.popupVerticalOffset
-    }
-    implicitWidth: root.metrics.compactActionSurfaceWidth
+    panelWidth: root.metrics.compactActionSurfaceWidth
     implicitHeight: actionsColumn.implicitHeight
         + root.metrics.compactMenuPadding * 2
-    color: "transparent"
-    grabFocus: true
-    visible: false
+    alignToAnchorTop: true
+    anchorTopOffset: root.popupVerticalOffset
 
     onVisibleChanged: {
         if (!visible)

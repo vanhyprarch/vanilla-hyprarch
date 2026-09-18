@@ -251,7 +251,8 @@ is not generalized to unrelated autostart commands.
 
 ## Quickshell popup-stack centering boundary
 
-**Affected components:** Quickshell 0.3.1 and Qt 6.11.2 on Wayland
+**Affected components:** Quickshell 0.3.1, Qt 6.11.2, and Hyprland 0.56.2 on
+Wayland
 
 When a focus-grabbing dock popup was already open, opening the Super+Space or
 Keyboard Shortcuts `PopupWindow` displaced the central surface down and right.
@@ -267,15 +268,34 @@ Super+Space and Keyboard Shortcuts therefore share a small per-screen
 `PanelWindow` primitive instead of using `PopupWindow`. It assigns the exact
 `Variants` delegate screen, positions from that monitor's local width and
 height, and uses `ExclusionMode.Ignore`; open dock popup size, position, and
-parent coordinates never participate. Hyprland's focus-grab protocol retains
-outside-click dismissal without restoring an xdg-popup ownership chain. Dock
-popup geometry and ownership are unchanged.
+parent coordinates never participate.
 
-Retest central positioning with no popup and with Display, Audio, and Network
-popups open after a Quickshell, Qt Wayland, Hyprland focus-grab, or layer-shell
-upgrade. The dedicated layer surfaces may be reconsidered only if a future
-popup implementation can prove an independent monitor coordinate space while
-another popup remains open.
+Live coexistence testing then exposed a related focus boundary: replacing only
+the central surface caused the first shortcut press to close an existing dock
+popup without showing the requested central surface. Hyprland 0.56.2 owns one
+seat grab. Replacing the dock's grabbing `xdg_popup` with a layer-shell focus
+grab sends that popup `popup_done`; its later teardown clears the newly
+installed grab as well. Quickshell reports the clear to the central surface,
+which correctly interprets it as outside-focus dismissal. This is native grab
+replacement and teardown ordering, not application-level shortcut arbitration.
+
+Dock-owned popup presentations now also use monitor-bound, non-exclusive
+`PanelWindow` surfaces while preserving their prior monitor-local placement
+and sliding an out-of-bounds edge placement back inside the logical screen. One
+shell-level focus coordinator owns the Hyprland grab and whitelists the visible
+central and dock surfaces together, plus the dock host while one of its panels
+is visible. A newly opened central surface is prioritized for the opening
+event-loop turn and then shares the whitelist with the still-visible dock
+surface and host. A cleared grab dismisses only the foremost central surface
+and rearms for a remaining dock on the next turn. Hidden surfaces leave the
+whitelist, reserve no exclusive zone, and are not visible input targets.
+
+Retest first-press coexistence, focus transfer, dismissal, and central
+positioning with no popup and with Display, Audio, and Network open after a
+Quickshell, Qt Wayland, Hyprland focus-grab, or layer-shell upgrade. The
+dedicated layer surfaces and shared coordinator may be reconsidered only if a
+future popup implementation can prove both an independent monitor coordinate
+space and compatible nested focus ownership.
 
 ## Quickshell Bluetooth pairing-agent boundary
 
