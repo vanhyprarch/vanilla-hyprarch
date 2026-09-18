@@ -66,6 +66,37 @@ if grep -Fq 'Configure in Power & Idle' \
 then
     fail 'removed Zig Screensaver Power & Idle shortcut remains'
 fi
+if grep -Fq 'actionEntry("zigRefresh", "Refresh"' \
+    "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
+then
+    fail 'old Zig Refresh label remains'
+fi
+if grep -Fq 'actionEntry("zigReinstall"' \
+    "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
+then
+    fail 'user-facing Zig Reinstall action remains'
+fi
+if grep -Fq '"Repair/Reinstall"' \
+    "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
+then
+    fail 'old Zig recovery wording remains'
+fi
+grep -Fq 'actionEntry("dictationLanguageView", "Languages"' \
+    "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml" ||
+    fail 'Local Dictation main page does not say Languages'
+if grep -Fq 'actionEntry("dictationLanguageView", "Language"' \
+    "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
+then
+    fail 'old singular Local Dictation Language label remains'
+fi
+for removed_language_label in 'Specific Language' 'Selected Languages' '"Done"'
+do
+    if grep -Fq "$removed_language_label" \
+        "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
+    then
+        fail "removed language hierarchy remains: $removed_language_label"
+    fi
+done
 grep -Fq 'This will remove Voxtype, its configuration, and all downloaded speech models.' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml" ||
     fail 'Local Dictation uninstall confirmation does not disclose data deletion'
@@ -90,6 +121,8 @@ run_qml_test()
     mkdir -m 0700 -p -- "$runtime_dir"
     ln -s "$repository_dir/home/.config/quickshell/vanhyprarch/components" \
         "$config_dir/components"
+    ln -s "$script_dir/SuperSpacePanelHarness.qml" \
+        "$config_dir/SuperSpacePanelHarness.qml"
     sed 's#import "../home/.config/quickshell/vanhyprarch/components"#import "components"#' \
         "$script_dir/$test_name.qml" > "$config_dir/shell.qml"
     log=$config_dir/quickshell.log
@@ -117,6 +150,7 @@ run_qml_test install-actions 'vanhyprarch Install action self-check passed'
 run_qml_test remove-actions 'vanhyprarch Remove action self-check passed'
 run_qml_test update-actions 'vanhyprarch Update action self-check passed'
 run_qml_test system-components 'vanhyprarch system-components self-check passed'
+run_qml_test dictation-languages 'vanhyprarch Dictation Languages self-check passed'
 run_qml_test component-ui-polish 'vanhyprarch component UI polish self-check passed'
 run_qml_test power-idle-capability 'vanhyprarch Power & Idle capability self-check passed'
 

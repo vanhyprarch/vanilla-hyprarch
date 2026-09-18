@@ -305,6 +305,12 @@ Scope {
         return code
     }
 
+    function reviewedLanguage(code: string): bool {
+        if (!catalogData)
+            return false
+        return catalogData.languages.some(language => language.id === code)
+    }
+
     function modelLabel(modelId: string): string {
         const candidate = model(modelId)
         return candidate ? candidate.label : modelId
@@ -312,7 +318,7 @@ Scope {
 
     function languageSummary(mode: string, languages: var): string {
         if (mode === "automatic")
-            return "Automatic"
+            return "Automatic detection"
         const labels = languages.map(code => languageLabel(code))
         return labels.join(" + ")
     }
@@ -395,6 +401,47 @@ Scope {
             proposedLanguages = ["en"]
         }
         return true
+    }
+
+    function selectAutomaticLanguageDetection(): string {
+        const selectedModel = model(proposedModel)
+        if (!selectedModel)
+            return "invalid"
+        if (selectedModel.family === "english")
+            return "english-only"
+        proposedLanguageMode = "automatic"
+        proposedLanguages = []
+        return "changed"
+    }
+
+    function toggleProposedLanguage(languageId: string): string {
+        const selectedModel = model(proposedModel)
+        if (!selectedModel || !reviewedLanguage(languageId))
+            return "invalid"
+        if (selectedModel.family === "english") {
+            if (languageId !== "en")
+                return "english-only"
+            proposedLanguageMode = "specific"
+            proposedLanguages = ["en"]
+            return "changed"
+        }
+
+        const draft = proposedLanguageMode === "automatic"
+            ? [] : proposedLanguages.slice()
+        const index = draft.indexOf(languageId)
+        if (index >= 0) {
+            if (draft.length === 1)
+                return "minimum"
+            draft.splice(index, 1)
+        } else {
+            if (draft.length >= 3)
+                return "maximum"
+            draft.push(languageId)
+        }
+
+        proposedLanguageMode = draft.length === 1 ? "specific" : "selected"
+        proposedLanguages = draft
+        return "changed"
     }
 
     function selectAcceleration(accelerationId: string): bool {

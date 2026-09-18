@@ -74,19 +74,9 @@ ShellRoot {
         zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
     }
-    VisualMetrics { id: visualMetrics }
-    Theme { id: shellTheme; metrics: visualMetrics }
-    Item { id: panelAnchor }
-    SuperSpacePanel {
+    SuperSpacePanelHarness {
         id: superSpacePanel
         controller: superSpace
-        metrics: visualMetrics
-        theme: shellTheme
-        anchorItem: panelAnchor
-        screenName: "test"
-        screenWidth: 1920
-        screenHeight: 1080
-        dockWidth: 56
     }
 
     Timer {
@@ -255,6 +245,10 @@ ShellRoot {
                     entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
                     === "Zig Screensaver,Pinned release,Install",
                 "not-installed Zig Screensaver page is wrong")
+            root.check(superSpace.visibleEntries.filter(entry =>
+                    entry.selectable !== false).map(entry => entry.label).join(",")
+                    === "Install",
+                "not-installed Zig Screensaver actions are not exactly Install")
             const zigInstalled = Object.assign({}, zigAbsent, {
                 state: "installed", installed: true, capability: "installed",
                 marker: "valid", cleanup_safe: true
@@ -263,8 +257,11 @@ ShellRoot {
                 "installed Zig Screensaver status was rejected")
             root.check(superSpace.visibleEntries.filter(entry =>
                     entry.selectable !== false).map(entry => entry.label).join(",")
-                    === "Refresh,Reinstall,Uninstall",
+                    === "Check status,Uninstall",
                 "installed Zig Screensaver actions are not exact")
+            root.check(!superSpace.visibleEntries.some(entry =>
+                    entry.label === "Refresh" || entry.label === "Reinstall"),
+                "legacy Zig action wording remains on the installed page")
             root.check(!superSpace.visibleEntries.some(entry =>
                     entry.label === "Configure in Power & Idle"),
                 "removed Power & Idle shortcut remains on the Zig page")
@@ -299,7 +296,7 @@ ShellRoot {
                 "incomplete Zig Screensaver status was rejected")
             root.check(superSpace.visibleEntries.filter(entry =>
                     entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
-                    === "Status,Details,Repair/Reinstall,Refresh",
+                    === "Status,Details,Check status,Repair",
                 "unsafe incomplete Zig Screensaver exposed Clean up")
             const zigErrorCleanable = Object.assign({}, zigIncomplete, {
                 state: "error", marker: "invalid", cleanup_safe: true
@@ -308,8 +305,17 @@ ShellRoot {
                 "cleanable Zig Screensaver error status was rejected")
             root.check(superSpace.visibleEntries.filter(entry =>
                     entry.kind !== "componentSeparator").map(entry => entry.label).join(",")
-                    === "Status,Details,Repair/Reinstall,Refresh,Clean up",
+                    === "Status,Details,Check status,Repair,Clean up",
                 "manager-proven Clean up action was not surfaced exactly")
+            root.check(!superSpace.visibleEntries.some(entry =>
+                    entry.label === "Refresh"
+                        || String(entry.label || "").indexOf("Reinstall") >= 0),
+                "legacy Zig recovery wording remains on the error page")
+            root.check(zigScreensaverActions.commandFor("reinstall", "").length > 0,
+                "technical reinstall API was removed with the user-facing action")
+            root.check(zigScreensaverActions.commandFor("repair", "").slice(-2).join("=")
+                    === "vanhyprarch-screensaver=repair",
+                "Repair is not wired to the approved repair lifecycle")
             root.check(zigScreensaverActions.commandFor("uninstall", "").length === 0
                     && zigScreensaverActions.commandFor("uninstall", "a".repeat(64)).slice(-2).join("=")
                         === "--plan-token=" + "a".repeat(64),

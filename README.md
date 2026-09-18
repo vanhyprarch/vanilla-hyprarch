@@ -92,8 +92,9 @@ English-only, local/offline transcription: hold F9 to record and release it to
 transcribe and type through `wtype`.
 The independently deployed `vanhyprarch-dictation` manager remains available
 when Voxtype is absent, so Super+Space can report state and offer installation.
-It exposes ten reviewed Whisper models, curated language choices, and recording
-limits of 30, 60, 120, or 300 seconds. SuperSpace offers explicit CPU and
+It exposes ten reviewed Whisper models, true Automatic language detection or
+one to three reviewed manual languages, and recording limits of 30, 60, 120,
+or 300 seconds. SuperSpace offers explicit CPU and
 Vulkan GPU choices through the same transactional backend. CPU remains the
 public default, Vulkan is never selected automatically, and a Vulkan change
 succeeds only after verified runtime evidence for the selected vendor.
@@ -106,7 +107,7 @@ components** and is not part of the baseline. Without it, Power & Idle contains
 only Caffeine, Turn Off Display, Suspend, and Automatic Lock choices None,
 Display Off, and Suspend. A validated installation additionally exposes Screen
 Saver Effect, Screensaver, and the Screensaver lock stage. Missing or damaged
-payload never generates a player invocation; its health and Repair/Reinstall
+payload never generates a player invocation; its Check status and Repair
 actions remain visible in Additional system components.
 
 ## Alpha limitations

@@ -3,16 +3,13 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 
-PopupWindow {
+CenteredOverlay {
     id: root
 
     required property SuperSpace controller
     required property var metrics
     required property var theme
-    required property Item anchorItem
     required property string screenName
-    required property int screenWidth
-    required property int screenHeight
     required property int dockWidth
 
     readonly property bool activeForScreen:
@@ -116,16 +113,12 @@ PopupWindow {
         }
     }
 
-    anchor {
-        item: root.anchorItem
-        edges: Edges.None
-        gravity: Edges.None
-    }
     implicitWidth: panelWidth
     implicitHeight: panelHeight
     color: "transparent"
-    grabFocus: true
     visible: false
+
+    onDismissed: controller.close()
 
     Component.onCompleted: syncVisibility()
 
@@ -335,9 +328,7 @@ PopupWindow {
                     : root.controller.currentSection === "update" ? "Update"
                     : root.controller.currentSection === "components"
                         ? root.controller.componentSubview === "model" ? "Choose a model"
-                        : root.controller.componentSubview === "language-mode" ? "Choose language mode"
-                        : root.controller.componentSubview === "language-specific" ? "Choose a language"
-                        : root.controller.componentSubview === "language-selected" ? "Choose two or three languages"
+                        : root.controller.componentSubview === "languages" ? "Languages"
                         : root.controller.componentSubview === "duration" ? "Maximum recording"
                         : root.controller.componentSubview === "acceleration" ? "Choose acceleration"
                         : root.controller.componentSubview === "uninstall"

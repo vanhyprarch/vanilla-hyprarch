@@ -156,10 +156,15 @@ clipboard content.
 
 SuperSpace contains `Additional system components -> Local Dictation`. The
 not-installed page describes the Vanilla default and launches installation in
-Foot. Once installed, it reports live state and provides nested model,
-language, and maximum-recording selectors. Apply, uninstall, and model download
-work remains in the visible terminal operation; QML never handles package,
-download, signature, config, or service mutations.
+Foot. Once installed, it reports live state and provides model, unified
+Languages, and maximum-recording selectors. Languages places true Automatic
+detection and the reviewed language catalog on one page. Manual selection
+supports one to three languages, has no Done step, and remains an in-memory
+draft when Back or Esc leaves the page. Apply Changes commits the complete
+Local Dictation draft; Refresh discards all unapplied choices and reconstructs
+the draft from authoritative status. Apply, uninstall, and model download work
+remains in the visible terminal operation; QML never handles package, download,
+signature, config, or service mutations.
 
 The stable public command supports:
 
@@ -176,8 +181,9 @@ Status and catalog use schema version 2 and work with no installed component.
 JSON goes only to stdout; mutations give human-readable progress and errors.
 Every selection is allowlisted. The CLI and SuperSpace accept exactly `cpu`
 and `vulkan`; SuperSpace labels them `CPU` and `Vulkan GPU`. CPU is the public
-default, there is no Auto mode, and selecting a row changes only proposed state
-until Apply runs the complete transaction in the visible terminal.
+default, there is no automatic acceleration mode, and selecting a row changes
+only proposed state until Apply runs the complete transaction in the visible
+terminal.
 
 Acceleration identity is the exact active executable digest. Voxtype's
 `backend` text, tooltip, filenames, and logs do not determine it. An unknown
@@ -240,13 +246,15 @@ orchestration.
 
 English-only model families are `tiny.en`, `base.en`, `small.en`, and
 `medium.en`. Multilingual families are `tiny`, `base`, `small`, `medium`,
-`large-v3`, and `large-v3-turbo`. A `.en` selection forces English. A
-multilingual selection permits one curated explicit language, `"auto"`, or
-constrained detection among two or three distinct curated languages. The UI
-catalog is English, French, German, Italian, Spanish, Portuguese, Dutch,
-Polish, Chinese, Japanese, Korean, Russian, and Arabic. The manager rejects
-invalid combinations rather than guessing. Maximum recording is one of 30,
-60, 120, or 300 seconds.
+`large-v3`, and `large-v3-turbo`. A `.en` selection forces English. For a
+multilingual model, Automatic detection remains Voxtype's real unconstrained
+mode; it is not simulated by selecting every reviewed language. The unified
+Languages page maps one manual selection to Voxtype's scalar form and two or
+three distinct selections to its constrained array form. The reviewed catalog
+is English, French, German, Italian, Spanish, Portuguese, Dutch, Polish,
+Chinese, Japanese, Korean, Russian, and Arabic. The manager rejects invalid
+combinations rather than guessing. Maximum recording is one of 30, 60, 120,
+or 300 seconds.
 
 Settings changes preserve comments and unrelated configuration. Scalar fields
 use Voxtype's stable config command against a private same-filesystem candidate;

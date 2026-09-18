@@ -279,8 +279,9 @@ The current Quickshell UI includes:
   Additional system components, and Power sections, in-process search over
   `DesktopEntries.applications` and typed action metadata, and confirmation for
   logout, reboot, power off, and optional-component removal;
-- a Local Dictation component page with nested reviewed model, language, and
-  maximum-recording selectors backed by the public management command;
+- a Local Dictation component page with reviewed model and maximum-recording
+  selectors plus one unified Languages page: real Automatic detection or one
+  to three reviewed manual languages, with no language-specific Done step;
 - a searchable, read-only shortcut viewer populated from described Hyprland
   bindings;
 - consistent long-list navigation: Qt Quick's native Flickable wheel tuning is
@@ -341,13 +342,19 @@ model removal never reload bindings.
 The two Additional system components controllers perform one asynchronous
 authoritative refresh when the shell initializes and retain that last-known
 session state. Opening, closing, entering, or reopening the catalog and its
-detail pages reads the cache and starts no manager command. Explicit Refresh
-and every completed lifecycle operation request authoritative state again;
-Local Dictation also refreshes its reviewed catalog. Status updates preserve
-the selected component or action by stable identity. Component-page status and
-settings rows are normal non-interactive information, separated from actions
-with the shared panel separator. Zig Screensaver's installed actions are
-Refresh, Reinstall, and Uninstall.
+detail pages reads the cache and starts no manager command. Explicit Local
+Dictation Refresh, Zig Check status, and every completed lifecycle operation
+request authoritative state again; Local Dictation also refreshes its reviewed
+catalog. Its Back and Esc navigation preserves the in-memory settings draft,
+Apply Changes commits that complete draft, and Local Dictation Refresh discards
+unapplied choices before rebuilding from authoritative status. Status updates
+preserve the selected component or action by stable identity. Component-page
+status and settings rows are normal non-interactive information, separated
+from actions with the shared panel separator. Zig Screensaver's installed
+actions are Check status and Uninstall; incomplete/error state offers Check
+status, Repair, and manager-proven Clean up when safe. The technical reinstall
+manager operation remains available without being promoted as a normal
+user-facing action.
 
 Flatpak is an unpinned required entry in the official package manifest. The
 development machine has a correct system `flathub` remote. The reusable
@@ -356,11 +363,14 @@ write, adds the system remote idempotently when absent, and fails closed rather
 than changing a same-named remote with an unexpected URL. It never installs a
 Flatpak application.
 
-The surface opens on the focused monitor through Super+Space or the named IPC
-target, supports pointer activation plus Up, Down, Enter, and Escape, and uses
-the shared panel, row, theme, metric, and global text-size foundations. The
-live named configuration loaded cleanly and exposes the expected IPC methods;
-visual and interaction validation remain pending.
+The Super+Space and Keyboard Shortcuts surfaces open centered on the focused
+monitor as independent per-screen layer surfaces. Their position is unaffected
+by open dock popups. Super+Space opens through its shortcut, dock logo, or named
+IPC target, supports pointer activation plus Up, Down, Enter, and Escape, and
+uses the shared panel, row, theme, metric, and global text-size foundations.
+Static and offscreen checks cover the shared geometry, focus/dismissal wiring,
+and named IPC ownership; controlled live visual and interaction validation of
+the new surface type remains pending.
 
 The desktop uses 5-pixel inner and 10-pixel outer Hyprland gaps with square
 application windows. Network, Bluetooth, Audio, and Display use the centralized

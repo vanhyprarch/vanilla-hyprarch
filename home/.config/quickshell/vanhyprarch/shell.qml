@@ -297,7 +297,7 @@ ShellRoot {
         metrics: visualMetrics
         controller: shortcuts
         theme: shellTheme
-        anchorItem: shortcutsAnchor
+        targetScreen: screenScope.modelData
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
@@ -309,34 +309,13 @@ ShellRoot {
         metrics: visualMetrics
         controller: superSpace
         theme: shellTheme
-        anchorItem: shortcutsAnchor
+        targetScreen: screenScope.modelData
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
         dockWidth: root.dockWidth
     }
 
-    PanelWindow {
-        screen: screenScope.modelData
-
-        anchors {
-            top: true
-            bottom: true
-            left: true
-            right: true
-        }
-
-        color: "transparent"
-        exclusionMode: ExclusionMode.Ignore
-        focusable: false
-        mask: Region {}
-
-        Item {
-            id: shortcutsAnchor
-
-            anchors.fill: parent
-        }
-    }
         }
     }
 }

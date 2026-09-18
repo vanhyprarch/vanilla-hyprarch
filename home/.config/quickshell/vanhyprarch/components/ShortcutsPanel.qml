@@ -1,18 +1,14 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 
-PopupWindow {
+CenteredOverlay {
     id: root
 
     required property var controller
     required property var metrics
     required property var theme
-    required property Item anchorItem
     required property string screenName
-    required property int screenWidth
-    required property int screenHeight
     required property int dockWidth
     required property int popupRadius
 
@@ -39,16 +35,12 @@ PopupWindow {
             visible = shouldShow
     }
 
-    anchor {
-        item: root.anchorItem
-        edges: Edges.None
-        gravity: Edges.None
-    }
     implicitWidth: panelWidth
     implicitHeight: panelHeight
     color: "transparent"
-    grabFocus: true
     visible: false
+
+    onDismissed: controller.close()
 
     Component.onCompleted: syncVisibility()
 

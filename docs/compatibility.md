@@ -249,6 +249,34 @@ readiness before callbacks. Public commands remain deployed under
 `$HOME/.local/bin`; this mitigation does not move them into a system PATH and
 is not generalized to unrelated autostart commands.
 
+## Quickshell popup-stack centering boundary
+
+**Affected components:** Quickshell 0.3.1 and Qt 6.11.2 on Wayland
+
+When a focus-grabbing dock popup was already open, opening the Super+Space or
+Keyboard Shortcuts `PopupWindow` displaced the central surface down and right.
+Both surfaces used a full-monitor anchor item, but Quickshell 0.3.1 implements
+`grabFocus: true` with the native `Qt::Popup` role and an `xdg_popup` positioner.
+Wayland popups form a nested popup stack, so a second focus-grabbing popup is
+not an independent monitor-owned surface even when its QML anchor item belongs
+to a full-monitor window. Tagged 0.3.1 source confirms that `PopupWindow` sets
+the transient parent and `Qt::Popup` flag before passing the anchor rectangle
+to the Wayland xdg positioner.
+
+Super+Space and Keyboard Shortcuts therefore share a small per-screen
+`PanelWindow` primitive instead of using `PopupWindow`. It assigns the exact
+`Variants` delegate screen, positions from that monitor's local width and
+height, and uses `ExclusionMode.Ignore`; open dock popup size, position, and
+parent coordinates never participate. Hyprland's focus-grab protocol retains
+outside-click dismissal without restoring an xdg-popup ownership chain. Dock
+popup geometry and ownership are unchanged.
+
+Retest central positioning with no popup and with Display, Audio, and Network
+popups open after a Quickshell, Qt Wayland, Hyprland focus-grab, or layer-shell
+upgrade. The dedicated layer surfaces may be reconsidered only if a future
+popup implementation can prove an independent monitor coordinate space while
+another popup remains open.
+
 ## Quickshell Bluetooth pairing-agent boundary
 
 **Affected component:** Quickshell 0.3.1 with BlueZ 5.87

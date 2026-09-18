@@ -18,7 +18,7 @@ Scope {
     property string currentSection: "root"
     property string currentComponentId: ""
     property string componentSubview: ""
-    property var selectedLanguageDraft: []
+    property string languageDraftMessage: ""
     property string searchText: ""
     property string pendingPowerAction: ""
     readonly property var sections: [
@@ -111,7 +111,7 @@ Scope {
             pendingPowerAction = ""
         } else if (componentSubview !== "") {
             componentSubview = ""
-            selectedLanguageDraft = []
+            languageDraftMessage = ""
         } else if (currentComponentId !== "") {
             currentComponentId = ""
             searchText = ""
@@ -474,10 +474,11 @@ Scope {
             actionEntry("dictationModelView", "Model",
                 actions.modelLabel(actions.proposedModel), "audio-input-microphone",
                 !actions.operationRunning && actions.catalogData !== null, false),
-            actionEntry("dictationLanguageView", "Language",
+            actionEntry("dictationLanguageView", "Languages",
                 actions.languageSummary(actions.proposedLanguageMode, actions.proposedLanguages)
                     + (languageLocked ? " · locked by English-only model" : ""),
-                "preferences-desktop-locale", !actions.operationRunning && !languageLocked, false),
+                "preferences-desktop-locale", !actions.operationRunning
+                    && actions.catalogData !== null, false),
             actionEntry("dictationDurationView", "Maximum recording",
                 actions.durationLabel(actions.proposedMaxDuration), "appointment-soon",
                 !actions.operationRunning, false),
@@ -514,44 +515,31 @@ Scope {
         return result
     }
 
-    function languageModeEntries(): var {
-        return [
-            actionEntry("dictationLanguageSpecificView", "Specific Language",
-                "Use one language for every transcription", "preferences-desktop-locale", true, false),
-            actionEntry("dictationLanguageAutomatic", "Automatic",
-                "Detect from all Whisper languages", "system-search", true, false),
-            actionEntry("dictationLanguageSelectedView", "Selected Languages",
-                "Constrain detection to two or three languages", "view-list-symbolic", true, false)
-        ]
-    }
-
-    function specificLanguageEntries(): var {
+    function languageEntries(): var {
         const result = []
-        const catalog = systemComponentsActions.catalogData
+        const actions = systemComponentsActions
+        const catalog = actions.catalogData
         if (!catalog)
             return [infoEntry("Languages unavailable", "Could not read the language catalog.", true)]
+        const selectedModel = actions.model(actions.proposedModel)
+        const languageLocked = selectedModel && selectedModel.family === "english"
+        result.push({
+            kind: "dictationLanguageAutomatic",
+            label: "Automatic detection",
+            detail: languageLocked ? "Unavailable with an English-only model"
+                : "Detect from the full Whisper language set",
+            icon: "system-search",
+            active: actions.proposedLanguageMode === "automatic",
+            enabled: !languageLocked
+        })
+        result.push(separatorEntry())
+        result.push(infoEntry("Manual selection",
+            languageDraftMessage !== "" ? languageDraftMessage
+                : languageLocked ? "English-only models require English"
+                    : "Choose up to 3 languages", false))
         for (const language of catalog.languages) {
-            result.push({
-                kind: "dictationLanguageSpecificSelect",
-                languageId: language.id,
-                label: language.label,
-                detail: language.id,
-                icon: "preferences-desktop-locale",
-                active: systemComponentsActions.proposedLanguageMode === "specific"
-                    && systemComponentsActions.proposedLanguages[0] === language.id,
-                enabled: true
-            })
-        }
-        return result
-    }
-
-    function selectedLanguageEntries(): var {
-        const result = []
-        const catalog = systemComponentsActions.catalogData
-        if (!catalog)
-            return [infoEntry("Languages unavailable", "Could not read the language catalog.", true)]
-        for (const language of catalog.languages) {
-            const selected = selectedLanguageDraft.indexOf(language.id) >= 0
+            const selected = actions.proposedLanguageMode !== "automatic"
+                && actions.proposedLanguages.indexOf(language.id) >= 0
             result.push({
                 kind: "dictationLanguageToggle",
                 languageId: language.id,
@@ -559,13 +547,9 @@ Scope {
                 detail: selected ? "Selected" : "Not selected",
                 icon: selected ? "checkbox-checked" : "checkbox",
                 active: selected,
-                enabled: selected || selectedLanguageDraft.length < 3
+                enabled: !languageLocked || language.id === "en"
             })
         }
-        result.push(actionEntry("dictationLanguageSelectedDone", "Done",
-            selectedLanguageDraft.length + " selected · two or three required",
-            "dialog-ok", selectedLanguageDraft.length >= 2
-                && selectedLanguageDraft.length <= 3, false))
         return result
     }
 
@@ -629,12 +613,8 @@ Scope {
     function dictationEntries(): var {
         if (componentSubview === "model")
             return modelSelectorEntries()
-        if (componentSubview === "language-mode")
-            return languageModeEntries()
-        if (componentSubview === "language-specific")
-            return specificLanguageEntries()
-        if (componentSubview === "language-selected")
-            return selectedLanguageEntries()
+        if (componentSubview === "languages")
+            return languageEntries()
         if (componentSubview === "duration")
             return durationSelectorEntries()
         if (componentSubview === "acceleration")
@@ -716,11 +696,12 @@ Scope {
                 infoEntry("Status", status.state === "error" ? "Error" : "Incomplete", true),
                 infoEntry("Details", actions.errorMessage || status.errors.join("; "), true),
                 separatorEntry(),
-                actionEntry("zigRepair", "Repair/Reinstall",
-                    "Stage and verify a complete pinned payload", "view-refresh",
+                actionEntry("zigRefresh", "Check status",
+                    "Read authoritative component state again", "view-refresh",
                     !actions.operationRunning, false),
-                actionEntry("zigRefresh", "Refresh", "Read component state again",
-                    "view-refresh", !actions.operationRunning, false)
+                actionEntry("zigRepair", "Repair",
+                    "Stage and verify a complete pinned payload", "system-software-install",
+                    !actions.operationRunning, false)
             ]
             if (status.cleanup_safe)
                 result.push(actionEntry("zigCleanup", "Clean up",
@@ -731,10 +712,8 @@ Scope {
         return [
             infoEntry("Status", "Installed · " + status.version + " · " + status.architecture, false),
             separatorEntry(),
-            actionEntry("zigRefresh", "Refresh", "Validate marker and complete payload again",
+            actionEntry("zigRefresh", "Check status", "Validate marker and complete payload again",
                 "view-refresh", !actions.operationRunning, false),
-            actionEntry("zigReinstall", "Reinstall", "Replace from the pinned verified release",
-                "system-software-install", !actions.operationRunning, false),
             actionEntry("zigUninstallView", "Uninstall", "Remove optional player payload",
                 "edit-delete", !actions.operationRunning, true)
         ]
@@ -850,47 +829,31 @@ Scope {
             componentSubview = "model"
             break
         case "dictationModelSelect":
-            if (systemComponentsActions.selectModel(entry.modelId))
-                componentSubview = ""
-            break
-        case "dictationLanguageView":
-            componentSubview = "language-mode"
-            break
-        case "dictationLanguageSpecificView":
-            componentSubview = "language-specific"
-            break
-        case "dictationLanguageSpecificSelect":
-            systemComponentsActions.proposedLanguageMode = "specific"
-            systemComponentsActions.proposedLanguages = [entry.languageId]
-            componentSubview = ""
-            break
-        case "dictationLanguageAutomatic":
-            systemComponentsActions.proposedLanguageMode = "automatic"
-            systemComponentsActions.proposedLanguages = []
-            componentSubview = ""
-            break
-        case "dictationLanguageSelectedView":
-            selectedLanguageDraft = systemComponentsActions.proposedLanguageMode === "selected"
-                ? systemComponentsActions.proposedLanguages.slice() : []
-            componentSubview = "language-selected"
-            break
-        case "dictationLanguageToggle": {
-            const draft = selectedLanguageDraft.slice()
-            const index = draft.indexOf(entry.languageId)
-            if (index >= 0)
-                draft.splice(index, 1)
-            else if (draft.length < 3)
-                draft.push(entry.languageId)
-            selectedLanguageDraft = draft
-            break
-        }
-        case "dictationLanguageSelectedDone":
-            if (selectedLanguageDraft.length >= 2 && selectedLanguageDraft.length <= 3) {
-                systemComponentsActions.proposedLanguageMode = "selected"
-                systemComponentsActions.proposedLanguages = selectedLanguageDraft.slice()
+            if (systemComponentsActions.selectModel(entry.modelId)) {
+                languageDraftMessage = ""
                 componentSubview = ""
             }
             break
+        case "dictationLanguageView":
+            languageDraftMessage = ""
+            componentSubview = "languages"
+            break
+        case "dictationLanguageAutomatic":
+            languageDraftMessage = systemComponentsActions
+                .selectAutomaticLanguageDetection() === "changed" ? ""
+                    : "English-only models require English"
+            break
+        case "dictationLanguageToggle": {
+            const result = systemComponentsActions.toggleProposedLanguage(
+                entry.languageId)
+            languageDraftMessage = result === "maximum"
+                ? "Maximum 3 languages selected"
+                : result === "minimum"
+                    ? "Keep 1 language selected or use Automatic detection"
+                : result === "english-only"
+                    ? "English-only models require English" : ""
+            break
+        }
         case "dictationDurationView":
             componentSubview = "duration"
             break
@@ -911,6 +874,7 @@ Scope {
                 close()
             break
         case "dictationRefresh":
+            languageDraftMessage = ""
             systemComponentsActions.refreshAll()
             break
         case "dictationUninstallView":

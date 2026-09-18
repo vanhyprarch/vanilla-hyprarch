@@ -108,20 +108,9 @@ ShellRoot {
         powerActions: powerActions
     }
 
-    VisualMetrics { id: metrics }
-    Theme { id: theme; metrics: metrics }
-    Item { id: anchor }
-
-    SuperSpacePanel {
+    SuperSpacePanelHarness {
         id: panel
         controller: superSpace
-        metrics: metrics
-        theme: theme
-        anchorItem: anchor
-        screenName: "component-ui-test"
-        screenWidth: 1920
-        screenHeight: 1080
-        dockWidth: 56
     }
 
     Timer {
@@ -253,12 +242,17 @@ ShellRoot {
                         root.zigStatus("installed"))),
                     "installed Zig fixture was rejected after reopen")
                 panel.resetSelection()
-                root.check(panel.selectedEntryIdentity === "zigRefresh:Refresh",
+                root.check(panel.selectedEntryIdentity === "zigRefresh:Check status",
                     "Zig information or separator entered action navigation")
-                zigActions.refreshAll()
+                const checkStatusEntry = superSpace.visibleEntries.find(entry =>
+                    entry.kind === "zigRefresh")
+                superSpace.activate(checkStatusEntry)
                 root.check(zigActions.statusRefreshSerial
                         === root.initialZigStatusRefreshes + 1,
-                    "explicit Zig Refresh did not launch authoritative status")
+                    "explicit Zig Check status did not launch authoritative status")
+                root.check(zigActions.pendingOperationKind === ""
+                        && !zigActions.operationRunning,
+                    "Check status started a component mutation")
                 root.phase = 2
                 return
             }
@@ -266,8 +260,8 @@ ShellRoot {
             if (root.phase === 2) {
                 if (zigActions.statusLoading)
                     return
-                root.check(panel.selectedEntryIdentity === "zigRefresh:Refresh",
-                    "Zig status completion moved the selected Refresh action")
+                root.check(panel.selectedEntryIdentity === "zigRefresh:Check status",
+                    "Zig status completion moved the selected Check status action")
                 stop()
                 console.log("vanhyprarch component UI polish self-check passed")
                 Qt.quit()
