@@ -1,5 +1,7 @@
 -- Vanilla HyprArch managed portable Hyprland configuration.
 
+-- Session environment ---------------------------------------------------------
+
 local function prependPathOnce(inheritedPath, entry)
     local entries = { entry }
     if inheritedPath == "" then
@@ -18,8 +20,12 @@ local sessionHome = os.getenv("HOME")
 assert(sessionHome ~= nil and sessionHome ~= "", "HOME is not set")
 assert(sessionHome:sub(1, 1) == "/", "HOME must be an absolute path")
 local inheritedPath = os.getenv("PATH") or ""
+-- Public Vanilla commands resolve from one stable per-user executable directory.
 hl.env("PATH", prependPathOnce(inheritedPath, sessionHome .. "/.local/bin"))
 
+-- Optional components ---------------------------------------------------------
+
+-- Exact component markers keep optional payloads out of baseline startup.
 local function dictationComponentInstalled()
     local dataHome = os.getenv("XDG_DATA_HOME")
     if dataHome == nil or dataHome == "" or dataHome:sub(1, 1) ~= "/" then
@@ -35,9 +41,14 @@ local function dictationComponentInstalled()
     return content == "vanhyprarch-dictation-v1\n"
 end
 
+-- Cursor environment ----------------------------------------------------------
+
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
 
+-- Startup ---------------------------------------------------------------------
+
+-- Centralize the project's session-start decisions in Hyprland's startup hook.
 hl.on("hyprland.start", function ()
     hl.exec_cmd("hyprpaper")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
@@ -48,8 +59,11 @@ hl.on("hyprland.start", function ()
     end
 end)
 
+-- Appearance ------------------------------------------------------------------
+
 hl.config({
     general = {
+        -- The current spacing is the project's deliberate desktop geometry.
         gaps_in = 5,
         gaps_out = {
             top = 10,
@@ -64,9 +78,11 @@ hl.config({
         },
         resize_on_border = false,
         allow_tearing = false,
+        -- Managed pseudo/split controls assume dwindle as the baseline layout.
         layout = "dwindle",
     },
     decoration = {
+        -- Square window geometry is an intentional Vanilla HyprArch design choice.
         rounding = 0,
         rounding_power = 2,
         active_opacity = 1.0,
@@ -89,8 +105,9 @@ hl.config({
     },
 })
 
+-- Animation profile -----------------------------------------------------------
+
 hl.curve("easeOutQuint", { type = "bezier", points = { { 0.23, 1 }, { 0.32, 1 } } })
-hl.curve("easeInOutCubic", { type = "bezier", points = { { 0.65, 0.05 }, { 0.36, 1 } } })
 hl.curve("linear", { type = "bezier", points = { { 0, 0 }, { 1, 1 } } })
 hl.curve("almostLinear", { type = "bezier", points = { { 0.5, 0.5 }, { 0.75, 1 } } })
 hl.curve("quick", { type = "bezier", points = { { 0.15, 0 }, { 0.1, 1 } } })
@@ -114,6 +131,9 @@ hl.animation({ leaf = "workspacesIn", enabled = true, speed = 1.21, bezier = "al
 hl.animation({ leaf = "workspacesOut", enabled = true, speed = 1.94, bezier = "almostLinear", style = "fade" })
 hl.animation({ leaf = "zoomFactor", enabled = true, speed = 7, bezier = "quick" })
 
+-- Layout ----------------------------------------------------------------------
+
+-- Preserve split choices made through the managed dwindle controls.
 hl.config({
     dwindle = {
         preserve_split = true,
@@ -132,6 +152,8 @@ hl.config({
     },
 })
 
+-- Wallpaper fallback ----------------------------------------------------------
+
 hl.config({
     misc = {
         force_default_wallpaper = -1,
@@ -139,8 +161,11 @@ hl.config({
     },
 })
 
+-- Input ----------------------------------------------------------------------
+
 hl.config({
     input = {
+        -- Num Lock is enabled at graphical-session start as a project default.
         numlock_by_default = true,
         follow_mouse = 1,
         sensitivity = 0,
@@ -156,12 +181,15 @@ hl.gesture({
     action = "workspace",
 })
 
+-- Window rules ----------------------------------------------------------------
+
 local suppressMaximizeRule = hl.window_rule({
     name = "suppress-maximize-events",
     match = { class = ".*" },
     suppress_event = "maximize",
 })
 
+-- Avoid focus changes from transient empty-class XWayland drag windows.
 hl.window_rule({
     name = "fix-xwayland-drags",
     match = {
@@ -175,6 +203,7 @@ hl.window_rule({
     no_focus = true,
 })
 
+-- Keep Hyprland's emergency launcher floating and clear of the lower edge.
 hl.window_rule({
     name = "move-hyprland-run",
     match = { class = "hyprland-run" },

@@ -14,6 +14,7 @@ end
 local managedHome = configHome .. "/hypr/vanhyprarch"
 local userHome = configHome .. "/vanhyprarch"
 
+-- Load managed policy before preserved machine configuration and user overrides.
 require(managedHome .. "/core.lua")
 require(managedHome .. "/bindings.lua")
 require(userHome .. "/machine/hyprland.lua")

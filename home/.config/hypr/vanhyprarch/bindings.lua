@@ -1,3 +1,6 @@
+-- Vanilla HyprArch managed curated bindings.
+
+-- Descriptions are consumed by the searchable shortcut viewer.
 local function bind(keys, category, action, dispatcher, options)
     local opts = options or {}
     opts.description = category .. " | " .. action
@@ -6,6 +9,7 @@ end
 
 local mainMod = "SUPER"
 
+-- Exact component markers prevent optional bindings from becoming baseline policy.
 local function dictationComponentInstalled()
     local sessionHome = os.getenv("HOME")
     assert(sessionHome ~= nil and sessionHome ~= "", "HOME is not set")
