@@ -9,6 +9,7 @@ PanelWindow {
     required property var focusCoordinator
     required property int screenWidth
     required property int screenHeight
+    property int persistentLeftInset: 0
     signal dismissed()
 
     function dismissFromCoordinator(): void {
@@ -22,7 +23,8 @@ PanelWindow {
         left: true
     }
     margins.top: OverlayGeometry.margin(root.screenHeight, root.implicitHeight)
-    margins.left: OverlayGeometry.margin(root.screenWidth, root.implicitWidth)
+    margins.left: OverlayGeometry.usableMargin(root.screenWidth,
+        root.persistentLeftInset, root.implicitWidth)
     aboveWindows: true
     exclusiveZone: 0
     exclusionMode: ExclusionMode.Ignore

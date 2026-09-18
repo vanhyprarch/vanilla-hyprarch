@@ -94,7 +94,6 @@ ShellRoot {
     readonly property var globalTextSizeController: textSizeController
     readonly property PowerActions globalPowerActions: powerActions
     readonly property int dockWidth: visualMetrics.dockWidth
-    readonly property int cornerRadius: visualMetrics.legacyPopupRadius
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
     property int logoSize: 40
     readonly property int logoTopMargin: visualMetrics.dockOuterInset
@@ -323,7 +322,6 @@ ShellRoot {
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
         dockWidth: root.dockWidth
-        popupRadius: root.cornerRadius
     }
 
     SuperSpacePanel {

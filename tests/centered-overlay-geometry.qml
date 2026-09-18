@@ -5,27 +5,30 @@ import "../home/.config/quickshell/vanhyprarch/components/CenteredOverlayGeometr
 TestCase {
     name: "CenteredOverlayGeometry"
 
-    function verifyCentered(surfaceName, monitor, surface, popup) {
-        const left = Geometry.coordinate(monitor.x, monitor.width, surface.width)
+    function verifyCentered(surfaceName, monitor, dockWidth, surface, popup) {
+        const left = Geometry.usableCoordinate(monitor.x, monitor.width,
+            dockWidth, surface.width)
         const top = Geometry.coordinate(monitor.y, monitor.height, surface.height)
         const centerX = left + surface.width / 2
         const centerY = top + surface.height / 2
+        const usableCenterX = monitor.x + dockWidth
+            + (monitor.width - dockWidth) / 2
 
-        compare(centerX, monitor.x + monitor.width / 2,
-            surfaceName + " x center changed with " + popup.name)
+        compare(centerX, usableCenterX,
+            surfaceName + " usable x center changed with " + popup.name)
         compare(centerY, monitor.y + monitor.height / 2,
             surfaceName + " y center changed with " + popup.name)
     }
 
     function test_monitorCenterIndependentOfDockPopup() {
         const surfaces = [
-            { name: "Super+Space", width: 900, height: 620 },
+            { name: "Super+Space", width: 720, height: 620 },
             { name: "Keyboard Shortcuts", width: 900, height: 900 }
         ]
         const monitors = [
-            { x: 0, y: 0, width: 1920, height: 1080 },
-            { x: -2560, y: 320, width: 2560, height: 1440 },
-            { x: 1920, y: -2160, width: 3840, height: 2160 }
+            { x: 0, y: 0, width: 1920, height: 1080, dockWidth: 56 },
+            { x: -2560, y: 320, width: 2560, height: 1440, dockWidth: 72 },
+            { x: 1920, y: -2160, width: 3840, height: 2160, dockWidth: 64 }
         ]
         const popupStates = [
             { name: "no dock popup", x: 0, y: 0, width: 0, height: 0 },
@@ -37,15 +40,25 @@ TestCase {
         for (const surface of surfaces) {
             for (const monitor of monitors) {
                 for (const popup of popupStates)
-                    verifyCentered(surface.name, monitor, surface, popup)
+                    verifyCentered(surface.name, monitor, monitor.dockWidth,
+                        surface, popup)
             }
         }
     }
 
     function test_marginUsesMonitorLocalGeometry() {
-        compare(Geometry.margin(1920, 900), 510)
+        compare(Geometry.usableMargin(1920, 56, 900), 538)
+        compare(Geometry.usableMargin(2560, 72, 900), 866)
+        compare(Geometry.usableMargin(3840, 64, 900), 1502)
         compare(Geometry.margin(1080, 620), 230)
-        compare(Geometry.coordinate(-2560, 2560, 900), -1730)
-        compare(Geometry.coordinate(1920, 3840, 900), 3390)
+        compare(Geometry.usableCoordinate(-2560, 2560, 72, 900), -1694)
+        compare(Geometry.usableCoordinate(1920, 3840, 64, 900), 3422)
+    }
+
+    function test_noDockFallsBackToFullMonitorCenter() {
+        compare(Geometry.usableMargin(1920, 0, 900), 510)
+        compare(Geometry.usableCenter(-1920, 1920, 0, 900), -960)
+        compare(Geometry.usableCoordinate(2560, 2560, 0, 900),
+            Geometry.coordinate(2560, 2560, 900))
     }
 }

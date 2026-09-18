@@ -129,22 +129,38 @@ TestCase {
     }
 
     function test_systemPanelPlacementMatchesPopupAnchor(): void {
-        compare(Geometry.horizontalMargin(10, 36, 56, 9, 384, 1920), 64)
+        const dockWidth = 56
+        const historicalGap = 9
+        const expectedLeft = dockWidth + historicalGap
+        const consumers = ["Display", "Audio", "Network", "Bluetooth",
+            "Clock", "Power & Idle", "Power Menu"]
+        for (const consumer of consumers) {
+            compare(Geometry.horizontalMargin(10, 36, dockWidth,
+                historicalGap, 384, 1920), expectedLeft,
+                consumer + " lost the historical dock gap")
+        }
         compare(Geometry.aboveMargin(700, 36, -2, 420, 1080), 318)
         compare(Geometry.aboveMargin(540, 36, -2, 310, 900), 268)
     }
 
     function test_launcherPlacementMatchesPopupAnchor(): void {
-        compare(Geometry.horizontalMargin(8, 40, 56, 9, 384, 1920), 64)
+        const dockWidth = 56
+        const historicalGap = 9
+        const expectedLeft = dockWidth + historicalGap
+        for (const consumer of ["App Picker", "Launcher Context Menu"]) {
+            compare(Geometry.horizontalMargin(8, 40, dockWidth,
+                historicalGap, 384, 1920), expectedLeft,
+                consumer + " lost its launcher-relative horizontal gap")
+        }
         compare(Geometry.alignedTopMargin(240, 4, 180, 1080), 236)
     }
 
     function test_monitorOriginDoesNotEnterLocalMargins(): void {
         const localMargin = Geometry.horizontalMargin(10, 36, 56, 9,
             384, 1920)
-        compare(localMargin, 64)
-        compare(-2560 + localMargin, -2496)
-        compare(1920 + localMargin, 1984)
+        compare(localMargin, 65)
+        compare(-2560 + localMargin, -2495)
+        compare(1920 + localMargin, 1985)
     }
 
     function test_popupSlidesInsideSmallLogicalScreen(): void {
@@ -154,7 +170,7 @@ TestCase {
     }
 
     function test_varyingLogicalDimensions(): void {
-        compare(Geometry.horizontalMargin(22, 48, 72, 12, 420, 1600), 93)
+        compare(Geometry.horizontalMargin(22, 48, 72, 12, 420, 1600), 94)
         compare(Geometry.aboveMargin(850, 48, -4, 500, 900), 400)
         compare(Geometry.alignedTopMargin(32, 6, 260, 720), 26)
         compare(Geometry.clampMargin(-18, 200, 720), 0)

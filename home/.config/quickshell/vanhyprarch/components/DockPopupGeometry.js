@@ -24,7 +24,7 @@ function horizontalMargin(anchorX, anchorWidth, anchorParentWidth, gap,
         panelWidth, screenWidth) {
     const centeredInset = Math.max(0,
         (anchorParentWidth - anchorWidth) / 2)
-    const preferred = anchorX + anchorWidth + centeredInset + gap - 1
+    const preferred = anchorX + anchorWidth + centeredInset + gap
     return clampMargin(preferred, panelWidth, screenWidth)
 }
 

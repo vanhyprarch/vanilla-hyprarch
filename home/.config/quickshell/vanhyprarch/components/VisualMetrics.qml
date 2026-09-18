@@ -35,10 +35,6 @@ QtObject {
     readonly property int compactActionSurfaceWidth: scaled(200)
     readonly property int wideOverlayMaximum: scaled(720)
 
-    // Transitional value for surfaces that have not joined the square visual
-    // foundation yet. Remove it after the later panel-normalization phases.
-    readonly property int legacyPopupRadius: 10
-
     // Shared surface geometry.
     readonly property int panelRadius: 0
     readonly property int rowRadius: 0

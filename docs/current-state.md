@@ -363,19 +363,21 @@ write, adds the system remote idempotently when absent, and fails closed rather
 than changing a same-named remote with an unexpected URL. It never installs a
 Flatpak application.
 
-The Super+Space and Keyboard Shortcuts surfaces open centered on the focused
-monitor as independent per-screen layer surfaces. Dock-owned panels use
-monitor-bound layer surfaces too, and one shell-level focus coordinator keeps a
-central surface and the existing dock panel in the same Hyprland focus
-whitelist. Their positions remain independent. Super+Space opens through its
+The Super+Space and Keyboard Shortcuts surfaces open centered in the focused
+monitor's usable desktop region to the right of its persistent dock, as
+independent per-screen layer surfaces. Dock-owned panels use monitor-bound
+layer surfaces too, and one shell-level focus coordinator keeps a central
+surface and the existing dock panel in the same Hyprland focus whitelist.
+Their positions remain independent. Super+Space opens through its
 shortcut, dock logo, or named IPC target, supports pointer activation plus Up,
 Down, Enter, and Escape, and uses the shared panel, row, theme, metric, and
 global text-size foundations. Its light rectangular navigation cursor is
 distinct from the darker persistent-selection fill; Keyboard Shortcuts uses
 the same navigation cursor. Static and offscreen checks cover geometry,
 first-activation coexistence, focus/dismissal state, repeated cycles, and named
-IPC ownership; controlled live visual and interaction validation of the
-coexistence correction remains pending.
+IPC ownership. Controlled live Wayland validation passed the shared focus and
+dismissal behavior; the usable-desktop centering refinement still requires its
+final visual check.
 
 The desktop uses 5-pixel inner and 10-pixel outer Hyprland gaps with square
 application windows. Network, Bluetooth, Audio, and Display use the centralized

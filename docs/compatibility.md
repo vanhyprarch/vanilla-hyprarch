@@ -266,9 +266,11 @@ to the Wayland xdg positioner.
 
 Super+Space and Keyboard Shortcuts therefore share a small per-screen
 `PanelWindow` primitive instead of using `PopupWindow`. It assigns the exact
-`Variants` delegate screen, positions from that monitor's local width and
-height, and uses `ExclusionMode.Ignore`; open dock popup size, position, and
-parent coordinates never participate.
+`Variants` delegate screen and uses `ExclusionMode.Ignore`. Vertical placement
+uses the monitor's logical height; horizontal placement uses the monitor-local
+region to the right of the persistent dock's `VisualMetrics.dockWidth`
+exclusive region. Open dock popup size, position, and parent coordinates never
+participate.
 
 Live coexistence testing then exposed a related focus boundary: replacing only
 the central surface caused the first shortcut press to close an existing dock
@@ -281,7 +283,10 @@ replacement and teardown ordering, not application-level shortcut arbitration.
 
 Dock-owned popup presentations now also use monitor-bound, non-exclusive
 `PanelWindow` surfaces while preserving their prior monitor-local placement
-and sliding an out-of-bounds edge placement back inside the logical screen. One
+and sliding an out-of-bounds edge placement back inside the logical screen.
+The pre-migration popup expanded its anchor rectangle by the centered dock
+inset plus `VisualMetrics.dockPopupGap`; the layer-surface projection retains
+that exact token-derived right-of-dock relationship. One
 shell-level focus coordinator owns the Hyprland grab and whitelists the visible
 central and dock surfaces together, plus the dock host while one of its panels
 is visible. A newly opened central surface is prioritized for the opening

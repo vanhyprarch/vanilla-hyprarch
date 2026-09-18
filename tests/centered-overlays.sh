@@ -48,9 +48,13 @@ grep -Fq 'exclusionMode: ExclusionMode.Ignore' "$components_dir/CenteredOverlay.
 grep -Fq 'margins.top: OverlayGeometry.margin(root.screenHeight, root.implicitHeight)' \
     "$components_dir/CenteredOverlay.qml" \
     || fail 'vertical position is not derived from monitor-local geometry'
-grep -Fq 'margins.left: OverlayGeometry.margin(root.screenWidth, root.implicitWidth)' \
+grep -Fq 'margins.left: OverlayGeometry.usableMargin(root.screenWidth,' \
     "$components_dir/CenteredOverlay.qml" \
-    || fail 'horizontal position is not derived from monitor-local geometry'
+    || fail 'horizontal position is not derived from usable monitor geometry'
+[ "$(grep -F 'persistentLeftInset: dockWidth' \
+    "$components_dir/SuperSpacePanel.qml" \
+    "$components_dir/ShortcutsPanel.qml" | wc -l)" -eq 2 ] \
+    || fail 'central surfaces do not share the persistent dock inset'
 grep -Fq 'focusable: true' "$components_dir/CenteredOverlay.qml" \
     || fail 'centered surfaces cannot receive keyboard focus'
 grep -Fq 'exclusiveZone: 0' "$components_dir/CenteredOverlay.qml" \
@@ -203,6 +207,14 @@ grep -Fq '? root.theme.navigationFill' "$components_dir/ShortcutsPanel.qml" \
     || fail 'Shortcuts does not share the navigation cursor role'
 grep -Fq 'radius: root.metrics.rowRadius' "$components_dir/ShortcutsPanel.qml" \
     || fail 'Shortcuts navigation cursor is not rectangular'
+for panel in SuperSpacePanel.qml ShortcutsPanel.qml
+do
+    grep -Fq 'radius: root.metrics.rowRadius' "$components_dir/$panel" \
+        || fail "$panel search field does not use the shared rectangular radius"
+    grep -Fq '? root.metrics.controlOutlineThickness : 0' \
+        "$components_dir/$panel" \
+        || fail "$panel search field does not use the shared focus outline"
+done
 
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner \
     -input "$test_dir/centered-overlay-geometry.qml"

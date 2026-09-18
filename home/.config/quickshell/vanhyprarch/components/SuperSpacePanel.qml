@@ -24,6 +24,8 @@ CenteredOverlay {
     readonly property int panelHeight: Math.max(metrics.scaled(320),
         Math.min(metrics.scaled(620), screenHeight - metrics.scaled(64)))
 
+    persistentLeftInset: dockWidth
+
     function syncVisibility(): void {
         const shouldShow = controller.isOpen && activeForScreen
         if (visible !== shouldShow)
@@ -250,6 +252,7 @@ CenteredOverlay {
                 topMargin: root.metrics.contentGap
             }
             height: root.metrics.scaled(44)
+            radius: root.metrics.rowRadius
             visible: !root.confirming && root.controller.currentComponentId === ""
             color: root.theme.surface
             border.width: searchInput.activeFocus

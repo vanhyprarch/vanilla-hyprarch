@@ -10,7 +10,6 @@ CenteredOverlay {
     required property var theme
     required property string screenName
     required property int dockWidth
-    required property int popupRadius
 
     readonly property bool activeForScreen: controller.activeScreenName === screenName
     property int panelWidth: Math.max(320,
@@ -28,6 +27,8 @@ CenteredOverlay {
     readonly property int categoryHeadingFontWeight:
         metrics.sectionHeadingFontWeight
     readonly property int categorySectionTopGap: metrics.scaled(12)
+
+    persistentLeftInset: dockWidth
 
     function syncVisibility(): void {
         const shouldShow = controller.isOpen && activeForScreen
@@ -142,11 +143,11 @@ CenteredOverlay {
                 rightMargin: root.panelPadding
             }
             height: root.searchHeight
-            radius: root.popupRadius
+            radius: root.metrics.rowRadius
             color: root.theme.surface
-            border.width: searchInput.activeFocus ? 2 : 1
-            border.color: searchInput.activeFocus
-                ? root.theme.focus : root.theme.separator
+            border.width: searchInput.activeFocus
+                ? root.metrics.controlOutlineThickness : 0
+            border.color: root.theme.focus
 
             Text {
                 anchors {
