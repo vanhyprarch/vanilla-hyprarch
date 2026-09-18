@@ -1,0 +1,4 @@
+-- Vanilla HyprArch user customization override.
+-- This file is user-owned; project updates do not overwrite it.
+-- Vanilla HyprArch is Alpha; this override interface is not stable.
+-- Check release notes for breaking changes and available migration guidance.

@@ -38,7 +38,7 @@ grep -Fq 'onClicked: superSpace.toggle()' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/shell.qml" ||
     fail 'dock logo no longer uses the shared SuperSpace controller'
 grep -Fq 'vanhyprarch.superSpace toggle' \
-    "$repository_dir/home/.config/hypr/bindings.lua" ||
+    "$repository_dir/home/.config/hypr/vanhyprarch/bindings.lua" ||
     fail 'Super+Space no longer uses the shared SuperSpace IPC controller'
 grep -Fq 'root.refreshAll()' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/components/SystemComponentsActions.qml" ||

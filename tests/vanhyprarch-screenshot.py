@@ -21,7 +21,7 @@ from unittest import mock
 
 REPOSITORY = Path(__file__).resolve().parent.parent
 HELPER = REPOSITORY / "bin" / "vanhyprarch-screenshot"
-HYPRLAND_CONFIG = REPOSITORY / "home/.config/hypr/hyprland.lua"
+HYPRLAND_CONFIG = REPOSITORY / "home/.config/hypr/vanhyprarch/core.lua"
 LOADER = importlib.machinery.SourceFileLoader("vanhyprarch_screenshot", str(HELPER))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 if SPEC is None:
@@ -492,7 +492,7 @@ os._exit(0)
         self.assertFalse(re.search(r"subprocess\.(?:call|Popen|run)\([^\n]*['\"]sh['\"]", source))
 
     def test_command_binding_and_required_packages_are_tracked(self) -> None:
-        bindings = (REPOSITORY / "home/.config/hypr/bindings.lua").read_text(
+        bindings = (REPOSITORY / "home/.config/hypr/vanhyprarch/bindings.lua").read_text(
             encoding="utf-8"
         )
         self.assertIn(

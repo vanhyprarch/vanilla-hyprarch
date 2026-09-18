@@ -74,11 +74,12 @@ the selection through `screensaver-effect` when starting. The `validate` and
 
 ## Generated configuration
 
-The static `home/.config/hypr/hypridle.conf` sources the managed
-`vanhyprarch-idle.conf`. The backend writes the fragment atomically from the
-stored preferences. When Caffeine is active, the fragment contains no
-listeners and therefore performs no automatic screensaver, display-off, lock,
-or suspend action.
+The static `home/.config/hypr/hypridle.conf` sources
+`vanhyprarch-idle.conf`. The fragment is a generated live projection, not a
+tracked release artifact. The backend writes it atomically from stored
+preferences. When Caffeine is active, the fragment contains no listeners and
+therefore performs no automatic screensaver, display-off, lock, or suspend
+action.
 
 An enabled screensaver generates one inhibitor-aware listener. Its timeout
 starts `vanhyprarch-screensaver`; genuine-input resume stops it. If Screen saver
@@ -116,9 +117,10 @@ During development, `~/.local/bin/vanhyprarch-idle` may be a symlink to the
 tracked backend. The controller and separately installed
 `vanhyprarch-zig-player` must both be in hypridle's inherited PATH; production
 installs regular executables in `$HOME/.local/bin` without depending on a Git
-checkout. A future shared bootstrap must also deploy the static main
-configuration and initial generated fragment and create the default preference
-file.
+checkout. A future shared bootstrap must deploy the static main configuration
+and initialize the default preference file. It must not deploy generated
+fragment bytes: the first `session-start` creates a missing fragment from the
+preserved preference before hypridle starts.
 
 An earlier real reboot showed that bare hypridle did not inherit that directory,
 so startup temporarily used a shell to prepend it. The unified Hyprland session

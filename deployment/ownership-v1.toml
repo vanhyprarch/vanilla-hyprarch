@@ -1,0 +1,157 @@
+schema_version = 1
+
+[[artifact]]
+source = "home/.config/hypr/hyprland.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.lua"
+class = "MANAGED"
+component = "hyprland"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/hypr/vanhyprarch/core.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/vanhyprarch/core.lua"
+class = "MANAGED"
+component = "hyprland"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/hypr/vanhyprarch/bindings.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/vanhyprarch/bindings.lua"
+class = "MANAGED"
+component = "hyprland"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "seeds/home/.config/vanhyprarch/machine/hyprland.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/machine/hyprland.lua"
+class = "MACHINE_CONFIGURATION"
+component = "hyprland"
+mode = "0644"
+authority = "user-machine"
+user_editable = true
+machine_specific = true
+
+[[artifact]]
+source = "seeds/home/.config/vanhyprarch/overrides/hyprland.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/overrides/hyprland.lua"
+class = "USER_CUSTOMIZATION_OVERRIDE"
+component = "hyprland"
+mode = "0644"
+authority = "user"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/power-idle.conf"
+class = "PERSISTENT_STATE_PREFERENCE"
+component = "power-idle"
+mode = "0600"
+authority = "vanhyprarch-idle"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/hypr/hypridle.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hypridle.conf"
+class = "MANAGED"
+component = "power-idle"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/vanhyprarch-idle.conf"
+class = "GENERATED"
+component = "power-idle"
+mode = "0600"
+authority = "vanhyprarch-idle"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/caffeine"
+class = "RUNTIME"
+component = "power-idle"
+mode = "0600"
+authority = "vanhyprarch-idle"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/hypr/hyprlock.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprlock.conf"
+class = "MANAGED"
+component = "hyprlock"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "bin/vanhyprarch-idle"
+target = "$HOME/.local/bin/vanhyprarch-idle"
+class = "MANAGED"
+component = "power-idle"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "bin/vanhyprarch-screenshot"
+target = "$HOME/.local/bin/vanhyprarch-screenshot"
+class = "MANAGED"
+component = "screenshot"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "bin/vanhyprarch-dictation"
+target = "$HOME/.local/bin/vanhyprarch-dictation"
+class = "MANAGED"
+component = "dictation-manager"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "bin/vanhyprarch-screensaver"
+target = "$HOME/.local/bin/vanhyprarch-screensaver"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+mode = "0755"
+authority = "optional-component"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "$HOME/.local/bin/vanhyprarch-zig-player"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+mode = "0755"
+authority = "optional-component"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "system/etc/bluetooth/main.conf"
+target = "/etc/bluetooth/main.conf"
+class = "SYSTEM_ADOPTED_MANAGED"
+component = "bluetooth"
+mode = "0644"
+authority = "administrator-adoption"
+user_editable = false
+machine_specific = false

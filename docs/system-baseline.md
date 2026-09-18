@@ -66,7 +66,7 @@ and unresolved choices are maintained in the canonical
 | Graphical authorization | `hyprpolkitagent` | Hyprland starts its packaged systemd user service for the direct graphical session. |
 | Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
-| Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The independently released native client owns layer-shell output coverage, input absorption, and animation. |
+| Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The current runtime uses the independently released native client. Its payload is reserved for a future optional Additional system component; that runtime migration is not implemented yet. |
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
@@ -139,6 +139,10 @@ Hyprland's native `input.numlock_by_default` option is enabled. Num Lock is
 therefore on by default when the graphical session starts. This is a compositor
 input default; it does not require `numlockx`, `setleds`, an autostart command,
 or an external script.
+
+Keyboard layout and device-specific input rules are machine configuration, not
+managed baseline defaults. The public machine seed intentionally leaves them
+unset.
 
 ## Deliberate default applications
 
@@ -263,6 +267,10 @@ Player; Ly itself is not run inside the graphical session.
 - `hyprlock` provides session locking.
 - `hypridle` provides idle and pre-sleep event handling.
 
+The repository provides a minimal portable managed `hyprlock.conf` with no
+connector, wallpaper, locale, font, or development-machine assumptions. It has
+not yet replaced the current live configuration.
+
 Hyprland starts the backend's session initialization command, which atomically
 reconciles Caffeine off and then directly execs hypridle. The packaged
 `hypridle.service` user unit is disabled and inactive. The static configuration
@@ -279,10 +287,17 @@ operations. `i2c-tools` is included with that support. Actual DDC availability,
 I2C permissions, connector names, monitor modes, scale, color depth, and GPU
 drivers are hardware-specific installation concerns.
 
-The tracked alpha `hyprland.lua` still carries the development machine's
-`DP-1` mode, scale, color, and keyboard choices, and the scale writer is tied to
-that connector. It is not a portable baseline file and must be reviewed before
-manual deployment. General overrides belong to the planned customization layer.
+The repository Hyprland entrypoint now loads managed core, managed bindings,
+machine configuration, and user override layers. The managed files and public
+machine seed contain no development-machine connector, mode, scale, color, or
+keyboard choices. The seed's portable catch-all monitor rule uses preferred
+mode, automatic position, and automatic scale; it is machine-owned but is not a
+Monitor panel write target. A future scale writer may edit only a documented
+field in a specific explicit output profile. The live development
+configuration and current scale writer remain tied to `DP-1` until the
+separately reviewed migration; repository structure alone must not be copied
+over that live state. No general multi-monitor schema is promised during
+Alpha.
 
 ## Screenshots
 

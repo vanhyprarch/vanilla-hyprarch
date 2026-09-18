@@ -12,8 +12,8 @@ binary_manifest=$component_dir/binaries.toml
 official_manifest=$repository_dir/packages/official.txt
 aur_manifest=$repository_dir/packages/aur.txt
 optional_manifest=$repository_dir/packages/optional-dictation-official.txt
-bindings=$repository_dir/home/.config/hypr/bindings.lua
-hyprland_config=$repository_dir/home/.config/hypr/hyprland.lua
+bindings=$repository_dir/home/.config/hypr/vanhyprarch/bindings.lua
+hyprland_config=$repository_dir/home/.config/hypr/vanhyprarch/core.lua
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-dictation-static.XXXXXX")
 
 cleanup()

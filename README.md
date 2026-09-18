@@ -65,11 +65,14 @@ finished. Development starts from a working minimal Arch installation and the
 package manifests in [`packages/`](packages/), but tracked configuration must
 currently be reviewed and deployed manually.
 
-In particular, the tracked Hyprland monitor and keyboard configuration is a
-development-machine profile, not a portable default. The tracked BlueZ
-`main.conf` is also a complete system-file replacement and must not overwrite
-an existing administrator configuration without review and rollback. See the
-[installation strategy](docs/installation-strategy.md) and
+The repository now separates managed portable Hyprland configuration from
+create-once machine configuration and a user-owned customization override.
+That repository structure has not yet been migrated onto the development
+machine. The tracked BlueZ `main.conf` is also a complete system-file
+replacement and must not overwrite an existing administrator configuration
+without review and rollback. See the
+[deployment ownership contract](docs/deployment-ownership.md),
+[installation strategy](docs/installation-strategy.md), and
 [system baseline](docs/system-baseline.md).
 
 For development, public commands may be symlinked from `bin/` into
@@ -95,15 +98,19 @@ available so the component can be installed again later.
 
 ## Alpha limitations
 
-Clean-install and first-reboot validation, portable monitor/Hyprlock/Hyprpaper
-configuration, final light/dark wallpaper integration, and an update-safe user
-override layer remain future work. The pinned Zig Player release is currently
+Vanilla HyprArch Alpha releases are for testing and feedback, not
+production-stable use. Ownership boundaries now exist, but clean installation,
+first-reboot deployment, live migration, project self-update, and complete
+rollback machinery do not. User-owned files are preserved by ownership class;
+their Alpha interfaces may still change with release-note disclosure and
+practical migration guidance.
+
+Portable Hyprpaper and wallpaper integration remain future work. The Zig
+Screensaver's move to an optional Additional system component is also deferred;
+current runtime behavior still expects it. The pinned player release is
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
-and Vanilla HyprArch self-update are not implemented. Physical multi-monitor
-screensaver and screenshot validation remains pending.
-Project self-update remains unavailable until a MANAGED / USER OVERRIDE / STATE
-deployment architecture exists. The detailed status and roadmap are in
+and Vanilla HyprArch self-update are not implemented. See
 [current state](docs/current-state.md).
 
 Architecture decisions, compatibility evidence, and version-specific retest

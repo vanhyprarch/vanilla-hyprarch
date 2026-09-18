@@ -343,6 +343,23 @@ threshold. Existing Up/Down selection in Super+Space and Shortcuts is circular,
 skips disabled entries, and keeps the wrapped row visible; Shortcuts paging
 remains clamped.
 
+## 2026-09-18: Deployment ownership foundation
+
+The first distribution-architecture milestone separated the tracked Hyprland
+configuration into a small managed XDG-aware loader, portable managed core,
+managed curated bindings, a create-once machine seed, and a header-only
+user-owned override seed. Development-machine monitor, keyboard, and device
+rules were excluded from public managed content. Hyprland 0.56.2 source and
+documentation established intentional absolute-path `require()` support and
+required-file watch tracking.
+
+The effective Power & Idle fragment left release ownership and is now
+represented only as backend-generated state. A portable managed hyprlock
+baseline, version-1 ownership manifest, Alpha compatibility contract, and
+static ownership regression tests were added. No live migration or desktop
+reload occurred; the Monitor panel remains unchanged for the controlled next
+step.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

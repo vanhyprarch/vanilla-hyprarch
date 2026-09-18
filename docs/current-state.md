@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-17.
+Snapshot date: 2026-09-18.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -14,7 +14,7 @@ tracked in the [compatibility register](compatibility.md).
 - Repository: `~/Projects/vanilla-hyprarch`
 - Development branch: `main`
 - Technical namespace and named Quickshell config: `vanhyprarch`
-- Hyprland: 0.56.2 (`hyprland` package 0.56.2-2)
+- Hyprland: 0.56.2 (`hyprland` package 0.56.2-3)
 - Quickshell: 0.3.1 (`quickshell` package 0.3.1-1)
 - Flatpak: required unpinned official package; locally validated with 1.18.2
 
@@ -26,13 +26,23 @@ from the `vanhyprarch` named configuration.
 Repository-managed sources:
 
 - `home/.config/hypr/hyprland.lua`
-- `home/.config/hypr/bindings.lua`
+- `home/.config/hypr/vanhyprarch/core.lua`
+- `home/.config/hypr/vanhyprarch/bindings.lua`
 - `home/.config/hypr/hypridle.conf`
-- `home/.config/hypr/vanhyprarch-idle.conf`
+- `home/.config/hypr/hyprlock.conf`
 - `home/.config/quickshell/vanhyprarch/`
 - `install/configure-flatpak`
 - `install/install-zig-player`
 - `install/dictation/`
+
+Create-once sources:
+
+- `seeds/home/.config/vanhyprarch/machine/hyprland.lua`
+- `seeds/home/.config/vanhyprarch/overrides/hyprland.lua`
+
+`deployment/ownership-v1.toml` records the first machine-readable ownership
+contract. The Power & Idle fragment is no longer release-owned source; it is a
+mode-0600 generated projection with no manifest `source`.
 
 Live paths:
 
@@ -51,23 +61,26 @@ validated after a full logout/login. New Foot and Quickshell processes both
 received `$HOME/.local/bin` first, and the name-based screenshot command
 resolved successfully.
 
-The tracked `hyprland.lua` is the current development-machine profile, not a
-portable Vanilla HyprArch default. It contains the development system's
-`DP-1`, `3840x2160@60`, scale `1.25`, 10-bit/color-management, and Italian
-keyboard choices. The Monitor panel's persistent scale presets intentionally
-edit the single `dp1Scale` declaration and are currently enabled only for
-`DP-1`. Users must review these values rather than deploy the file unchanged;
-general monitor and input overrides belong to the planned update-safe
-customization layer.
+The tracked Hyprland configuration is now a small managed loader followed by a
+portable managed core, managed bindings, create-once machine configuration,
+and a user-owned customization override. It contains no development-machine
+connector, mode, scale, bit-depth, color-management, keyboard-layout, or
+device rule. The loader resolves XDG configuration paths and uses four ordered
+absolute `require()` calls.
 
-The following live configuration files exist but are not yet represented in
-the repository:
+This is repository structure only. The development machine still runs its
+pre-migration live Hyprland files, including its `DP-1` monitor profile,
+Italian keyboard setting, and personal `epic-mouse-v1` rule. The current
+Monitor panel still edits the old live `dp1Scale` declaration and remains
+enabled only for `DP-1`; it was deliberately left unchanged because the live
+Quickshell configuration is a symlink into this checkout. Its move to the
+machine-owned file belongs to the separately reviewed live migration.
 
-- `~/.config/hypr/hyprlock.conf`
-- `~/.config/hypr/hyprpaper.conf`
-
-This is a known source-of-truth gap for future installer work, not permission to
-copy hardware- or user-specific settings blindly.
+A deliberately authored portable managed `hyprlock.conf` baseline now exists
+in the repository. It was not copied from the live development configuration
+and has not been deployed. The live `hyprpaper.conf` and wallpaper remain
+unrepresented source-of-truth gaps; that is not permission to copy personal or
+machine-specific settings blindly.
 
 Mutable shell state is stored outside Git. Theme mode uses
 `${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/theme-mode`; launcher order
@@ -82,7 +95,7 @@ The graphical session remains the direct
 `Ly -> /usr/bin/start-hyprland -> Hyprland` path. UWSM is not part of the
 Vanilla HyprArch architecture.
 
-Before registering its startup children, the tracked Lua configuration reads
+Before registering its startup children, the managed portable core reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
 any existing `$HOME/.local/bin` entries, and prepends exactly one such entry
 while preserving every other entry and its order. Public session commands use
@@ -129,9 +142,11 @@ replacement, and rollback behavior. Startup failures leave one overwritten
 mode-0600 line in the session-runtime `session-start-error.log`; a successful
 reconciliation removes it.
 
-`-n` prevents a duplicate instance of the named Quickshell configuration.
-Bindings are loaded from `~/.config/hypr/bindings.lua` with Lua `dofile()`, so a
-change only to that file requires an explicit `hyprctl reload`.
+`-n` prevents a duplicate instance of the named Quickshell configuration. In
+the repository architecture, managed bindings are loaded through Hyprland's
+tracked absolute-path `require()` mechanism. The live machine continues to use
+its old `~/.config/hypr/bindings.lua` and `dofile()` until the controlled
+migration.
 
 Hyprland's existing input configuration sets `numlock_by_default = true`, so
 Num Lock is enabled by default when the graphical session starts.
@@ -584,16 +599,19 @@ workaround. Physical two-monitor validation remains pending.
 
 ### PLANNED
 
-- Bring the required hyprlock and hyprpaper configuration into the repository
-  in portable form.
+- Bring portable hyprpaper and wallpaper configuration into the repository.
 - Build the shared bootstrap and thin optional archinstall integration defined
   in the [installation strategy](installation-strategy.md), supporting both a
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
 - Develop the light/dark wallpaper selection system.
-- Design an update-safe customization/override layer rather than asking users
-  to edit future managed defaults in place.
+- Perform the controlled live Hyprland ownership migration and then update the
+  Monitor panel to write only the documented scale field of a specific explicit
+  output profile in the machine-owned file. It must not edit the portable
+  catch-all rule.
+- Move the Zig Screensaver into optional Additional system component ownership
+  without constraining the baseline when it is absent.
 
 ### PROVISIONAL
 
@@ -606,5 +624,5 @@ workaround. Physical two-monitor validation remains pending.
 
 - Shared bootstrap and optional archinstall integration
 - Remove Application ownership mapping
-- Vanilla HyprArch self-update, pending the MANAGED / USER OVERRIDE / STATE
-  deployment architecture
+- Vanilla HyprArch self-update; ownership boundaries now exist, but no updater,
+  deployment ledger, release staging, or rollback engine has been designed

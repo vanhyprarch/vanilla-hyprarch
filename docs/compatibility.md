@@ -10,9 +10,9 @@ and removable local mitigations. Package selection belongs in
 | Component | Validated version | Role / status |
 | --- | --- | --- |
 | Arch Linux | Rolling snapshot, 2026-09-10 | Standard minimal base, packaging, and systemd |
-| Hyprland | 0.56.2 (`hyprland 0.56.2-2`) | Compositor, Lua configuration, input, and session ownership |
+| Hyprland | 0.56.2 (`hyprland 0.56.2-3`) | Compositor, Lua configuration, input, and session ownership |
 | hypridle | 0.1.8 (`hypridle 0.1.8-2`) | Idle notifications and pre-sleep hooks |
-| hyprlock | 0.9.6 (`hyprlock 0.9.6-3`) | Manual/password unlock and Screen saver/Display automatic-lock paths validated; portable theming remains pending |
+| hyprlock | 0.9.6 (`hyprlock 0.9.6-3`) | Manual/password unlock and Screen saver/Display automatic-lock paths validated; portable repository baseline added but not live-migrated |
 | Quickshell | 0.3.1 (`quickshell 0.3.1-1`) | Main desktop shell; no longer part of screensaver rendering |
 | Qt | 6.11.2 (`qt6-base 6.11.2-3`) | Main Quickshell runtime |
 | `vanhyprarch-zig-player` | v0.1.1 | Native layer-shell screensaver renderer; idle continuity and input routing validated, physical two-monitor testing pending |
@@ -30,6 +30,48 @@ and removable local mitigations. Package selection belongs in
 This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
 separately when required.
+
+## Hyprland Lua import boundary
+
+**Affected component:** Hyprland 0.56.2
+
+Hyprland's official Lua configuration documentation supports modules by
+absolute path. The 0.56.2 loader intentionally recognizes leading `/` paths,
+accepts an explicit `.lua` suffix, registers successfully resolved required
+files in its tracked configuration paths, and clears user `package.loaded`
+entries while rebuilding that tracking on reload. The same implementation is
+present in the 0.56.0 and 0.56.1 tags.
+
+The repository entrypoint therefore uses four explicit ordered absolute
+`require()` calls. It does not use `dofile()`: standard `dofile()` executes an
+absolute file but bypasses Hyprland's require searcher and its configuration
+path tracking. Both mechanisms execute separate Lua chunks with chunk-local
+locals and a shared global environment, so managed files avoid publishing
+project globals. `Hyprland --verify-config` follows the same imports; missing
+files or configuration errors make verification fail.
+
+Retest the absolute-path resolver, required-file tracking, error behavior, and
+`--verify-config` after a Hyprland Lua-loader upgrade before changing the
+import mechanism.
+
+## Hyprlock portable baseline validation boundary
+
+**Affected component:** hyprlock 0.9.6
+
+The portable baseline uses only `general.hide_cursor`, a monitor-neutral solid
+background, and one monitor-neutral input field. Every selected category and
+value is registered by the exact 0.9.6
+[configuration schema](https://github.com/hyprwm/hyprlock/blob/v0.9.6/src/config/ConfigManager.cpp).
+Colors and layout values use forms also present in the installed package
+example. Static tests reject connector names, home paths, image paths, commands,
+and keyboard-layout presentation.
+
+Hyprlock 0.9.6 has no verification-only command. An invalid-display invocation
+exits at its compositor connection assertion before parsing configuration, so
+it cannot provide a safe parser test. The repository-only milestone therefore
+does not launch hyprlock against the live compositor. Validate the managed file
+with a non-visible isolated compositor or an upstream parser-only facility
+before live deployment, and retest the schema after a hyprlock upgrade.
 
 ## Voxtype 1.0.1 integration boundary
 
@@ -357,8 +399,10 @@ Vanilla HyprArch must not blindly update its configuration or external player.
 A player update requires an explicit version, architecture, asset-name,
 checksum, release URL, and source-tag update followed by controller, timing,
 output, input, and license-notice validation. Project self-update remains
-unavailable until the required MANAGED / USER OVERRIDE / STATE deployment
-architecture can preserve user changes and roll back a validated deployment.
+unavailable. The first ownership contract now distinguishes managed, machine,
+override, preference, generated, runtime, optional, and system-adopted
+artifacts, but no deployment ledger, release staging, updater transaction, or
+rollback engine exists yet.
 
 Before changing this baseline:
 
