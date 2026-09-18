@@ -33,6 +33,8 @@ Repository-managed sources:
 - `home/.config/quickshell/vanhyprarch/`
 - `install/configure-flatpak`
 - `install/install-zig-player`
+- `install/zig-screensaver/`
+- `install/vanhyprarch-zig-player.conf`
 - `install/dictation/`
 
 Create-once sources:
@@ -264,9 +266,10 @@ The current Quickshell UI includes:
 - DDC/CI brightness control, fixed monitor-scale presets, and a global text-size
   control supporting every integer from 9 through 20 with a project default of
   12;
-- a compact Power & Idle panel backed by the project controller, with Caffeine,
-  timeout presets, screensaver-effect selection, and one automatic-lock
-  selection;
+- a compact capability-aware Power & Idle panel backed by the project
+  controller: Caffeine, Display, Suspend, and Automatic Lock are baseline;
+  Screensaver and Screen Saver Effect exist only with validated Zig
+  Screensaver capability;
 - a persistent light/dark shell theme using Papirus icons;
 - direct dock access to Super+Space from the logo and to the shortcut viewer
   from a system-sized `dialog-information` control;
@@ -474,6 +477,13 @@ generates no automatic actions without changing stored preferences. The CLI
 provides deterministic status output and atomic configure, set, apply, and
 Caffeine operations for the Quickshell UI.
 
+Status version 3 separates stored from effective screensaver values. Unexpected
+component damage preserves stored timeout, effect, and lock choice while
+projecting Screensaver to Never and a safe effective lock of Display, Suspend,
+or None. Deliberate uninstall instead persists Screensaver Never, Color Mix,
+and that disclosed lock fallback before removing the marker and optional
+payload.
+
 A reproduced reboot exposed a security-relevant mismatch: Caffeine's runtime
 marker disappeared as intended, but its persistent generated zero-listener
 fragment survived. The UI therefore reported Caffeine off while the fresh
@@ -572,20 +582,30 @@ unlock, and automatic locking at the Screen saver and Display stages have
 passed controlled manual testing. Physical multi-monitor acceptance and
 untested combinations remain separate work.
 
-## Screensaver — NATIVE PLAYER PRODUCTION CHAIN VALIDATED
+## Zig Screensaver optional component — REPOSITORY IMPLEMENTED / LIVE ADOPTION PENDING
 
-Production now uses:
+When the optional component is installed, production uses:
 
 `vanhyprarch-screensaver -> vanhyprarch-zig-player <effect> -> wlr-layer-shell`
 
 Rendering is delegated to the independent GPL-2.0-only Zig Player at pinned
 release `v0.1.1`; its implementation is not vendored here. Available effects
-are ColorMix, Matrix, Doom, and Game of Life. The versioned installer verifies
+are Color Mix, Matrix, Doom, and Game of Life. The component manager verifies
 the x86_64 release archive and deploys the binary, upstream license, notices,
 README, and pinned metadata to per-user XDG locations. Zig is not a runtime
 dependency.
 
-`bin/vanhyprarch-screensaver` retains idempotent `start`, `stop`, and `status`,
+The baseline remains complete without the player. Super+Space lists Local
+Dictation and Zig Screensaver as explicit siblings. `component-status --json`
+requires the exact marker plus the complete canonical payload; absent or
+incomplete capability removes every screensaver control and listener while
+Display, Suspend, Automatic Lock, and Caffeine remain operational. This
+repository candidate has not adopted the player or published a component
+marker on the current development machine.
+
+`bin/vanhyprarch-screensaver` provides explicit `start --idle`, bounded `test`,
+idempotent `stop` and runtime `status`, plus install/adopt/reinstall/repair/
+uninstall lifecycle commands. It preserves
 exact cursor restoration, serialized lifecycle operations, failed-start
 cleanup, and stale-state handling. It records only the native PID, Linux start
 time, exact executable path, and effect argument and never signals a process
@@ -625,8 +645,6 @@ workaround. Physical two-monitor validation remains pending.
   applied temporarily and confirmed within 10 seconds before persistence;
   failure or timeout restores the known-good runtime configuration. Text Size
   remains global.
-- Move the Zig Screensaver into optional Additional system component ownership
-  without constraining the baseline when it is absent.
 
 ### PROVISIONAL
 

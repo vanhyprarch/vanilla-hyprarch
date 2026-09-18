@@ -1,7 +1,8 @@
 # Installation strategy
 
 This document is the canonical plan for making Vanilla HyprArch reproducible.
-The pinned external-player installer is implemented; no shared project
+The pinned Zig Screensaver component manager is implemented; the historical
+`install-zig-player` command is only a compatibility wrapper. No shared project
 bootstrap or archinstall preset exists yet.
 
 The current repository is therefore a development and testing source tree, not
@@ -59,8 +60,8 @@ The shared bootstrap will eventually:
   including `vanhyprarch-idle`, `vanhyprarch-screensaver`, and
   `vanhyprarch-screenshot`, under `$HOME/.local/bin` without depending on a Git
   checkout;
-- invoke the pinned external-player installer so
-  `vanhyprarch-zig-player` is installed in that same directory;
+- deploy immutable Zig Screensaver manager resources, but leave the optional
+  `vanhyprarch-zig-player` payload absent until explicitly installed;
 - establish required symlinks and enable or disable documented services;
 - deploy the minimal `system/etc/bluetooth/main.conf` before starting or
   enabling `bluetooth.service`, preserving exact rollback material if an
@@ -104,19 +105,20 @@ that the manifest does not contain.
 
 ## External player installation
 
-`install/install-zig-player` is a reusable bootstrap component, not a copy of
-the external project. Its tracked metadata pins release `v0.1.1`, Linux
+`install/install-zig-player` is now a compatibility entry point that delegates
+to `vanhyprarch-screensaver install`; it is not a baseline bootstrap step. The
+tracked immutable manager metadata pins release `v0.1.1`, Linux
 `x86_64`, the exact asset name and SHA-256, and canonical release and source-tag
 URLs. It never follows GitHub's `latest` redirect.
 
-The normal per-user destination is
-`$HOME/.local/bin/vanhyprarch-zig-player`. The installer downloads into a
-private temporary directory, verifies the hard-coded digest before extraction,
-requires an exact archive layout, and atomically installs the executable with
-mode `0755`. The upstream LICENSE and `THIRD_PARTY_NOTICES.md` are installed
-under the user's XDG-style data tree together with the README and pinned source
-metadata. `DESTDIR` and an install-home override support packaging and isolated
-tests without touching a live home.
+The manager downloads into a private temporary directory, verifies canonical
+metadata, the exact archive digest and layout, each member digest, x86_64 ELF,
+runtime libraries, destinations, ownership, and modes, then publishes the
+complete XDG-aware payload. After prospective idle configuration parses, the
+mode-0644 marker is published before the installed-capability fragment, so a
+generated listener never precedes authoritative capability.
+Install, adoption, repair, reinstall rollback, and uninstall are tested with
+isolated home/data/runtime roots; production does not require a Git checkout.
 
 Release v0.1.1 provides only x86_64. Other architectures fail closed until a
 reviewed release adds an explicit asset and digest. Runtime requires glibc and

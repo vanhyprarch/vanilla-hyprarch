@@ -32,17 +32,37 @@ DockPopup {
     ]
     readonly property var lockChoices: [
         { value: "none", label: "None" },
-        { value: "screensaver", label: "Screen saver" },
-        { value: "display", label: "Display off" },
+        { value: "screensaver", label: "Screensaver" },
+        { value: "display", label: "Display Off" },
+        { value: "suspend", label: "Suspend" }
+    ]
+    readonly property var lockChoicesWithoutScreensaver: [
+        { value: "none", label: "None" },
+        { value: "display", label: "Display Off" },
         { value: "suspend", label: "Suspend" }
     ]
     readonly property var effectChoices: [
-        { value: "colormix", label: "ColorMix" },
+        { value: "colormix", label: "Color Mix" },
         { value: "matrix", label: "Matrix" },
         { value: "doom", label: "Doom" },
         { value: "gameoflife", label: "Game of Life" }
     ]
     readonly property int minimumLockChoiceWidth: root.metrics.scaled(48)
+    readonly property var effectiveLockChoices: root.controller.screensaverAvailable
+        ? root.lockChoices : root.lockChoicesWithoutScreensaver
+    readonly property bool screensaverControlsVisible:
+        effectSection.visible && screensaverSection.visible
+    readonly property int automaticLockChoiceCount: lockChoiceRepeater.count
+    readonly property var orderedSections: [caffeineSection, effectSection,
+        screensaverSection, displaySection, suspendSection, automaticLockSection]
+    readonly property var visibleSectionLabels: root.orderedSections
+        .filter(section => section.visible).map(section => section.sectionLabel)
+    readonly property var visibleLockChoiceLabels:
+        root.effectiveLockChoices.map(choice => choice.label)
+    readonly property real optionalLayoutContribution:
+        (effectSection.visible ? effectSection.implicitHeight + content.spacing : 0)
+        + (screensaverSection.visible
+            ? screensaverSection.implicitHeight + content.spacing : 0)
 
     implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
@@ -103,6 +123,7 @@ DockPopup {
         required property string stage
         required property string title
         required property var presets
+        readonly property string sectionLabel: title
 
         width: content.width
         spacing: root.metrics.contentGap
@@ -182,6 +203,8 @@ DockPopup {
             }
 
             Item {
+                id: caffeineSection
+                readonly property string sectionLabel: "Caffeine"
                 width: parent.width
                 height: root.metrics.twoLineRowHeight
 
@@ -244,14 +267,17 @@ DockPopup {
             }
 
             Column {
+                id: effectSection
+                readonly property string sectionLabel: "Screen Saver Effect"
                 width: parent.width
+                visible: root.controller.screensaverAvailable
                 spacing: root.metrics.contentGap
                 opacity: root.controller.ready
                     ? 1.0 : root.metrics.disabledInteractiveOpacity
 
                 Text {
                     width: parent.width
-                    text: "Screen saver effect"
+                    text: "Screen Saver Effect"
                     color: root.theme.text
                     font.pixelSize: root.metrics.informationLabelFontSize
                     font.weight: root.metrics.informationLabelFontWeight
@@ -288,18 +314,22 @@ DockPopup {
             }
 
             StageSection {
+                id: screensaverSection
+                visible: root.controller.screensaverAvailable
                 stage: "screensaver"
-                title: "Screen saver"
+                title: "Screensaver"
                 presets: root.screensaverPresets
             }
 
             StageSection {
+                id: displaySection
                 stage: "display"
-                title: "Turn off display"
+                title: "Turn Off Display"
                 presets: root.displayPresets
             }
 
             StageSection {
+                id: suspendSection
                 stage: "suspend"
                 title: "Suspend"
                 presets: root.suspendPresets
@@ -311,8 +341,10 @@ DockPopup {
             }
 
             Text {
+                id: automaticLockSection
+                readonly property string sectionLabel: "Automatic Lock"
                 width: parent.width
-                text: "Automatic lock"
+                text: "Automatic Lock"
                 color: root.theme.text
                 font.pixelSize: root.metrics.informationLabelFontSize
                 font.weight: root.metrics.informationLabelFontWeight
@@ -325,7 +357,8 @@ DockPopup {
                 spacing: root.metrics.rowSpacing
 
                 Repeater {
-                    model: root.lockChoices
+                    id: lockChoiceRepeater
+                    model: root.effectiveLockChoices
 
                     ChoiceButton {
                         required property var modelData

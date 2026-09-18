@@ -67,9 +67,9 @@ grep -Fq 'This will remove Voxtype, its configuration, and all downloaded speech
 grep -Fq 'Will remain available so Local Dictation can be installed again later.' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml" ||
     fail 'Local Dictation uninstall confirmation does not disclose manager retention'
-grep -Fq 'root.controller.componentSubview === "uninstall" ? "Uninstall Local Dictation?"' \
+grep -Fq '? "Uninstall Zig Screensaver?" : "Uninstall Local Dictation?"' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpacePanel.qml" ||
-    fail 'Local Dictation uninstall heading is not exact'
+    fail 'component-specific uninstall headings are not exact'
 if grep -Eqi 'preserv(e|ing).*(config|model)|(config|model).*preserv' \
     "$repository_dir/home/.config/quickshell/vanhyprarch/components/SuperSpace.qml"
 then
@@ -112,5 +112,6 @@ run_qml_test install-actions 'vanhyprarch Install action self-check passed'
 run_qml_test remove-actions 'vanhyprarch Remove action self-check passed'
 run_qml_test update-actions 'vanhyprarch Update action self-check passed'
 run_qml_test system-components 'vanhyprarch system-components self-check passed'
+run_qml_test power-idle-capability 'vanhyprarch Power & Idle capability self-check passed'
 
 printf '%s\n' 'SuperSpace action/controller tests: PASS'

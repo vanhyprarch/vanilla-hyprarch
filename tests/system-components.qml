@@ -7,6 +7,8 @@ ShellRoot {
     property int reloadRequests: 0
     property int reloadCompletions: 0
     property int refreshRequests: 0
+    property int configurePowerIdleRequests: 0
+    property string configuredPowerIdleScreen: ""
     property int lifecyclePhase: 0
     property var lifecycleEvents: []
     readonly property string successFixture:
@@ -40,6 +42,11 @@ ShellRoot {
         checksEnabled: false
         executionEnabled: false
     }
+    ZigScreensaverActions {
+        id: zigScreensaverActions
+        checksEnabled: false
+        executionEnabled: false
+    }
     Connections {
         target: componentActions
         function onOperationTerminalCompleted(operationKind, exitCode) {
@@ -66,7 +73,12 @@ ShellRoot {
         removeActions: removeActions
         updateActions: updateActions
         systemComponentsActions: componentActions
+        zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
+        onConfigurePowerIdleRequested: function(screenName) {
+            root.configurePowerIdleRequests += 1
+            root.configuredPowerIdleScreen = screenName
+        }
     }
     VisualMetrics { id: visualMetrics }
     Theme { id: shellTheme; metrics: visualMetrics }
@@ -225,11 +237,82 @@ ShellRoot {
             root.check(superSpace.sections[4].detail
                     === "Install and configure optional Vanilla HyprArch components",
                 "component root description is wrong")
+            const zigAbsent = {
+                schema_version: 1, manager_version: 1, component: "zig-screensaver",
+                state: "not-installed", installed: false, capability: "absent",
+                version: "v0.1.1", architecture: "x86_64", marker: "absent",
+                cleanup_safe: true, errors: []
+            }
+            root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigAbsent)),
+                "valid Zig Screensaver status was rejected")
             superSpace.enterSection("components")
             root.check(superSpace.currentSection === "components"
-                    && superSpace.visibleEntries.length === 1
-                    && superSpace.visibleEntries[0].componentId === "local-dictation",
+                    && superSpace.visibleEntries.length === 2
+                    && superSpace.visibleEntries[0].componentId === "local-dictation"
+                    && superSpace.visibleEntries[1].componentId === "zig-screensaver",
                 "component catalog navigation failed")
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "Local Dictation,Zig Screensaver",
+                "optional components are not explicit siblings in product order")
+            superSpace.openComponent("zig-screensaver")
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "Zig Screensaver,Pinned release,Install",
+                "not-installed Zig Screensaver page is wrong")
+            const zigInstalled = Object.assign({}, zigAbsent, {
+                state: "installed", installed: true, capability: "installed",
+                marker: "valid", cleanup_safe: true
+            })
+            root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigInstalled)),
+                "installed Zig Screensaver status was rejected")
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "Status,Configure in Power & Idle,Refresh,Reinstall,Uninstall",
+                "installed Zig Screensaver actions are not exact")
+            superSpace.activeScreenName = "test-screen"
+            superSpace.activate(superSpace.visibleEntries.find(entry =>
+                entry.kind === "zigConfigure"))
+            root.check(root.configurePowerIdleRequests === 1
+                    && root.configuredPowerIdleScreen === "test-screen",
+                "Configure in Power & Idle did not navigate through the shell request")
+            superSpace.enterSection("components")
+            superSpace.openComponent("zig-screensaver")
+            zigScreensaverActions.uninstallPlan = {
+                schema_version: 1, component: "zig-screensaver",
+                stored_lock: "screensaver", resulting_lock: "display",
+                plan_token: "a".repeat(64)
+            }
+            zigScreensaverActions.uninstallPlanValid = true
+            superSpace.componentSubview = "uninstall"
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "Uninstall Zig Screensaver?,Automatic Lock after removal,Preserved settings,Cancel,Confirm uninstall"
+                    && superSpace.visibleEntries[1].detail === "Display Off",
+                "bound uninstall confirmation did not disclose the exact lock destination")
+            superSpace.componentSubview = ""
+            const zigIncomplete = Object.assign({}, zigAbsent, {
+                state: "incomplete", capability: "incomplete", marker: "valid",
+                cleanup_safe: false, errors: ["damaged player"]
+            })
+            root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigIncomplete)),
+                "incomplete Zig Screensaver status was rejected")
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "Status,Details,Repair/Reinstall,Refresh",
+                "unsafe incomplete Zig Screensaver exposed Clean up")
+            const zigErrorCleanable = Object.assign({}, zigIncomplete, {
+                state: "error", marker: "invalid", cleanup_safe: true
+            })
+            root.check(zigScreensaverActions.acceptStatus(JSON.stringify(zigErrorCleanable)),
+                "cleanable Zig Screensaver error status was rejected")
+            root.check(superSpace.visibleEntries.map(entry => entry.label).join(",")
+                    === "Status,Details,Repair/Reinstall,Refresh,Clean up",
+                "manager-proven Clean up action was not surfaced exactly")
+            root.check(zigScreensaverActions.commandFor("uninstall", "").length === 0
+                    && zigScreensaverActions.commandFor("uninstall", "a".repeat(64)).slice(-2).join("=")
+                        === "--plan-token=" + "a".repeat(64),
+                "uninstall command was not bound to its approved plan token")
+            root.check(["install", "adopt", "reinstall", "uninstall", "repair", "clean-up"]
+                    .map(operation => superSpace.zigBusyLabel(operation)).join(",")
+                    === "Installing,Adopting,Reinstalling,Uninstalling,Repairing,Cleaning up",
+                "Zig Screensaver busy-state labels are not exact")
+            superSpace.goBack()
             superSpace.openComponent("local-dictation")
             root.check(superSpace.currentComponentId === "local-dictation",
                 "Local Dictation page did not open")

@@ -30,11 +30,11 @@ select other AUR packages freely.
 All packages in the current official manifest were verified as installed and
 available from Arch's official repositories by 2026-09-17.
 
-`wayland` is explicit because the external player directly links
-`libwayland-client`. `curl` is explicit because the pinned installer invokes
-its command-line client; neither dependency is left implicit merely because it
-is also present transitively on the development system. Zig is not a runtime
-or baseline package.
+`wayland` is independently fundamental to the baseline Wayland desktop rather
+than being retained for the optional player. `curl` is explicit because the
+pinned component manager invokes its command-line client; neither dependency
+is left implicit merely because it is also present transitively on the
+development system. Zig is not a runtime or baseline package.
 
 `flatpak` is a required, unpinned official Arch package. Clean installations
 install the version currently available from the enabled official repositories,
@@ -66,7 +66,7 @@ and unresolved choices are maintained in the canonical
 | Graphical authorization | `hyprpolkitagent` | Hyprland starts its packaged systemd user service for the direct graphical session. |
 | Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
-| Screensaver renderer | `wayland`, external `vanhyprarch-zig-player` v0.1.1 | The current runtime uses the independently released native client. Its payload is reserved for a future optional Additional system component; that runtime migration is not implemented yet. |
+| Optional screensaver renderer | baseline `python` and `wayland`, external `vanhyprarch-zig-player` v0.1.1 | `python` and Wayland are independently required, so the component adds no official package. `vanhyprarch-screensaver` and immutable pinned metadata are baseline; the native player, license, notices, README/release record, and marker exist only when Zig Screensaver is installed. |
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
@@ -118,8 +118,10 @@ configuration for the main shell. It will install `vanhyprarch-idle`,
 available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
-existing pinned player installer so the separately released
-`vanhyprarch-zig-player` is available there too. Production screensaver
+Zig Screensaver manager resources under the corresponding
+`vanhyprarch/zig-screensaver/` data directory. It does not baseline-install the
+separately released `vanhyprarch-zig-player`; SuperSpace offers that explicit
+optional transaction. Production screensaver
 presentation does not use Quickshell or Foot.
 
 ## Flatpak applications
@@ -276,9 +278,10 @@ reconciles Caffeine off and then directly execs hypridle. The packaged
 `hypridle.service` user unit is disabled and inactive. The static configuration
 has a `pidof hyprlock || hyprlock` lock command, delegates conditional
 pre-sleep locking to `vanhyprarch-idle`, and sources the project-generated
-listener fragment. The migration defaults produce zero listeners: Screen saver,
-display off, and suspend are `Never`, automatic lock is `None`, and Caffeine is
-off.
+listener fragment. A baseline without Zig Screensaver cannot render a
+screensaver listener even if dormant preferences exist. Display off, Suspend,
+Automatic Lock, and Caffeine remain functional; the clean-install defaults are
+all `Never`, automatic lock `None`, and Caffeine off.
 
 ## Monitor control utilities
 

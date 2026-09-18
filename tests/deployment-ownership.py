@@ -268,7 +268,7 @@ io.write(table.concat(loaded, "\n"))
             "vanhyprarch-idle": "MANAGED",
             "vanhyprarch-screenshot": "MANAGED",
             "vanhyprarch-dictation": "MANAGED",
-            "vanhyprarch-screensaver": "OPTIONAL_COMPONENT_PAYLOAD",
+            "vanhyprarch-screensaver": "MANAGED",
         }
         for command, ownership_class in command_classes.items():
             target = f"$HOME/.local/bin/{command}"
@@ -283,6 +283,11 @@ io.write(table.concat(loaded, "\n"))
         player = self.artifact_for_target("$HOME/.local/bin/vanhyprarch-zig-player")
         self.assertEqual(player["class"], "OPTIONAL_COMPONENT_PAYLOAD")
         self.assertNotIn("source", player)
+        marker = self.artifact_for_target(
+            "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/components/zig-screensaver"
+        )
+        self.assertEqual(marker["authority"], "vanhyprarch-screensaver")
+        self.assertEqual(marker["mode"], "0644")
 
     def test_hyprlock_baseline_is_minimal_and_portable(self) -> None:
         config = HYPRLOCK_PATH.read_text(encoding="utf-8")

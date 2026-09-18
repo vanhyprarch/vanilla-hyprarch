@@ -10,6 +10,7 @@ Scope {
     required property RemoveActions removeActions
     required property UpdateActions updateActions
     required property SystemComponentsActions systemComponentsActions
+    required property ZigScreensaverActions zigScreensaverActions
     required property PowerActions powerActions
 
     property bool isOpen: false
@@ -58,7 +59,7 @@ Scope {
             label: "Additional system components",
             detail: "Install and configure optional Vanilla HyprArch components",
             icon: "applications-system",
-            keywords: ["additional", "system", "components", "optional", "dictation"]
+            keywords: ["additional", "system", "components", "optional", "dictation", "screensaver", "zig"]
         },
         {
             kind: "section",
@@ -69,6 +70,7 @@ Scope {
         }
     ]
     readonly property var visibleEntries: buildVisibleEntries()
+    signal configurePowerIdleRequested(string screenName)
 
     function open(): void {
         if (isOpen)
@@ -88,6 +90,7 @@ Scope {
         searchText = ""
         pendingPowerAction = ""
         systemComponentsActions.refreshAll()
+        zigScreensaverActions.refreshAll()
         isOpen = true
     }
 
@@ -133,17 +136,21 @@ Scope {
         searchText = ""
         if (sectionId === "remove")
             removeActions.refreshPackages()
-        else if (sectionId === "components")
+        else if (sectionId === "components") {
             systemComponentsActions.refreshAll()
+            zigScreensaverActions.refreshAll()
+        }
     }
 
     function openComponent(componentId: string): void {
-        if (currentSection !== "components" || componentId !== "local-dictation")
+        if (currentSection !== "components"
+                || ["local-dictation", "zig-screensaver"].indexOf(componentId) < 0)
             return
         currentComponentId = componentId
         componentSubview = ""
         searchText = ""
         systemComponentsActions.refreshAll()
+        zigScreensaverActions.refreshAll()
     }
 
     function normalize(value): string {
@@ -352,11 +359,10 @@ Scope {
     }
 
     function componentCatalogEntries(query: string): var {
+        const result = []
         const status = systemComponentsActions.statusData
         const label = "Local Dictation"
         const searchable = normalize(label + " voice speech F9 voxtype local offline")
-        if (query !== "" && matchRank(label, searchable, query) < 0)
-            return []
         let detail = "Local/offline push-to-talk dictation using F9"
         if (systemComponentsActions.statusLoading)
             detail = "Checking component status…"
@@ -364,13 +370,25 @@ Scope {
             detail = "Installed · " + systemComponentsActions.modelLabel(status.model)
         else if (status.state === "error" || status.state === "incomplete")
             detail = "Needs attention · " + systemComponentsActions.errorMessage
-        return [{
-            kind: "component",
-            componentId: "local-dictation",
-            label: label,
-            detail: detail,
-            icon: "audio-input-microphone"
-        }]
+        if (query === "" || matchRank(label, searchable, query) >= 0)
+            result.push({ kind: "component", componentId: "local-dictation",
+                label: label, detail: detail, icon: "audio-input-microphone" })
+
+        const zigStatus = zigScreensaverActions.statusData
+        const zigLabel = "Zig Screensaver"
+        const zigSearch = normalize(zigLabel + " idle effects matrix doom game of life")
+        let zigDetail = "Optional native screensaver effects · v0.1.1"
+        if (zigScreensaverActions.statusLoading)
+            zigDetail = "Checking component status…"
+        else if (zigStatus.state === "installed")
+            zigDetail = "Installed · " + zigStatus.version
+        else if (zigStatus.state === "error" || zigStatus.state === "incomplete")
+            zigDetail = "Needs attention · " + zigScreensaverActions.errorMessage
+        if (query === "" || matchRank(zigLabel, zigSearch, query) >= 0)
+            result.push({ kind: "component", componentId: "zig-screensaver",
+                label: zigLabel, detail: zigDetail,
+                icon: "preferences-desktop-screensaver" })
+        return result
     }
 
     function infoEntry(label: string, detail: string, danger: bool): var {
@@ -604,6 +622,100 @@ Scope {
         return dictationDetailEntries()
     }
 
+    function lockLabel(value: string): string {
+        if (value === "display") return "Display Off"
+        if (value === "suspend") return "Suspend"
+        return "None"
+    }
+
+    function zigBusyLabel(operation: string): string {
+        if (operation === "install") return "Installing"
+        if (operation === "adopt") return "Adopting"
+        if (operation === "reinstall") return "Reinstalling"
+        if (operation === "uninstall") return "Uninstalling"
+        if (operation === "repair") return "Repairing"
+        if (operation === "clean-up") return "Cleaning up"
+        return "Working"
+    }
+
+    function zigUninstallEntries(): var {
+        const actions = zigScreensaverActions
+        if (actions.planLoading)
+            return [infoEntry("Uninstall Zig Screensaver?",
+                "Calculating the Power & Idle preference transaction…", false)]
+        if (!actions.uninstallPlanValid)
+            return [
+                infoEntry("Uninstall unavailable",
+                    actions.errorMessage || "Could not calculate the preference transaction.", true),
+                actionEntry("zigUninstallCancel", "Back", "Return without removing Zig Screensaver",
+                    "go-previous", true, false)
+            ]
+        return [
+            infoEntry("Uninstall Zig Screensaver?",
+                "Screensaver and Screen Saver Effect will disappear from Power & Idle.", true),
+            infoEntry("Automatic Lock after removal",
+                actions.uninstallPlan.stored_lock === "screensaver"
+                    ? lockLabel(actions.uninstallPlan.resulting_lock)
+                    : "Unchanged (" + lockLabel(actions.uninstallPlan.resulting_lock) + ")", false),
+            infoEntry("Preserved settings",
+                "Turn Off Display, Suspend, and Caffeine behavior are preserved.", false),
+            actionEntry("zigUninstallCancel", "Cancel", "Return without removing Zig Screensaver",
+                "dialog-cancel", true, false),
+            actionEntry("zigUninstallConfirm", "Confirm uninstall",
+                "Reconcile Power & Idle, then remove the verified optional payload",
+                "edit-delete", !actions.operationRunning, true)
+        ]
+    }
+
+    function zigEntries(): var {
+        const actions = zigScreensaverActions
+        const status = actions.statusData
+        if (componentSubview === "uninstall")
+            return zigUninstallEntries()
+        if (actions.operationRunning)
+            return [infoEntry("Zig Screensaver",
+                zigBusyLabel(actions.pendingOperationKind) + " in Foot…",
+                false)]
+        if (actions.statusLoading)
+            return [infoEntry("Status", "Checking component status…", false)]
+        if (status.state === "not-installed")
+            return [
+                infoEntry("Zig Screensaver",
+                    "Optional native screensaver effects for Power & Idle.", false),
+                infoEntry("Pinned release", status.version + " · Arch Linux x86_64", false),
+                actionEntry("zigInstall", "Install", "Download and verify the pinned release",
+                    "system-software-install", !actions.operationRunning, false)
+            ]
+        if (status.state === "incomplete" || status.state === "error") {
+            const result = [
+                infoEntry("Status", status.state === "error" ? "Error" : "Incomplete", true),
+                infoEntry("Details", actions.errorMessage || status.errors.join("; "), true),
+                actionEntry("zigRepair", "Repair/Reinstall",
+                    "Stage and verify a complete pinned payload", "view-refresh",
+                    !actions.operationRunning, false),
+                actionEntry("zigRefresh", "Refresh", "Read component state again",
+                    "view-refresh", !actions.operationRunning, false)
+            ]
+            if (status.cleanup_safe)
+                result.push(actionEntry("zigCleanup", "Clean up",
+                    "Remove only manager-proven component material", "edit-delete",
+                    !actions.operationRunning, true))
+            return result
+        }
+        return [
+            infoEntry("Status", "Installed · " + status.version + " · " + status.architecture, false),
+            actionEntry("zigConfigure", "Configure in Power & Idle",
+                "Use Screen Saver Effect, Screensaver, and Automatic Lock",
+                "preferences-system-power", true, false),
+            actionEntry("zigRefresh", "Refresh", "Validate marker and complete payload again",
+                "view-refresh", !actions.operationRunning, false),
+            actionEntry("zigReinstall", "Reinstall", "Replace from the pinned verified release",
+                "system-software-install", !actions.operationRunning, false),
+            actionEntry("zigUninstallView", "Uninstall", "Remove optional player payload",
+                "edit-delete", !actions.operationRunning, true)
+        ]
+    }
+
     function buildVisibleEntries(): var {
         // Keep the upstream model as a direct binding dependency while it scans.
         DesktopEntries.applications.values
@@ -641,6 +753,8 @@ Scope {
         if (currentSection === "components") {
             if (currentComponentId === "local-dictation")
                 return dictationEntries()
+            if (currentComponentId === "zig-screensaver")
+                return zigEntries()
             return componentCatalogEntries(query)
         }
         if (currentSection === "power")
@@ -785,6 +899,37 @@ Scope {
             if (systemComponentsActions.execute(
                     systemComponentsActions.commandForUninstall(), "uninstall"))
                 close()
+            break
+        case "zigInstall":
+            if (zigScreensaverActions.execute("install")) close()
+            break
+        case "zigConfigure":
+            const requestedScreen = activeScreenName
+            close()
+            configurePowerIdleRequested(requestedScreen)
+            break
+        case "zigRefresh":
+            zigScreensaverActions.refreshAll()
+            break
+        case "zigRepair":
+            if (zigScreensaverActions.execute("repair")) close()
+            break
+        case "zigCleanup":
+            if (zigScreensaverActions.execute("clean-up")) close()
+            break
+        case "zigReinstall":
+            if (zigScreensaverActions.execute("reinstall")) close()
+            break
+        case "zigUninstallView":
+            componentSubview = "uninstall"
+            zigScreensaverActions.refreshUninstallPlan()
+            break
+        case "zigUninstallCancel":
+            componentSubview = ""
+            break
+        case "zigUninstallConfirm":
+            if (zigScreensaverActions.execute("uninstall",
+                    zigScreensaverActions.uninstallPlan.plan_token)) close()
             break
         case "power":
             if (powerActions.requiresConfirmation(entry.actionId))

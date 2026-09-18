@@ -27,12 +27,14 @@ by name; helpers private to Quickshell remain at
 `Quickshell.shellDir/helpers`, while fixed system dependencies may use explicit
 `/usr/bin/...` paths.
 
-Screensaver rendering is delegated to the independent
+Optional screensaver rendering is delegated to the independent
 [Vanilla HyprArch Zig Player](https://github.com/vanhyprarch/vanhyprarch-zig-player).
-This repository provides a pinned installer component and lifecycle control
+The baseline always provides `vanhyprarch-screensaver`, while the player is the
+opt-in **Zig Screensaver** component. This repository provides pinned component
+lifecycle control
 for the separately released executable; it does not vendor or duplicate the
 player's source. The player owns native layer-shell presentation and input
-absorption. The pinned integration uses release `v0.1.1` and offers ColorMix,
+absorption. The pinned integration uses release `v0.1.1` and offers Color Mix,
 Matrix, Doom, and Game of Life.
 
 ## Implemented
@@ -42,15 +44,16 @@ Matrix, Doom, and Game of Life.
 - native Quickshell audio, NetworkManager Wi-Fi, and BlueZ Bluetooth controls;
 - DDC/CI brightness and development-machine scale presets;
 - persistent Power & Idle preferences, Caffeine, automatic locking, display
-  power-off, suspend/resume, and the independent native screensaver;
+  power-off and suspend/resume, with capability-aware support for the optional
+  native screensaver;
 - direct-session PolicyKit and clean Hyprland logout integration;
 - Print Screen smart region/window/monitor screenshots saved under
   `Pictures/Screenshots` and copied as `image/png` for normal Ctrl+V pasting;
 - keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update,
   Additional system components, and Power workflows with native catalogs and
   visible terminal transactions;
-- official Arch package manifests and a pinned, checksummed Zig Player
-  installer component;
+- official Arch package manifests and a pinned, checksummed Zig Screensaver
+  install/adopt/reinstall/uninstall lifecycle;
 - required, unpinned Flatpak from the official Arch repositories, with an
   idempotent bootstrap component for the required system Flathub remote;
 - optional, offline F9 push-to-talk dictation managed through Additional system
@@ -97,6 +100,14 @@ succeeds only after verified runtime evidence for the selected vendor.
 Local Dictation uses clean uninstall semantics: removing it deletes Voxtype's
 configuration and every downloaded speech model, but keeps the Vanilla manager
 available so the component can be installed again later.
+
+Zig Screensaver is a sibling of Local Dictation under **Additional system
+components** and is not part of the baseline. Without it, Power & Idle contains
+only Caffeine, Turn Off Display, Suspend, and Automatic Lock choices None,
+Display Off, and Suspend. A validated installation additionally exposes Screen
+Saver Effect, Screensaver, and the Screensaver lock stage. Missing or damaged
+payload never generates a player invocation; its health and Repair/Reinstall
+actions remain visible in Additional system components.
 
 ## Alpha limitations
 

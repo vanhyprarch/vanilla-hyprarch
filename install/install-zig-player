@@ -4,9 +4,6 @@ set -eu
 
 program_name=${0##*/}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-canonical_metadata=$script_dir/vanhyprarch-zig-player.conf
-metadata_file=${VANHYPRARCH_ZIG_PLAYER_METADATA:-$canonical_metadata}
-work_dir=
 
 fail()
 {
@@ -14,168 +11,14 @@ fail()
     exit 1
 }
 
-cleanup()
-{
-    cleanup_status=$?
-    trap - 0 HUP INT TERM
-    if [ -n "$work_dir" ] && [ -d "$work_dir" ]; then
-        rm -rf -- "$work_dir"
-    fi
-    exit "$cleanup_status"
-}
-
-install_atomically()
-{
-    source_file=$1
-    destination_file=$2
-    installed_mode=$3
-    temporary_file=$destination_file.tmp.$$
-    rm -f -- "$temporary_file"
-    install -m "$installed_mode" -- "$source_file" "$temporary_file" ||
-        fail "could not stage $destination_file"
-    mv -f -- "$temporary_file" "$destination_file" ||
-        fail "could not install $destination_file"
-}
-
-[ -f "$metadata_file" ] && [ ! -L "$metadata_file" ] ||
-    fail "metadata is not a regular file: $metadata_file"
-# shellcheck disable=SC1090
-. "$metadata_file"
-
-test_override=false
-if [ "$metadata_file" != "$canonical_metadata" ]; then
-    [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" = 1 ] ||
-        fail 'alternate metadata is allowed only for isolated tests'
-    test_override=true
-fi
-
-if [ "$test_override" = false ]; then
-    [ "${VANHYPRARCH_ZIG_PLAYER_VERSION:-}" = v0.1.1 ] ||
-        fail 'unsupported or missing player version metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_ARCHITECTURE:-}" = x86_64 ] ||
-        fail 'unsupported or missing player architecture metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_ASSET:-}" = \
-        vanhyprarch-zig-player-v0.1.1-linux-x86_64.tar.gz ] ||
-        fail 'unexpected player asset metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_SHA256:-}" = \
-        9bd759283aa823aba124c94d64b9696df670551a1d6418ca1a32194ea0b1a887 ] ||
-        fail 'unexpected player checksum metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_REPOSITORY_URL:-}" = \
-        https://github.com/vanhyprarch/vanhyprarch-zig-player ] ||
-        fail 'unexpected player repository URL metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_RELEASE_URL:-}" = \
-        https://github.com/vanhyprarch/vanhyprarch-zig-player/releases/tag/v0.1.1 ] ||
-        fail 'unexpected player release URL metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_DOWNLOAD_URL:-}" = \
-        https://github.com/vanhyprarch/vanhyprarch-zig-player/releases/download/v0.1.1/vanhyprarch-zig-player-v0.1.1-linux-x86_64.tar.gz ] ||
-        fail 'unexpected player download URL metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_SOURCE_TAG_URL:-}" = \
-        https://github.com/vanhyprarch/vanhyprarch-zig-player/tree/v0.1.1 ] ||
-        fail 'unexpected player source-tag URL metadata'
-    [ "${VANHYPRARCH_ZIG_PLAYER_SOURCE_ARCHIVE_URL:-}" = \
-        https://github.com/vanhyprarch/vanhyprarch-zig-player/archive/refs/tags/v0.1.1.tar.gz ] ||
-        fail 'unexpected player source-archive URL metadata'
-else
-    case ${VANHYPRARCH_ZIG_PLAYER_VERSION:-} in v[0-9]*) ;; *)
-        fail 'invalid test player version metadata' ;; esac
-    [ -n "${VANHYPRARCH_ZIG_PLAYER_ARCHITECTURE:-}" ] ||
-        fail 'missing test player architecture metadata'
-    case ${VANHYPRARCH_ZIG_PLAYER_ASSET:-} in
-        vanhyprarch-zig-player-*.tar.gz) ;;
-        *) fail 'invalid test player asset metadata' ;;
-    esac
-    case ${VANHYPRARCH_ZIG_PLAYER_SHA256:-} in
-        *[!0-9a-f]*|'') fail 'invalid test player checksum metadata' ;;
-    esac
-    [ "${#VANHYPRARCH_ZIG_PLAYER_SHA256}" -eq 64 ] ||
-        fail 'invalid test player checksum length'
-    [ -n "${VANHYPRARCH_ZIG_PLAYER_REPOSITORY_URL:-}" ] &&
-        [ -n "${VANHYPRARCH_ZIG_PLAYER_RELEASE_URL:-}" ] &&
-        [ -n "${VANHYPRARCH_ZIG_PLAYER_DOWNLOAD_URL:-}" ] &&
-        [ -n "${VANHYPRARCH_ZIG_PLAYER_SOURCE_TAG_URL:-}" ] &&
-        [ -n "${VANHYPRARCH_ZIG_PLAYER_SOURCE_ARCHIVE_URL:-}" ] ||
-        fail 'incomplete test player URL metadata'
-fi
-
-target_architecture=${VANHYPRARCH_TARGET_ARCHITECTURE:-$(uname -m)}
-[ "$target_architecture" = "$VANHYPRARCH_ZIG_PLAYER_ARCHITECTURE" ] ||
-    fail "unsupported architecture: $target_architecture (v0.1.1 provides x86_64 only)"
-
 [ -n "${HOME:-}" ] || fail 'HOME is not set'
-install_home=${VANHYPRARCH_INSTALL_HOME:-$HOME}
-case $install_home in /*) ;; *) fail 'install home must be absolute' ;; esac
-destination_root=${DESTDIR:-}
-case $destination_root in ''|/*) ;; *) fail 'DESTDIR must be empty or absolute' ;; esac
-destination_root=${destination_root%/}
-install_root=$destination_root$install_home
-bin_dir=$install_root/.local/bin
-license_dir=$install_root/.local/share/licenses/vanhyprarch-zig-player
-documentation_dir=$install_root/.local/share/doc/vanhyprarch-zig-player
+case $HOME in /*) ;; *) fail 'HOME must be absolute' ;; esac
 
-temporary_base=${TMPDIR:-/tmp}
-case $temporary_base in /*) ;; *) fail 'TMPDIR must be absolute' ;; esac
-[ -d "$temporary_base" ] || fail "$temporary_base is not a directory"
-umask 077
-work_dir=$(mktemp -d "$temporary_base/vanhyprarch-zig-player.XXXXXX") ||
-    fail 'could not create private temporary directory'
-trap cleanup 0 HUP INT TERM
-
-archive=$work_dir/$VANHYPRARCH_ZIG_PLAYER_ASSET
-if [ -n "${VANHYPRARCH_TEST_ARCHIVE:-}" ]; then
-    [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" = 1 ] ||
-        fail 'test archive override is not enabled'
-    cp -- "$VANHYPRARCH_TEST_ARCHIVE" "$archive" ||
-        fail 'could not copy test archive'
-else
-    command -v curl >/dev/null 2>&1 ||
-        fail 'curl is required to download the pinned player release'
-    curl --fail --location --proto '=https' --tlsv1.2 \
-        --output "$archive" "$VANHYPRARCH_ZIG_PLAYER_DOWNLOAD_URL" ||
-        fail 'could not download the pinned player release'
+controller=$HOME/.local/bin/vanhyprarch-screensaver
+if [ ! -x "$controller" ]; then
+    controller=$script_dir/../bin/vanhyprarch-screensaver
 fi
+[ -x "$controller" ] || fail 'vanhyprarch-screensaver is unavailable'
 
-printf '%s  %s\n' "$VANHYPRARCH_ZIG_PLAYER_SHA256" "$archive" |
-    sha256sum -c - >/dev/null || fail 'player archive checksum verification failed'
-
-archive_root=${VANHYPRARCH_ZIG_PLAYER_ASSET%.tar.gz}
-actual_listing=$work_dir/archive.list
-expected_listing=$work_dir/expected.list
-tar -tzf "$archive" | LC_ALL=C sort > "$actual_listing" ||
-    fail 'could not inspect player archive'
-{
-    printf '%s/\n' "$archive_root"
-    printf '%s/%s\n' "$archive_root" LICENSE
-    printf '%s/%s\n' "$archive_root" README.md
-    printf '%s/%s\n' "$archive_root" THIRD_PARTY_NOTICES.md
-    printf '%s/%s\n' "$archive_root" vanhyprarch-zig-player
-} | LC_ALL=C sort > "$expected_listing"
-cmp -s "$actual_listing" "$expected_listing" ||
-    fail 'player archive contains an unexpected path or is incomplete'
-
-extract_dir=$work_dir/extracted
-mkdir -m 700 -- "$extract_dir" || fail 'could not create extraction directory'
-tar -xzf "$archive" -C "$extract_dir" -- \
-    "$archive_root/LICENSE" \
-    "$archive_root/README.md" \
-    "$archive_root/THIRD_PARTY_NOTICES.md" \
-    "$archive_root/vanhyprarch-zig-player" ||
-    fail 'could not extract verified player archive'
-source_dir=$extract_dir/$archive_root
-for expected_file in LICENSE README.md THIRD_PARTY_NOTICES.md vanhyprarch-zig-player; do
-    [ -f "$source_dir/$expected_file" ] && [ ! -L "$source_dir/$expected_file" ] ||
-        fail "invalid extracted file: $expected_file"
-done
-
-mkdir -p -- "$bin_dir" "$license_dir" "$documentation_dir" ||
-    fail 'could not create player installation directories'
-install_atomically "$source_dir/vanhyprarch-zig-player" \
-    "$bin_dir/vanhyprarch-zig-player" 0755
-install_atomically "$source_dir/LICENSE" "$license_dir/LICENSE" 0644
-install_atomically "$source_dir/THIRD_PARTY_NOTICES.md" \
-    "$license_dir/THIRD_PARTY_NOTICES.md" 0644
-install_atomically "$source_dir/README.md" "$documentation_dir/README.md" 0644
-install_atomically "$metadata_file" \
-    "$documentation_dir/vanhyprarch-zig-player.conf" 0644
-
-printf 'installed vanhyprarch-zig-player %s at %s\n' \
-    "$VANHYPRARCH_ZIG_PLAYER_VERSION" "$bin_dir/vanhyprarch-zig-player"
+printf '%s\n' 'install-zig-player is a compatibility entry point; delegating to the component manager.' >&2
+exec "$controller" install

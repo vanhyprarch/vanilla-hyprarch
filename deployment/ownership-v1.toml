@@ -130,10 +130,30 @@ machine_specific = false
 [[artifact]]
 source = "bin/vanhyprarch-screensaver"
 target = "$HOME/.local/bin/vanhyprarch-screensaver"
-class = "OPTIONAL_COMPONENT_PAYLOAD"
-component = "zig-screensaver"
+class = "MANAGED"
+component = "zig-screensaver-manager"
 mode = "0755"
-authority = "optional-component"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "install/zig-screensaver/manager.py"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/zig-screensaver/manager.py"
+class = "MANAGED"
+component = "zig-screensaver-manager"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "install/vanhyprarch-zig-player.conf"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/zig-screensaver/vanhyprarch-zig-player.conf"
+class = "MANAGED"
+component = "zig-screensaver-manager"
+mode = "0644"
+authority = "vanilla-hyprarch"
 user_editable = false
 machine_specific = false
 
@@ -142,7 +162,43 @@ target = "$HOME/.local/bin/vanhyprarch-zig-player"
 class = "OPTIONAL_COMPONENT_PAYLOAD"
 component = "zig-screensaver"
 mode = "0755"
-authority = "optional-component"
+authority = "vanhyprarch-screensaver"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/licenses/vanhyprarch-zig-player/{LICENSE,THIRD_PARTY_NOTICES.md}"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+mode = "0644"
+authority = "vanhyprarch-screensaver"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/doc/vanhyprarch-zig-player/{README.md,vanhyprarch-zig-player.conf}"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+mode = "0644"
+authority = "vanhyprarch-screensaver"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/components/zig-screensaver"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+mode = "0644"
+authority = "vanhyprarch-screensaver"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/{screensaver.state,screensaver.cursor,screensaver.lock,screensaver.log,zig-screensaver-component.lock,zig-screensaver-install.receipt}"
+class = "RUNTIME"
+component = "zig-screensaver-manager"
+mode = "0600"
+authority = "vanhyprarch-screensaver"
 user_editable = false
 machine_specific = false
 

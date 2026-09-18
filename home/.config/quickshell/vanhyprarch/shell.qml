@@ -10,6 +10,9 @@ import "components"
 ShellRoot {
     id: root
 
+    property string powerIdleRequestScreen: ""
+    property int powerIdleRequestSerial: 0
+
     TextSizeController {
         id: textSizeController
     }
@@ -56,13 +59,27 @@ ShellRoot {
         id: systemComponentsActions
     }
 
+    ZigScreensaverActions {
+        id: zigScreensaverActions
+
+        onOperationTerminalCompleted: function(operationKind, exitCode) {
+            if (exitCode === 0)
+                idleController.refreshStatus(false)
+        }
+    }
+
     SuperSpace {
         id: superSpace
         installActions: installActions
         removeActions: removeActions
         updateActions: updateActions
         systemComponentsActions: systemComponentsActions
+        zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
+        onConfigurePowerIdleRequested: function(screenName) {
+            root.powerIdleRequestScreen = screenName
+            root.powerIdleRequestSerial += 1
+        }
     }
 
     IdleController {
@@ -211,6 +228,9 @@ ShellRoot {
             controller: idleController
             theme: shellTheme
             metrics: visualMetrics
+            screenName: screenScope.modelData.name
+            openRequestScreen: root.powerIdleRequestScreen
+            openRequestSerial: root.powerIdleRequestSerial
 
             anchors {
                 bottom: dockThemeToggle.top

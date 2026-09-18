@@ -5,11 +5,15 @@ import Quickshell.Io
 Scope {
     id: root
 
+    property bool checksEnabled: true
     property string screensaver: "never"
     property string display: "never"
     property string suspend: "never"
     property string lockPoint: "none"
+    property string storedLockPoint: "none"
+    property string effectiveScreensaver: "never"
     property string effect: "colormix"
+    property string screensaverCapability: "incomplete"
     property bool caffeine: false
     property int effectiveListeners: 0
     property bool ready: false
@@ -18,6 +22,7 @@ Scope {
     property var queuedAction: null
 
     readonly property bool busy: actionProcess.running || queuedAction !== null
+    readonly property bool screensaverAvailable: screensaverCapability === "installed"
     readonly property bool visualCaffeine: pendingCaffeine !== ""
         ? pendingCaffeine === "on" : caffeine
     readonly property string backendCommand: "vanhyprarch-idle"
@@ -29,7 +34,8 @@ Scope {
     readonly property var lockPoints: ["none", "screensaver", "display", "suspend"]
     readonly property var effects: ["colormix", "matrix", "doom", "gameoflife"]
 
-    Component.onCompleted: Qt.callLater(function() { root.refreshStatus(false) })
+    Component.onCompleted: if (checksEnabled)
+        Qt.callLater(function() { root.refreshStatus(false) })
 
     function timeoutIsValid(value: string): bool {
         if (value === "never")
@@ -87,11 +93,13 @@ Scope {
     function canSetStage(stage: string, value: string): bool {
         if (!root.ready || root.busy || !root.isKnownPreset(stage, value))
             return false
+        if (stage === "screensaver" && !root.screensaverAvailable)
+            return false
 
         let nextScreensaver = root.screensaver
         let nextDisplay = root.display
         let nextSuspend = root.suspend
-        let nextLock = root.lockPoint
+        let nextLock = root.storedLockPoint
         switch (stage) {
         case "screensaver": nextScreensaver = value; break
         case "display": nextDisplay = value; break
@@ -106,6 +114,8 @@ Scope {
 
     function canSetLock(lockValue: string): bool {
         if (!root.ready || root.busy || root.lockPoints.indexOf(lockValue) < 0)
+            return false
+        if (lockValue === "screensaver" && !root.screensaverAvailable)
             return false
         return root.configurationIsValid(root.screensaver, root.display,
             root.suspend, lockValue)
@@ -124,7 +134,7 @@ Scope {
         let nextScreensaver = root.screensaver
         let nextDisplay = root.display
         let nextSuspend = root.suspend
-        let nextLock = root.lockPoint
+        let nextLock = root.storedLockPoint
         switch (stage) {
         case "screensaver": nextScreensaver = value; break
         case "display": nextDisplay = value; break
@@ -148,7 +158,7 @@ Scope {
             root.errorMessage = "Enable that stage before assigning automatic lock."
             return
         }
-        if (lockValue === root.lockPoint)
+        if (lockValue === root.storedLockPoint)
             return
 
         root.startAction([
@@ -202,7 +212,7 @@ Scope {
     }
 
     function refreshStatus(preserveError: bool): void {
-        if (root.busy || statusProcess.running)
+        if (!root.checksEnabled || root.busy || statusProcess.running)
             return
         if (!preserveError) {
             root.errorMessage = ""
@@ -221,8 +231,9 @@ Scope {
     function parseStatus(output: string): var {
         const values = {}
         const expectedKeys = [
-            "version", "screensaver", "display", "suspend",
-            "lock", "effect", "caffeine", "effective_listeners"
+            "version", "screensaver", "display", "suspend", "lock",
+            "effective_screensaver", "effective_lock", "effect",
+            "screensaver_capability", "caffeine", "effective_listeners"
         ]
         const lines = String(output || "").split("\n")
         for (const rawLine of lines) {
@@ -242,16 +253,29 @@ Scope {
             if (values[key] === undefined)
                 throw new Error("missing status key")
         }
-        if (values.version !== "2"
+        if (values.version !== "3"
                 || (values.caffeine !== "on" && values.caffeine !== "off")
+                || ["installed", "absent", "incomplete"].indexOf(
+                    values.screensaver_capability) < 0
                 || root.effects.indexOf(values.effect) < 0
                 || !/^[0-9]+$/.test(values.effective_listeners)
                 || !root.configurationIsValid(values.screensaver,
                     values.display, values.suspend, values.lock))
             throw new Error("invalid backend status values")
 
+        const expectedEffectiveScreen = values.screensaver_capability === "installed"
+            ? values.screensaver : "never"
+        let expectedEffectiveLock = values.lock
+        if (values.screensaver_capability !== "installed"
+                && expectedEffectiveLock === "screensaver")
+            expectedEffectiveLock = values.display !== "never" ? "display"
+                : values.suspend !== "never" ? "suspend" : "none"
+        if (values.effective_screensaver !== expectedEffectiveScreen
+                || values.effective_lock !== expectedEffectiveLock)
+            throw new Error("inconsistent effective screensaver projection")
+
         const expectedListeners = values.caffeine === "on" ? 0
-            : (values.screensaver === "never" ? 0 : 1)
+            : (values.effective_screensaver === "never" ? 0 : 1)
                 + (values.display === "never" ? 0 : 1)
                 + (values.suspend === "never" ? 0 : 1)
         if (Number(values.effective_listeners) !== expectedListeners)
@@ -261,8 +285,11 @@ Scope {
             screensaver: values.screensaver,
             display: values.display,
             suspend: values.suspend,
-            lockPoint: values.lock,
+            lockPoint: values.effective_lock,
+            storedLockPoint: values.lock,
+            effectiveScreensaver: values.effective_screensaver,
             effect: values.effect,
+            screensaverCapability: values.screensaver_capability,
             caffeine: values.caffeine === "on",
             effectiveListeners: expectedListeners
         }
@@ -277,10 +304,18 @@ Scope {
         return message.length > 180 ? message.slice(0, 177) + "…" : message
     }
 
+    function failClosedScreensaverCapability(): void {
+        root.screensaverCapability = "incomplete"
+        root.effectiveScreensaver = "never"
+        if (root.lockPoint === "screensaver")
+            root.lockPoint = root.display !== "never" ? "display"
+                : root.suspend !== "never" ? "suspend" : "none"
+    }
+
     Timer {
         interval: 30000
         repeat: true
-        running: true
+        running: root.checksEnabled
         onTriggered: root.refreshStatus(true)
     }
 
@@ -316,6 +351,7 @@ Scope {
             if (root.queuedAction === null && !actionProcess.running)
                 root.pendingCaffeine = ""
             if (lastExitCode !== 0) {
+                root.failClosedScreensaverCapability()
                 root.errorMessage = root.conciseError(errorText,
                     "Could not read Power & Idle status.")
                 Qt.callLater(root.startQueuedAction)
@@ -332,8 +368,14 @@ Scope {
                     root.suspend = state.suspend
                 if (root.lockPoint !== state.lockPoint)
                     root.lockPoint = state.lockPoint
+                if (root.storedLockPoint !== state.storedLockPoint)
+                    root.storedLockPoint = state.storedLockPoint
+                if (root.effectiveScreensaver !== state.effectiveScreensaver)
+                    root.effectiveScreensaver = state.effectiveScreensaver
                 if (root.effect !== state.effect)
                     root.effect = state.effect
+                if (root.screensaverCapability !== state.screensaverCapability)
+                    root.screensaverCapability = state.screensaverCapability
                 if (root.caffeine !== state.caffeine)
                     root.caffeine = state.caffeine
                 if (root.effectiveListeners !== state.effectiveListeners)
@@ -343,6 +385,7 @@ Scope {
                 if (!preserveError)
                     root.errorMessage = ""
             } catch (error) {
+                root.failClosedScreensaverCapability()
                 root.errorMessage = "Could not parse Power & Idle status."
                 console.warn("Failed to parse vanhyprarch-idle status: " + error)
             }

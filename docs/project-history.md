@@ -377,6 +377,23 @@ live references were verified. System Keyboard Synchronization and Monitor
 Control & Safe Apply were recorded as future milestones and were not
 implemented by this migration.
 
+## Zig Screensaver optional-component repository milestone
+
+The native player moved from an assumed baseline payload to the explicit Zig
+Screensaver sibling of Local Dictation in Additional system components. The
+baseline manager now owns pinned install, adoption, repair, reinstall,
+uninstall, marker publication, runtime process identity, and cursor recovery.
+Power & Idle gained authoritative capability projection and distinct
+unexpected-damage versus deliberate-uninstall preference semantics.
+
+The historical manual-start hazard was closed by rejecting plain `start`,
+using explicit `start --idle` from generated hypridle configuration, and adding
+a five-second bounded `test`. Exact process termination no longer depends on
+successful cursor restoration; retained cursor state can be completed by a
+later idempotent stop, including after unexpected player exit. This work was
+implemented and tested in an isolated repository worktree. It did not adopt,
+reload, reinstall, or otherwise change the current live desktop.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

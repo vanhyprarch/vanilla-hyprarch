@@ -76,6 +76,26 @@ from preserved preferences with Caffeine off before directly executing
 hypridle. Caffeine itself remains session runtime state under
 `XDG_RUNTIME_DIR` and never overwrites the preference.
 
+## Zig Screensaver ownership
+
+`$HOME/.local/bin/vanhyprarch-screensaver`, its private Python implementation,
+and canonical v0.1.1 verification metadata are baseline `MANAGED` artifacts.
+The player binary, license, notices, README, installed release record, and
+mode-0644 marker are `OPTIONAL_COMPONENT_PAYLOAD`. Their sole lifecycle and
+marker authority is `vanhyprarch-screensaver`; QML only consumes its strict
+status. Runtime PID, cursor, log, and component lock records remain under
+`$XDG_RUNTIME_DIR/vanhyprarch/` and are not deployment payload.
+
+A Zig-specific mode-0600 install receipt may exist there only while recovering
+an interrupted fresh publication. It proves cleanup authority solely for
+canonical objects created by that operation, is not a durable deployment
+ledger, and is removed after success or handled rollback.
+
+The player remains at the intentional public-command location
+`$HOME/.local/bin`. All optional data paths and the immutable resource directory
+respect `XDG_DATA_HOME`, falling back to `$HOME/.local/share`; preferences and
+the generated idle fragment independently respect `XDG_CONFIG_HOME`.
+
 ## Alpha compatibility contract
 
 Vanilla HyprArch is Alpha. Public Alpha releases are intended for testing and

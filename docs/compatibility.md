@@ -15,7 +15,7 @@ and removable local mitigations. Package selection belongs in
 | hyprlock | 0.9.6 (`hyprlock 0.9.6-3`) | Manual/password unlock and Screen saver/Display automatic-lock paths validated; portable repository baseline added but not live-migrated |
 | Quickshell | 0.3.1 (`quickshell 0.3.1-1`) | Main desktop shell; no longer part of screensaver rendering |
 | Qt | 6.11.2 (`qt6-base 6.11.2-3`) | Main Quickshell runtime |
-| `vanhyprarch-zig-player` | v0.1.1 | Native layer-shell screensaver renderer; idle continuity and input routing validated, physical two-monitor testing pending |
+| `vanhyprarch-zig-player` | optional v0.1.1, Linux x86_64 | Native layer-shell renderer; canonical member hashes and required Wayland/glibc libraries are validated before capability publication. Idle continuity and input routing validated; physical two-monitor testing pending. |
 | Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal for interactive Install/Remove/Update operations; a shared helper retains final output until Enter without `--hold` |
 | pacman | 7.1.0 (`pacman 7.1.0.r9.g54d9411-2`) | Local installed-package catalog and authoritative removal transaction semantics |
 | yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR installation, removal, and full-system update wrapper |
@@ -307,6 +307,13 @@ an existing customized BlueZ configuration.
 ## Current screensaver validation
 
 **Status:** validated with `vanhyprarch-zig-player` v0.1.1
+
+The player is now optional for the Arch Linux x86_64 Alpha target. Absence is
+not a compatibility failure: the backend suppresses all player actions while
+Display, Suspend, Automatic Lock, and Caffeine remain available. Marker or
+payload corruption is reported as incomplete and uses the same safe effective
+projection. The repository lifecycle tests are complete; this milestone has
+not yet performed controlled adoption or a fullscreen physical live test.
 
 ### Production idle continuity
 

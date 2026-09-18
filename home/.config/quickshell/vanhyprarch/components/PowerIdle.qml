@@ -7,6 +7,9 @@ Item {
     required property var controller
     required property var theme
     required property var metrics
+    property string screenName: ""
+    property string openRequestScreen: ""
+    property int openRequestSerial: 0
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
     readonly property int iconSize: root.metrics.dockSystemIconSize
 
@@ -14,6 +17,13 @@ Item {
     implicitHeight: buttonSize
     width: implicitWidth
     height: implicitHeight
+
+    onOpenRequestSerialChanged: {
+        if (root.openRequestScreen === root.screenName) {
+            powerIdlePanel.visible = true
+            root.controller.refreshStatus(false)
+        }
+    }
 
     Image {
         anchors.centerIn: parent

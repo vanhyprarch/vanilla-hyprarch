@@ -47,6 +47,22 @@ The deployed version-2 state is Screen saver `never`, Display `never`, Suspend
 listeners. Version-1 migration preserves existing timeout and lock selections
 while defaulting the new effect field to `colormix`.
 
+Zig Screensaver capability is not a preference. The backend asks the baseline
+`vanhyprarch-screensaver` manager and publishes
+`screensaver_capability=installed|absent|incomplete` in status version 3,
+together with stored and effective screensaver/lock values. Only a valid marker
+plus fully validated pinned payload is installed. When capability is absent or
+incomplete, effective Screensaver is `never`, no player listener is rendered,
+and stored `lock=screensaver` projects temporarily to Display, else Suspend,
+else None. Stored screensaver, effect, and lock values are not rewritten for
+unexpected damage, so Repair can restore the exact configuration.
+Periodic backend status observes the capability annotation in the deployed
+fragment. A transition from installed to incomplete/absent (or back) triggers
+an exact-owned player stop and the normal validated transactional fragment
+deployment before status returns. Cursor restoration failure remains visible
+after process termination and safe configuration publication;
+unrelated fragment incoherence still fails closed instead of being overwritten.
+
 ## Command interface
 
 ```text
@@ -57,6 +73,9 @@ vanhyprarch-idle configure <screensaver> <display> <suspend> <lock>
 vanhyprarch-idle set <screensaver|display|suspend|lock|effect> <value>
 vanhyprarch-idle caffeine <on|off>
 vanhyprarch-idle screensaver-effect
+vanhyprarch-idle reconcile-screensaver <installed|absent>
+vanhyprarch-idle screensaver-uninstall-plan
+vanhyprarch-idle remove-screensaver
 ```
 
 `status` emits stable `key=value` lines for later QML parsing. Before reporting
@@ -81,11 +100,13 @@ preferences. When Caffeine is active, the fragment contains no listeners and
 therefore performs no automatic screensaver, display-off, lock, or suspend
 action.
 
-An enabled screensaver generates one inhibitor-aware listener. Its timeout
-starts `vanhyprarch-screensaver`; genuine-input resume stops it. If Screen saver
-owns locking, resume requests `loginctl lock-session` instead and the general
-unlock command stops the saver. The listener never ignores legitimate
-inhibitors.
+An enabled and authoritatively available screensaver generates one
+inhibitor-aware listener. Its timeout starts `vanhyprarch-screensaver start
+--idle`; genuine-input resume stops it. If Screensaver owns locking, resume
+calls the controller's `resume-lock`, which requests
+`loginctl lock-session` and disarms duplicate exit locking only after that
+request succeeds; the general unlock command then stops the saver. The listener
+never ignores legitimate inhibitors.
 
 The final production chain started ColorMix through the controller at +10.034
 seconds and fired a harmless later listener at +20.036 seconds, 10.002 seconds
@@ -114,8 +135,9 @@ making Lock `none` and Caffeine meaningful even for pre-sleep handling.
 ## Deployment and rollback
 
 During development, `~/.local/bin/vanhyprarch-idle` may be a symlink to the
-tracked backend. The controller and separately installed
-`vanhyprarch-zig-player` must both be in hypridle's inherited PATH; production
+tracked backend. The baseline controller must be in hypridle's inherited PATH.
+The player is required only when its validated optional capability is
+installed; production
 installs regular executables in `$HOME/.local/bin` without depending on a Git
 checkout. A future shared bootstrap must deploy the static main configuration
 and initialize the default preference file. It must not deploy generated
@@ -210,11 +232,36 @@ The dock order is:
 
 This list follows the lower control area from bottom to top.
 
-The panel begins with **Caffeine / Keep computer awake**, followed by a compact
-screensaver-effect choice and the Screen saver, Turn off display, and Suspend
-timeout controls. Effect choice persists even when Screen saver is `Never`.
-Each stage can be
-`Never` and can be selected as the one automatic lock point. A single global
+The panel always shows Caffeine, Turn Off Display, Suspend, and Automatic Lock
+with None, Display Off, and Suspend. When Zig Screensaver is installed, Screen
+Saver Effect and Screensaver appear between Caffeine and Turn Off Display, and
+Screensaver is selectable as the Automatic Lock choice only while that stage is
+enabled.
+Absent and incomplete components leave no disabled row or empty placeholder.
+
+Automatic Lock is not a separate timeout. It selects which configured stage
+locks the session: for example, Screensaver at 120 seconds and Display at 300
+seconds with `lock=display` starts the saver at 120 without locking and locks
+when Display begins at 300. Deliberate uninstall atomically persists
+`screensaver=never`, `effect=colormix`, and maps `lock=screensaver` to Display,
+else Suspend, else None; other lock choices and Display/Suspend preferences are
+preserved. The confirmation UI discloses that destination before removal.
+
+`lock=screensaver` intentionally keeps the native saver visible while idle.
+Normal activity asks the session to lock before the desktop can reappear, so
+authentication protects leaving that stage without placing hyprlock over the
+saver at timeout. The idle controller records this protection on the owned
+process; an unexpected player exit requests the same session lock before it
+restores the cursor. The bounded manual `test` command never arms this policy.
+Display and Suspend retain their established stage behavior.
+
+While the optional component is damaged, baseline Display and Suspend edits
+remain subject to the stored ordering invariant. The backend does not rewrite
+the dormant Screensaver timeout to make a newly requested value fit; the user
+may repair or deliberately uninstall the component if that conservative rule
+blocks a desired ordering change.
+
+A single global
 controller owns backend processes and parsed state; screen-bound buttons and
 popups follow the existing `Quickshell.screens` delegate lifecycle.
 

@@ -62,12 +62,21 @@ if printf '%s\n' "$session_start_source" | grep -Fq 'get_hyprland_instance'; the
 fi
 
 mkdir -p "$test_dir/home/.config/vanhyprarch" \
-    "$test_dir/home/.config/hypr" "$test_dir/runtime"
+    "$test_dir/home/.config/hypr" "$test_dir/home/.local/bin" "$test_dir/runtime"
 export HOME=$test_dir/home
 export XDG_CONFIG_HOME=$HOME/.config
 export XDG_RUNTIME_DIR=$test_dir/runtime
 preferences=$XDG_CONFIG_HOME/vanhyprarch/power-idle.conf
 managed_fragment=$XDG_CONFIG_HOME/hypr/vanhyprarch-idle.conf
+export MOCK_SCREENSAVER_CAPABILITY=$test_dir/screensaver-capability
+printf 'installed\n' > "$MOCK_SCREENSAVER_CAPABILITY"
+
+cat > "$HOME/.local/bin/vanhyprarch-screensaver" <<'EOF'
+#!/bin/sh
+[ "$#" -eq 1 ] && [ "$1" = component-capability ] || exit 2
+cat "$MOCK_SCREENSAVER_CAPABILITY"
+EOF
+chmod 755 "$HOME/.local/bin/vanhyprarch-screensaver"
 
 cat > "$preferences" <<'EOF'
 version=1
@@ -81,12 +90,15 @@ chmod 600 "$preferences"
 chmod 600 "$managed_fragment"
 
 status=$($idle status)
-require_line "$status" 'version=2'
+require_line "$status" 'version=3'
 require_line "$status" 'screensaver=120'
 require_line "$status" 'display=300'
 require_line "$status" 'suspend=600'
 require_line "$status" 'lock=display'
+require_line "$status" 'effective_screensaver=120'
+require_line "$status" 'effective_lock=display'
 require_line "$status" 'effect=colormix'
+require_line "$status" 'screensaver_capability=installed'
 require_line "$status" 'caffeine=off'
 require_line "$status" 'effective_listeners=3'
 grep -Fqx 'version=1' "$preferences" ||
@@ -104,6 +116,28 @@ grep -Fq 'deployed hypridle configuration does not match current Power & Idle st
     "$test_dir/rejected.err" || fail 'status did not report an incoherent fragment'
 "$idle" render 120 300 600 display off gameoflife > "$managed_fragment"
 
+cp "$preferences" "$test_dir/preferences.before-damage"
+printf 'incomplete\n' > "$MOCK_SCREENSAVER_CAPABILITY"
+"$idle" render 120 300 600 display off gameoflife incomplete > "$managed_fragment"
+damaged_status=$("$idle" status)
+require_line "$damaged_status" 'screensaver=120'
+require_line "$damaged_status" 'lock=display'
+require_line "$damaged_status" 'effective_screensaver=never'
+require_line "$damaged_status" 'effective_lock=display'
+require_line "$damaged_status" 'screensaver_capability=incomplete'
+cmp -s "$preferences" "$test_dir/preferences.before-damage" ||
+    fail 'unexpected damage rewrote durable preferences'
+reject_command "$idle" set screensaver 300
+reject_command "$idle" set effect doom
+reject_command "$idle" set lock screensaver
+cmp -s "$preferences" "$test_dir/preferences.before-damage" ||
+    fail 'unavailable screensaver request changed durable preferences'
+printf 'installed\n' > "$MOCK_SCREENSAVER_CAPABILITY"
+"$idle" render 120 300 600 display off gameoflife > "$managed_fragment"
+repaired_status=$("$idle" status)
+require_line "$repaired_status" 'effective_screensaver=120'
+require_line "$repaired_status" 'effect=gameoflife'
+
 cp "$preferences" "$test_dir/preferences.before-invalid"
 reject_command "$idle" set effect ''
 reject_command "$idle" set effect 'matrix;touch-injected'
@@ -114,7 +148,7 @@ cmp -s "$preferences" "$test_dir/preferences.before-invalid" ||
 rendered=$($idle render 10 20 30 none off matrix)
 [ "$(printf '%s\n' "$rendered" | grep -c '^listener {$')" -eq 3 ] ||
     fail 'expected one listener per enabled stage'
-[ "$(printf '%s\n' "$rendered" | grep -c 'vanhyprarch-screensaver start')" -eq 1 ] ||
+[ "$(printf '%s\n' "$rendered" | grep -c 'vanhyprarch-screensaver start --idle')" -eq 1 ] ||
     fail 'screensaver start listener missing'
 [ "$(printf '%s\n' "$rendered" | grep -c 'vanhyprarch-screensaver stop')" -eq 1 ] ||
     fail 'screensaver resume action missing'
@@ -125,23 +159,76 @@ require_line "$rendered" '    on-resume = hyprctl dispatch '\''hl.dsp.dpms({ act
 require_line "$rendered" '    on-timeout = systemctl suspend'
 
 locked=$($idle render 10 20 30 screensaver off colormix)
-require_line "$locked" '    on-resume = loginctl lock-session'
+require_line "$locked" '    on-resume = vanhyprarch-screensaver resume-lock'
 [ "$(printf '%s\n' "$locked" | grep -c 'vanhyprarch-screensaver stop' || true)" -eq 0 ] ||
     fail 'screen-lock listener unexpectedly stops before unlock'
 
 display_locked=$($idle render 10 20 30 display off colormix)
 require_line "$display_locked" '    on-timeout = loginctl lock-session && hyprctl dispatch '\''hl.dsp.dpms({ action = "disable" })'\'''
+require_line "$display_locked" '    on-resume = vanhyprarch-screensaver stop'
+[ "$(printf '%s\n' "$display_locked" | grep -c 'loginctl lock-session')" -eq 1 ] ||
+    fail 'lock=display also locked at the earlier Screensaver stage'
 
 caffeinated=$($idle render 10 20 30 none on doom)
 [ "$(printf '%s\n' "$caffeinated" | grep -c '^listener {$' || true)" -eq 0 ] ||
     fail 'Caffeine output contains listeners'
 require_line "$caffeinated" '# Automatic Power & Idle actions are disabled.'
 
+absent=$($idle render 10 20 30 screensaver off matrix absent)
+[ "$(printf '%s\n' "$absent" | grep -c '^listener {$')" -eq 2 ] ||
+    fail 'absent capability did not remove only the screensaver listener'
+if printf '%s\n' "$absent" | grep -Fq 'vanhyprarch-screensaver start'; then
+    fail 'absent capability generated a screensaver action'
+fi
+require_line "$absent" '# Effective: screensaver=never lock=display capability=absent'
+
+incomplete=$($idle render 10 never 30 screensaver off matrix incomplete)
+require_line "$incomplete" '# Effective: screensaver=never lock=suspend capability=incomplete'
+if printf '%s\n' "$incomplete" | grep -Fq 'vanhyprarch-screensaver start'; then
+    fail 'incomplete capability generated a screensaver action'
+fi
+
 "$idle" validate 1 never never none colormix >/dev/null
 reject_command "$idle" validate 10 10 never none colormix
 reject_command "$idle" validate 20 10 30 none colormix
 reject_command "$idle" validate never never never screensaver colormix
 reject_command "$idle" validate never never never none '$(touch injected)'
+
+cat > "$preferences" <<'EOF'
+version=2
+screensaver=120
+display=300
+suspend=600
+lock=display
+effect=matrix
+EOF
+require_line "$("$idle" screensaver-uninstall-plan)" 'resulting_lock=display'
+cat > "$preferences" <<'EOF'
+version=2
+screensaver=120
+display=never
+suspend=600
+lock=screensaver
+effect=matrix
+EOF
+require_line "$("$idle" screensaver-uninstall-plan)" 'resulting_lock=suspend'
+[ "$("$idle" screensaver-resume-lock)" = on ] ||
+    fail 'Automatic Lock = Screensaver did not protect idle resume'
+printf 'incomplete\n' > "$MOCK_SCREENSAVER_CAPABILITY"
+[ "$("$idle" screensaver-resume-lock)" = off ] ||
+    fail 'unavailable Screensaver armed resume authentication'
+printf 'installed\n' > "$MOCK_SCREENSAVER_CAPABILITY"
+cat > "$preferences" <<'EOF'
+version=2
+screensaver=120
+display=never
+suspend=never
+lock=none
+effect=matrix
+EOF
+require_line "$("$idle" screensaver-uninstall-plan)" 'resulting_lock=none'
+[ "$("$idle" screensaver-resume-lock)" = off ] ||
+    fail 'Automatic Lock = None armed Screensaver resume authentication'
 
 mkdir "$test_dir/bin"
 cat > "$test_dir/bin/loginctl" <<'EOF'
@@ -187,7 +274,7 @@ session_real_stat=$session_root/real-stat
 session_hyprctl_log=$session_root/hyprctl.log
 session_error_record=$session_runtime/vanhyprarch/session-start-error.log
 mkdir -p "$session_home/.config/vanhyprarch" "$session_hypr_dir" \
-    "$session_runtime" "$session_bin"
+    "$session_home/.local/bin" "$session_runtime" "$session_bin"
 
 command -v cc >/dev/null 2>&1 ||
     fail 'a C compiler is required for the session-start parent fixture'
@@ -401,6 +488,7 @@ EOF
 
 cat > "$session_bin/vanhyprarch-screensaver" <<'EOF'
 #!/bin/sh
+[ "${1-}" = component-capability ] && printf 'installed\n'
 exit 0
 EOF
 
@@ -439,6 +527,8 @@ chmod 755 "$session_bin/hyprctl" "$session_bin/ps" \
     "$session_bin/pgrep" "$session_bin/readlink" \
     "$session_bin/vanhyprarch-idle" \
     "$session_bin/vanhyprarch-screensaver" "$session_exec_probe"
+cp -- "$session_bin/vanhyprarch-screensaver" \
+    "$session_home/.local/bin/vanhyprarch-screensaver"
 
 session_path=$session_bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -562,7 +652,7 @@ for session_lock_point in screensaver display suspend; do
     case $session_lock_point in
         screensaver)
             require_line "$(cat "$session_fragment")" \
-                '    on-resume = loginctl lock-session'
+                '    on-resume = vanhyprarch-screensaver resume-lock'
             ;;
         display)
             require_line "$(cat "$session_fragment")" \
@@ -763,5 +853,118 @@ fi
 grep -Fq 'restored previous hypridle configuration' \
     "$session_root/rollback.err" ||
     fail 'manual Caffeine rollback did not report restored daemon state'
+
+reconcile_runner=$session_root/reconcile-runner
+cat > "$reconcile_runner" <<'EOF'
+#!/bin/sh
+set -eu
+/usr/bin/sleep 300 &
+printf '%s\n' "$!" > "$MOCK_DAEMON_PID_FILE"
+printf '0\n' > "$MOCK_PGREP_COUNT_FILE"
+printf '1\n' > "$MOCK_PGREP_LIMIT_FILE"
+"$IDLE_UNDER_TEST" reconcile-screensaver absent
+EOF
+chmod 755 "$reconcile_runner"
+write_session_preferences display
+"$idle" render 37 91 143 display off matrix > "$session_fragment"
+reconcile_fragment_digest=$(sha256sum "$session_fragment" | sed 's/[[:space:]].*$//')
+rm -f "$session_root/daemon.pid" "$session_root/launch-count"
+if bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
+    --bind "$session_root" "$session_root" \
+    /usr/bin/env -i HOME="$session_home" \
+        XDG_CONFIG_HOME="$session_home/.config" XDG_RUNTIME_DIR="$session_runtime" \
+        PATH="$session_path" HYPRLAND_INSTANCE_SIGNATURE=test-signature \
+        IDLE_UNDER_TEST="$idle" MOCK_DAEMON_PID_FILE="$session_root/daemon.pid" \
+        MOCK_PGREP_COUNT_FILE="$session_root/pgrep-count" \
+        MOCK_PGREP_LIMIT_FILE="$session_root/pgrep-limit" \
+        MOCK_LAUNCH_COUNT_FILE="$session_root/launch-count" \
+        MOCK_MANAGED_LOG="$session_runtime/vanhyprarch/hypridle-managed.log" \
+        MOCK_FAIL_FIRST_LAUNCH=true MOCK_REAL_STAT="$session_real_stat" \
+        MOCK_ALLOW_INSTANCES=true MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
+        /bin/sh "$reconcile_runner" > "$session_root/reconcile.out" \
+        2> "$session_root/reconcile.err"; then
+    fail 'failed capability reconciliation unexpectedly succeeded'
+fi
+[ "$reconcile_fragment_digest" = \
+    "$(sha256sum "$session_fragment" | sed 's/[[:space:]].*$//')" ] ||
+    fail 'failed capability reconciliation did not restore exact prior fragment'
+[ "$(cat "$session_root/launch-count")" -eq 2 ] ||
+    fail 'failed capability reconciliation did not restore one prior daemon'
+
+legacy_status_runner=$session_root/legacy-status-runner
+cat > "$legacy_status_runner" <<'EOF'
+#!/bin/sh
+set -eu
+/usr/bin/sleep 300 &
+printf '%s\n' "$!" > "$MOCK_DAEMON_PID_FILE"
+printf '0\n' > "$MOCK_PGREP_COUNT_FILE"
+printf '1\n' > "$MOCK_PGREP_LIMIT_FILE"
+"$IDLE_UNDER_TEST" status > "$LEGACY_STATUS_OUTPUT"
+EOF
+chmod 755 "$legacy_status_runner"
+write_session_preferences display
+"$idle" render 37 91 143 display off matrix > "$session_fragment"
+sed -i '/^# Effective:/d' "$session_fragment"
+legacy_preferences_digest=$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')
+rm -f "$session_root/daemon.pid" "$session_root/launch-count"
+bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
+    --bind "$session_root" "$session_root" \
+    /usr/bin/env -i HOME="$session_home" \
+        XDG_CONFIG_HOME="$session_home/.config" XDG_RUNTIME_DIR="$session_runtime" \
+        PATH="$session_path" HYPRLAND_INSTANCE_SIGNATURE=test-signature \
+        IDLE_UNDER_TEST="$idle" LEGACY_STATUS_OUTPUT="$session_root/legacy-status.out" \
+        MOCK_DAEMON_PID_FILE="$session_root/daemon.pid" \
+        MOCK_PGREP_COUNT_FILE="$session_root/pgrep-count" \
+        MOCK_PGREP_LIMIT_FILE="$session_root/pgrep-limit" \
+        MOCK_LAUNCH_COUNT_FILE="$session_root/launch-count" \
+        MOCK_MANAGED_LOG="$session_runtime/vanhyprarch/hypridle-managed.log" \
+        MOCK_FAIL_FIRST_LAUNCH=false MOCK_REAL_STAT="$session_real_stat" \
+        MOCK_ALLOW_INSTANCES=true MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
+        /bin/sh "$legacy_status_runner" >/dev/null
+require_line "$(cat "$session_root/legacy-status.out")" 'version=3'
+require_line "$(cat "$session_fragment")" \
+    '# Effective: screensaver=37 lock=display capability=installed'
+[ "$legacy_preferences_digest" = \
+    "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
+    fail 'legacy generated-fragment reconciliation rewrote durable preferences'
+
+remove_runner=$session_root/remove-screensaver-runner
+cat > "$remove_runner" <<'EOF'
+#!/bin/sh
+set -eu
+/usr/bin/sleep 300 &
+printf '%s\n' "$!" > "$MOCK_DAEMON_PID_FILE"
+printf '0\n' > "$MOCK_PGREP_COUNT_FILE"
+printf '1\n' > "$MOCK_PGREP_LIMIT_FILE"
+"$IDLE_UNDER_TEST" remove-screensaver
+EOF
+chmod 755 "$remove_runner"
+
+write_session_preferences screensaver
+"$idle" render 37 91 143 screensaver off matrix > "$session_fragment"
+rm -f "$session_root/daemon.pid" "$session_root/launch-count"
+bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
+    --bind "$session_root" "$session_root" \
+    /usr/bin/env -i HOME="$session_home" \
+        XDG_CONFIG_HOME="$session_home/.config" XDG_RUNTIME_DIR="$session_runtime" \
+        PATH="$session_path" HYPRLAND_INSTANCE_SIGNATURE=test-signature \
+        IDLE_UNDER_TEST="$idle" MOCK_DAEMON_PID_FILE="$session_root/daemon.pid" \
+        MOCK_PGREP_COUNT_FILE="$session_root/pgrep-count" \
+        MOCK_PGREP_LIMIT_FILE="$session_root/pgrep-limit" \
+        MOCK_LAUNCH_COUNT_FILE="$session_root/launch-count" \
+        MOCK_MANAGED_LOG="$session_runtime/vanhyprarch/hypridle-managed.log" \
+        MOCK_FAIL_FIRST_LAUNCH=false MOCK_REAL_STAT="$session_real_stat" \
+        MOCK_ALLOW_INSTANCES=true MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
+        /bin/sh "$remove_runner" >/dev/null
+require_line "$(cat "$session_preferences")" 'screensaver=never'
+require_line "$(cat "$session_preferences")" 'display=91'
+require_line "$(cat "$session_preferences")" 'suspend=143'
+require_line "$(cat "$session_preferences")" 'lock=display'
+require_line "$(cat "$session_preferences")" 'effect=colormix'
+[ "$(grep -c '^listener {$' "$session_fragment")" -eq 2 ] ||
+    fail 'deliberate uninstall did not retain exactly Display and Suspend'
+if grep -Fq 'vanhyprarch-screensaver start' "$session_fragment"; then
+    fail 'deliberate uninstall fragment still invokes the player'
+fi
 
 printf 'vanhyprarch-idle tests: PASS\n'

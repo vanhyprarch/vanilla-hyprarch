@@ -619,10 +619,9 @@ promise Alpha stability for every Lua symbol, property, format, or internal
 interface it references. Persistent preferences remain owned by their backend,
 and generated effective files remain replaceable by their generator.
 
-The Zig Screensaver is assigned future optional-component ownership so the
-baseline architecture does not depend on it permanently. This decision does
-not yet remove current Power & Idle UI choices or alter runtime behavior; that
-migration remains a separate milestone.
+Zig Screensaver now uses optional-component ownership. The baseline manager and
+immutable verification metadata are managed payload; the player and its exact
+ancillary files exist only with a validated component marker.
 
 ## ADR-031: Synchronize graphical keyboard state from systemd-localed
 
@@ -667,3 +666,34 @@ known-good runtime configuration. An unconfirmed display configuration is
 never persisted. This decision does not implement Safe Apply, define a general
 multi-monitor schema, or add speculative interfaces; those belong to the
 separate Monitor Control & Safe Apply milestone.
+
+## ADR-033: Make Zig Screensaver an explicit capability
+
+**Status:** Accepted
+**Date:** 2026-09-18
+**Implementation:** Repository implemented; controlled live adoption pending
+
+Local Dictation and Zig Screensaver are explicit sibling entries under
+Additional system components. No generic plugin registry is introduced.
+`vanhyprarch-screensaver` remains the single baseline runtime and lifecycle
+authority. Its marker is published only after the pinned v0.1.1 x86_64 payload
+is fully validated and before installed-capability idle configuration is
+published.
+
+Power & Idle consumes backend capability rather than inspecting files. Absent
+or incomplete capability removes Screen Saver Effect, Screensaver, and the
+Screensaver Automatic Lock choice and prevents listener generation. Unexpected
+damage preserves durable screensaver preferences and projects a safe effective
+fallback. Deliberate uninstall resets Screensaver and effect and persistently
+maps a Screensaver lock to Display, else Suspend, else None after disclosure.
+Automatic Lock remains a stage selector, not an independent timeout.
+For the Screensaver stage, the native saver remains visible while idle and
+normal resume requests lock before desktop access; hyprlock is not placed over
+the saver at its timeout. The controller's resume operation records a successful
+lock request before allowing later cleanup; direct protected stop and unexpected
+protected-player exit request the same lock before cursor recovery, while
+bounded manual `test` never arms it.
+
+Idle invocation is explicit `start --idle`; manual testing uses a bounded
+`test`. Exact player termination is completed independently of cursor
+restoration, and pending cursor ownership remains recoverable by later stop.

@@ -36,12 +36,15 @@ ShellRoot {
         executionEnabled: false
     }
 
+    ZigScreensaverActions { id: zigScreensaverActions; checksEnabled: false; executionEnabled: false }
+
     SuperSpace {
         id: superSpace
         installActions: installActions
         removeActions: removeActions
         updateActions: updateActions
         systemComponentsActions: systemComponentsActions
+        zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
     }
 

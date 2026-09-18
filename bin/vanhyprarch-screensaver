@@ -11,10 +11,11 @@ log_name=screensaver.log
 start_attempts=40
 stop_attempts=30
 poll_delay=0.05
+manual_test_seconds=5
 
 usage()
 {
-    printf 'Usage: %s {start|stop|status}\n' "$program_name" >&2
+    printf 'Usage: %s {start --idle|resume-lock|test|stop|status|component-status --json|component-capability|install|adopt|reinstall|repair|uninstall --plan-token TOKEN|uninstall-plan --json|clean-up}\n' "$program_name" >&2
 }
 
 fail()
@@ -71,8 +72,25 @@ prepare_runtime()
     lock_file=$runtime_dir/$lock_name
     log_file=$runtime_dir/$log_name
 
-    exec 9>"$lock_file" || fail "could not open $lock_file"
+    validate_runtime_regular "$lock_file" 'screensaver lock'
+    exec 9>>"$lock_file" || fail "could not open $lock_file"
+    [ "$(stat -c '%u' -- "$lock_file" 2>/dev/null)" = "$current_uid" ] &&
+        [ -f "$lock_file" ] && [ ! -L "$lock_file" ] ||
+        fail "$lock_file is unsafe"
+    chmod 600 -- "$lock_file" || fail "could not secure $lock_file"
     flock -x 9 || fail "could not lock $lock_file"
+}
+
+validate_runtime_regular()
+{
+    inspected_path=$1
+    inspected_label=$2
+    [ ! -L "$inspected_path" ] || fail "$inspected_label must not be a symbolic link"
+    if [ -e "$inspected_path" ]; then
+        [ -f "$inspected_path" ] || fail "$inspected_label must be a regular file"
+        [ "$(stat -c '%u' -- "$inspected_path" 2>/dev/null)" = "$current_uid" ] ||
+            fail "$inspected_label is not owned by the current user"
+    fi
 }
 
 state_path_exists()
@@ -112,11 +130,13 @@ load_state()
     state_start_time=
     state_executable=
     state_effect=
+    state_protected=off
     seen_version=false
     seen_pid=false
     seen_start_time=false
     seen_executable=false
     seen_effect=false
+    seen_protected=false
 
     while IFS= read -r state_line || [ -n "$state_line" ]; do
         state_key=${state_line%%=*}
@@ -148,6 +168,11 @@ load_state()
                 seen_effect=true
                 state_effect=$state_value
                 ;;
+            protected)
+                [ "$seen_protected" = false ] || return 1
+                seen_protected=true
+                state_protected=$state_value
+                ;;
             *) return 1 ;;
         esac
     done < "$state_file"
@@ -159,6 +184,7 @@ load_state()
     is_unsigned_integer "$state_pid" && [ "$state_pid" -gt 1 ] || return 1
     is_unsigned_integer "$state_start_time" || return 1
     case $state_executable in /*) ;; *) return 1 ;; esac
+    case $state_protected in on|off) ;; *) return 1 ;; esac
     valid_effect "$state_effect"
 }
 
@@ -281,6 +307,55 @@ restore_cursor_state()
     remove_cursor_state
 }
 
+try_restore_cursor_state()
+{
+    cursor_state_path_exists || return 0
+    load_cursor_state || return 1
+    resolve_hyprctl || return 1
+    set_cursor_invisible "$saved_cursor_invisible" || return 1
+    remove_cursor_state
+}
+
+resolve_component_manager()
+{
+    if [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" = 1 ] &&
+        [ -n "${VANHYPRARCH_ZIG_SCREENSAVER_MANAGER:-}" ]; then
+        component_manager=$VANHYPRARCH_ZIG_SCREENSAVER_MANAGER
+    else
+        data_home=${XDG_DATA_HOME:-${HOME:?HOME is not set}/.local/share}
+        case $data_home in /*) ;; *) fail 'XDG_DATA_HOME must be absolute' ;; esac
+        component_manager=$data_home/vanhyprarch/zig-screensaver/manager.py
+        if [ ! -f "$component_manager" ]; then
+            controller_source=$(readlink -f -- "$0" 2>/dev/null || printf '%s' "$0")
+            source_root=$(dirname -- "$(dirname -- "$controller_source")")
+            source_manager=$source_root/install/zig-screensaver/manager.py
+            if [ -e "$source_root/.git" ] && [ -f "$source_manager" ]; then
+                component_manager=$source_manager
+            fi
+        fi
+    fi
+    [ -f "$component_manager" ] && [ ! -L "$component_manager" ] ||
+        fail 'Zig Screensaver manager resources are unavailable'
+}
+
+component_command()
+{
+    resolve_component_manager
+    [ -x "$component_manager" ] || fail 'Zig Screensaver manager is not executable'
+    exec "$component_manager" "$@"
+}
+
+require_component_capability()
+{
+    resolve_component_manager
+    [ -x "$component_manager" ] || fail 'Zig Screensaver manager is not executable'
+    component_capability=$(
+        "$component_manager" component-capability 2>/dev/null
+    ) || fail 'could not validate the Zig Screensaver component'
+    [ "$component_capability" = installed ] ||
+        fail "Zig Screensaver capability is $component_capability"
+}
+
 resolve_effect()
 {
     idle_executable=$(command -v vanhyprarch-idle 2>/dev/null) ||
@@ -295,10 +370,17 @@ resolve_player()
 {
     player_command=$(command -v vanhyprarch-zig-player 2>/dev/null) ||
         fail 'vanhyprarch-zig-player is not installed or not on PATH'
+    if [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" != 1 ]; then
+        expected_player=${HOME:?HOME is not set}/.local/bin/vanhyprarch-zig-player
+        [ "$player_command" = "$expected_player" ] && [ ! -L "$player_command" ] ||
+            fail 'vanhyprarch-zig-player did not resolve to the managed user-local payload'
+    fi
     player_executable=$(readlink -f -- "$player_command" 2>/dev/null) ||
         fail 'could not resolve vanhyprarch-zig-player'
     [ -f "$player_executable" ] && [ -x "$player_executable" ] ||
         fail "$player_executable is not an executable regular file"
+    [ "$(stat -c '%u' -- "$player_executable" 2>/dev/null)" = "$(id -u)" ] ||
+        fail "$player_executable is not owned by the current user"
 }
 
 write_state()
@@ -311,9 +393,45 @@ write_state()
         printf 'start_time=%s\n' "$launch_start_time"
         printf 'executable=%s\n' "$player_executable"
         printf 'effect=%s\n' "$selected_effect"
+        printf 'protected=%s\n' "$launch_protected"
     } > "$state_temporary" &&
         chmod 600 -- "$state_temporary" &&
         mv -f -- "$state_temporary" "$state_file"
+}
+
+write_loaded_state_protection()
+{
+    requested_protection=$1
+    case $requested_protection in on|off) ;; *) return 1 ;; esac
+    state_temporary=$runtime_dir/$state_name.$$
+    rm -f -- "$state_temporary" || return 1
+    {
+        printf 'version=1\n'
+        printf 'pid=%s\n' "$state_pid"
+        printf 'start_time=%s\n' "$state_start_time"
+        printf 'executable=%s\n' "$state_executable"
+        printf 'effect=%s\n' "$state_effect"
+        printf 'protected=%s\n' "$requested_protection"
+    } > "$state_temporary" &&
+        chmod 600 -- "$state_temporary" &&
+        mv -f -- "$state_temporary" "$state_file" || return 1
+    state_protected=$requested_protection
+}
+
+request_session_lock()
+{
+    loginctl_executable=$(command -v loginctl 2>/dev/null) ||
+        fail 'loginctl is unavailable for protected Screensaver exit'
+    "$loginctl_executable" lock-session >/dev/null 2>&1 ||
+        fail 'could not protect Screensaver exit with session lock'
+}
+
+authenticate_protected_exit()
+{
+    [ "$state_protected" = on ] || return 0
+    request_session_lock
+    write_loaded_state_protection off ||
+        fail 'session lock was requested, but runtime protection state could not be updated'
 }
 
 terminate_failed_launch()
@@ -342,7 +460,8 @@ cleanup_failed_start()
     trap - 0 HUP INT TERM
     terminate_failed_launch
     rm -f -- "$runtime_dir/$state_name.$$" \
-        "$runtime_dir/$cursor_state_name.$$" "$state_file" 2>/dev/null || true
+        "$runtime_dir/$cursor_state_name.$$" "${log_temporary:-}" \
+        "$state_file" 2>/dev/null || true
     if [ "${cursor_cleanup_required:-false}" = true ]; then
         if load_cursor_state && resolve_hyprctl &&
             set_cursor_invisible "$saved_cursor_invisible"; then
@@ -357,10 +476,13 @@ cleanup_failed_start()
 
 start_screensaver()
 {
+    launch_mode=$1
     prepare_runtime
 
     if state_path_exists; then
         if owned_process_is_running; then
+            [ "$launch_mode" != test ] ||
+                fail 'bounded test cannot reuse an active idle screensaver'
             printf 'running (pid %s, effect %s); start is idempotent\n' \
                 "$state_pid" "$state_effect"
             return 0
@@ -370,7 +492,18 @@ start_screensaver()
     fi
     restore_cursor_state
 
+    require_component_capability
     resolve_effect
+    launch_protected=off
+    if [ "$launch_mode" = idle ]; then
+        idle_executable=$(command -v vanhyprarch-idle 2>/dev/null) ||
+            fail 'vanhyprarch-idle is not installed or not on PATH'
+        launch_protected=$("$idle_executable" screensaver-resume-lock 2>/dev/null) ||
+            fail 'could not determine Screensaver authentication policy'
+        case $launch_protected in on|off) ;; *)
+            fail 'invalid Screensaver authentication policy' ;;
+        esac
+    fi
     resolve_player
     setsid_executable=$(command -v setsid 2>/dev/null) ||
         fail 'setsid is not installed or not on PATH'
@@ -389,8 +522,11 @@ start_screensaver()
     cursor_cleanup_required=true
     set_cursor_invisible true || fail 'could not hide the cursor'
 
-    : > "$log_file" || fail "could not create $log_file"
-    chmod 600 -- "$log_file" || fail "could not secure $log_file"
+    validate_runtime_regular "$log_file" 'screensaver log'
+    log_temporary=$(mktemp "$runtime_dir/.${log_name}.XXXXXX") ||
+        fail "could not stage $log_file"
+    chmod 600 -- "$log_temporary" || fail "could not secure $log_temporary"
+    mv -f -- "$log_temporary" "$log_file" || fail "could not publish $log_file"
     (
         exec 9>&-
         cd "$runtime_dir" || exit 1
@@ -418,7 +554,66 @@ start_screensaver()
     write_state || fail 'could not record runtime ownership'
 
     trap - 0 HUP INT TERM
+    controller_executable=$(readlink -f -- "$0" 2>/dev/null) ||
+        fail 'could not resolve the screensaver controller'
+    (
+        exec 9>&-
+        while process_matches "$launch_pid" "$launch_start_time" \
+            "$player_executable" "$selected_effect"; do
+            sleep 0.20
+        done
+        "$controller_executable" recover-exit "$launch_pid" \
+            "$launch_start_time" "$player_executable" "$selected_effect" \
+            "$launch_protected" || true
+    ) </dev/null >/dev/null 2>&1 &
     printf 'started (pid %s, effect %s)\n' "$launch_pid" "$selected_effect"
+}
+
+recover_unexpected_exit()
+{
+    [ "$#" -eq 5 ] || return 2
+    recovered_pid=$1
+    recovered_start=$2
+    recovered_executable=$3
+    recovered_effect=$4
+    recovered_protected=$5
+    prepare_runtime
+    load_state || return 0
+    [ "$state_pid" = "$recovered_pid" ] &&
+        [ "$state_start_time" = "$recovered_start" ] &&
+        [ "$state_executable" = "$recovered_executable" ] &&
+        [ "$state_effect" = "$recovered_effect" ] &&
+        [ "$state_protected" = "$recovered_protected" ] || return 0
+    process_matches "$state_pid" "$state_start_time" "$state_executable" \
+        "$state_effect" && return 0
+    if [ "$state_protected" = on ]; then
+        loginctl_executable=$(command -v loginctl 2>/dev/null) || return 1
+        "$loginctl_executable" lock-session >/dev/null 2>&1 || return 1
+    fi
+    remove_state
+    rm -f -- "$log_file"
+    try_restore_cursor_state
+}
+
+resume_lock_screensaver()
+{
+    prepare_runtime
+    if ! state_path_exists; then
+        request_session_lock
+        return 0
+    fi
+    if ! load_state; then
+        request_session_lock
+        fail 'session lock was requested for invalid Screensaver ownership state'
+    fi
+    authenticate_protected_exit
+    if ! process_matches "$state_pid" "$state_start_time" "$state_executable" \
+        "$state_effect"; then
+        remove_state
+        rm -f -- "$log_file"
+        try_restore_cursor_state ||
+            fail 'session lock was requested, but cursor restoration remains pending'
+    fi
 }
 
 wait_for_owned_process_to_stop()
@@ -438,7 +633,11 @@ stop_screensaver()
     prepare_runtime
     if ! state_path_exists; then
         if cursor_state_path_exists; then
-            restore_cursor_state
+            if ! try_restore_cursor_state; then
+                printf '%s: player is stopped but cursor restoration remains pending\n' \
+                    "$program_name" >&2
+                return 1
+            fi
             rm -f -- "$log_file"
             printf 'stopped; restored cursor state\n'
             return 0
@@ -447,43 +646,69 @@ stop_screensaver()
         return 0
     fi
     if ! load_state; then
-        restore_cursor_state
         remove_state
         rm -f -- "$log_file"
-        printf 'stopped; removed invalid ownership state\n'
-        return 0
+        if try_restore_cursor_state; then
+            printf 'stopped; removed invalid ownership state\n'
+            return 0
+        fi
+        printf '%s: removed invalid process state; cursor restoration remains pending\n' \
+            "$program_name" >&2
+        return 1
     fi
+    authenticate_protected_exit
     if ! process_matches "$state_pid" "$state_start_time" \
         "$state_executable" "$state_effect"; then
-        restore_cursor_state
         remove_state
         rm -f -- "$log_file"
-        printf 'stopped; removed stale ownership state\n'
-        return 0
+        if try_restore_cursor_state; then
+            printf 'stopped; removed stale ownership state\n'
+            return 0
+        fi
+        printf '%s: removed stale process state; cursor restoration remains pending\n' \
+            "$program_name" >&2
+        return 1
     fi
 
     owned_pid=$state_pid
     kill -TERM "$owned_pid" 2>/dev/null || true
-    restore_cursor_state
+    stopped_message=
     if wait_for_owned_process_to_stop; then
-        remove_state
-        rm -f -- "$log_file"
-        printf 'stopped (pid %s)\n' "$owned_pid"
-        return 0
+        stopped_message="stopped (pid $owned_pid)"
+    else
+        if process_matches "$state_pid" "$state_start_time" "$state_executable" \
+            "$state_effect"; then
+            kill -KILL "$state_pid" 2>/dev/null || true
+        fi
+        wait_for_owned_process_to_stop ||
+            fail "owned screensaver process $owned_pid did not stop"
+        stopped_message="stopped forcibly after graceful timeout (pid $owned_pid)"
     fi
+    remove_state
+    rm -f -- "$log_file"
+    if ! try_restore_cursor_state; then
+        printf '%s: %s; cursor restoration remains pending\n' \
+            "$program_name" "$stopped_message" >&2
+        return 1
+    fi
+    printf '%s\n' "$stopped_message"
+}
 
-    if process_matches "$state_pid" "$state_start_time" "$state_executable" \
-        "$state_effect"; then
-        kill -KILL "$state_pid" 2>/dev/null || true
+test_screensaver()
+{
+    if [ "${VANHYPRARCH_ALLOW_TEST_OVERRIDES:-}" = 1 ] &&
+        is_unsigned_integer "${VANHYPRARCH_SCREENSAVER_TEST_SECONDS:-}"; then
+        manual_test_seconds=$VANHYPRARCH_SCREENSAVER_TEST_SECONDS
     fi
-    if wait_for_owned_process_to_stop; then
-        remove_state
-        rm -f -- "$log_file"
-        printf 'stopped forcibly after graceful timeout (pid %s)\n' \
-            "$owned_pid"
-        return 0
-    fi
-    fail "owned screensaver process $owned_pid did not stop"
+    start_screensaver test
+    trap 'stop_screensaver >/dev/null 2>&1 || true; exit 129' HUP
+    trap 'stop_screensaver >/dev/null 2>&1 || true; exit 130' INT
+    trap 'stop_screensaver >/dev/null 2>&1 || true; exit 143' TERM
+    printf 'bounded manual test: stopping automatically after %s seconds\n' \
+        "$manual_test_seconds"
+    sleep "$manual_test_seconds"
+    trap - HUP INT TERM
+    stop_screensaver
 }
 
 status_screensaver()
@@ -509,16 +734,25 @@ status_screensaver()
     printf 'running (pid %s, effect %s)\n' "$state_pid" "$state_effect"
 }
 
-[ "$#" -eq 1 ] || {
-    usage
-    exit 2
-}
+case ${1-} in
+    component-status|component-capability|install|adopt|reinstall|repair|uninstall|uninstall-plan|clean-up)
+        component_command "$@"
+        ;;
+esac
 
-case $1 in
-    start) start_screensaver ;;
-    stop) stop_screensaver ;;
-    status) status_screensaver ;;
+case "$#:$*" in
+    '2:start --idle') start_screensaver idle ;;
+    '1:resume-lock') resume_lock_screensaver ;;
+    '1:test') test_screensaver ;;
+    '1:stop') stop_screensaver ;;
+    '1:status') status_screensaver ;;
+    '1:start') fail 'plain start is intentionally disabled; use start --idle or bounded test' ;;
     *)
+        if [ "$#" -eq 6 ] && [ "$1" = recover-exit ]; then
+            shift
+            recover_unexpected_exit "$@"
+            exit $?
+        fi
         usage
         exit 2
         ;;

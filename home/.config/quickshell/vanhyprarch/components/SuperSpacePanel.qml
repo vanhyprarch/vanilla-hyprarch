@@ -164,7 +164,9 @@ PopupWindow {
             height: root.metrics.scaled(34)
             text: root.confirming ? "Confirm power action"
                 : root.controller.currentComponentId === "local-dictation"
-                    ? "Local Dictation" : "Super + Space"
+                    ? "Local Dictation"
+                : root.controller.currentComponentId === "zig-screensaver"
+                    ? "Zig Screensaver" : "Super + Space"
             textFormat: Text.PlainText
             color: root.theme.text
             font.pixelSize: root.metrics.prominentValueFontSize
@@ -301,8 +303,11 @@ PopupWindow {
                         : root.controller.componentSubview === "language-selected" ? "Choose two or three languages"
                         : root.controller.componentSubview === "duration" ? "Maximum recording"
                         : root.controller.componentSubview === "acceleration" ? "Choose acceleration"
-                        : root.controller.componentSubview === "uninstall" ? "Uninstall Local Dictation?"
+                        : root.controller.componentSubview === "uninstall"
+                            ? root.controller.currentComponentId === "zig-screensaver"
+                                ? "Uninstall Zig Screensaver?" : "Uninstall Local Dictation?"
                         : root.controller.currentComponentId === "local-dictation" ? "Local Dictation"
+                        : root.controller.currentComponentId === "zig-screensaver" ? "Zig Screensaver"
                         : "Additional system components"
                     : root.controller.currentSection === "power" ? "Power"
                         : root.controller.searchText.trim() === ""
@@ -453,8 +458,9 @@ PopupWindow {
                                     + " installed packages"
                 : root.controller.currentSection === "components"
                     ? root.controller.systemComponentsActions.operationRunning
+                            || root.controller.zigScreensaverActions.operationRunning
                         ? "Operation running in Foot"
-                        : root.controller.currentComponentId === "local-dictation"
+                        : root.controller.currentComponentId !== ""
                             ? "Enter or click to choose" : "Optional components"
                 : root.controller.visibleEntries.length === 1
                     ? "1 result"
