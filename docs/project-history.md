@@ -447,10 +447,13 @@ card-attached `Applied` marker. A subsequent live Wayland review showed that
 the earlier synthetic pointer-scroll assumption did not describe useful
 runtime behavior, so the product contract became explicitly keyboard- and
 click-driven rather than adding custom input handling. The final isolated
-polish adds symmetric distance-based scale, position, z-order, and restrained
-opacity for two real neighbors per side while preserving the approved
-current-card size and all controller, Appearance, focus, apply, cancel,
-shortcut, and SuperSpace behavior.
+polish added symmetric distance-based scale, position, and z-order for two real
+neighbors per side while preserving the approved current-card size. Live review
+then removed translucent/animated tier changes, retained a fixed bounded image
+decode through depth changes, and constrained the existing surface input mask
+to painted cards so transparent space dismisses correctly. Controller,
+Appearance, focus, apply, cancel, shortcut, and SuperSpace behavior remain
+unchanged.
 
 ## Project maintenance contract
 

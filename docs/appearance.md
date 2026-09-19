@@ -110,11 +110,12 @@ exception.
 The normal picker is a minimal floating horizontal carousel: the responsive
 current card remains dominant while up to two real neighbors on either side
 become progressively smaller, further outward, and visually behind it. Cards
-sit directly over the desktop without a visible outer panel, title, filename,
-controls, or instructions. The only normal-state label is the small `Applied`
-marker attached to the remembered wallpaper. Exceptional loading, empty,
-decode-failure, and apply-error states retain only the concise feedback needed
-to diagnose them.
+remain fully opaque; depth comes only from scale, position, overlap, and
+z-order. They sit directly over the desktop without a visible outer panel,
+title, filename, controls, or instructions. The only normal-state label is the
+small `Applied` marker attached to the remembered wallpaper. Exceptional
+loading, empty, decode-failure, and apply-error states retain only the concise
+feedback needed to diagnose them.
 
 Picker navigation is intentionally keyboard- and click-driven. Left and Right
 or a first card click move only the navigation candidate; they do not persist a
@@ -123,6 +124,7 @@ calls the global Appearance controller, which invokes
 `set-wallpaper current PATH`; success closes the picker, while failure
 preserves the candidate and displays the backend error. Escape and outside
 dismissal close without mutation. Preview images use asynchronous,
-aspect-preserving crop from the original files, with sources active only for
-the current card and its two nearest neighbors per side; there is no thumbnail
-cache or worker pipeline.
+aspect-preserving crop from the original files and one fixed bounded decode
+size, so a loaded texture remains present while its card changes depth. Sources
+remain active only for the current card and its two nearest neighbors per side;
+there is no thumbnail cache or worker pipeline.

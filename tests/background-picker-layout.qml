@@ -13,8 +13,6 @@ TestCase {
     readonly property real distanceTwoScale: 0.58
     readonly property real distanceOneOffsetScale: 0.40
     readonly property real distanceTwoOffsetScale: 0.655
-    readonly property real distanceOneOpacity: 0.88
-    readonly property real distanceTwoOpacity: 0.78
 
     function preview(surfaceWidth, surfaceHeight) {
         return Layout.previewWidth(surfaceWidth, 24, 952, surfaceHeight, 32,
@@ -39,6 +37,18 @@ TestCase {
                 result.push(index)
         }
         return result
+    }
+
+    function rectAt(index, currentIndex, count) {
+        return Layout.cardRect(index, currentIndex, count, 1856, 600, 952,
+            distanceOneScale, distanceTwoScale, distanceOneOffsetScale,
+            distanceTwoOffsetScale)
+    }
+
+    function topmostAt(x, y, currentIndex, count) {
+        return Layout.topmostCardAt(x, y, currentIndex, count, 1856, 600,
+            952, distanceOneScale, distanceTwoScale,
+            distanceOneOffsetScale, distanceTwoOffsetScale)
     }
 
     function test_reference_depth_geometry() {
@@ -72,20 +82,88 @@ TestCase {
             <= 1856 - 48)
     }
 
-    function test_depth_order_and_opacity() {
+    function test_depth_order() {
         compare(Layout.cardZ(0), 30)
         compare(Layout.cardZ(1), 20)
         compare(Layout.cardZ(2), 10)
         verify(Layout.cardZ(0) > Layout.cardZ(1))
         verify(Layout.cardZ(1) > Layout.cardZ(2))
+    }
 
-        compare(Layout.cardOpacity(0, distanceOneOpacity,
-            distanceTwoOpacity), 1.0)
-        compare(Layout.cardOpacity(1, distanceOneOpacity,
-            distanceTwoOpacity), distanceOneOpacity)
-        compare(Layout.cardOpacity(2, distanceOneOpacity,
-            distanceTwoOpacity), distanceTwoOpacity)
-        verify(distanceOneOpacity > distanceTwoOpacity)
+    function test_painted_rectangles_and_pointer_hit_regions_match() {
+        const current = rectAt(2, 2, 6)
+        const near = rectAt(3, 2, 6)
+        const far = rectAt(4, 2, 6)
+
+        compare(current.x, 452)
+        compare(current.y, 32)
+        compare(current.width, 952)
+        compare(current.height, 536)
+        compare(near.x, 947)
+        compare(near.y, 97)
+        compare(near.width, 724)
+        compare(near.height, 407)
+        compare(far.x, 1276)
+        compare(far.y, 145)
+        compare(far.width, 552)
+        compare(far.height, 311)
+
+        compare(topmostAt(900, 300, 2, 6), 2,
+            "current visible card is not an inside target")
+        compare(topmostAt(1500, 100, 2, 6), 3,
+            "exposed distance-1 card is not an inside target")
+        compare(topmostAt(1750, 300, 2, 6), 4,
+            "exposed distance-2 card is not an inside target")
+
+        compare(topmostAt(1450, 50, 2, 6), -1,
+            "space above distance 1 retained an invisible hit rectangle")
+        compare(topmostAt(1450, 550, 2, 6), -1,
+            "space below distance 1 retained an invisible hit rectangle")
+        compare(topmostAt(1700, 100, 2, 6), -1,
+            "space above distance 2 retained an invisible hit rectangle")
+        compare(topmostAt(1700, 500, 2, 6), -1,
+            "space below distance 2 retained an invisible hit rectangle")
+        compare(topmostAt(10, 10, 2, 6), -1,
+            "transparent carousel space remained an inside target")
+
+        compare(topmostAt(1000, 300, 2, 6), 2,
+            "current did not win its overlap with distance 1")
+        compare(topmostAt(1500, 300, 2, 6), 3,
+            "distance 1 did not win its overlap with distance 2")
+
+        compare(topmostAt(300, 100, 2, 6), 1,
+            "exposed left distance-1 card is not an inside target")
+        compare(topmostAt(50, 300, 2, 6), 0,
+            "exposed left distance-2 card is not an inside target")
+        compare(topmostAt(400, 50, 2, 6), -1,
+            "space above left distance 1 retained an invisible hit rectangle")
+        compare(topmostAt(300, 300, 2, 6), 1,
+            "left distance 1 did not win its overlap with distance 2")
+    }
+
+    function test_visible_sources_survive_every_depth_transition() {
+        const uri = "file:///wallpaper.png"
+        const sourceFor = function(index, currentIndex) {
+            return Layout.sourceActive(index, currentIndex, 7) ? uri : ""
+        }
+
+        compare(sourceFor(2, 0), uri)
+        compare(sourceFor(2, 1), uri)
+        compare(sourceFor(2, 2), uri)
+        compare(sourceFor(2, 3), uri)
+        compare(sourceFor(2, 4), uri)
+
+        for (const transition of [[0, 1], [1, 2], [2, 1], [1, 0]]) {
+            const oldCurrent = transition[0]
+            const newCurrent = transition[1]
+            for (let index = 0; index < 5; ++index) {
+                if (Layout.sourceActive(index, oldCurrent, 7)
+                        && Layout.sourceActive(index, newCurrent, 7)) {
+                    compare(sourceFor(index, oldCurrent), uri)
+                    compare(sourceFor(index, newCurrent), uri)
+                }
+            }
+        }
     }
 
     function test_left_and_right_geometry_is_symmetric() {

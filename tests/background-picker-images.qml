@@ -9,6 +9,22 @@ TestCase {
     visible: true
     width: 32
     height: 32
+    property int transitionWidth: 552
+
+    Image {
+        id: transitionPreview
+
+        visible: false
+        width: root.transitionWidth
+        height: Math.round(width * 9 / 16)
+        source: Qt.resolvedUrl(
+            "../assets/wallpapers/Light/Wolkenstein_1_light.png")
+        sourceSize.width: 952
+        sourceSize.height: 536
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: true
+    }
 
     Component {
         id: previewComponent
@@ -33,5 +49,19 @@ TestCase {
         })
         tryCompare(corruptPreview, "status", Image.Error, 1000)
         corruptPreview.destroy()
+    }
+
+    function test_loaded_preview_survives_depth_resizing() {
+        tryCompare(transitionPreview, "status", Image.Ready, 3000)
+        const originalSource = transitionPreview.source
+
+        for (const width of [724, 952, 724, 552]) {
+            transitionWidth = width
+            wait(0)
+            compare(transitionPreview.source, originalSource)
+            compare(transitionPreview.sourceSize.width, 952)
+            compare(transitionPreview.sourceSize.height, 536)
+            compare(transitionPreview.status, Image.Ready)
+        }
     }
 }

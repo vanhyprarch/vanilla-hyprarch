@@ -94,14 +94,34 @@ grep -Fq 'interactive: false' \
 grep -Fq 'PickerLayout.visualDistance' \
     "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'picker does not derive card presentation from candidate distance'
+grep -Fq 'mask: Region {' "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'picker does not constrain input to painted content'
+grep -Fq 'root.cardGeometry(index)' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'painted cards do not use the shared hit-region geometry'
+[ "$(grep -F -c 'readonly property var geometry: root.cardGeometry(' \
+    "$components_dir/BackgroundPickerPanel.qml")" -eq 5 ] \
+    || fail 'picker input mask does not use five shared card rectangles'
+grep -Fq 'x: cardSlot.visualGeometry.x - cardSlot.x' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'painted card position diverges from shared hit geometry'
 grep -Fq 'asynchronous: true' "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'preview images are not asynchronous'
 grep -Fq 'fillMode: Image.PreserveAspectCrop' \
     "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'preview images are not aspect-preserving crops'
-grep -Fq 'sourceSize.width: cardSlot.visualWidth' \
+grep -Fq 'sourceSize.width: root.previewWidth' \
     "$components_dir/BackgroundPickerPanel.qml" \
-    || fail 'preview decode width does not follow the visible depth tier'
+    || fail 'preview decode width changes during depth transitions'
+grep -Fq 'opacity: 1.0' "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'visible wallpaper cards are not fully opaque'
+if grep -Eq 'cardOpacity|backgroundPreviewDistance(One|Two)Opacity|Behavior on (width|height)|NumberAnimation' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    "$components_dir/BackgroundPickerLayout.js" \
+    "$components_dir/VisualMetrics.qml"
+then
+    fail 'picker retained opacity tiers or animated card resizing'
+fi
 grep -Fq 'previewImage.status === Image.Error' \
     "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'failed or missing previews have no fallback state'

@@ -78,14 +78,54 @@ function cardZ(distance) {
     return 0
 }
 
-function cardOpacity(distance, distanceOneOpacity, distanceTwoOpacity) {
-    if (distance === 0)
-        return 1.0
-    if (distance === 1)
-        return distanceOneOpacity
-    if (distance === 2)
-        return distanceTwoOpacity
-    return 0.0
+function cardRect(index, currentIndex, count, surfaceWidth, surfaceHeight,
+        previewWidth, distanceOneScale, distanceTwoScale,
+        distanceOneOffsetScale, distanceTwoOffsetScale) {
+    const distance = visualDistance(index, currentIndex, count)
+    if (distance < 0 || distance > 2) {
+        return { visible: false, index: index, distance: distance,
+            x: 0, y: 0, width: 0, height: 0, z: 0 }
+    }
+
+    const width = cardWidth(previewWidth, distance, distanceOneScale,
+        distanceTwoScale)
+    const height = previewHeight(width)
+    const centerOffset = cardCenterOffset(index, currentIndex, count,
+        previewWidth, distanceOneOffsetScale, distanceTwoOffsetScale)
+    return {
+        visible: true,
+        index: index,
+        distance: distance,
+        x: Math.round(surfaceWidth / 2 + centerOffset - width / 2),
+        y: Math.round((surfaceHeight - height) / 2),
+        width: width,
+        height: height,
+        z: cardZ(distance)
+    }
+}
+
+function containsPoint(rect, x, y) {
+    return rect.visible && x >= rect.x && x < rect.x + rect.width
+        && y >= rect.y && y < rect.y + rect.height
+}
+
+function topmostCardAt(x, y, currentIndex, count, surfaceWidth,
+        surfaceHeight, previewWidth, distanceOneScale, distanceTwoScale,
+        distanceOneOffsetScale, distanceTwoOffsetScale) {
+    let match = -1
+    let matchZ = -1
+    const first = Math.max(0, currentIndex - 2)
+    const last = Math.min(count - 1, currentIndex + 2)
+    for (let index = first; index <= last; ++index) {
+        const rect = cardRect(index, currentIndex, count, surfaceWidth,
+            surfaceHeight, previewWidth, distanceOneScale, distanceTwoScale,
+            distanceOneOffsetScale, distanceTwoOffsetScale)
+        if (containsPoint(rect, x, y) && rect.z > matchZ) {
+            match = index
+            matchZ = rect.z
+        }
+    }
+    return match
 }
 
 function compositionWidth(previewWidth, distanceTwoWidth,

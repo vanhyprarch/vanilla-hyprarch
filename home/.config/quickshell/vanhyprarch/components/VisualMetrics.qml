@@ -43,8 +43,6 @@ QtObject {
     readonly property real backgroundPreviewDistanceTwoScale: 0.58
     readonly property real backgroundPreviewDistanceOneOffsetScale: 0.40
     readonly property real backgroundPreviewDistanceTwoOffsetScale: 0.655
-    readonly property real backgroundPreviewDistanceOneOpacity: 0.88
-    readonly property real backgroundPreviewDistanceTwoOpacity: 0.78
     readonly property int backgroundPreviewLogicalStep: scaled(360)
     readonly property int backgroundPreviewOutlineThickness: 3
 

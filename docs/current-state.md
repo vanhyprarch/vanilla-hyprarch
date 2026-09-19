@@ -549,13 +549,16 @@ image sources only around the current item.
 Previews are large, responsive, widescreen rectangular cards floating directly
 over the desktop in a restrained depth-scaled carousel. The current card is
 dominant; up to two real neighbors per side become progressively smaller,
-further outward, and visually behind it. The transparent central surface
-retains focus and dismissal ownership but draws no outer panel, title, filename,
-controls, instructions, or footer. In normal operation `Applied` is the only
-label; concise loading, empty, preview, and apply-error feedback remains
-available only for exceptional states. Asynchronous original-image loads use a
-bounded per-tier decode size, `PreserveAspectCrop`, and distance-two source
-activation.
+further outward, and visually behind it. Every visible image remains fully
+opaque; scale, position, overlap, and z-order alone communicate depth. The
+transparent central surface retains focus and dismissal ownership but draws no
+outer panel, title, filename, controls, instructions, or footer. Its input mask
+matches the actual painted cards, so visually empty space remains outside the
+picker. In normal operation `Applied` is the only label; concise loading, empty,
+preview, and apply-error feedback remains available only for exceptional
+states. Asynchronous original-image loads use one fixed bounded decode size,
+`PreserveAspectCrop`, and distance-two source activation, retaining an already
+loaded texture when its card changes tier.
 
 Picker navigation is intentionally keyboard- and click-driven. Left/Right move
 the candidate without applying, and a first click selects. Enter or a second

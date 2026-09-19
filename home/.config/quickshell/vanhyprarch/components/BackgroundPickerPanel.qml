@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import "BackgroundPickerLayout.js" as PickerLayout
 
 CenteredOverlay {
@@ -52,6 +53,15 @@ CenteredOverlay {
         }
     }
 
+    function cardGeometry(index: int): var {
+        return PickerLayout.cardRect(index, controller.currentIndex,
+            controller.catalog.length, surfaceWidth, surfaceHeight,
+            previewWidth, metrics.backgroundPreviewDistanceOneScale,
+            metrics.backgroundPreviewDistanceTwoScale,
+            metrics.backgroundPreviewDistanceOneOffsetScale,
+            metrics.backgroundPreviewDistanceTwoOffsetScale)
+    }
+
     function handleKey(event): void {
         if (event.key === Qt.Key_Escape) {
             controller.close()
@@ -71,6 +81,56 @@ CenteredOverlay {
 
     onDismissed: controller.close()
     Component.onCompleted: syncVisibility()
+
+    mask: Region {
+        Region {
+            readonly property var geometry: root.cardGeometry(
+                root.controller.currentIndex - 2)
+            x: geometry.x
+            y: geometry.y
+            width: geometry.visible ? geometry.width : 0
+            height: geometry.visible ? geometry.height : 0
+        }
+        Region {
+            readonly property var geometry: root.cardGeometry(
+                root.controller.currentIndex - 1)
+            x: geometry.x
+            y: geometry.y
+            width: geometry.visible ? geometry.width : 0
+            height: geometry.visible ? geometry.height : 0
+        }
+        Region {
+            readonly property var geometry: root.cardGeometry(
+                root.controller.currentIndex)
+            x: geometry.x
+            y: geometry.y
+            width: geometry.visible ? geometry.width : 0
+            height: geometry.visible ? geometry.height : 0
+        }
+        Region {
+            readonly property var geometry: root.cardGeometry(
+                root.controller.currentIndex + 1)
+            x: geometry.x
+            y: geometry.y
+            width: geometry.visible ? geometry.width : 0
+            height: geometry.visible ? geometry.height : 0
+        }
+        Region {
+            readonly property var geometry: root.cardGeometry(
+                root.controller.currentIndex + 2)
+            x: geometry.x
+            y: geometry.y
+            width: geometry.visible ? geometry.width : 0
+            height: geometry.visible ? geometry.height : 0
+        }
+
+        Region {
+            x: exceptionalMessage.x
+            y: exceptionalMessage.y
+            width: exceptionalMessage.visible ? exceptionalMessage.width : 0
+            height: exceptionalMessage.visible ? exceptionalMessage.height : 0
+        }
+    }
 
     onVisibleChanged: {
         if (visible) {
@@ -152,45 +212,29 @@ CenteredOverlay {
                     PickerLayout.visualDistance(index,
                         root.controller.currentIndex,
                         root.controller.catalog.length)
+                readonly property var visualGeometry:
+                    root.cardGeometry(index)
                 readonly property bool sourceActive:
                     PickerLayout.sourceActive(index,
                         root.controller.currentIndex,
                         root.controller.catalog.length)
-                readonly property int visualWidth: PickerLayout.cardWidth(
-                    root.previewWidth, visualDistance,
-                    root.metrics.backgroundPreviewDistanceOneScale,
-                    root.metrics.backgroundPreviewDistanceTwoScale)
-                readonly property int visualHeight:
-                    PickerLayout.previewHeight(visualWidth)
-                readonly property int visualTranslation:
-                    PickerLayout.cardTranslation(index,
-                        root.controller.currentIndex,
-                        root.controller.catalog.length, root.cardStep,
-                        root.previewWidth,
-                        root.metrics.backgroundPreviewDistanceOneOffsetScale,
-                        root.metrics.backgroundPreviewDistanceTwoOffsetScale)
 
                 width: root.cardStep
                 height: carousel.height
-                z: PickerLayout.cardZ(visualDistance)
+                z: visualGeometry.z
 
                 Rectangle {
                     id: previewCard
 
-                    x: Math.round((parent.width - width) / 2
-                        + cardSlot.visualTranslation)
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: PickerLayout.visible(cardSlot.index,
-                        root.controller.currentIndex,
-                        root.controller.catalog.length)
-                    width: cardSlot.visualWidth
-                    height: cardSlot.visualHeight
+                    x: cardSlot.visualGeometry.x - cardSlot.x
+                        + carousel.contentX
+                    y: cardSlot.visualGeometry.y
+                    visible: cardSlot.visualGeometry.visible
+                    width: cardSlot.visualGeometry.width
+                    height: cardSlot.visualGeometry.height
                     radius: 0
                     color: root.theme.surface
-                    opacity: PickerLayout.cardOpacity(
-                        cardSlot.visualDistance,
-                        root.metrics.backgroundPreviewDistanceOneOpacity,
-                        root.metrics.backgroundPreviewDistanceTwoOpacity)
+                    opacity: 1.0
                     border.width: cardSlot.navigationCurrent
                         ? root.metrics.backgroundPreviewOutlineThickness
                         : root.metrics.controlOutlineThickness
@@ -199,13 +243,6 @@ CenteredOverlay {
                         : cardSlot.applied ? root.theme.focus
                             : root.theme.panelOutline
                     clip: true
-
-                    Behavior on width {
-                        NumberAnimation { duration: 120 }
-                    }
-                    Behavior on height {
-                        NumberAnimation { duration: 120 }
-                    }
 
                     Image {
                         id: previewImage
@@ -216,8 +253,8 @@ CenteredOverlay {
                         }
                         source: cardSlot.sourceActive
                             ? cardSlot.modelData.uri : ""
-                        sourceSize.width: cardSlot.visualWidth
-                        sourceSize.height: cardSlot.visualHeight
+                        sourceSize.width: root.previewWidth
+                        sourceSize.height: root.previewHeight
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true
