@@ -34,14 +34,18 @@ QtObject {
     readonly property int actionSurfaceWidth: scaled(300)
     readonly property int compactActionSurfaceWidth: scaled(200)
     readonly property int wideOverlayMaximum: scaled(720)
-    readonly property int backgroundPickerMaximumWidth: scaled(1344)
+    readonly property int backgroundPickerMaximumWidth: scaled(1856)
     readonly property int backgroundPickerMaximumHeight: scaled(600)
     readonly property int backgroundPickerHorizontalPadding: scaled(24)
     readonly property int backgroundPickerVerticalPadding: scaled(32)
-    readonly property real backgroundPreviewHorizontalShare: 0.74
     readonly property int backgroundPreviewMaximumWidth: scaled(952)
-    readonly property int backgroundPreviewAdjacentWidth: scaled(552)
-    readonly property int backgroundPreviewCardStep: scaled(360)
+    readonly property real backgroundPreviewDistanceOneScale: 0.76
+    readonly property real backgroundPreviewDistanceTwoScale: 0.58
+    readonly property real backgroundPreviewDistanceOneOffsetScale: 0.40
+    readonly property real backgroundPreviewDistanceTwoOffsetScale: 0.655
+    readonly property real backgroundPreviewDistanceOneOpacity: 0.88
+    readonly property real backgroundPreviewDistanceTwoOpacity: 0.78
+    readonly property int backgroundPreviewLogicalStep: scaled(360)
     readonly property int backgroundPreviewOutlineThickness: 3
 
     // Shared surface geometry.

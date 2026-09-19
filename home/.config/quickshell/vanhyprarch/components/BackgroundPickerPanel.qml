@@ -24,15 +24,12 @@ CenteredOverlay {
         metrics.backgroundPickerHorizontalPadding,
         metrics.backgroundPreviewMaximumWidth, surfaceHeight,
         metrics.backgroundPickerVerticalPadding,
-        metrics.backgroundPreviewHorizontalShare)
+        metrics.backgroundPreviewDistanceTwoScale,
+        metrics.backgroundPreviewDistanceTwoOffsetScale)
     readonly property int previewHeight:
         PickerLayout.previewHeight(previewWidth)
-    readonly property int adjacentWidth: PickerLayout.adjacentWidth(
-        previewWidth, metrics.backgroundPreviewAdjacentWidth)
-    readonly property int adjacentHeight:
-        PickerLayout.previewHeight(adjacentWidth)
     readonly property int cardStep: PickerLayout.cardStep(previewWidth,
-        metrics.backgroundPreviewCardStep, metrics.scaled(48))
+        metrics.backgroundPreviewLogicalStep, metrics.scaled(48))
 
     persistentLeftInset: dockWidth
     implicitWidth: surfaceWidth
@@ -119,13 +116,8 @@ CenteredOverlay {
             model: root.controller.catalog
             orientation: ListView.Horizontal
             clip: true
-            interactive: count > 1 && !root.controller.applying
+            interactive: false
             boundsBehavior: Flickable.StopAtBounds
-            flickDeceleration: 10000
-            snapMode: ListView.SnapToItem
-            highlightRangeMode: ListView.StrictlyEnforceRange
-            preferredHighlightBegin: width / 2 - root.cardStep / 2
-            preferredHighlightEnd: width / 2 + root.cardStep / 2
             cacheBuffer: root.cardStep * 3
             reuseItems: true
             currentIndex: -1
@@ -146,12 +138,6 @@ CenteredOverlay {
                     root.controller.select(currentIndex)
             }
 
-            onMovementEnded: {
-                const centered = indexAt(contentX + width / 2, height / 2)
-                if (centered >= 0)
-                    currentIndex = centered
-            }
-
             delegate: Item {
                 id: cardSlot
 
@@ -162,30 +148,49 @@ CenteredOverlay {
                     index === root.controller.currentIndex
                 readonly property bool applied:
                     modelData.path === root.controller.appliedPath
+                readonly property int visualDistance:
+                    PickerLayout.visualDistance(index,
+                        root.controller.currentIndex,
+                        root.controller.catalog.length)
                 readonly property bool sourceActive:
                     PickerLayout.sourceActive(index,
                         root.controller.currentIndex,
-                        root.controller.catalog.length, 2)
-                readonly property int visualWidth: navigationCurrent
-                    ? root.previewWidth : root.adjacentWidth
-                readonly property int visualHeight: navigationCurrent
-                    ? root.previewHeight : root.adjacentHeight
+                        root.controller.catalog.length)
+                readonly property int visualWidth: PickerLayout.cardWidth(
+                    root.previewWidth, visualDistance,
+                    root.metrics.backgroundPreviewDistanceOneScale,
+                    root.metrics.backgroundPreviewDistanceTwoScale)
+                readonly property int visualHeight:
+                    PickerLayout.previewHeight(visualWidth)
+                readonly property int visualTranslation:
+                    PickerLayout.cardTranslation(index,
+                        root.controller.currentIndex,
+                        root.controller.catalog.length, root.cardStep,
+                        root.previewWidth,
+                        root.metrics.backgroundPreviewDistanceOneOffsetScale,
+                        root.metrics.backgroundPreviewDistanceTwoOffsetScale)
 
                 width: root.cardStep
                 height: carousel.height
-                z: navigationCurrent ? 100 : 10 - Math.abs(
-                    index - root.controller.currentIndex)
+                z: PickerLayout.cardZ(visualDistance)
 
                 Rectangle {
                     id: previewCard
 
-                    x: Math.round((parent.width - width) / 2)
+                    x: Math.round((parent.width - width) / 2
+                        + cardSlot.visualTranslation)
                     anchors.verticalCenter: parent.verticalCenter
+                    visible: PickerLayout.visible(cardSlot.index,
+                        root.controller.currentIndex,
+                        root.controller.catalog.length)
                     width: cardSlot.visualWidth
                     height: cardSlot.visualHeight
                     radius: 0
                     color: root.theme.surface
-                    opacity: cardSlot.navigationCurrent ? 1.0 : 0.72
+                    opacity: PickerLayout.cardOpacity(
+                        cardSlot.visualDistance,
+                        root.metrics.backgroundPreviewDistanceOneOpacity,
+                        root.metrics.backgroundPreviewDistanceTwoOpacity)
                     border.width: cardSlot.navigationCurrent
                         ? root.metrics.backgroundPreviewOutlineThickness
                         : root.metrics.controlOutlineThickness
@@ -211,8 +216,8 @@ CenteredOverlay {
                         }
                         source: cardSlot.sourceActive
                             ? cardSlot.modelData.uri : ""
-                        sourceSize.width: root.previewWidth
-                        sourceSize.height: root.previewHeight
+                        sourceSize.width: cardSlot.visualWidth
+                        sourceSize.height: cardSlot.visualHeight
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true

@@ -547,18 +547,23 @@ are safe; large catalogs instantiate lightweight delegates while activating
 image sources only around the current item.
 
 Previews are large, responsive, widescreen rectangular cards floating directly
-over the desktop in a restrained overlapping carousel. The transparent central
-surface retains focus and dismissal ownership but draws no outer panel, title,
-filename, controls, instructions, or footer. In normal operation `Applied` is
-the only label; concise loading, empty, preview, and apply-error feedback remains
+over the desktop in a restrained depth-scaled carousel. The current card is
+dominant; up to two real neighbors per side become progressively smaller,
+further outward, and visually behind it. The transparent central surface
+retains focus and dismissal ownership but draws no outer panel, title, filename,
+controls, instructions, or footer. In normal operation `Applied` is the only
+label; concise loading, empty, preview, and apply-error feedback remains
 available only for exceptional states. Asynchronous original-image loads use a
-bounded decode size, `PreserveAspectCrop`, and nearby-only source activation.
-Left/Right and native horizontal Flickable wheel behavior move the candidate
-without applying. A first click selects; Enter or a second click on the current
-card applies through `AppearanceController`. Success closes; failure leaves the
-picker and candidate visible with a concise error; Escape and outside dismissal
-make no Appearance or renderer request. Applied and navigation-current state
-remain visually distinct.
+bounded per-tier decode size, `PreserveAspectCrop`, and distance-two source
+activation.
+
+Picker navigation is intentionally keyboard- and click-driven. Left/Right move
+the candidate without applying, and a first click selects. Enter or a second
+click on the current card applies through
+`AppearanceController`. Success closes; failure leaves the picker and candidate
+visible with a concise error; Escape and outside dismissal make no Appearance
+or renderer request. Applied and navigation-current state remain visually
+distinct.
 
 ## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATED
 

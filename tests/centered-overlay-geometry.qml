@@ -24,9 +24,12 @@ TestCase {
 
     function test_monitorCenterIndependentOfDockPopup() {
         const surfaces = [
-            { name: "Super+Space", width: 720, height: 620 },
-            { name: "Keyboard Shortcuts", width: 900, height: 900 },
-            { name: "Background Picker", width: 1344, height: 600 }
+            { name: "Super+Space", width: 720, height: 620,
+                responsive: false },
+            { name: "Keyboard Shortcuts", width: 900, height: 900,
+                responsive: false },
+            { name: "Background Picker", width: 1856, height: 600,
+                responsive: true }
         ]
         const monitors = [
             { x: 0, y: 0, width: 1920, height: 1080, dockWidth: 56 },
@@ -42,9 +45,16 @@ TestCase {
 
         for (const surface of surfaces) {
             for (const monitor of monitors) {
+                const actualSurface = {
+                    width: surface.responsive
+                        ? Math.min(surface.width, monitor.width
+                            - monitor.dockWidth - 48)
+                        : surface.width,
+                    height: surface.height
+                }
                 for (const popup of popupStates)
                     verifyCentered(surface.name, monitor, monitor.dockWidth,
-                        surface, popup)
+                        actualSurface, popup)
             }
         }
     }
@@ -66,7 +76,7 @@ TestCase {
         const surfaces = [
             { name: "Super+Space", width: 840, expectedMargin: 1088 },
             { name: "Keyboard Shortcuts", width: 900, expectedMargin: 1058 },
-            { name: "Background Picker", width: 1344, expectedMargin: 836 }
+            { name: "Background Picker", width: 1856, expectedMargin: 580 }
         ]
 
         for (const surface of surfaces) {

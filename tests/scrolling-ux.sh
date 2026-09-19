@@ -50,7 +50,10 @@ indicator_count=$(grep -R -h --include='*.qml' \
 
 [ "$(grep -F -c 'orientation: ListView.Horizontal' \
     "$components_dir/BackgroundPickerPanel.qml")" -eq 1 ] \
-    || fail "expected one native horizontal background carousel"
+    || fail "expected one horizontal background carousel"
+[ "$(grep -F -c 'interactive: false' \
+    "$components_dir/BackgroundPickerPanel.qml")" -eq 1 ] \
+    || fail "background carousel must exclude wheel and touch scrolling"
 
 navigation_count=$(grep -R -h --include='*.qml' \
     -F 'WrappedListNavigation {' "$components_dir" | wc -l)

@@ -440,11 +440,17 @@ through `AppearanceController`, preserving independent Light/Dark selections
 and all renderer reconciliation. Asynchronous original-image previews are
 limited to nearby carousel entries, with no thumbnail pipeline.
 
-Human functional verification approved the complete interaction model. The
+Human functional verification approved the interaction model. The first
 follow-up visual pass removed normal-state outer chrome and copy, enlarged and
 responsively clamped the floating preview composition, and retained only the
-card-attached `Applied` marker. Controller, Appearance, focus, navigation,
-apply, cancel, wheel, shortcut, and SuperSpace behavior remained unchanged.
+card-attached `Applied` marker. A subsequent live Wayland review showed that
+the earlier synthetic pointer-scroll assumption did not describe useful
+runtime behavior, so the product contract became explicitly keyboard- and
+click-driven rather than adding custom input handling. The final isolated
+polish adds symmetric distance-based scale, position, z-order, and restrained
+opacity for two real neighbors per side while preserving the approved
+current-card size and all controller, Appearance, focus, apply, cancel,
+shortcut, and SuperSpace behavior.
 
 ## Project maintenance contract
 

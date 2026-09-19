@@ -107,19 +107,22 @@ central overlay under the established coordinator boundary, so that path
 closes the picker before changing mode instead of creating a ThemeToggle
 exception.
 
-The normal picker is a minimal floating horizontal carousel: larger responsive
-wallpaper cards sit directly over the desktop without a visible outer panel,
-title, filename, controls, or instructions. The only normal-state label is the
-small `Applied` marker attached to the remembered wallpaper. Exceptional
-loading, empty, decode-failure, and apply-error states retain only the concise
-feedback needed to diagnose them.
+The normal picker is a minimal floating horizontal carousel: the responsive
+current card remains dominant while up to two real neighbors on either side
+become progressively smaller, further outward, and visually behind it. Cards
+sit directly over the desktop without a visible outer panel, title, filename,
+controls, or instructions. The only normal-state label is the small `Applied`
+marker attached to the remembered wallpaper. Exceptional loading, empty,
+decode-failure, and apply-error states retain only the concise feedback needed
+to diagnose them.
 
-Left and Right, native horizontal wheel scrolling, or a first card click move
-only the navigation candidate. They do not persist a preference or contact
-Hyprpaper. Enter or a second click on the current card calls the global
-Appearance controller, which invokes `set-wallpaper current PATH`; success
-closes the picker, while failure preserves the candidate and displays the
-backend error. Escape and outside dismissal close without mutation. Preview
-images use asynchronous, aspect-preserving crop from the original files, with
-only nearby sources active and a restrained decode-failure fallback; there is
-no thumbnail cache or worker pipeline.
+Picker navigation is intentionally keyboard- and click-driven. Left and Right
+or a first card click move only the navigation candidate; they do not persist a
+preference or contact Hyprpaper. Enter or a second click on the current card
+calls the global Appearance controller, which invokes
+`set-wallpaper current PATH`; success closes the picker, while failure
+preserves the candidate and displays the backend error. Escape and outside
+dismissal close without mutation. Preview images use asynchronous,
+aspect-preserving crop from the original files, with sources active only for
+the current card and its two nearest neighbors per side; there is no thumbnail
+cache or worker pipeline.

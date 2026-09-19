@@ -80,14 +80,28 @@ if grep -Fq 'WheelHandler {' "$components_dir/BackgroundPickerPanel.qml"
 then
     fail 'picker reintroduced a custom wheel handler'
 fi
+if grep -Eq 'onWheel[[:space:]]*:|flickDeceleration:|snapMode:' \
+    "$components_dir/BackgroundPickerPanel.qml"
+then
+    fail 'picker retained wheel/flick-specific carousel behavior'
+fi
 grep -Fq 'orientation: ListView.Horizontal' \
     "$components_dir/BackgroundPickerPanel.qml" \
-    || fail 'picker does not use native horizontal Flickable navigation'
+    || fail 'picker does not use a horizontal candidate presentation'
+grep -Fq 'interactive: false' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'picker ListView does not intentionally disable wheel/touch input'
+grep -Fq 'PickerLayout.visualDistance' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'picker does not derive card presentation from candidate distance'
 grep -Fq 'asynchronous: true' "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'preview images are not asynchronous'
 grep -Fq 'fillMode: Image.PreserveAspectCrop' \
     "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'preview images are not aspect-preserving crops'
+grep -Fq 'sourceSize.width: cardSlot.visualWidth' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'preview decode width does not follow the visible depth tier'
 grep -Fq 'previewImage.status === Image.Error' \
     "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'failed or missing previews have no fallback state'
