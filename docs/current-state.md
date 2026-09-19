@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-18.
+Snapshot date: 2026-09-19.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -25,10 +25,12 @@ from the `vanhyprarch` named configuration.
 
 Repository-managed sources:
 
+- `assets/wallpapers/`
 - `home/.config/hypr/hyprland.lua`
 - `home/.config/hypr/vanhyprarch/core.lua`
 - `home/.config/hypr/vanhyprarch/bindings.lua`
 - `home/.config/hypr/hypridle.conf`
+- `home/.config/hypr/hyprpaper.conf`
 - `home/.config/hypr/hyprlock.conf`
 - `home/.config/quickshell/vanhyprarch/`
 - `install/configure-flatpak`
@@ -54,6 +56,7 @@ Live paths:
 - `~/.config/vanhyprarch/machine/hyprland.lua`
 - `~/.config/vanhyprarch/overrides/hyprland.lua`
 - `~/.config/hypr/hypridle.conf`
+- `~/.config/hypr/hyprpaper.conf`
 - `~/.config/hypr/vanhyprarch-idle.conf`
 - `~/.config/quickshell/vanhyprarch`
 
@@ -90,13 +93,17 @@ single-explicit-profile Alpha boundary, not a general multi-monitor schema.
 
 A deliberately authored portable managed `hyprlock.conf` baseline now exists
 in the repository. It was not copied from the live development configuration
-and has not been deployed. The live `hyprpaper.conf` and wallpaper remain
-unrepresented source-of-truth gaps; that is not permission to copy personal or
-machine-specific settings blindly.
+and has not been deployed. A portable managed `hyprpaper.conf` now contains
+only renderer policy; wallpaper preference belongs to Appearance. Neither file
+has been deployed by this isolated milestone.
 
-Mutable shell state is stored outside Git. Theme mode uses
-`${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/theme-mode`; launcher order
-uses `Quickshell.statePath("launchers.json")` under Quickshell's shell-ID state.
+Mutable shell state is stored outside Git. Appearance uses
+`${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json`; the former
+`${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/theme-mode` is read only as
+a first-run migration input. Appearance asset provenance uses
+`${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json` and
+is not a second preference. Launcher order uses
+`Quickshell.statePath("launchers.json")` under Quickshell's shell-ID state.
 Global text size uses the versioned preference documented in
 [Global text size](text-size.md); a missing preference means the 12-pixel
 default without creating state.
@@ -118,7 +125,8 @@ changed.
 
 Hyprland starts these processes on `hyprland.start`:
 
-1. `hyprpaper`
+1. `exec $HOME/.local/bin/vanhyprarch-appearance renderer-start`, which
+   preserves one direct session-owned Hyprpaper process
 2. `systemctl --user start hyprpolkitagent`
 3. `exec $HOME/.local/bin/vanhyprarch-idle session-start`, constructed from the
    validated `sessionHome`; the leading shell builtin replaces Hyprland's
@@ -270,7 +278,8 @@ The current Quickshell UI includes:
   controller: Caffeine, Turn off display, Suspend, and Automatic lock are baseline;
   Screensaver and Screen saver effect exist only with validated Zig
   Screensaver capability;
-- a persistent light/dark shell theme using Papirus icons;
+- one persistent Light/Dark Appearance mode coordinating the accepted shell
+  palette, standard host preference, and remembered per-mode wallpaper;
 - direct dock access to Super+Space from the logo and to the shortcut viewer
   from a system-sized `dialog-information` control;
 - clock and calendar;
@@ -448,6 +457,57 @@ re-pair; incoming pairing while the panel is closed; the full PIN, passkey,
 display-passkey, and service-authorization matrix; multi-monitor incoming
 prompt routing; and shell reload during active pairing remain pending
 real-hardware validation.
+
+## Appearance foundation — REPOSITORY IMPLEMENTED / LIVE ADOPTION PENDING
+
+`bin/vanhyprarch-appearance` is the preference and reconciliation authority for
+Light/Dark mode, the standard host color-scheme preference, and one remembered
+wallpaper per mode. Its version-1 JSON preference is a mode-0600
+`PERSISTENT_STATE_PREFERENCE`; wallpaper names are stored relative to the
+matching XDG Pictures `Wallpapers/Light` or `Wallpapers/Dark` directory. The
+global Quickshell `AppearanceController` owns shell projection and startup
+reconciliation. Each per-screen Theme button calls only that controller and
+has no persistence or private theme state. The accepted `Theme.qml` palettes
+are unchanged.
+
+The validated host write target is writable
+`org.gnome.desktop.interface color-scheme`. The active GTK Settings portal
+provider maps `prefer-dark` to `org.freedesktop.appearance/color-scheme` 1 and
+`prefer-light` to 2 and emits the standardized change signal from the
+GSettings notification. The backend reads the portal after every write and
+reports mismatches. It does not write to the portal, alter `gtk-theme`, set Qt
+style overrides, edit Firefox or other application configuration, or restart
+applications.
+
+Hyprpaper remains a required official package and is renderer only. Hyprland's
+direct session startup now enters it through `vanhyprarch-appearance
+renderer-start`; multiple exact executable identities fail closed. Normal
+reconciliation uses the installed 0.8.4 monitor-wildcard `wallpaper` request
+and verifies every output through `listactive`. The managed renderer config has
+IPC on, splash off, and no user wallpaper. Missing or failed rendering does not
+block shell or host mode and is represented in strict versioned status.
+
+Eight reviewed original Wolkenstein images ship under `assets/wallpapers/` as
+GPL-2.0-only managed distribution content. Appearance seeds exact copies
+non-destructively into the user-owned plural directories, tracks previously
+seeded hashes in a private provenance receipt, and preserves unrelated or
+modified same-name files. Pair 1 is the explicit Light/Dark default. First-run
+migration preserves a valid legacy shell theme value and adopts a uniform
+active wallpaper already in its mode directory; otherwise both selections use
+the seeded pair-1 defaults. Existing Appearance preferences are never replaced
+by defaults. `catalog` and `set-wallpaper current` form the next picker's
+non-visible boundary; no picker, thumbnails, Style menu, or direct shortcut
+exists yet. See [Appearance foundation](appearance.md).
+
+This candidate was implemented and tested only in its isolated worktree. The
+development machine still has a legacy live Hyprpaper config and the old live
+theme/host/wallpaper mismatch; none was changed or reloaded here. Read-only
+inspection found legacy shell mode Light, host/portal Dark, and an active
+wallpaper outside the mode directories. `xdg-user-dir` and `user-dirs.dirs`
+are absent, so portable fallback resolves the definitive product locations to
+the already populated `Pictures/Wallpapers/{Light,Dark}` tree. Those eight
+user-prepared files were inventoried and copied only into the isolated
+repository asset payload; the live tree itself was not changed.
 
 ## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATED
 
@@ -668,13 +728,13 @@ workaround. Physical two-monitor validation remains pending.
 
 ### PLANNED
 
-- Bring portable hyprpaper and wallpaper configuration into the repository.
 - Build the shared bootstrap and thin optional archinstall integration defined
   in the [installation strategy](installation-strategy.md), supporting both a
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Develop the light/dark wallpaper selection system.
+- Build the visual Style/background picker, thumbnails or carousel, and direct
+  background shortcut on the Appearance controller boundary.
 - Implement System Keyboard Synchronization: graphical XKB state from
   `systemd-localed` is the source of truth, synchronized at session start and
   on relevant property changes. The current Italian machine-file block is

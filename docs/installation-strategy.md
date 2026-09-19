@@ -58,8 +58,8 @@ The shared bootstrap will eventually:
 - deploy the main `vanhyprarch` named Quickshell configuration;
 - atomically install regular executable files for public project commands,
   including `vanhyprarch-idle`, `vanhyprarch-screensaver`, and
-  `vanhyprarch-screenshot`, under `$HOME/.local/bin` without depending on a Git
-  checkout;
+  `vanhyprarch-screenshot`, plus `vanhyprarch-appearance`, under
+  `$HOME/.local/bin` without depending on a Git checkout;
 - deploy immutable Zig Screensaver manager resources, but leave the optional
   `vanhyprarch-zig-player` payload absent until explicitly installed;
 - establish required symlinks and enable or disable documented services;
@@ -67,6 +67,14 @@ The shared bootstrap will eventually:
   enabling `bluetooth.service`, preserving exact rollback material if an
   existing administrator configuration would be replaced;
 - preserve the documented startup owner for each session process;
+- deploy the reviewed official wallpaper payload under XDG data, then invoke
+  the Appearance asset seeder to create the user's XDG Pictures
+  `Wallpapers/Light` and `Wallpapers/Dark` directories only when absent and
+  add exact bundled files without claiming the directories or changing
+  unrelated content;
+- preserve or initialize the Appearance preference through its backend and
+  deploy the selection-free managed Hyprpaper configuration before the first
+  graphical session;
 - create safe initial preference state, including Power & Idle at all `Never`,
   automatic lock at `None`, `effect=colormix`, and Caffeine off; the backend
   must generate the effective idle fragment rather than receiving release-owned
@@ -97,6 +105,18 @@ The Bluetooth bootstrap must not seed a power preference. With BlueZ
 first-run default of ON. Only an explicit On or Off selection creates the
 versioned XDG configuration file; subsequent sessions restore that saved
 global choice across all adapters.
+
+Appearance first-run reconciliation may migrate a valid legacy shell mode and
+may adopt a uniform active wallpaper already contained in a required mode
+directory. A clean installation with no such active selection uses the
+explicit Wolkenstein pair-1 Light and Dark defaults; it never chooses an
+arbitrary directory entry. Existing Appearance selections remain unchanged.
+
+The seeder records prior official digests under XDG state. Later releases may
+add new assets and may update only a destination whose bytes still match the
+recorded prior seed. A user-modified same-name file, unrelated image, or
+unrecognized collision is preserved. The operation is local, hash-verified,
+idempotent, and requires no network access.
 
 The version-1 ownership manifest is descriptive input for this future work. It
 does not imply transaction, merge, rollback, migration, or uninstall behavior.

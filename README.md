@@ -19,7 +19,8 @@ Ly -> /usr/bin/start-hyprland -> Hyprland
 UWSM is not part of the architecture. Hyprland owns the session and starts the
 required session processes. Quickshell provides the desktop UI. Power & Idle
 state belongs to `vanhyprarch-idle`, while Hyprland directly owns one
-`hypridle` process.
+`hypridle` process. Appearance state belongs to `vanhyprarch-appearance`, while
+Hyprpaper is only its session-owned wallpaper renderer.
 
 The graphical session prepends `$HOME/.local/bin` exactly once to its inherited
 `PATH`. Public `vanhyprarch-*` session commands are installed there and invoked
@@ -46,6 +47,10 @@ Matrix, Doom, and Game of Life.
 - persistent Power & Idle preferences, Caffeine, automatic locking, display
   power-off and suspend/resume, with capability-aware support for the optional
   native screensaver;
+- one Light/Dark Appearance preference coordinating the Vanilla palette,
+  standard host application preference, and independently remembered Light and
+  Dark wallpapers, with eight bundled GPL-2.0-only Wolkenstein choices and an
+  explicit pair-1 default;
 - direct-session PolicyKit and clean Hyprland logout integration;
 - Print Screen smart region/window/monitor screenshots saved under
   `Pictures/Screenshots` and copied as `image/png` for normal Ctrl+V pasting;
@@ -120,9 +125,9 @@ and rollback infrastructure do not. User-owned files are preserved by
 ownership class; their Alpha interfaces may still change with release-note
 disclosure and practical migration guidance.
 
-Portable Hyprpaper and wallpaper integration remain future work. The Zig
-Screensaver's move to an optional Additional system component is also deferred;
-current runtime behavior still expects it. The pinned player release is
+The Appearance foundation is implemented only in an isolated candidate and
+still needs human review and controlled deployment; its visual background
+picker is future work. The pinned player release is
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
 and Vanilla HyprArch self-update are not implemented. See

@@ -17,8 +17,10 @@ expressions, not shell commands.
 | `MACHINE_CONFIGURATION` | The file describes actual hardware or user-environment reality. Vanilla HyprArch may initialize it once, but normal updates preserve it. Users may edit it; project UI may edit only explicitly documented fields. |
 | `USER_CUSTOMIZATION_OVERRIDE` | An optional advanced escape hatch owned by the user. It is unnecessary for the curated default experience and is preserved by normal updates. |
 | `PERSISTENT_STATE_PREFERENCE` | Durable user selection or backend state. Its owning backend, not release payloads, controls its format and writes. It is not a configuration override. |
+| `PERSISTENT_STATE_PROVENANCE` | Durable backend-owned hashes recording which user-content files were previously seeded unchanged. It is not a user preference or release payload. |
 | `GENERATED` | An effective projection derived from managed policy and preserved preferences. Release payloads do not own its bytes; its generator may replace it. |
 | `RUNTIME` | Session- or process-lifetime state. It is neither a release payload nor durable preference. |
+| `USER_CONTENT` | User-owned content that Vanilla may seed non-destructively. Updates preserve user additions and modifications and never manage the containing directory wholesale. |
 | `OPTIONAL_COMPONENT_PAYLOAD` | Files present only when the named optional component is installed. They are not unconditional baseline payloads. |
 | `SYSTEM_ADOPTED_MANAGED` | A system-level file that becomes managed only through an explicit administrator adoption boundary with separate validation and rollback work. |
 
@@ -75,6 +77,30 @@ source. `vanhyprarch-idle session-start` creates or replaces that projection
 from preserved preferences with Caffeine off before directly executing
 hypridle. Caffeine itself remains session runtime state under
 `XDG_RUNTIME_DIR` and never overwrites the preference.
+
+## Appearance preference and renderer ownership
+
+`appearance.json` is a `PERSISTENT_STATE_PREFERENCE` written only by
+`vanhyprarch-appearance`. It stores the desired mode and relative Light/Dark
+wallpaper selections. The managed `hyprpaper.conf` contains renderer policy but
+no user selection. Hyprpaper's process, IPC state, and active wallpaper are
+effective external state, not preference storage. Appearance runtime locking,
+bounded restart suppression, and renderer logging stay under
+`XDG_RUNTIME_DIR/vanhyprarch`.
+
+The eight GPL-2.0-only files under `assets/wallpapers/` and their deployed XDG
+data copies are `MANAGED` distribution payload. The copies seeded beneath
+`<XDG Pictures>/Wallpapers/Light` and `Dark` are `USER_CONTENT`; their parent
+directories are never managed wholesale. Bootstrap may create those
+directories when absent but never removes their contents.
+
+The private mode-0600 `appearance-assets.json` record is
+`PERSISTENT_STATE_PROVENANCE`, not an Appearance preference. It records the
+last official digest seeded for each relative path. Appearance may add a new
+asset, recognize an existing byte-identical official copy, or update a copy
+whose current digest still equals its receipt. A missing receipt or digest
+mismatch preserves the destination as user content, including a modified file
+that shares an official filename.
 
 ## Zig Screensaver ownership
 

@@ -29,8 +29,10 @@ VALID_CLASSES = {
     "MACHINE_CONFIGURATION",
     "USER_CUSTOMIZATION_OVERRIDE",
     "PERSISTENT_STATE_PREFERENCE",
+    "PERSISTENT_STATE_PROVENANCE",
     "GENERATED",
     "RUNTIME",
+    "USER_CONTENT",
     "OPTIONAL_COMPONENT_PAYLOAD",
     "SYSTEM_ADOPTED_MANAGED",
 }
@@ -80,6 +82,53 @@ class DeploymentOwnershipTests(unittest.TestCase):
         self.assertEqual(artifact["class"], "GENERATED")
         self.assertNotIn("source", artifact)
         self.assertFalse(GENERATED_SOURCE.exists())
+
+    def test_appearance_preference_renderer_and_manager_ownership(self) -> None:
+        preference = self.artifact_for_target(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"
+        )
+        self.assertEqual(preference["class"], "PERSISTENT_STATE_PREFERENCE")
+        self.assertEqual(preference["authority"], "vanhyprarch-appearance")
+        self.assertNotIn("source", preference)
+
+        renderer = self.artifact_for_target(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprpaper.conf"
+        )
+        self.assertEqual(renderer["class"], "MANAGED")
+        self.assertEqual(renderer["source"], "home/.config/hypr/hyprpaper.conf")
+
+        manager = self.artifact_for_target(
+            "$HOME/.local/bin/vanhyprarch-appearance"
+        )
+        self.assertEqual(manager["class"], "MANAGED")
+        self.assertEqual(manager["mode"], "0755")
+
+        receipt = self.artifact_for_target(
+            "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json"
+        )
+        self.assertEqual(receipt["class"], "PERSISTENT_STATE_PROVENANCE")
+        self.assertEqual(receipt["authority"], "vanhyprarch-appearance")
+
+        user_content = self.artifact_for_target(
+            "<XDG Pictures>/Wallpapers/{Light,Dark}/*"
+        )
+        self.assertEqual(user_content["class"], "USER_CONTENT")
+        self.assertEqual(user_content["authority"], "user")
+        self.assertTrue(user_content["user_editable"])
+
+        asset_sources = {
+            item["source"]
+            for item in self.artifacts
+            if item["component"] == "appearance-assets" and "source" in item
+        }
+        self.assertEqual(
+            asset_sources,
+            {
+                "assets/wallpapers/NOTICE.md",
+                *(f"assets/wallpapers/Light/Wolkenstein_{number}_light.png" for number in range(1, 5)),
+                *(f"assets/wallpapers/Dark/Wolkenstein_{number}_dark.png" for number in range(1, 5)),
+            },
+        )
 
     def test_override_is_header_only(self) -> None:
         self.assertEqual(OVERRIDE_SEED.read_text(encoding="utf-8"), OVERRIDE_HEADER)

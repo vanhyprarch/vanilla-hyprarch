@@ -1,11 +1,10 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 
 Item {
     id: root
 
-    required property var theme
+    required property var controller
     required property var metrics
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
     readonly property int iconSize: root.metrics.dockSystemIconSize
@@ -15,26 +14,16 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    function toggleTheme(): void {
-        if (persistenceProcess.operation === "write")
-            return
-
-        root.theme.darkMode = !root.theme.darkMode
-        const mode = root.theme.darkMode ? "dark" : "light"
-
-        if (persistenceProcess.running) {
-            persistenceProcess.pendingMode = mode
-            return
-        }
-
-        persistenceProcess.startWrite(mode)
+    function activate(): void {
+        if (root.controller.ready && !root.controller.busy)
+            root.controller.toggleMode()
     }
 
     Image {
         anchors.centerIn: parent
         width: root.iconSize
         height: root.iconSize
-        source: Quickshell.iconPath(root.theme.darkMode
+        source: Quickshell.iconPath(root.controller.darkMode
             ? "weather-clear-night"
             : "weather-clear")
         sourceSize: Qt.size(root.iconSize, root.iconSize)
@@ -47,95 +36,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.toggleTheme()
-    }
-
-    Process {
-        id: persistenceProcess
-
-        property string operation: ""
-        property string pendingMode: ""
-        property string readOutput: ""
-        property bool exitReceived: false
-        property bool stdoutReceived: false
-        property bool resultHandled: false
-        property int lastExitCode: -1
-
-        function startRead(): void {
-            operation = "read"
-            readOutput = ""
-            exitReceived = false
-            stdoutReceived = false
-            resultHandled = false
-            lastExitCode = -1
-            command = ["sh", "-c",
-                "state_file=\"${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/theme-mode\"; "
-                    + "if [ -r \"$state_file\" ]; then cat -- \"$state_file\" 2>/dev/null || true; fi"]
-            running = true
-        }
-
-        function startWrite(mode: string): void {
-            if (running)
-                return
-
-            operation = "write"
-            command = ["sh", "-c",
-                "set -eu; umask 077; "
-                    + "state_dir=\"${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch\"; "
-                    + "mkdir -p -- \"$state_dir\"; "
-                    + "temporary_file=$(mktemp \"$state_dir/.theme-mode.XXXXXX\"); "
-                    + "trap 'rm -f -- \"$temporary_file\"' EXIT HUP INT TERM; "
-                    + "printf '%s' \"$1\" > \"$temporary_file\"; "
-                    + "mv -f -- \"$temporary_file\" \"$state_dir/theme-mode\"; "
-                    + "trap - EXIT HUP INT TERM",
-                "vanhyprarch-theme", mode]
-            running = true
-        }
-
-        function maybeFinishRead(): void {
-            if (operation !== "read" || resultHandled
-                    || !exitReceived || !stdoutReceived)
-                return
-
-            resultHandled = true
-            if (pendingMode === "" && lastExitCode === 0) {
-                if (readOutput === "dark")
-                    root.theme.darkMode = true
-                else if (readOutput === "light")
-                    root.theme.darkMode = false
-            }
-
-            operation = ""
-            if (pendingMode !== "") {
-                Qt.callLater(function() {
-                    const mode = persistenceProcess.pendingMode
-                    persistenceProcess.pendingMode = ""
-                    persistenceProcess.startWrite(mode)
-                })
-            }
-        }
-
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: {
-                persistenceProcess.readOutput = text
-                persistenceProcess.stdoutReceived = true
-                persistenceProcess.maybeFinishRead()
-            }
-        }
-
-        onExited: function(exitCode, exitStatus) {
-            if (persistenceProcess.operation === "read") {
-                persistenceProcess.lastExitCode = exitCode
-                persistenceProcess.exitReceived = true
-                persistenceProcess.maybeFinishRead()
-            } else if (persistenceProcess.operation === "write") {
-                if (exitCode !== 0)
-                    console.warn("Failed to save shell theme (exit " + exitCode + ")")
-                persistenceProcess.operation = ""
-            }
-        }
-
-        Component.onCompleted: startRead()
+        enabled: root.controller.ready && !root.controller.busy
+        onClicked: root.activate()
     }
 }

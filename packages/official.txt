@@ -5,6 +5,7 @@ cups-filters
 cups-pk-helper
 curl
 ddcutil
+file
 firefox
 flatpak
 foot

@@ -1,0 +1,1147 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+"""Own Vanilla HyprArch appearance preferences and external reconciliation."""
+
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterator
+
+
+GSETTINGS = "/usr/bin/gsettings"
+BUSCTL = "/usr/bin/busctl"
+HYPRCTL = "/usr/bin/hyprctl"
+HYPRPAPER = "/usr/bin/hyprpaper"
+FILE = "/usr/bin/file"
+MODES = ("light", "dark")
+MODE_DIRECTORIES = {"light": "Light", "dark": "Dark"}
+HOST_VALUES = {"light": "prefer-light", "dark": "prefer-dark"}
+PORTAL_VALUES = {"light": 2, "dark": 1}
+SUPPORTED_MIME_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/bmp",
+    "image/x-ms-bmp",
+    "image/webp",
+    "image/svg+xml",
+    "image/jxl",
+}
+PORTAL_PATTERN = re.compile(r"^v v u ([012])$")
+MAX_PREFERENCE_SIZE = 65536
+RENDERER_RETRY_SECONDS = 30
+OFFICIAL_WALLPAPERS = {
+    "Light/Wolkenstein_1_light.png": "b50be7099006266842d002787e3fd942a73aa0767c5f05e76bf60620e4f1f8af",
+    "Light/Wolkenstein_2_light.png": "5ba879381756bc37d9b52f46730aeb5aed2d7a86ecda47341c823d81e4071304",
+    "Light/Wolkenstein_3_light.png": "a14b24c69f2ea3a2b14e49b74be4048d13ef88e952f42c95e31e35047b317fb6",
+    "Light/Wolkenstein_4_light.png": "197baf007ce3cd0e4bd171e94a15e9e9154e472ef285ad1fcdc30fa98709dfd9",
+    "Dark/Wolkenstein_1_dark.png": "873fb0237b3496eb7f8dd8547af36d2300fd70f17f7e04b46018c252f1943e79",
+    "Dark/Wolkenstein_2_dark.png": "edf04599f234363646e60bd438aba84b20ce894de472c0bdd2e978fce5601bdd",
+    "Dark/Wolkenstein_3_dark.png": "867f62a0afcd31644ec8a665e88e6bbce2b8e6c8fb9ca3f44a9e388c620cf995",
+    "Dark/Wolkenstein_4_dark.png": "8ea4cae4d3cb07254f3bbb2423af9c3f0937766d9fdd45ed70d35937639e24dc",
+}
+DEFAULT_WALLPAPERS = {
+    "light": "Wolkenstein_1_light.png",
+    "dark": "Wolkenstein_1_dark.png",
+}
+
+Runner = Callable[..., subprocess.CompletedProcess[Any]]
+PopenFactory = Callable[..., subprocess.Popen[Any]]
+ProcessProbe = Callable[[], list[int]]
+
+
+class AppearanceError(RuntimeError):
+    """An appearance operation could not be completed safely."""
+
+
+@dataclass(frozen=True)
+class Preference:
+    mode: str
+    light_wallpaper: str | None = None
+    dark_wallpaper: str | None = None
+
+    def wallpaper(self, mode: str) -> str | None:
+        return self.light_wallpaper if mode == "light" else self.dark_wallpaper
+
+    def with_mode(self, mode: str) -> "Preference":
+        return Preference(mode, self.light_wallpaper, self.dark_wallpaper)
+
+    def with_wallpaper(self, mode: str, relative: str) -> "Preference":
+        if mode == "light":
+            return Preference(self.mode, relative, self.dark_wallpaper)
+        return Preference(self.mode, self.light_wallpaper, relative)
+
+    def as_json(self) -> dict[str, object]:
+        return {
+            "version": 1,
+            "mode": self.mode,
+            "light_wallpaper": self.light_wallpaper,
+            "dark_wallpaper": self.dark_wallpaper,
+        }
+
+
+def absolute_environment_path(
+    environ: Mapping[str, str], name: str, fallback: Path
+) -> Path:
+    value = environ.get(name)
+    result = Path(value) if value else fallback
+    if not result.is_absolute():
+        raise AppearanceError(f"{name} must be an absolute path")
+    return result
+
+
+def resolve_configured_directory(value: str, home: Path) -> Path | None:
+    if "\x00" in value or "\n" in value or "\r" in value:
+        return None
+    if value == "$HOME":
+        resolved = home
+    elif value.startswith("$HOME/"):
+        resolved = home / value[len("$HOME/") :]
+    elif value == "${HOME}":
+        resolved = home
+    elif value.startswith("${HOME}/"):
+        resolved = home / value[len("${HOME}/") :]
+    else:
+        resolved = Path(value)
+    if "$" in str(resolved) or not resolved.is_absolute():
+        return None
+    return resolved
+
+
+def configured_pictures_directory(
+    home: Path, environ: Mapping[str, str]
+) -> Path | None:
+    environment_value = environ.get("XDG_PICTURES_DIR")
+    if environment_value:
+        resolved = resolve_configured_directory(environment_value, home)
+        if resolved is not None:
+            return resolved
+
+    config_home = absolute_environment_path(
+        environ, "XDG_CONFIG_HOME", home / ".config"
+    )
+    user_dirs = config_home / "user-dirs.dirs"
+    try:
+        if not user_dirs.is_file() or user_dirs.stat().st_size > MAX_PREFERENCE_SIZE:
+            return None
+        contents = user_dirs.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+
+    for line in contents.splitlines():
+        match = re.fullmatch(r'XDG_PICTURES_DIR="([^"\\]*)"', line.strip())
+        if match is not None:
+            return resolve_configured_directory(match.group(1), home)
+    return None
+
+
+def concise_error(result: subprocess.CompletedProcess[Any]) -> str:
+    value = result.stderr
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if not isinstance(value, str):
+        return ""
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    return lines[-1][:300] if lines else ""
+
+
+class AppearanceManager:
+    def __init__(
+        self,
+        environ: Mapping[str, str] | None = None,
+        runner: Runner = subprocess.run,
+        popen: PopenFactory = subprocess.Popen,
+        process_probe: ProcessProbe | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.time,
+        asset_root: Path | None = None,
+        official_wallpapers: Mapping[str, str] | None = None,
+        default_wallpapers: Mapping[str, str] | None = None,
+    ) -> None:
+        self.environ = dict(os.environ if environ is None else environ)
+        home_value = self.environ.get("HOME")
+        if not home_value:
+            raise AppearanceError("HOME is not set")
+        self.home = Path(home_value)
+        if not self.home.is_absolute():
+            raise AppearanceError("HOME must be an absolute path")
+        self.config_home = absolute_environment_path(
+            self.environ, "XDG_CONFIG_HOME", self.home / ".config"
+        )
+        self.state_home = absolute_environment_path(
+            self.environ, "XDG_STATE_HOME", self.home / ".local/state"
+        )
+        self.data_home = absolute_environment_path(
+            self.environ, "XDG_DATA_HOME", self.home / ".local/share"
+        )
+        self.runtime_dir = absolute_environment_path(
+            self.environ,
+            "XDG_RUNTIME_DIR",
+            Path(f"/run/user/{os.getuid()}"),
+        )
+        self.pictures = (
+            configured_pictures_directory(self.home, self.environ)
+            or self.home / "Pictures"
+        )
+        self.wallpaper_root = self.pictures / "Wallpapers"
+        self.preference_path = self.config_home / "vanhyprarch/appearance.json"
+        self.asset_receipt_path = (
+            self.state_home / "vanhyprarch/appearance-assets.json"
+        )
+        self.asset_root = (
+            asset_root
+            if asset_root is not None
+            else self.data_home / "vanhyprarch/wallpapers"
+        )
+        self.official_wallpapers = dict(
+            OFFICIAL_WALLPAPERS
+            if official_wallpapers is None
+            else official_wallpapers
+        )
+        self.default_wallpapers = dict(
+            DEFAULT_WALLPAPERS if default_wallpapers is None else default_wallpapers
+        )
+        self._validate_asset_metadata()
+        self.legacy_theme_path = self.state_home / "vanhyprarch/theme-mode"
+        self.runtime_root = self.runtime_dir / "vanhyprarch"
+        self.lock_path = self.runtime_root / "appearance.lock"
+        self.failure_path = self.runtime_root / "appearance-renderer-failure"
+        self.renderer_log_path = self.runtime_root / "appearance-hyprpaper.log"
+        self.runner = runner
+        self.popen = popen
+        self.process_probe = process_probe or self._live_renderer_pids
+        self.sleeper = sleeper
+        self.clock = clock
+
+    def _validate_asset_metadata(self) -> None:
+        for mode in MODES:
+            name = self.default_wallpapers.get(mode)
+            if not isinstance(name, str) or not name or Path(name).name != name:
+                raise AppearanceError(f"official {mode} default is invalid")
+            relative = f"{MODE_DIRECTORIES[mode]}/{name}"
+            if relative not in self.official_wallpapers:
+                raise AppearanceError(f"official {mode} default is not in the asset set")
+        for relative, digest in self.official_wallpapers.items():
+            path = Path(relative)
+            if (
+                len(path.parts) != 2
+                or path.parts[0] not in MODE_DIRECTORIES.values()
+                or path.name in ("", ".", "..")
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            ):
+                raise AppearanceError("official wallpaper metadata is invalid")
+
+    def mode_directory(self, mode: str) -> Path:
+        self.require_mode(mode)
+        return self.wallpaper_root / MODE_DIRECTORIES[mode]
+
+    @staticmethod
+    def require_mode(mode: str) -> None:
+        if mode not in MODES:
+            raise AppearanceError("mode must be light or dark")
+
+    def ensure_user_directories(self) -> None:
+        for directory in (self.mode_directory("light"), self.mode_directory("dark")):
+            try:
+                directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+            except OSError as error:
+                raise AppearanceError(
+                    f"could not create wallpaper directory {directory}: {error}"
+                ) from error
+            if not directory.is_dir():
+                raise AppearanceError(f"wallpaper path is not a directory: {directory}")
+
+    def _preference_from_object(self, value: Any) -> Preference:
+        if not isinstance(value, dict) or set(value) != {
+            "version",
+            "mode",
+            "light_wallpaper",
+            "dark_wallpaper",
+        }:
+            raise AppearanceError("appearance preference has an invalid schema")
+        if (
+            type(value["version"]) is not int
+            or value["version"] != 1
+            or not isinstance(value["mode"], str)
+            or value["mode"] not in MODES
+        ):
+            raise AppearanceError("appearance preference has invalid values")
+        for key in ("light_wallpaper", "dark_wallpaper"):
+            relative = value[key]
+            if relative is not None:
+                self._validate_relative_preference(relative)
+        return Preference(
+            value["mode"], value["light_wallpaper"], value["dark_wallpaper"]
+        )
+
+    @staticmethod
+    def _validate_relative_preference(value: Any) -> None:
+        if not isinstance(value, str) or not value or "\x00" in value:
+            raise AppearanceError("appearance preference contains an invalid path")
+        path = Path(value)
+        if path.is_absolute() or ".." in path.parts or "\n" in value or "\r" in value:
+            raise AppearanceError("appearance preference path is not safely relative")
+
+    def read_preference(self) -> Preference | None:
+        try:
+            file_stat = self.preference_path.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise AppearanceError(f"could not inspect appearance preference: {error}") from error
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or file_stat.st_uid != os.getuid()
+            or file_stat.st_size > MAX_PREFERENCE_SIZE
+        ):
+            raise AppearanceError("appearance preference is not a safe user-owned file")
+        try:
+            value = json.loads(self.preference_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise AppearanceError(f"could not parse appearance preference: {error}") from error
+        return self._preference_from_object(value)
+
+    def _write_private_json(self, path: Path, value: object) -> None:
+        directory = path.parent
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(directory, 0o700)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", dir=directory
+            )
+            temporary = Path(temporary_name)
+            try:
+                os.fchmod(descriptor, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump(
+                        value,
+                        stream,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    stream.write("\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, path)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+        except OSError as error:
+            raise AppearanceError(f"could not save {path.name}: {error}") from error
+
+    def write_preference(self, preference: Preference) -> None:
+        self._preference_from_object(preference.as_json())
+        self._write_private_json(self.preference_path, preference.as_json())
+
+    @staticmethod
+    def _regular_file_digest(path: Path) -> tuple[str, tuple[int, int, int, int]]:
+        flags = os.O_RDONLY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as error:
+            raise AppearanceError(f"could not open wallpaper asset {path}: {error}") from error
+        try:
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise AppearanceError(f"wallpaper asset is not a regular file: {path}")
+            digest = hashlib.sha256()
+            while True:
+                block = os.read(descriptor, 1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+            after = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        identity = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        if identity != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        ):
+            raise AppearanceError(f"wallpaper asset changed while reading: {path}")
+        return digest.hexdigest(), identity
+
+    def read_asset_receipt(self) -> dict[str, str]:
+        try:
+            file_stat = self.asset_receipt_path.lstat()
+        except FileNotFoundError:
+            return {}
+        except OSError as error:
+            raise AppearanceError(f"could not inspect wallpaper seed receipt: {error}") from error
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or file_stat.st_uid != os.getuid()
+            or file_stat.st_size > MAX_PREFERENCE_SIZE
+        ):
+            raise AppearanceError("wallpaper seed receipt is not a safe user-owned file")
+        try:
+            value = json.loads(self.asset_receipt_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise AppearanceError(f"could not parse wallpaper seed receipt: {error}") from error
+        if not isinstance(value, dict) or set(value) != {"version", "seeded"}:
+            raise AppearanceError("wallpaper seed receipt has an invalid schema")
+        seeded = value["seeded"]
+        if type(value["version"]) is not int or value["version"] != 1 or not isinstance(seeded, dict):
+            raise AppearanceError("wallpaper seed receipt has invalid values")
+        result: dict[str, str] = {}
+        for relative, digest in seeded.items():
+            path = Path(relative) if isinstance(relative, str) else Path(".")
+            if (
+                not isinstance(relative, str)
+                or len(path.parts) != 2
+                or path.parts[0] not in MODE_DIRECTORIES.values()
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
+                raise AppearanceError("wallpaper seed receipt contains an invalid entry")
+            result[relative] = digest
+        return result
+
+    def write_asset_receipt(self, seeded: Mapping[str, str]) -> None:
+        self._write_private_json(
+            self.asset_receipt_path,
+            {"version": 1, "seeded": dict(sorted(seeded.items()))},
+        )
+
+    def _publish_official_asset(
+        self,
+        source: Path,
+        destination: Path,
+        expected_digest: str,
+        replace_identity: tuple[int, int, int, int] | None,
+    ) -> bool:
+        destination.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.name}.", dir=destination.parent
+        )
+        temporary: Path | None = Path(temporary_name)
+        try:
+            os.fchmod(descriptor, 0o644)
+            with source.open("rb") as input_stream, os.fdopen(
+                descriptor, "wb"
+            ) as output_stream:
+                shutil.copyfileobj(input_stream, output_stream)
+                output_stream.flush()
+                os.fsync(output_stream.fileno())
+            copied_digest, _ = self._regular_file_digest(temporary)
+            if copied_digest != expected_digest:
+                raise AppearanceError(f"official wallpaper changed while copying: {source}")
+            if replace_identity is None:
+                try:
+                    os.link(temporary, destination, follow_symlinks=False)
+                except FileExistsError:
+                    return False
+            else:
+                _, current_identity = self._regular_file_digest(destination)
+                if current_identity != replace_identity:
+                    return False
+                os.replace(temporary, destination)
+                temporary = None
+            return True
+        except OSError as error:
+            raise AppearanceError(
+                f"could not seed official wallpaper {destination}: {error}"
+            ) from error
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
+
+    def seed_official_assets(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "seeded": [],
+            "updated": [],
+            "current": [],
+            "preserved": [],
+            "errors": [],
+        }
+        try:
+            receipt = self.read_asset_receipt()
+        except AppearanceError as error:
+            result["errors"].append(str(error))
+            return result
+        next_receipt = dict(receipt)
+        receipt_changed = False
+        for relative, expected_digest in sorted(self.official_wallpapers.items()):
+            source = self.asset_root / relative
+            destination = self.wallpaper_root / relative
+            try:
+                source_digest, _ = self._regular_file_digest(source)
+                if source_digest != expected_digest:
+                    raise AppearanceError(
+                        f"official wallpaper checksum mismatch: {source}"
+                    )
+                try:
+                    destination_digest, destination_identity = (
+                        self._regular_file_digest(destination)
+                    )
+                except AppearanceError:
+                    if destination.exists() or destination.is_symlink():
+                        result["preserved"].append(relative)
+                        continue
+                    if not self._publish_official_asset(
+                        source, destination, expected_digest, None
+                    ):
+                        result["preserved"].append(relative)
+                        continue
+                    result["seeded"].append(relative)
+                else:
+                    if destination_digest == expected_digest:
+                        result["current"].append(relative)
+                    elif receipt.get(relative) == destination_digest:
+                        if not self._publish_official_asset(
+                            source,
+                            destination,
+                            expected_digest,
+                            destination_identity,
+                        ):
+                            result["preserved"].append(relative)
+                            continue
+                        result["updated"].append(relative)
+                    else:
+                        result["preserved"].append(relative)
+                        continue
+                if next_receipt.get(relative) != expected_digest:
+                    next_receipt[relative] = expected_digest
+                    receipt_changed = True
+            except AppearanceError as error:
+                result["errors"].append(str(error))
+        if receipt_changed:
+            try:
+                self.write_asset_receipt(next_receipt)
+            except AppearanceError as error:
+                result["errors"].append(str(error))
+        return result
+
+    def _legacy_mode(self) -> str | None:
+        try:
+            file_stat = self.legacy_theme_path.lstat()
+            if (
+                not stat.S_ISREG(file_stat.st_mode)
+                or file_stat.st_uid != os.getuid()
+                or file_stat.st_size > 16
+            ):
+                return None
+            value = self.legacy_theme_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+        return value if value in MODES else None
+
+    def run(self, arguments: Sequence[str]) -> subprocess.CompletedProcess[Any]:
+        try:
+            return self.runner(
+                list(arguments),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                shell=False,
+                env=self.environ,
+            )
+        except OSError as error:
+            raise AppearanceError(f"could not execute {arguments[0]}: {error}") from error
+
+    def read_host_value(self) -> str:
+        result = self.run(
+            [GSETTINGS, "get", "org.gnome.desktop.interface", "color-scheme"]
+        )
+        if result.returncode != 0:
+            raise AppearanceError(
+                concise_error(result) or "could not read host color-scheme"
+            )
+        value = str(result.stdout).strip()
+        if value not in ("'prefer-light'", "'prefer-dark'", "'default'"):
+            raise AppearanceError("host color-scheme returned an unexpected value")
+        return value[1:-1]
+
+    def read_portal_value(self) -> int:
+        result = self.run(
+            [
+                BUSCTL,
+                "--user",
+                "call",
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Settings",
+                "Read",
+                "ss",
+                "org.freedesktop.appearance",
+                "color-scheme",
+            ]
+        )
+        if result.returncode != 0:
+            raise AppearanceError(
+                concise_error(result) or "could not read portal color-scheme"
+            )
+        match = PORTAL_PATTERN.fullmatch(str(result.stdout).strip())
+        if match is None:
+            raise AppearanceError("portal color-scheme returned an unexpected value")
+        return int(match.group(1))
+
+    def apply_host_mode(self, mode: str) -> list[str]:
+        self.require_mode(mode)
+        errors: list[str] = []
+        try:
+            current = self.read_host_value()
+            if current != HOST_VALUES[mode]:
+                result = self.run(
+                    [
+                        GSETTINGS,
+                        "set",
+                        "org.gnome.desktop.interface",
+                        "color-scheme",
+                        HOST_VALUES[mode],
+                    ]
+                )
+                if result.returncode != 0:
+                    return [
+                        concise_error(result) or "could not update host color-scheme"
+                    ]
+        except AppearanceError as error:
+            return [str(error)]
+
+        for attempt in range(11):
+            try:
+                if self.read_portal_value() == PORTAL_VALUES[mode]:
+                    return errors
+            except AppearanceError as error:
+                if attempt == 10:
+                    errors.append(str(error))
+                    break
+            if attempt < 10:
+                self.sleeper(0.1)
+        if not errors:
+            errors.append("portal color-scheme did not match the requested host preference")
+        return errors
+
+    def _live_renderer_pids(self) -> list[int]:
+        expected = Path(HYPRPAPER)
+        pids: list[int] = []
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                if entry.stat().st_uid != os.getuid():
+                    continue
+                executable = Path(os.readlink(entry / "exe"))
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            if executable == expected:
+                pids.append(int(entry.name))
+        return sorted(pids)
+
+    def read_active_wallpapers(self) -> dict[str, str]:
+        result = self.run([HYPRCTL, "hyprpaper", "listactive"])
+        if result.returncode != 0:
+            raise AppearanceError(
+                concise_error(result) or "could not read active Hyprpaper wallpapers"
+            )
+        active: dict[str, str] = {}
+        for raw_line in str(result.stdout).splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            monitor, separator, path = line.partition(": ")
+            if not separator or not monitor or not path or monitor in active:
+                raise AppearanceError("Hyprpaper returned invalid active wallpaper state")
+            active[monitor] = path
+        return active
+
+    def _mode_for_existing_path(self, path: str) -> tuple[str, str] | None:
+        try:
+            candidate = Path(path).resolve(strict=True)
+        except (OSError, RuntimeError):
+            return None
+        for mode in MODES:
+            try:
+                root = self.mode_directory(mode).resolve(strict=True)
+                relative = candidate.relative_to(root)
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if relative.parts and candidate.is_file():
+                return mode, relative.as_posix()
+        return None
+
+    def default_wallpaper(self, mode: str) -> str | None:
+        self.require_mode(mode)
+        name = self.default_wallpapers[mode]
+        destination = self.mode_directory(mode) / name
+        try:
+            _, relative = self.validate_wallpaper(mode, destination)
+            digest, _ = self._regular_file_digest(destination)
+        except AppearanceError:
+            return None
+        expected = self.official_wallpapers[f"{MODE_DIRECTORIES[mode]}/{name}"]
+        return relative if digest == expected else None
+
+    def seed_preference(self) -> Preference:
+        mode = self._legacy_mode()
+        if mode is None:
+            try:
+                host = self.read_host_value()
+            except AppearanceError:
+                host = "default"
+            mode = "dark" if host == "prefer-dark" else "light"
+
+        selected: dict[str, str | None] = {
+            mode: self.default_wallpaper(mode) for mode in MODES
+        }
+        if len(self.process_probe()) == 1:
+            try:
+                active = self.read_active_wallpapers()
+            except AppearanceError:
+                active = {}
+            paths = set(active.values())
+            if len(paths) == 1:
+                identified = self._mode_for_existing_path(next(iter(paths)))
+                if identified is not None:
+                    selected[identified[0]] = identified[1]
+        return Preference(mode, selected["light"], selected["dark"])
+
+    def current_preference(self) -> tuple[Preference, bool]:
+        preference = self.read_preference()
+        return (preference, True) if preference is not None else (
+            self.seed_preference(),
+            False,
+        )
+
+    def validate_wallpaper(self, mode: str, value: str | Path) -> tuple[Path, str]:
+        self.require_mode(mode)
+        raw = str(value)
+        if not raw or "\x00" in raw or "\n" in raw or "\r" in raw:
+            raise AppearanceError("wallpaper path contains unsupported characters")
+        candidate_input = Path(raw)
+        if not candidate_input.is_absolute():
+            raise AppearanceError("wallpaper path must be absolute")
+        try:
+            root = self.mode_directory(mode).resolve(strict=True)
+            candidate = candidate_input.resolve(strict=True)
+            relative = candidate.relative_to(root)
+            file_stat = candidate.stat()
+        except FileNotFoundError as error:
+            raise AppearanceError("wallpaper file or mode directory does not exist") from error
+        except (OSError, RuntimeError, ValueError) as error:
+            raise AppearanceError("wallpaper path escapes its mode directory") from error
+        if not relative.parts or not stat.S_ISREG(file_stat.st_mode):
+            raise AppearanceError("wallpaper path must identify a regular file")
+
+        result = self.run([FILE, "--brief", "--mime-type", "--", str(candidate)])
+        if result.returncode != 0:
+            raise AppearanceError(concise_error(result) or "could not inspect wallpaper")
+        mime = str(result.stdout).strip()
+        if mime not in SUPPORTED_MIME_TYPES:
+            raise AppearanceError(f"unsupported wallpaper content type: {mime or 'unknown'}")
+        return candidate, relative.as_posix()
+
+    def preference_wallpaper(
+        self, preference: Preference, mode: str
+    ) -> tuple[Path | None, str | None]:
+        relative = preference.wallpaper(mode)
+        if relative is None:
+            return None, None
+        candidate = self.mode_directory(mode) / relative
+        try:
+            validated, _ = self.validate_wallpaper(mode, candidate)
+        except AppearanceError as error:
+            return None, str(error)
+        return validated, None
+
+    def _failure_is_recent(self) -> bool:
+        try:
+            value = float(self.failure_path.read_text(encoding="ascii"))
+        except (OSError, UnicodeError, ValueError):
+            return False
+        return self.clock() - value < RENDERER_RETRY_SECONDS
+
+    def _record_renderer_failure(self) -> None:
+        try:
+            self.runtime_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self.failure_path.write_text(f"{self.clock():.6f}\n", encoding="ascii")
+            os.chmod(self.failure_path, 0o600)
+        except OSError:
+            pass
+
+    def _clear_renderer_failure(self) -> None:
+        try:
+            self.failure_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+
+    def ensure_renderer(self) -> str | None:
+        pids = self.process_probe()
+        if len(pids) == 1:
+            return None
+        if len(pids) > 1:
+            return "multiple Hyprpaper processes are running"
+        if self._failure_is_recent():
+            return "Hyprpaper restart is temporarily suppressed after a recent failure"
+        if not Path(HYPRPAPER).is_file() or not os.access(HYPRPAPER, os.X_OK):
+            return "Hyprpaper is not installed or executable"
+
+        try:
+            self.runtime_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            descriptor = os.open(
+                self.renderer_log_path,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC,
+                0o600,
+            )
+            try:
+                self.popen(
+                    [HYPRPAPER],
+                    stdin=subprocess.DEVNULL,
+                    stdout=descriptor,
+                    stderr=descriptor,
+                    shell=False,
+                    close_fds=True,
+                    env=self.environ,
+                )
+            finally:
+                os.close(descriptor)
+        except OSError as error:
+            self._record_renderer_failure()
+            return f"could not start Hyprpaper: {error}"
+
+        for _ in range(21):
+            pids = self.process_probe()
+            if len(pids) == 1:
+                try:
+                    self.read_active_wallpapers()
+                except AppearanceError:
+                    pass
+                else:
+                    self._clear_renderer_failure()
+                    return None
+            if len(pids) > 1:
+                self._record_renderer_failure()
+                return "starting Hyprpaper created multiple renderer processes"
+            self.sleeper(0.1)
+        self._record_renderer_failure()
+        return "Hyprpaper did not become available after startup"
+
+    def apply_wallpaper(self, preference: Preference) -> list[str]:
+        wallpaper, validation_error = self.preference_wallpaper(
+            preference, preference.mode
+        )
+        if validation_error is not None:
+            return [validation_error]
+        if wallpaper is None:
+            return []
+        renderer_error = self.ensure_renderer()
+        if renderer_error is not None:
+            return [renderer_error]
+        try:
+            active = self.read_active_wallpapers()
+            already_applied = bool(active) and all(
+                Path(path).resolve(strict=True) == wallpaper
+                for path in active.values()
+            )
+        except (AppearanceError, OSError, RuntimeError):
+            already_applied = False
+        if already_applied:
+            return []
+        result = self.run(
+            [HYPRCTL, "hyprpaper", "wallpaper", "", str(wallpaper), "cover"]
+        )
+        if result.returncode != 0:
+            return [concise_error(result) or "Hyprpaper rejected the wallpaper"]
+        try:
+            active = self.read_active_wallpapers()
+        except AppearanceError as error:
+            return [str(error)]
+        try:
+            matches = bool(active) and all(
+                Path(path).resolve(strict=True) == wallpaper for path in active.values()
+            )
+        except (OSError, RuntimeError):
+            matches = False
+        return [] if matches else ["Hyprpaper active wallpaper did not match the selection"]
+
+    @contextmanager
+    def operation_lock(self) -> Iterator[None]:
+        try:
+            self.runtime_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            descriptor = os.open(
+                self.lock_path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600
+            )
+        except OSError as error:
+            raise AppearanceError(f"could not open appearance lock: {error}") from error
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            except OSError as error:
+                raise AppearanceError(f"could not lock appearance state: {error}") from error
+            yield
+        finally:
+            os.close(descriptor)
+
+    def reconcile(self) -> list[str]:
+        with self.operation_lock():
+            self.ensure_user_directories()
+            asset_result = self.seed_official_assets()
+            preference, initialized = self.current_preference()
+            if not initialized:
+                self.write_preference(preference)
+            return (
+                list(asset_result["errors"])
+                + self.apply_host_mode(preference.mode)
+                + self.apply_wallpaper(preference)
+            )
+
+    def set_mode(self, mode: str) -> list[str]:
+        self.require_mode(mode)
+        with self.operation_lock():
+            self.ensure_user_directories()
+            asset_result = self.seed_official_assets()
+            preference, _ = self.current_preference()
+            preference = preference.with_mode(mode)
+            self.write_preference(preference)
+            return (
+                list(asset_result["errors"])
+                + self.apply_host_mode(mode)
+                + self.apply_wallpaper(preference)
+            )
+
+    def set_wallpaper(self, mode: str, path: str) -> list[str]:
+        with self.operation_lock():
+            self.ensure_user_directories()
+            asset_result = self.seed_official_assets()
+            preference, _ = self.current_preference()
+            actual_mode = preference.mode if mode == "current" else mode
+            self.require_mode(actual_mode)
+            _, relative = self.validate_wallpaper(actual_mode, path)
+            preference = preference.with_wallpaper(actual_mode, relative)
+            self.write_preference(preference)
+            errors = list(asset_result["errors"])
+            if preference.mode == actual_mode:
+                errors.extend(self.apply_wallpaper(preference))
+            return errors
+
+    def _host_status(self, mode: str) -> dict[str, object]:
+        result: dict[str, object] = {
+            "expected_gsettings": HOST_VALUES[mode],
+            "expected_portal": PORTAL_VALUES[mode],
+            "gsettings": None,
+            "portal": None,
+            "matches": False,
+            "error": None,
+        }
+        errors: list[str] = []
+        try:
+            result["gsettings"] = self.read_host_value()
+        except AppearanceError as error:
+            errors.append(str(error))
+        try:
+            result["portal"] = self.read_portal_value()
+        except AppearanceError as error:
+            errors.append(str(error))
+        result["matches"] = (
+            result["gsettings"] == result["expected_gsettings"]
+            and result["portal"] == result["expected_portal"]
+        )
+        if errors:
+            result["error"] = "; ".join(errors)
+        elif not result["matches"]:
+            result["error"] = "host or portal color-scheme does not match the desired mode"
+        return result
+
+    def _renderer_status(
+        self, preference: Preference, current: Path | None, validation_error: str | None
+    ) -> dict[str, object]:
+        pids = self.process_probe()
+        result: dict[str, object] = {
+            "process_count": len(pids),
+            "pids": pids,
+            "active": {},
+            "matches": False,
+            "state": "available",
+            "error": validation_error,
+        }
+        if not Path(HYPRPAPER).is_file() or not os.access(HYPRPAPER, os.X_OK):
+            result["state"] = "missing"
+            result["error"] = "Hyprpaper is not installed or executable"
+            return result
+        if len(pids) == 0:
+            result["state"] = "not-running"
+            result["error"] = result["error"] or "Hyprpaper is not running"
+            return result
+        if len(pids) > 1:
+            result["state"] = "multiple"
+            result["error"] = "multiple Hyprpaper processes are running"
+            return result
+        try:
+            active = self.read_active_wallpapers()
+            result["active"] = active
+        except AppearanceError as error:
+            result["state"] = "ipc-error"
+            result["error"] = str(error)
+            return result
+        if current is None:
+            result["state"] = "unselected" if validation_error is None else "invalid-selection"
+            return result
+        try:
+            result["matches"] = bool(active) and all(
+                Path(path).resolve(strict=True) == current for path in active.values()
+            )
+        except (OSError, RuntimeError):
+            result["matches"] = False
+        if not result["matches"]:
+            result["state"] = "mismatch"
+            result["error"] = "active wallpaper does not match the desired selection"
+        return result
+
+    def status(self) -> dict[str, object]:
+        preference, initialized = self.current_preference()
+        wallpapers: dict[str, object] = {}
+        current: Path | None = None
+        current_error: str | None = None
+        for mode in MODES:
+            resolved, error = self.preference_wallpaper(preference, mode)
+            wallpapers[mode] = {
+                "path": str(resolved) if resolved is not None else None,
+                "selected": preference.wallpaper(mode),
+                "valid": preference.wallpaper(mode) is None or resolved is not None,
+                "error": error,
+            }
+            if mode == preference.mode:
+                current = resolved
+                current_error = error
+        host = self._host_status(preference.mode)
+        renderer = self._renderer_status(preference, current, current_error)
+        errors = [
+            str(value)
+            for value in (host.get("error"), renderer.get("error"))
+            if value
+        ]
+        return {
+            "version": 1,
+            "initialized": initialized,
+            "mode": preference.mode,
+            "current_wallpaper": str(current) if current is not None else None,
+            "wallpapers": wallpapers,
+            "directories": {
+                "pictures": str(self.pictures),
+                "light": str(self.mode_directory("light")),
+                "dark": str(self.mode_directory("dark")),
+            },
+            "defaults": {
+                mode: self.default_wallpaper(mode) for mode in MODES
+            },
+            "host": host,
+            "renderer": renderer,
+            "consistent": bool(host["matches"])
+            and (
+                renderer["state"] == "unselected"
+                if current is None
+                else renderer["state"] == "available" and renderer["matches"]
+            ),
+            "errors": errors,
+        }
+
+    def catalog(self, requested_mode: str) -> dict[str, object]:
+        preference, _ = self.current_preference()
+        mode = preference.mode if requested_mode == "current" else requested_mode
+        self.require_mode(mode)
+        directory = self.mode_directory(mode)
+        entries: list[str] = []
+        if directory.is_dir():
+            for candidate in directory.iterdir():
+                try:
+                    path, _ = self.validate_wallpaper(mode, candidate)
+                except AppearanceError:
+                    continue
+                value = str(path)
+                if value not in entries:
+                    entries.append(value)
+        entries.sort(
+            key=lambda value: (Path(value).name.casefold(), Path(value).name, value)
+        )
+        return {
+            "version": 1,
+            "mode": mode,
+            "directory": str(directory),
+            "wallpapers": entries,
+        }
+
+
+def print_json(value: object) -> None:
+    print(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def usage() -> None:
+    print(
+        "usage: vanhyprarch-appearance "
+        "status|reconcile|set-mode MODE|set-wallpaper MODE PATH|catalog MODE|seed-assets|renderer-start",
+        file=sys.stderr,
+    )
+
+
+def main(arguments: Sequence[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if arguments is None else arguments)
+    try:
+        manager = AppearanceManager()
+        if argv == ["status"]:
+            print_json(manager.status())
+            return 0
+        if argv == ["seed-assets"]:
+            with manager.operation_lock():
+                manager.ensure_user_directories()
+                result = manager.seed_official_assets()
+            print_json(result)
+            for error in result["errors"]:
+                print(f"vanhyprarch-appearance: {error}", file=sys.stderr)
+            return 1 if result["errors"] else 0
+        if argv == ["reconcile"]:
+            errors = manager.reconcile()
+        elif len(argv) == 2 and argv[0] == "set-mode":
+            errors = manager.set_mode(argv[1])
+        elif len(argv) == 3 and argv[0] == "set-wallpaper":
+            errors = manager.set_wallpaper(argv[1], argv[2])
+        elif len(argv) == 2 and argv[0] == "catalog":
+            print_json(manager.catalog(argv[1]))
+            return 0
+        elif argv == ["renderer-start"]:
+            with manager.operation_lock():
+                pids = manager.process_probe()
+                if len(pids) == 1:
+                    return 0
+                if len(pids) > 1:
+                    raise AppearanceError("multiple Hyprpaper processes are running")
+                if not Path(HYPRPAPER).is_file() or not os.access(HYPRPAPER, os.X_OK):
+                    raise AppearanceError("Hyprpaper is not installed or executable")
+                os.execve(HYPRPAPER, [HYPRPAPER], manager.environ)
+            return 0
+        else:
+            usage()
+            return 2
+        if errors:
+            for error in errors:
+                print(f"vanhyprarch-appearance: {error}", file=sys.stderr)
+            return 1
+        return 0
+    except AppearanceError as error:
+        print(f"vanhyprarch-appearance: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

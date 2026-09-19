@@ -697,3 +697,43 @@ bounded manual `test` never arms it.
 Idle invocation is explicit `start --idle`; manual testing uses a bounded
 `test`. Exact player termination is completed independently of cursor
 restoration, and pending cursor ownership remains recoverable by later stop.
+
+## ADR-034: Make Appearance the Light/Dark authority
+
+**Status:** Accepted
+**Date:** 2026-09-19
+
+`vanhyprarch-appearance` owns one durable Light/Dark preference, independent
+Light and Dark wallpaper selections, host color-scheme publication, and
+Hyprpaper reconciliation. The global Quickshell `AppearanceController` is its
+shell projection. Per-screen dock buttons invoke that authority and retain no
+private persistence or theme state. The accepted Vanilla palettes remain
+unchanged.
+
+The writable host source is `org.gnome.desktop.interface color-scheme`.
+Appearance sets `prefer-dark` or `prefer-light` and requires corresponding
+`org.freedesktop.appearance/color-scheme` portal readback of 1 or 2. The portal
+is a read interface, not a write target. No application profile, GTK theme,
+Qt override, or application lifecycle is modified.
+
+Hyprpaper is the required session-owned renderer and never the preference
+authority. Hyprland starts one instance through the public Appearance manager;
+the managed renderer config carries no wallpaper selection. A monitor-wildcard
+IPC request applies one selected wallpaper to every output. Desired preference
+and effective shell, host, portal, renderer-process, and per-output wallpaper
+state remain distinguishable for diagnosis and idempotent reconciliation.
+
+Preferences use a versioned mode-0600 JSON file in XDG configuration state.
+Wallpaper selections are relative to the matching
+`<XDG Pictures>/Wallpapers/{Light,Dark}` directory. User images are never
+managed payload. Canonical containment and content-type checks reject path
+escapes and unsupported files. First-run migration preserves a valid legacy
+shell mode and adopts an active wallpaper only when it is already contained in
+the appropriate directory; it never guesses from directory order.
+
+The original GPL-2.0-only Wolkenstein images are managed distribution assets,
+while their seeded Pictures copies become user content. A private hash receipt
+distinguishes an unchanged prior seed from a modified same-name user file.
+Updates may add assets or replace only an unchanged prior seed; they never
+delete user content. Wolkenstein pair 1 is the explicit deterministic default
+for a new preference, while existing selections remain authoritative.

@@ -60,6 +60,133 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"
+class = "PERSISTENT_STATE_PREFERENCE"
+component = "appearance"
+mode = "0600"
+authority = "vanhyprarch-appearance"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json"
+class = "PERSISTENT_STATE_PROVENANCE"
+component = "appearance"
+mode = "0600"
+authority = "vanhyprarch-appearance"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/hypr/hyprpaper.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprpaper.conf"
+class = "MANAGED"
+component = "appearance"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/NOTICE.md"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/NOTICE.md"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Light/Wolkenstein_1_light.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Light/Wolkenstein_1_light.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Light/Wolkenstein_2_light.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Light/Wolkenstein_2_light.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Light/Wolkenstein_3_light.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Light/Wolkenstein_3_light.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Light/Wolkenstein_4_light.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Light/Wolkenstein_4_light.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Dark/Wolkenstein_1_dark.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Dark/Wolkenstein_1_dark.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Dark/Wolkenstein_2_dark.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Dark/Wolkenstein_2_dark.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Dark/Wolkenstein_3_dark.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Dark/Wolkenstein_3_dark.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "assets/wallpapers/Dark/Wolkenstein_4_dark.png"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/Dark/Wolkenstein_4_dark.png"
+class = "MANAGED"
+component = "appearance-assets"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "<XDG Pictures>/Wallpapers/{Light,Dark}/*"
+class = "USER_CONTENT"
+component = "appearance-assets"
+mode = "0644"
+authority = "user"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
 source = "home/.config/hypr/hypridle.conf"
 target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hypridle.conf"
 class = "MANAGED"
@@ -104,6 +231,25 @@ class = "MANAGED"
 component = "power-idle"
 mode = "0755"
 authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "bin/vanhyprarch-appearance"
+target = "$HOME/.local/bin/vanhyprarch-appearance"
+class = "MANAGED"
+component = "appearance"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/{appearance.lock,appearance-renderer-failure,appearance-hyprpaper.log}"
+class = "RUNTIME"
+component = "appearance"
+mode = "0600"
+authority = "vanhyprarch-appearance"
 user_editable = false
 machine_specific = false
 

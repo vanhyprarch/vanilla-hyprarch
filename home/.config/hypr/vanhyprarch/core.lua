@@ -50,7 +50,7 @@ hl.env("HYPRCURSOR_SIZE", "24")
 
 -- Centralize the project's session-start decisions in Hyprland's startup hook.
 hl.on("hyprland.start", function ()
-    hl.exec_cmd("hyprpaper")
+    hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-appearance renderer-start")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
     hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-idle session-start")
     hl.exec_cmd("qs -n -c vanhyprarch")

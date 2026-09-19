@@ -394,6 +394,27 @@ later idempotent stop, including after unexpected player exit. This work was
 implemented and tested in an isolated repository worktree. It did not adopt,
 reload, reinstall, or otherwise change the current live desktop.
 
+## 2026-09-19: Appearance foundation candidate
+
+An isolated candidate replaced the dock button's private theme-file shell code
+with one global Appearance authority. The new public manager owns a versioned
+preference, standard host color-scheme publication and portal readback, one
+remembered wallpaper per mode, strict XDG Pictures containment, and Hyprpaper
+startup and monitor-wildcard IPC. The accepted shell palettes did not change.
+
+Exact installed portal and Hyprpaper versions were audited before design.
+Deterministic tests use temporary homes and mocked GSettings, D-Bus, process,
+and renderer boundaries. The candidate did not deploy, reload Quickshell,
+change live GSettings, alter wallpaper, or touch user images. The visual picker,
+Style menu, thumbnails, and shortcut remain the next milestone.
+
+The product wallpaper convention was corrected before deployment to plural
+`Pictures/Wallpapers/{Light,Dark}`. Eight reviewed original Wolkenstein images
+became GPL-2.0-only managed distribution assets; pair 1 is the explicit default.
+A hash receipt supports non-destructive, idempotent seeding while preserving
+user-added and modified same-name files. The live source library was inspected
+read-only and remained unchanged.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

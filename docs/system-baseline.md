@@ -2,7 +2,7 @@
 
 This document defines the reusable Vanilla HyprArch base system. It describes
 project requirements, not a complete snapshot of every package installed on the
-development machine. Package facts were verified locally on 2026-09-10.
+development machine. Package facts were verified locally through 2026-09-19.
 
 The starting point is a working minimal Arch Linux installation with systemd,
 network access, a suitable kernel, firmware, and GPU drivers. Kernel, firmware,
@@ -28,7 +28,7 @@ dependency. Its inclusion does not authorize the installer or future agents to
 select other AUR packages freely.
 
 All packages in the current official manifest were verified as installed and
-available from Arch's official repositories by 2026-09-17.
+available from Arch's official repositories by 2026-09-19.
 
 `wayland` is independently fundamental to the baseline Wayland desktop rather
 than being retained for the optional player. `curl` is explicit because the
@@ -47,6 +47,11 @@ contains `gnupg` and `wtype`, both from the official repositories. GnuPG
 verifies the detached upstream Voxtype signature; `wtype` is Voxtype's sole
 configured Wayland typing driver. The Voxtype executable itself is a pinned,
 verified upstream release artifact, not an Arch or AUR package.
+
+The official `file` package is explicit because the Appearance manager invokes
+its MIME detector to validate user wallpaper content against the installed
+Hyprpaper decoder contract. Filename extensions are not trusted as image
+evidence.
 
 ## Installation reproducibility
 
@@ -68,7 +73,7 @@ and unresolved choices are maintained in the canonical
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
 | Optional screensaver renderer | baseline `python` and `wayland`, external `vanhyprarch-zig-player` v0.1.1 | `python` and Wayland are independently required, so the component adds no official package. `vanhyprarch-screensaver` and immutable pinned metadata are baseline; the native player, license, notices, README/release record, and marker exist only when Zig Screensaver is installed. |
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
-| Wallpaper | `hyprpaper` | Started by Hyprland. Its current configuration is live-only and still needs to be represented in the repository. |
+| Appearance and wallpaper | `hyprpaper`, `file` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream
@@ -114,7 +119,7 @@ interaction or manual reapplication.
 
 The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
 configuration for the main shell. It will install `vanhyprarch-idle`,
-`vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
+`vanhyprarch-appearance`, `vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
 available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
@@ -240,6 +245,33 @@ systemctl --user start hyprpolkitagent
 
 The project does not enable the unit separately; the direct Hyprland session
 remains its startup owner.
+
+The GTK portal backend supplies `org.freedesktop.impl.portal.Settings` because
+the Hyprland backend does not implement that interface. Appearance writes only
+the writable `org.gnome.desktop.interface color-scheme` host key and verifies
+the brokered `org.freedesktop.appearance/color-scheme` result. Dark is portal
+value 1 and Light is value 2. No toolkit theme name or application-specific
+configuration is part of this contract.
+
+## Appearance and wallpapers
+
+The durable preference is
+`${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json`. XDG Pictures
+resolution uses `XDG_PICTURES_DIR` from `user-dirs.dirs`, with
+`$HOME/Pictures` as the standards-compatible fallback when no configuration is
+available. User images live beneath `Wallpapers/Light` and `Wallpapers/Dark`
+and remain user content rather than managed deployment payload.
+
+Eight GPL-2.0-only Wolkenstein images ship as managed, offline distribution
+assets under the project XDG data directory. Appearance seeds exact copies
+non-destructively into the user directories and uses pair 1 as the explicit
+Light/Dark default. A durable hash receipt permits updates only to unchanged
+prior seeds and preserves unrelated or user-modified files.
+
+The managed `hyprpaper.conf` enables IPC, disables the splash, and declares no
+wallpaper. The manager applies one selected file to the installed renderer's
+monitor wildcard and checks all `listactive` entries. Hyprpaper absence or IPC
+failure is reported without disabling Vanilla shell colors or host preference.
 
 ## Fonts and icons
 

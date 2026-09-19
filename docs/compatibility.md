@@ -20,7 +20,11 @@ and removable local mitigations. Package selection belongs in
 | pacman | 7.1.0 (`pacman 7.1.0.r9.g54d9411-2`) | Local installed-package catalog and authoritative removal transaction semantics |
 | yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR installation, removal, and full-system update wrapper |
 | Flatpak | 1.18.2 (`flatpak 1:1.18.2-1`) | Locally validated official package for interactive app/runtime updates; required but not version-pinned |
-| hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Wallpaper process launched by Hyprland; portable tracked configuration remains open work |
+| hyprpaper | 0.8.4 (`hyprpaper 0.8.4-8`) | Required Appearance renderer; new Hyprwire `wallpaper`/`listactive` contract validated |
+| hyprgraphics | 0.5.1 (`hyprgraphics 0.5.1-4`) | Hyprpaper image decoding; PNG, JPEG, BMP, WebP, SVG, and JXL linked, without HEIF/AVIF |
+| xdg-desktop-portal | 1.22.1 (`xdg-desktop-portal 1.22.1-2`) | Brokers the standard Settings read interface |
+| xdg-desktop-portal-gtk | 1.15.3 (`xdg-desktop-portal-gtk 1.15.3-1`) | Active Settings provider mapping GNOME interface color scheme to the standard portal value |
+| xdg-desktop-portal-hyprland | 1.4.1 (`xdg-desktop-portal-hyprland 1.4.1-2`) | Hyprland portal interfaces; does not provide Settings on this version |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
 | grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic tests and the real 10-bit workflow pass |
 | slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer selection passes |
@@ -72,6 +76,68 @@ it cannot provide a safe parser test. The repository-only milestone therefore
 does not launch hyprlock against the live compositor. Validate the managed file
 with a non-visible isolated compositor or an upstream parser-only facility
 before live deployment, and retest the schema after a hyprlock upgrade.
+
+## Appearance host-preference boundary
+
+**Affected components:** xdg-desktop-portal 1.22.1,
+xdg-desktop-portal-gtk 1.15.3, GLib 2.88.3, Firefox 156.0, GTK 3.24.52,
+GTK 4.22.5, and Qt 6.11.2
+
+The direct Hyprland session selects `hyprland;gtk` portal backends. The
+Hyprland backend's declared interfaces do not include Settings, so the active
+GTK backend owns `org.freedesktop.impl.portal.Settings`. Its exact 1.15.3
+source reads the writable `org.gnome.desktop.interface color-scheme` enum,
+maps it directly to `org.freedesktop.appearance/color-scheme`, subscribes to
+GSettings changes, and emits the standardized `SettingChanged` signal without
+a portal restart. Live read-only inspection returned `prefer-dark` and portal
+value 1. A real opposite-value write was deliberately not performed during the
+isolated milestone.
+
+Firefox 156 contains both the standardized appearance namespace and its XDG
+Settings preference path; no current profile override was found by the narrow
+audit. Normal System theme and web `prefers-color-scheme` behavior can consume
+the portal change, while explicit Firefox themes or site choices remain
+authoritative. A read-only GTK 4 probe reported interface color scheme 2
+(Dark), matching the live portal, while retaining the `Adwaita-dark` theme.
+A GTK 3 probe instead reported application-prefer-dark false and the explicit
+`Adwaita-dark` theme; such legacy applications may not change with the standard
+preference because Appearance deliberately does not replace `gtk-theme`. Qt
+6.11.2 provides the XDG desktop portal platform-theme plugin with the standard
+appearance namespace and `QStyleHints::colorScheme`. However, a read-only
+ordinary Wayland Qt 6.11.2 probe with no `QT_QPA_PLATFORMTHEME` override
+reported `Qt::ColorScheme::Unknown` (0), so automatic consumption by ordinary
+Qt applications is not proven on this session. Vanilla does not force-load a
+platform theme or set a Qt style override; sandboxed applications or
+applications that select the portal theme may behave differently.
+
+Retest provider selection, writable schema, portal readback and signal,
+Firefox System-theme behavior, representative GTK 4 and Qt applications, and
+the documented GTK 3 limitation after portal, GLib, Firefox, GTK, or Qt
+upgrades. Do not compensate with per-application configuration.
+
+## Hyprpaper 0.8.4 IPC and image boundary
+
+**Affected components:** hyprpaper 0.8.4, Hyprland/hyprctl 0.56.2, and
+hyprgraphics 0.5.1
+
+Installed `hyprctl hyprpaper --help` exposes only `wallpaper` with separate
+monitor, path, and optional fit-mode arguments. `listactive` works;
+`listloaded` is invalid on this new protocol. Tagged 0.8.4 source proves that
+an empty monitor is a wildcard, exact monitor settings take precedence, and a
+new wildcard state is recalculated for every registered output. Appearance
+therefore uses the argument vector `wallpaper`, empty monitor, canonical path,
+`cover`, then verifies all `listactive` entries. It never uses the older
+preload/reload workflow or a connector literal.
+
+The installed binary links hyprgraphics plus libmagic, PNG, JPEG, WebP, SVG,
+and JPEG XL libraries. Tagged hyprgraphics source additionally provides BMP.
+HEIF is not linked, so AVIF is not accepted even though generic upstream source
+can compile that optional decoder. Appearance mirrors this content-based
+contract and treats actual renderer failure as authoritative.
+
+Retest request names, argument form, wildcard semantics, readback, and compiled
+decoder libraries after Hyprpaper, Hyprland, or hyprgraphics upgrades. Remove
+or update the local MIME capability table in the same reviewed change.
 
 ## Voxtype 1.0.1 integration boundary
 

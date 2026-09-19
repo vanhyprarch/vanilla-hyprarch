@@ -32,6 +32,11 @@ ShellRoot {
         metrics: visualMetrics
     }
 
+    AppearanceController {
+        id: appearanceController
+        theme: shellTheme
+    }
+
     Shortcuts {
         id: shortcuts
     }
@@ -210,7 +215,7 @@ ShellRoot {
 
         ThemeToggle {
             id: dockThemeToggle
-            theme: shellTheme
+            controller: appearanceController
             metrics: visualMetrics
 
             anchors {
