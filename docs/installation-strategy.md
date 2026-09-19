@@ -68,10 +68,10 @@ The shared bootstrap will eventually:
   existing administrator configuration would be replaced;
 - preserve the documented startup owner for each session process;
 - deploy the reviewed official wallpaper payload under XDG data, then invoke
-  the Appearance asset seeder to create the user's XDG Pictures
-  `Wallpapers/Light` and `Wallpapers/Dark` directories only when absent and
-  add exact bundled files without claiming the directories or changing
-  unrelated content;
+  the Appearance one-shot asset bootstrap; only a user with no durable
+  initialization evidence receives the current starter files and newly
+  created XDG Pictures `Wallpapers/Light` and `Wallpapers/Dark` directories,
+  while initialized directories and their contents remain untouched;
 - preserve or initialize the Appearance preference through its backend and
   deploy the selection-free managed Hyprpaper configuration before the first
   graphical session;
@@ -112,11 +112,13 @@ directory. A clean installation with no such active selection uses the
 explicit Wolkenstein pair-1 Light and Dark defaults; it never chooses an
 arbitrary directory entry. Existing Appearance selections remain unchanged.
 
-The seeder records prior official digests under XDG state. Later releases may
-add new assets and may update only a destination whose bytes still match the
-recorded prior seed. A user-modified same-name file, unrelated image, or
-unrecognized collision is preserved. The operation is local, hash-verified,
-idempotent, and requires no network access.
+Wallpaper bootstrap records a durable completion marker under XDG state. It is
+local, hash-verified, non-destructive, and requires no network access. Once
+complete, the Light and Dark directories and all their contents are user-owned:
+later releases do not add new starters, restore deleted starters, or update old
+ones. Changing the managed starter set changes only true fresh installations.
+Existing version-1 seed receipts migrate to completed without touching user
+content.
 
 The version-1 ownership manifest is descriptive input for this future work. It
 does not imply transaction, merge, rollback, migration, or uninstall behavior.

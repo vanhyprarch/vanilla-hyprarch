@@ -499,14 +499,17 @@ black, or blank frame. No Hyprpaper sequencing change is needed; the shell
 palette continues to update immediately after external reconciliation.
 
 Eight reviewed original Wolkenstein images ship under `assets/wallpapers/` as
-GPL-2.0-only managed distribution content. Appearance seeds exact copies
-non-destructively into the user-owned plural directories, tracks previously
-seeded hashes in a private provenance receipt, and preserves unrelated or
-modified same-name files. Pair 1 is the explicit Light/Dark default. First-run
-migration preserves a valid legacy shell theme value and adopts a uniform
-active wallpaper already in its mode directory; otherwise both selections use
-the seeded pair-1 defaults. Existing Appearance preferences are never replaced
-by defaults. `catalog` returns the current-mode catalog in stable natural
+GPL-2.0-only managed distribution content. Appearance copies them
+non-destructively only during a true first wallpaper initialization and records
+completion in the private version-2 `appearance-assets.json` state. Existing
+version-1 receipts migrate without directory writes. Afterward the plural
+Light/Dark directories and all their contents are user-owned: updates and
+reconciliation never add, replace, restore, or delete wallpapers. Pair 1 is the
+explicit Light/Dark default for a fresh preference. First-run migration
+preserves a valid legacy shell theme value and adopts a uniform active
+wallpaper already in its mode directory; otherwise both selections use the
+seeded pair-1 defaults. Existing Appearance preferences are never replaced by
+defaults. `catalog` returns the real current-mode directory in stable natural
 filename order with additive entry metadata, and `set-wallpaper current`
 remains the only picker apply boundary. See [Appearance foundation](appearance.md).
 

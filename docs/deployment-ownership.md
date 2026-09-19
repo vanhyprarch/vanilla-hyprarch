@@ -17,7 +17,7 @@ expressions, not shell commands.
 | `MACHINE_CONFIGURATION` | The file describes actual hardware or user-environment reality. Vanilla HyprArch may initialize it once, but normal updates preserve it. Users may edit it; project UI may edit only explicitly documented fields. |
 | `USER_CUSTOMIZATION_OVERRIDE` | An optional advanced escape hatch owned by the user. It is unnecessary for the curated default experience and is preserved by normal updates. |
 | `PERSISTENT_STATE_PREFERENCE` | Durable user selection or backend state. Its owning backend, not release payloads, controls its format and writes. It is not a configuration override. |
-| `PERSISTENT_STATE_PROVENANCE` | Durable backend-owned hashes recording which user-content files were previously seeded unchanged. It is not a user preference or release payload. |
+| `PERSISTENT_STATE_PROVENANCE` | Durable backend-owned initialization/provenance state. It may retain historical seed hashes for migration, but is not a user preference or release payload. |
 | `GENERATED` | An effective projection derived from managed policy and preserved preferences. Release payloads do not own its bytes; its generator may replace it. |
 | `RUNTIME` | Session- or process-lifetime state. It is neither a release payload nor durable preference. |
 | `USER_CONTENT` | User-owned content that Vanilla may seed non-destructively. Updates preserve user additions and modifications and never manage the containing directory wholesale. |
@@ -91,16 +91,17 @@ bounded restart suppression, and renderer logging stay under
 The eight GPL-2.0-only files under `assets/wallpapers/` and their deployed XDG
 data copies are `MANAGED` distribution payload. The copies seeded beneath
 `<XDG Pictures>/Wallpapers/Light` and `Dark` are `USER_CONTENT`; their parent
-directories are never managed wholesale. Bootstrap may create those
-directories when absent but never removes their contents.
+directories and every file in them become user-owned immediately after the
+one-shot bootstrap. Normal updates never manage those directories wholesale or
+inject, replace, restore, or remove their contents.
 
 The private mode-0600 `appearance-assets.json` record is
-`PERSISTENT_STATE_PROVENANCE`, not an Appearance preference. It records the
-last official digest seeded for each relative path. Appearance may add a new
-asset, recognize an existing byte-identical official copy, or update a copy
-whose current digest still equals its receipt. A missing receipt or digest
-mismatch preserves the destination as user content, including a modified file
-that shares an official filename.
+`PERSISTENT_STATE_PROVENANCE`, not an Appearance preference. Its version-2
+schema records that starter content initialization completed and may retain
+historical version-1 seed hashes solely for compatibility and audit. A
+version-1 receipt, or an existing Appearance preference when that receipt is
+absent, migrates to initialized without touching user content. Only a user with
+no such durable evidence receives the currently distributed starter set.
 
 ## Zig Screensaver ownership
 

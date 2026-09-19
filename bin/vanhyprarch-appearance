@@ -94,6 +94,12 @@ class Preference:
         }
 
 
+@dataclass(frozen=True)
+class AssetReceipt:
+    seeded: dict[str, str]
+    legacy: bool
+
+
 def absolute_environment_path(
     environ: Mapping[str, str], name: str, fallback: Path
 ) -> Path:
@@ -389,30 +395,12 @@ class AppearanceManager:
             raise AppearanceError(f"wallpaper asset changed while reading: {path}")
         return digest.hexdigest(), identity
 
-    def read_asset_receipt(self) -> dict[str, str]:
-        try:
-            file_stat = self.asset_receipt_path.lstat()
-        except FileNotFoundError:
-            return {}
-        except OSError as error:
-            raise AppearanceError(f"could not inspect wallpaper seed receipt: {error}") from error
-        if (
-            not stat.S_ISREG(file_stat.st_mode)
-            or file_stat.st_uid != os.getuid()
-            or file_stat.st_size > MAX_PREFERENCE_SIZE
-        ):
-            raise AppearanceError("wallpaper seed receipt is not a safe user-owned file")
-        try:
-            value = json.loads(self.asset_receipt_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as error:
-            raise AppearanceError(f"could not parse wallpaper seed receipt: {error}") from error
-        if not isinstance(value, dict) or set(value) != {"version", "seeded"}:
-            raise AppearanceError("wallpaper seed receipt has an invalid schema")
-        seeded = value["seeded"]
-        if type(value["version"]) is not int or value["version"] != 1 or not isinstance(seeded, dict):
+    @staticmethod
+    def _validate_seeded_receipt(value: object) -> dict[str, str]:
+        if not isinstance(value, dict):
             raise AppearanceError("wallpaper seed receipt has invalid values")
         result: dict[str, str] = {}
-        for relative, digest in seeded.items():
+        for relative, digest in value.items():
             path = Path(relative) if isinstance(relative, str) else Path(".")
             if (
                 not isinstance(relative, str)
@@ -425,18 +413,66 @@ class AppearanceManager:
             result[relative] = digest
         return result
 
+    def read_asset_receipt(self) -> AssetReceipt | None:
+        try:
+            file_stat = self.asset_receipt_path.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise AppearanceError(f"could not inspect wallpaper seed receipt: {error}") from error
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or file_stat.st_uid != os.getuid()
+            or file_stat.st_size > MAX_PREFERENCE_SIZE
+        ):
+            raise AppearanceError("wallpaper seed receipt is not a safe user-owned file")
+        try:
+            value = json.loads(self.asset_receipt_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise AppearanceError(f"could not parse wallpaper seed receipt: {error}") from error
+        if not isinstance(value, dict):
+            raise AppearanceError("wallpaper seed receipt has an invalid schema")
+        if (
+            set(value) == {"version", "seeded"}
+            and type(value.get("version")) is int
+            and value.get("version") == 1
+        ):
+            return AssetReceipt(self._validate_seeded_receipt(value["seeded"]), True)
+        if (
+            set(value) == {"version", "starter_content_initialized", "seeded"}
+            and type(value.get("version")) is int
+            and value.get("version") == 2
+            and value.get("starter_content_initialized") is True
+        ):
+            return AssetReceipt(self._validate_seeded_receipt(value["seeded"]), False)
+        raise AppearanceError("wallpaper seed receipt has an invalid schema")
+
     def write_asset_receipt(self, seeded: Mapping[str, str]) -> None:
         self._write_private_json(
             self.asset_receipt_path,
-            {"version": 1, "seeded": dict(sorted(seeded.items()))},
+            {
+                "version": 2,
+                "starter_content_initialized": True,
+                "seeded": dict(sorted(seeded.items())),
+            },
         )
+
+    def _appearance_preference_state_exists(self) -> bool:
+        try:
+            self.preference_path.lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise AppearanceError(
+                f"could not inspect appearance preference: {error}"
+            ) from error
+        return True
 
     def _publish_official_asset(
         self,
         source: Path,
         destination: Path,
         expected_digest: str,
-        replace_identity: tuple[int, int, int, int] | None,
     ) -> bool:
         destination.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         descriptor, temporary_name = tempfile.mkstemp(
@@ -454,17 +490,10 @@ class AppearanceManager:
             copied_digest, _ = self._regular_file_digest(temporary)
             if copied_digest != expected_digest:
                 raise AppearanceError(f"official wallpaper changed while copying: {source}")
-            if replace_identity is None:
-                try:
-                    os.link(temporary, destination, follow_symlinks=False)
-                except FileExistsError:
-                    return False
-            else:
-                _, current_identity = self._regular_file_digest(destination)
-                if current_identity != replace_identity:
-                    return False
-                os.replace(temporary, destination)
-                temporary = None
+            try:
+                os.link(temporary, destination, follow_symlinks=False)
+            except FileExistsError:
+                return False
             return True
         except OSError as error:
             raise AppearanceError(
@@ -476,6 +505,8 @@ class AppearanceManager:
 
     def seed_official_assets(self) -> dict[str, object]:
         result: dict[str, object] = {
+            "initialized": False,
+            "migrated": False,
             "seeded": [],
             "updated": [],
             "current": [],
@@ -487,57 +518,87 @@ class AppearanceManager:
         except AppearanceError as error:
             result["errors"].append(str(error))
             return result
-        next_receipt = dict(receipt)
-        receipt_changed = False
+
+        if receipt is not None:
+            result["initialized"] = True
+            if receipt.legacy:
+                try:
+                    self.write_asset_receipt(receipt.seeded)
+                    result["migrated"] = True
+                except AppearanceError as error:
+                    result["errors"].append(str(error))
+            return result
+
+        try:
+            existing_preference = self._appearance_preference_state_exists()
+        except AppearanceError as error:
+            result["errors"].append(str(error))
+            return result
+        if existing_preference:
+            result["initialized"] = True
+            try:
+                self.write_asset_receipt({})
+                result["migrated"] = True
+            except AppearanceError as error:
+                result["errors"].append(str(error))
+            return result
+
+        try:
+            self.ensure_user_directories()
+        except AppearanceError as error:
+            result["errors"].append(str(error))
+            return result
+
+        verified_sources: dict[str, Path] = {}
         for relative, expected_digest in sorted(self.official_wallpapers.items()):
             source = self.asset_root / relative
-            destination = self.wallpaper_root / relative
             try:
                 source_digest, _ = self._regular_file_digest(source)
                 if source_digest != expected_digest:
                     raise AppearanceError(
                         f"official wallpaper checksum mismatch: {source}"
                     )
+                verified_sources[relative] = source
+            except AppearanceError as error:
+                result["errors"].append(str(error))
+
+        if result["errors"]:
+            return result
+
+        seeded_receipt: dict[str, str] = {}
+        for relative, source in sorted(verified_sources.items()):
+            expected_digest = self.official_wallpapers[relative]
+            destination = self.wallpaper_root / relative
+            try:
+                destination_digest, _ = self._regular_file_digest(destination)
+            except AppearanceError:
+                if destination.exists() or destination.is_symlink():
+                    result["preserved"].append(relative)
+                    continue
                 try:
-                    destination_digest, destination_identity = (
-                        self._regular_file_digest(destination)
-                    )
-                except AppearanceError:
-                    if destination.exists() or destination.is_symlink():
-                        result["preserved"].append(relative)
-                        continue
-                    if not self._publish_official_asset(
-                        source, destination, expected_digest, None
+                    if self._publish_official_asset(
+                        source, destination, expected_digest
                     ):
-                        result["preserved"].append(relative)
-                        continue
-                    result["seeded"].append(relative)
-                else:
-                    if destination_digest == expected_digest:
-                        result["current"].append(relative)
-                    elif receipt.get(relative) == destination_digest:
-                        if not self._publish_official_asset(
-                            source,
-                            destination,
-                            expected_digest,
-                            destination_identity,
-                        ):
-                            result["preserved"].append(relative)
-                            continue
-                        result["updated"].append(relative)
+                        result["seeded"].append(relative)
+                        seeded_receipt[relative] = expected_digest
                     else:
                         result["preserved"].append(relative)
-                        continue
-                if next_receipt.get(relative) != expected_digest:
-                    next_receipt[relative] = expected_digest
-                    receipt_changed = True
-            except AppearanceError as error:
-                result["errors"].append(str(error))
-        if receipt_changed:
-            try:
-                self.write_asset_receipt(next_receipt)
-            except AppearanceError as error:
-                result["errors"].append(str(error))
+                except AppearanceError as error:
+                    result["errors"].append(str(error))
+            else:
+                if destination_digest == expected_digest:
+                    result["current"].append(relative)
+                    seeded_receipt[relative] = expected_digest
+                else:
+                    result["preserved"].append(relative)
+
+        if result["errors"]:
+            return result
+        try:
+            self.write_asset_receipt(seeded_receipt)
+            result["initialized"] = True
+        except AppearanceError as error:
+            result["errors"].append(str(error))
         return result
 
     def _legacy_mode(self) -> str | None:
@@ -996,13 +1057,17 @@ class AppearanceManager:
 
     def reconcile(self) -> list[str]:
         with self.operation_lock():
-            self.ensure_user_directories()
             asset_result = self.seed_official_assets()
+            asset_errors = list(asset_result["errors"])
+            if not asset_result["initialized"]:
+                return asset_errors or [
+                    "wallpaper starter content initialization did not complete"
+                ]
             preference, initialized = self.current_preference()
             if not initialized:
                 self.write_preference(preference)
             return (
-                list(asset_result["errors"])
+                asset_errors
                 + self.apply_host_mode(preference.mode)
                 + self.apply_wallpaper(preference)
             )
@@ -1010,28 +1075,36 @@ class AppearanceManager:
     def set_mode(self, mode: str) -> list[str]:
         self.require_mode(mode)
         with self.operation_lock():
-            self.ensure_user_directories()
             asset_result = self.seed_official_assets()
+            asset_errors = list(asset_result["errors"])
+            if not asset_result["initialized"]:
+                return asset_errors or [
+                    "wallpaper starter content initialization did not complete"
+                ]
             preference, _ = self.current_preference()
             preference = preference.with_mode(mode)
             self.write_preference(preference)
             return (
-                list(asset_result["errors"])
+                asset_errors
                 + self.apply_host_mode(mode)
                 + self.apply_wallpaper(preference)
             )
 
     def set_wallpaper(self, mode: str, path: str) -> list[str]:
         with self.operation_lock():
-            self.ensure_user_directories()
             asset_result = self.seed_official_assets()
+            asset_errors = list(asset_result["errors"])
+            if not asset_result["initialized"]:
+                return asset_errors or [
+                    "wallpaper starter content initialization did not complete"
+                ]
             preference, _ = self.current_preference()
             actual_mode = preference.mode if mode == "current" else mode
             self.require_mode(actual_mode)
             _, relative = self.validate_wallpaper(actual_mode, path)
             preference = preference.with_wallpaper(actual_mode, relative)
             self.write_preference(preference)
-            errors = list(asset_result["errors"])
+            errors = asset_errors
             if preference.mode == actual_mode:
                 errors.extend(self.apply_wallpaper(preference))
             return errors
@@ -1244,7 +1317,6 @@ def main(arguments: Sequence[str] | None = None) -> int:
             return 0
         if argv == ["seed-assets"]:
             with manager.operation_lock():
-                manager.ensure_user_directories()
                 result = manager.seed_official_assets()
             print_json(result)
             for error in result["errors"]:

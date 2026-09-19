@@ -17,24 +17,39 @@ content directories are:
 <XDG Pictures>/Wallpapers/Dark
 ```
 
-They are user-content locations. Vanilla may create missing directories but
-never owns, renames, overwrites, or deletes their images.
+They are user-content locations. Vanilla may create and populate them during
+first initialization only; afterward it never owns, renames, overwrites,
+restores, or deletes their contents.
 
 Eight original Wolkenstein Light/Dark images ship as GPL-2.0-only managed
 distribution assets under `assets/wallpapers/`. Deployment installs exact
 managed copies below
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/`; the Appearance
-manager non-destructively seeds them into the user-content directories. Pair 1,
-`Wolkenstein_1_light.png` and `Wolkenstein_1_dark.png`, is the explicit default.
+manager seeds them non-destructively as starter content only when wallpaper
+bootstrap has never completed for the user. Pair 1,
+`Wolkenstein_1_light.png` and `Wolkenstein_1_dark.png`, is the explicit default
+for that fresh initialization.
 
 The mode-0600
 `${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json`
-receipt records only hashes that Appearance previously seeded. A missing
-destination receives the exact reviewed bytes. An unchanged prior seed may be
-updated when its managed source changes, and newly introduced assets may be
-added. An unrelated file or a user-modified same-name file is preserved. The
-operation never removes user content. `seed-assets` exposes this bounded step
-to the future bootstrap; normal reconciliation also runs it idempotently.
+version-2 receipt is the durable completion marker for this one-shot bootstrap.
+On a true first initialization, Appearance creates the Light and Dark
+directories, verifies every managed source, copies only absent destinations,
+and records completion only after the whole operation succeeds. An unrelated
+file or any same-name collision is preserved.
+
+A version-1 hash receipt is durable evidence that an earlier release already
+initialized the user, so it is migrated to version 2 without reading or
+changing wallpaper-directory contents. An existing `appearance.json` is the
+same conservative migration evidence when the older receipt is absent. The
+legacy per-file hashes are retained for historical compatibility but no longer
+authorize replacement, restoration, or addition. Normal `seed-assets`,
+reconciliation, mode changes, and wallpaper changes all become content no-ops
+after initialization. Deleting one starter, deleting all starters, leaving a
+mode directory empty, or replacing everything with personal images is a valid
+user-owned state. A future managed starter set therefore affects only users
+whose bootstrap has never completed. A future restore-defaults action would
+need a separate explicit user request; it is not part of reconciliation.
 
 The host preference is the writable
 `org.gnome.desktop.interface color-scheme` GSettings key. Dark maps to
@@ -81,6 +96,14 @@ wallpaper already inside a required mode directory overrides that mode's
 default during first-run adoption. Existing `appearance.json` selections,
 including an intentional unset selection, are preserved. No directory entry is
 chosen by enumeration. A missing selection does not block shell or host mode.
+
+If a remembered wallpaper is later deleted, Appearance leaves both the missing
+file and the stored selection alone. Host mode reconciliation still proceeds,
+but wallpaper application and status report the invalid selection and send no
+Hyprpaper request. If the preference is unset and the directory is empty, the
+existing safe unselected/empty-catalog state is used. The user may select any
+remaining catalog item explicitly; Appearance never manufactures an official
+fallback after bootstrap.
 
 `set-mode` first persists the desired mode, then applies and verifies the host
 preference and the remembered wallpaper. Status keeps desired preference

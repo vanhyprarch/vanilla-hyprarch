@@ -264,9 +264,12 @@ and remain user content rather than managed deployment payload.
 
 Eight GPL-2.0-only Wolkenstein images ship as managed, offline distribution
 assets under the project XDG data directory. Appearance seeds exact copies
-non-destructively into the user directories and uses pair 1 as the explicit
-Light/Dark default. A durable hash receipt permits updates only to unchanged
-prior seeds and preserves unrelated or user-modified files.
+non-destructively into the user directories once and uses pair 1 as the
+explicit Light/Dark default for a fresh initialization. A durable version-2
+completion record prevents normal updates and reconciliation from adding,
+restoring, or replacing files afterward; the directories and their contents
+are user-owned. Version-1 hash receipts migrate to completed without touching
+the wallpaper directories.
 
 The managed `hyprpaper.conf` enables IPC, disables the splash, and declares no
 wallpaper. The manager applies one selected file to the installed renderer's

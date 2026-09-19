@@ -246,21 +246,32 @@ class AppearanceTests(unittest.TestCase):
         self.manager.ensure_user_directories()
         self.assertEqual(existing.read_bytes(), b"personal bytes")
 
-    def test_clean_asset_seed_preserves_exact_bytes_and_is_idempotent(self) -> None:
+    def test_fresh_asset_bootstrap_is_exact_marked_and_one_shot(self) -> None:
         result = self.manager.seed_official_assets()
         self.assertEqual(result["seeded"], sorted(self.official_bytes))
         self.assertEqual(result["errors"], [])
+        self.assertTrue(result["initialized"])
+        self.assertFalse(result["migrated"])
         for relative, contents in self.official_bytes.items():
             self.assertEqual((self.manager.wallpaper_root / relative).read_bytes(), contents)
 
+        receipt = json.loads(
+            self.manager.asset_receipt_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(receipt["version"], 2)
+        self.assertIs(receipt["starter_content_initialized"], True)
+        self.assertEqual(receipt["seeded"], self.official_wallpapers)
+        self.assertEqual(self.manager.asset_receipt_path.stat().st_mode & 0o777, 0o600)
+
         before = self.manager.asset_receipt_path.read_bytes()
         second = self.manager.seed_official_assets()
-        self.assertEqual(second["current"], sorted(self.official_bytes))
+        self.assertTrue(second["initialized"])
+        self.assertEqual(second["current"], [])
         self.assertEqual(second["seeded"], [])
         self.assertEqual(second["updated"], [])
         self.assertEqual(self.manager.asset_receipt_path.read_bytes(), before)
 
-    def test_asset_seed_creates_missing_plural_mode_directories(self) -> None:
+    def test_fresh_asset_bootstrap_creates_missing_plural_mode_directories(self) -> None:
         shutil.rmtree(self.manager.wallpaper_root)
 
         result = self.manager.seed_official_assets()
@@ -269,7 +280,7 @@ class AppearanceTests(unittest.TestCase):
         self.assertTrue(self.manager.mode_directory("light").is_dir())
         self.assertTrue(self.manager.mode_directory("dark").is_dir())
 
-    def test_asset_seed_preserves_unrelated_and_same_name_user_content(self) -> None:
+    def test_fresh_bootstrap_preserves_unrelated_and_same_name_user_content(self) -> None:
         unrelated = self.wallpaper("light", "My mountain ☀.png", b"user image")
         collision = self.manager.mode_directory("dark") / "Official Dark.png"
         collision.write_bytes(b"user-modified official filename")
@@ -284,7 +295,7 @@ class AppearanceTests(unittest.TestCase):
             self.official_bytes["Light/Official Light.png"],
         )
 
-    def test_existing_byte_identical_official_copy_is_recognized(self) -> None:
+    def test_fresh_bootstrap_recognizes_existing_byte_identical_copy(self) -> None:
         relative = "Light/Official Light.png"
         destination = self.manager.wallpaper_root / relative
         destination.write_bytes(self.official_bytes[relative])
@@ -294,52 +305,187 @@ class AppearanceTests(unittest.TestCase):
         self.assertIn(relative, result["current"])
         self.assertNotIn(relative, result["seeded"])
         self.assertEqual(
-            self.manager.read_asset_receipt()[relative],
+            self.manager.read_asset_receipt().seeded[relative],
             self.official_wallpapers[relative],
         )
 
-    def test_asset_reseed_updates_unchanged_seed_and_adds_new_asset(self) -> None:
+    def test_initialized_user_deletion_of_one_starter_is_never_restored(self) -> None:
         self.assertEqual(self.manager.seed_official_assets()["errors"], [])
-        updated_relative = "Light/Official Light.png"
-        updated_bytes = b"updated official light bytes"
-        (self.asset_root / updated_relative).write_bytes(updated_bytes)
-        self.manager.official_wallpapers[updated_relative] = hashlib.sha256(
-            updated_bytes
-        ).hexdigest()
+        light = self.manager.mode_directory("light") / "Official Light.png"
+        dark = self.manager.mode_directory("dark") / "Official Dark.png"
+        self.write_preference("light", light.name, dark.name)
+        dark.unlink()
 
-        new_relative = "Dark/New night – Dolomiti.png"
-        new_bytes = b"new official dark bytes"
-        new_source = self.asset_root / new_relative
-        new_source.write_bytes(new_bytes)
+        self.assertEqual(self.manager.seed_official_assets()["errors"], [])
+        self.assertEqual(self.manager.reconcile(), [])
+        self.assertFalse(dark.exists())
+
+    def test_initialized_empty_mode_directories_are_valid_user_states(self) -> None:
+        self.assertEqual(self.manager.seed_official_assets()["errors"], [])
+        for relative in self.official_bytes:
+            (self.manager.wallpaper_root / relative).unlink()
+        self.write_preference("light")
+
+        self.assertEqual(self.manager.seed_official_assets()["errors"], [])
+        self.assertEqual(self.manager.reconcile(), [])
+        self.assertEqual(list(self.manager.mode_directory("light").iterdir()), [])
+        self.assertEqual(list(self.manager.mode_directory("dark").iterdir()), [])
+        self.assertEqual(self.manager.catalog("light")["wallpapers"], [])
+        self.assertEqual(self.manager.catalog("dark")["wallpapers"], [])
+
+    def test_future_starter_release_does_not_change_initialized_user_content(self) -> None:
+        self.assertEqual(self.manager.seed_official_assets()["errors"], [])
+        shutil.rmtree(self.manager.wallpaper_root)
+        self.manager.ensure_user_directories()
+        personal = self.wallpaper("light", "Personal café.png", b"personal")
+
+        changed_relative = "Light/Official Light.png"
+        changed_bytes = b"release two light"
+        (self.asset_root / changed_relative).write_bytes(changed_bytes)
+        self.manager.official_wallpapers[changed_relative] = hashlib.sha256(
+            changed_bytes
+        ).hexdigest()
+        new_relative = "Dark/New release.png"
+        new_bytes = b"release two dark"
+        (self.asset_root / new_relative).write_bytes(new_bytes)
         self.manager.official_wallpapers[new_relative] = hashlib.sha256(
             new_bytes
         ).hexdigest()
 
         result = self.manager.seed_official_assets()
 
-        self.assertEqual(result["updated"], [updated_relative])
-        self.assertEqual(result["seeded"], [new_relative])
+        self.assertEqual(result["seeded"], [])
+        self.assertEqual(result["updated"], [])
+        self.assertEqual(personal.read_bytes(), b"personal")
         self.assertEqual(
-            (self.manager.wallpaper_root / updated_relative).read_bytes(), updated_bytes
+            sorted(path.name for path in self.manager.mode_directory("light").iterdir()),
+            [personal.name],
         )
-        self.assertEqual(
-            (self.manager.wallpaper_root / new_relative).read_bytes(), new_bytes
-        )
+        self.assertEqual(list(self.manager.mode_directory("dark").iterdir()), [])
 
-    def test_user_modified_previously_seeded_asset_is_not_overwritten(self) -> None:
-        self.manager.seed_official_assets()
-        relative = "Light/Official Light.png"
-        destination = self.manager.wallpaper_root / relative
-        destination.write_bytes(b"user modification")
-        (self.asset_root / relative).write_bytes(b"new release bytes")
-        self.manager.official_wallpapers[relative] = hashlib.sha256(
-            b"new release bytes"
+    def test_true_fresh_user_receives_the_current_starter_release(self) -> None:
+        new_relative = "Dark/New release.png"
+        new_bytes = b"release two dark"
+        (self.asset_root / new_relative).write_bytes(new_bytes)
+        self.manager.official_wallpapers[new_relative] = hashlib.sha256(
+            new_bytes
         ).hexdigest()
 
         result = self.manager.seed_official_assets()
 
-        self.assertEqual(destination.read_bytes(), b"user modification")
-        self.assertIn(relative, result["preserved"])
+        self.assertIn(new_relative, result["seeded"])
+        self.assertEqual(
+            (self.manager.wallpaper_root / new_relative).read_bytes(), new_bytes
+        )
+
+    def test_version_one_receipt_migrates_without_touching_user_content(self) -> None:
+        personal = self.wallpaper("light", "Only mine.png", b"personal")
+        collision = self.wallpaper(
+            "dark", "Official Dark.png", b"user-modified former starter"
+        )
+        legacy_seeded = {
+            "Light/Official Light.png": self.official_wallpapers[
+                "Light/Official Light.png"
+            ]
+        }
+        self.manager._write_private_json(
+            self.manager.asset_receipt_path,
+            {"version": 1, "seeded": legacy_seeded},
+        )
+        before = {
+            path.relative_to(self.manager.wallpaper_root): path.read_bytes()
+            for path in self.manager.wallpaper_root.rglob("*")
+            if path.is_file()
+        }
+
+        result = self.manager.seed_official_assets()
+
+        self.assertTrue(result["initialized"])
+        self.assertTrue(result["migrated"])
+        after = {
+            path.relative_to(self.manager.wallpaper_root): path.read_bytes()
+            for path in self.manager.wallpaper_root.rglob("*")
+            if path.is_file()
+        }
+        self.assertEqual(after, before)
+        self.assertEqual(personal.read_bytes(), b"personal")
+        self.assertEqual(collision.read_bytes(), b"user-modified former starter")
+        receipt = json.loads(
+            self.manager.asset_receipt_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(receipt["version"], 2)
+        self.assertIs(receipt["starter_content_initialized"], True)
+        self.assertEqual(receipt["seeded"], legacy_seeded)
+        self.assertEqual(self.manager.seed_official_assets()["seeded"], [])
+
+    def test_existing_preference_migrates_missing_receipt_without_seeding(self) -> None:
+        personal = self.wallpaper("dark", "Personal.png", b"personal")
+        self.write_preference("dark", dark=personal.name)
+
+        result = self.manager.seed_official_assets()
+
+        self.assertTrue(result["initialized"])
+        self.assertTrue(result["migrated"])
+        self.assertEqual(result["seeded"], [])
+        self.assertEqual(personal.read_bytes(), b"personal")
+        self.assertFalse(
+            (self.manager.mode_directory("light") / "Official Light.png").exists()
+        )
+
+    def test_initialized_missing_wallpaper_directories_are_not_recreated(self) -> None:
+        self.manager._write_private_json(
+            self.manager.asset_receipt_path,
+            {"version": 1, "seeded": {}},
+        )
+        shutil.rmtree(self.manager.wallpaper_root)
+
+        result = self.manager.seed_official_assets()
+
+        self.assertTrue(result["initialized"])
+        self.assertTrue(result["migrated"])
+        self.assertFalse(self.manager.wallpaper_root.exists())
+        self.assertEqual(self.manager.seed_official_assets()["errors"], [])
+        self.assertFalse(self.manager.wallpaper_root.exists())
+
+    def test_failed_fresh_bootstrap_does_not_record_completion(self) -> None:
+        relative = "Light/Official Light.png"
+        source = self.asset_root / relative
+        original = source.read_bytes()
+        source.write_bytes(b"corrupt managed source")
+
+        failed = self.manager.seed_official_assets()
+
+        self.assertFalse(failed["initialized"])
+        self.assertTrue(failed["errors"])
+        self.assertFalse(self.manager.asset_receipt_path.exists())
+        self.assertFalse(self.manager.preference_path.exists())
+        self.assertEqual(list(self.manager.mode_directory("light").iterdir()), [])
+        self.assertEqual(list(self.manager.mode_directory("dark").iterdir()), [])
+
+        source.write_bytes(original)
+        retried = self.manager.seed_official_assets()
+        self.assertTrue(retried["initialized"])
+        self.assertEqual(retried["errors"], [])
+
+    def test_deleted_selected_starter_fails_safely_without_recreation(self) -> None:
+        self.assertEqual(self.manager.seed_official_assets()["errors"], [])
+        selected = self.manager.mode_directory("light") / "Official Light.png"
+        self.write_preference("light", light=selected.name)
+        selected.unlink()
+        self.system.calls.clear()
+
+        errors = self.manager.reconcile()
+
+        self.assertTrue(any("does not exist" in error for error in errors))
+        self.assertFalse(selected.exists())
+        self.assertEqual(self.manager.read_preference().light_wallpaper, selected.name)
+        self.assertFalse(
+            any(
+                call[:3]
+                == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+                for call in self.system.calls
+            )
+        )
 
     def test_clean_preference_uses_explicit_official_defaults(self) -> None:
         self.assertEqual(self.manager.reconcile(), [])

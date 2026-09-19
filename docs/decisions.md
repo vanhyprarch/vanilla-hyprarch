@@ -736,11 +736,13 @@ shell mode and adopts an active wallpaper only when it is already contained in
 the appropriate directory; it never guesses from directory order.
 
 The original GPL-2.0-only Wolkenstein images are managed distribution assets,
-while their seeded Pictures copies become user content. A private hash receipt
-distinguishes an unchanged prior seed from a modified same-name user file.
-Updates may add assets or replace only an unchanged prior seed; they never
-delete user content. Wolkenstein pair 1 is the explicit deterministic default
-for a new preference, while existing selections remain authoritative.
+while their Pictures copies are one-time starter content. A private version-2
+receipt records that bootstrap completed. Version-1 per-file hash receipts are
+migration evidence and their hashes remain historical only; neither old hashes
+nor missing destinations authorize later writes. After initialization, updates
+do not add, replace, restore, or delete anything in the user-owned Light/Dark
+directories. Wolkenstein pair 1 is the explicit deterministic default for a
+fresh preference, while existing selections remain authoritative.
 
 The visual Background Picker is one global controller with one screen-bound
 presentation per `Variants` delegate. Both `Style -> Choose background` and
