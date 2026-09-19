@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,26 @@ from unittest import mock
 REPOSITORY = Path(__file__).resolve().parent.parent
 HELPER = REPOSITORY / "bin/vanhyprarch-appearance"
 ASSET_ROOT = REPOSITORY / "assets/wallpapers"
+EXPECTED_OFFICIAL_V2 = {
+    "Light/Wolkenstein_1_light.png": "aa875da4d6deb582124a4a352024750bc3ab66373e19e4a58927d6f739b46f84",
+    "Light/Wolkenstein_2_light.png": "563c000e090fc22d7f07ceb75236a06d8e77fd43c2735e67c1eb8af837041fe8",
+    "Light/Wolkenstein_3_light.png": "ea10e484ff89eaa1f687029604013319e5055a56a1bbedb2c2bbe9707cdef8a0",
+    "Light/Wolkenstein_4_light.png": "23f804102450cd72c392225626b2dd797940d5d005f71e4f50af0ad1d72a34c8",
+    "Dark/Wolkenstein_1_dark.png": "860b098368bd209191bf958f77034a7edbb959cadb2d6bb421f1521ab26f47a1",
+    "Dark/Wolkenstein_2_dark.png": "56ad6850bd3b761abd3399686fbc629332f32960994beda0e04817e247059d1b",
+    "Dark/Wolkenstein_3_dark.png": "48049ba97ef1aa104969cd2062f6152990638f3341dcfb2f58e45e5e19bfb612",
+    "Dark/Wolkenstein_4_dark.png": "af21a3a35d66645a8c5b6807c1fa959d0df495ad79aa8f4b5bdb37b55d31f432",
+}
+OLD_OFFICIAL_V1_HASHES = {
+    "b50be7099006266842d002787e3fd942a73aa0767c5f05e76bf60620e4f1f8af",
+    "5ba879381756bc37d9b52f46730aeb5aed2d7a86ecda47341c823d81e4071304",
+    "a14b24c69f2ea3a2b14e49b74be4048d13ef88e952f42c95e31e35047b317fb6",
+    "197baf007ce3cd0e4bd171e94a15e9e9154e472ef285ad1fcdc30fa98709dfd9",
+    "873fb0237b3496eb7f8dd8547af36d2300fd70f17f7e04b46018c252f1943e79",
+    "edf04599f234363646e60bd438aba84b20ce894de472c0bdd2e978fce5601bdd",
+    "867f62a0afcd31644ec8a665e88e6bbce2b8e6c8fb9ca3f44a9e388c620cf995",
+    "8ea4cae4d3cb07254f3bbb2423af9c3f0937766d9fdd45ed70d35937639e24dc",
+}
 LOADER = importlib.machinery.SourceFileLoader("vanhyprarch_appearance", str(HELPER))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 if SPEC is None:
@@ -271,6 +292,43 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(second["updated"], [])
         self.assertEqual(self.manager.asset_receipt_path.read_bytes(), before)
 
+    def test_repository_v2_fresh_bootstrap_seeds_exact_eight_and_pair_one(self) -> None:
+        manager = appearance.AppearanceManager(
+            self.environ,
+            runner=self.system.runner,
+            popen=self.system.popen,
+            process_probe=self.system.process_probe,
+            sleeper=lambda _: None,
+            clock=lambda: 1000.0,
+            asset_root=ASSET_ROOT,
+        )
+
+        self.assertEqual(manager.reconcile(), [])
+
+        actual_names = {
+            path.relative_to(manager.wallpaper_root).as_posix()
+            for path in manager.wallpaper_root.rglob("*.png")
+        }
+        self.assertEqual(actual_names, set(EXPECTED_OFFICIAL_V2))
+        self.assertEqual(len(actual_names), 8)
+        for relative, expected_digest in EXPECTED_OFFICIAL_V2.items():
+            destination = manager.wallpaper_root / relative
+            self.assertEqual(
+                hashlib.sha256(destination.read_bytes()).hexdigest(), expected_digest
+            )
+            self.assertEqual(
+                destination.read_bytes(), (ASSET_ROOT / relative).read_bytes()
+            )
+        preference = manager.read_preference()
+        self.assertEqual(preference.light_wallpaper, "Wolkenstein_1_light.png")
+        self.assertEqual(preference.dark_wallpaper, "Wolkenstein_1_dark.png")
+        receipt = manager.read_asset_receipt()
+        self.assertFalse(receipt.legacy)
+        self.assertEqual(receipt.seeded, EXPECTED_OFFICIAL_V2)
+        receipt_json = json.loads(manager.asset_receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt_json["version"], 2)
+        self.assertIs(receipt_json["starter_content_initialized"], True)
+
     def test_fresh_asset_bootstrap_creates_missing_plural_mode_directories(self) -> None:
         shutil.rmtree(self.manager.wallpaper_root)
 
@@ -362,6 +420,57 @@ class AppearanceTests(unittest.TestCase):
             [personal.name],
         )
         self.assertEqual(list(self.manager.mode_directory("dark").iterdir()), [])
+
+    def test_initialized_repository_v2_leaves_sixteen_file_library_unchanged(self) -> None:
+        manager = appearance.AppearanceManager(
+            self.environ,
+            runner=self.system.runner,
+            popen=self.system.popen,
+            process_probe=self.system.process_probe,
+            sleeper=lambda _: None,
+            clock=lambda: 1000.0,
+            asset_root=ASSET_ROOT,
+        )
+        old_receipt: dict[str, str] = {}
+        for relative in EXPECTED_OFFICIAL_V2:
+            destination = manager.wallpaper_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            contents = f"old v1 bytes for {relative}".encode()
+            destination.write_bytes(contents)
+            old_receipt[relative] = hashlib.sha256(contents).hexdigest()
+            mode, name = relative.split("/", 1)
+            number = name.split("_", 2)[1]
+            personal_name = f"wolkenstein-{int(number):02d}-{mode.lower()}.png"
+            shutil.copyfile(ASSET_ROOT / relative, destination.parent / personal_name)
+        manager.write_asset_receipt(old_receipt)
+        manager.write_preference(
+            appearance.Preference(
+                "dark", "wolkenstein-01-light.png", "wolkenstein-01-dark.png"
+            )
+        )
+
+        def snapshot() -> dict[str, tuple[int, int, str]]:
+            return {
+                path.relative_to(manager.wallpaper_root).as_posix(): (
+                    path.stat().st_size,
+                    path.stat().st_mtime_ns,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+                for path in manager.wallpaper_root.rglob("*")
+                if path.is_file()
+            }
+
+        before = snapshot()
+        self.assertEqual(len(before), 16)
+        seed_result = manager.seed_official_assets()
+        self.assertEqual(seed_result["errors"], [])
+        self.assertEqual(seed_result["seeded"], [])
+        self.assertEqual(seed_result["updated"], [])
+        self.assertEqual(manager.reconcile(), [])
+        self.assertTrue(manager.status()["consistent"])
+        self.assertEqual(len(manager.catalog("light")["entries"]), 8)
+        self.assertEqual(len(manager.catalog("dark")["entries"]), 8)
+        self.assertEqual(snapshot(), before)
 
     def test_true_fresh_user_receives_the_current_starter_release(self) -> None:
         new_relative = "Dark/New release.png"
@@ -1071,11 +1180,34 @@ class StaticIntegrationTests(unittest.TestCase):
                 "dark": "Wolkenstein_1_dark.png",
             },
         )
-        self.assertEqual(len(appearance.OFFICIAL_WALLPAPERS), 8)
+        self.assertEqual(appearance.OFFICIAL_WALLPAPERS, EXPECTED_OFFICIAL_V2)
+        self.assertTrue(
+            set(appearance.OFFICIAL_WALLPAPERS.values()).isdisjoint(
+                OLD_OFFICIAL_V1_HASHES
+            )
+        )
+        repository_pngs = {
+            path.relative_to(ASSET_ROOT).as_posix()
+            for path in ASSET_ROOT.rglob("*.png")
+        }
+        self.assertEqual(repository_pngs, set(EXPECTED_OFFICIAL_V2))
+        self.assertFalse(
+            any(
+                path.name.startswith("wolkenstein-")
+                for path in ASSET_ROOT.rglob("*.png")
+            )
+        )
         for relative, expected_digest in appearance.OFFICIAL_WALLPAPERS.items():
             asset = ASSET_ROOT / relative
             self.assertTrue(asset.is_file(), relative)
             self.assertEqual(hashlib.sha256(asset.read_bytes()).hexdigest(), expected_digest)
+            header = asset.read_bytes()[:29]
+            self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(header[12:16], b"IHDR")
+            self.assertEqual(struct.unpack(">II", header[16:24]), (3840, 2160))
+            self.assertEqual(header[24], 8)
+            self.assertEqual(header[25], 2)
+            self.assertEqual(header[28], 0)
 
     def test_product_paths_use_wallpapers_plural(self) -> None:
         paths = [

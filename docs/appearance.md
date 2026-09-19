@@ -21,14 +21,16 @@ They are user-content locations. Vanilla may create and populate them during
 first initialization only; afterward it never owns, renames, overwrites,
 restores, or deletes their contents.
 
-Eight original Wolkenstein Light/Dark images ship as GPL-2.0-only managed
-distribution assets under `assets/wallpapers/`. Deployment installs exact
-managed copies below
+Official Wallpaper Set v2 provides eight original 3840×2160 RGB Wolkenstein
+Light/Dark PNG images as GPL-2.0-only managed distribution assets under
+`assets/wallpapers/`. Its filenames are unchanged from the previous set.
+Deployment installs exact managed copies below
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers/`; the Appearance
 manager seeds them non-destructively as starter content only when wallpaper
 bootstrap has never completed for the user. Pair 1,
 `Wolkenstein_1_light.png` and `Wolkenstein_1_dark.png`, is the explicit default
-for that fresh initialization.
+for that fresh initialization. Existing initialized users receive none of the
+replacement images automatically.
 
 The mode-0600
 `${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json`

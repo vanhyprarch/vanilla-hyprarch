@@ -49,8 +49,8 @@ Matrix, Doom, and Game of Life.
   native screensaver;
 - one Light/Dark Appearance preference coordinating the Vanilla palette,
   standard host application preference, and independently remembered Light and
-  Dark wallpapers, with eight bundled GPL-2.0-only Wolkenstein choices and an
-  explicit pair-1 default;
+  Dark wallpapers, with eight bundled 3840×2160 GPL-2.0-only Wolkenstein v2
+  choices and an explicit pair-1 default;
 - direct-session PolicyKit and clean Hyprland logout integration;
 - Print Screen smart region/window/monitor screenshots saved under
   `Pictures/Screenshots` and copied as `image/png` for normal Ctrl+V pasting;

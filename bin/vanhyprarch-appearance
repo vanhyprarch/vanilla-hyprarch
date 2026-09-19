@@ -45,14 +45,14 @@ PORTAL_PATTERN = re.compile(r"^v v u ([012])$")
 MAX_PREFERENCE_SIZE = 65536
 RENDERER_RETRY_SECONDS = 30
 OFFICIAL_WALLPAPERS = {
-    "Light/Wolkenstein_1_light.png": "b50be7099006266842d002787e3fd942a73aa0767c5f05e76bf60620e4f1f8af",
-    "Light/Wolkenstein_2_light.png": "5ba879381756bc37d9b52f46730aeb5aed2d7a86ecda47341c823d81e4071304",
-    "Light/Wolkenstein_3_light.png": "a14b24c69f2ea3a2b14e49b74be4048d13ef88e952f42c95e31e35047b317fb6",
-    "Light/Wolkenstein_4_light.png": "197baf007ce3cd0e4bd171e94a15e9e9154e472ef285ad1fcdc30fa98709dfd9",
-    "Dark/Wolkenstein_1_dark.png": "873fb0237b3496eb7f8dd8547af36d2300fd70f17f7e04b46018c252f1943e79",
-    "Dark/Wolkenstein_2_dark.png": "edf04599f234363646e60bd438aba84b20ce894de472c0bdd2e978fce5601bdd",
-    "Dark/Wolkenstein_3_dark.png": "867f62a0afcd31644ec8a665e88e6bbce2b8e6c8fb9ca3f44a9e388c620cf995",
-    "Dark/Wolkenstein_4_dark.png": "8ea4cae4d3cb07254f3bbb2423af9c3f0937766d9fdd45ed70d35937639e24dc",
+    "Light/Wolkenstein_1_light.png": "aa875da4d6deb582124a4a352024750bc3ab66373e19e4a58927d6f739b46f84",
+    "Light/Wolkenstein_2_light.png": "563c000e090fc22d7f07ceb75236a06d8e77fd43c2735e67c1eb8af837041fe8",
+    "Light/Wolkenstein_3_light.png": "ea10e484ff89eaa1f687029604013319e5055a56a1bbedb2c2bbe9707cdef8a0",
+    "Light/Wolkenstein_4_light.png": "23f804102450cd72c392225626b2dd797940d5d005f71e4f50af0ad1d72a34c8",
+    "Dark/Wolkenstein_1_dark.png": "860b098368bd209191bf958f77034a7edbb959cadb2d6bb421f1521ab26f47a1",
+    "Dark/Wolkenstein_2_dark.png": "56ad6850bd3b761abd3399686fbc629332f32960994beda0e04817e247059d1b",
+    "Dark/Wolkenstein_3_dark.png": "48049ba97ef1aa104969cd2062f6152990638f3341dcfb2f58e45e5e19bfb612",
+    "Dark/Wolkenstein_4_dark.png": "af21a3a35d66645a8c5b6807c1fa959d0df495ad79aa8f4b5bdb37b55d31f432",
 }
 DEFAULT_WALLPAPERS = {
     "light": "Wolkenstein_1_light.png",

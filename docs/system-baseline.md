@@ -262,10 +262,12 @@ resolution uses `XDG_PICTURES_DIR` from `user-dirs.dirs`, with
 available. User images live beneath `Wallpapers/Light` and `Wallpapers/Dark`
 and remain user content rather than managed deployment payload.
 
-Eight GPL-2.0-only Wolkenstein images ship as managed, offline distribution
-assets under the project XDG data directory. Appearance seeds exact copies
-non-destructively into the user directories once and uses pair 1 as the
-explicit Light/Dark default for a fresh initialization. A durable version-2
+Official Wallpaper Set v2 ships eight GPL-2.0-only 3840×2160 RGB Wolkenstein
+PNGs as managed, offline distribution assets under the project XDG data
+directory. Their established filenames and pair-1 default are unchanged.
+Appearance seeds exact copies non-destructively into the user directories once
+for a fresh initialization. Existing initialized users do not receive later
+starter-set replacements. A durable version-2
 completion record prevents normal updates and reconciliation from adding,
 restoring, or replacing files afterward; the directories and their contents
 are user-owned. Version-1 hash receipts migrate to completed without touching

@@ -455,6 +455,21 @@ to painted cards so transparent space dismisses correctly. Controller,
 Appearance, focus, apply, cancel, shortcut, and SuperSpace behavior remain
 unchanged.
 
+## 2026-09-19: Official Wallpaper Set v2 candidate
+
+The official fresh-install starter artwork was replaced with eight original
+project-owner 3840×2160 RGB PNGs: four Light and four Dark images. Exact
+reviewed source bytes were mapped from numbered 01–04 pairs onto the unchanged
+managed `Wolkenstein_1` through `Wolkenstein_4` filenames, preserving pair 1 as
+the deterministic default. Asset hashes, validation fixtures, and provenance
+documentation were updated without changing the deployment manifest.
+
+The one-shot ownership boundary remains unchanged. Fresh installations receive
+the v2 source set, while initialized users receive no additions, replacements,
+or restorations. Development used temporary fixtures for both fresh and
+initialized states; the live main checkout, Appearance state, and user-owned
+wallpaper directories were not deployed or modified.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate
