@@ -440,6 +440,12 @@ through `AppearanceController`, preserving independent Light/Dark selections
 and all renderer reconciliation. Asynchronous original-image previews are
 limited to nearby carousel entries, with no thumbnail pipeline.
 
+Human functional verification approved the complete interaction model. The
+follow-up visual pass removed normal-state outer chrome and copy, enlarged and
+responsively clamped the floating preview composition, and retained only the
+card-attached `Applied` marker. Controller, Appearance, focus, navigation,
+apply, cancel, wheel, shortcut, and SuperSpace behavior remained unchanged.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

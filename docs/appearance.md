@@ -107,6 +107,13 @@ central overlay under the established coordinator boundary, so that path
 closes the picker before changing mode instead of creating a ThemeToggle
 exception.
 
+The normal picker is a minimal floating horizontal carousel: larger responsive
+wallpaper cards sit directly over the desktop without a visible outer panel,
+title, filename, controls, or instructions. The only normal-state label is the
+small `Applied` marker attached to the remembered wallpaper. Exceptional
+loading, empty, decode-failure, and apply-error states retain only the concise
+feedback needed to diagnose them.
+
 Left and Right, native horizontal wheel scrolling, or a first card click move
 only the navigation candidate. They do not persist a preference or contact
 Hyprpaper. Enter or a second click on the current card calls the global

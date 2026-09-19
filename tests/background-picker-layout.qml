@@ -35,16 +35,39 @@ TestCase {
     }
 
     function test_widescreen_preview_geometry() {
-        compare(Layout.previewWidth(1040, 80, 560, 620, 160), 560)
-        compare(Layout.previewHeight(560), 315)
-        compare(Layout.previewWidth(620, 80, 560, 620, 160), 460)
-        compare(Layout.previewHeight(460), 259)
-        compare(Layout.previewWidth(1040, 80, 560, 420, 160), 462)
-        compare(Layout.previewHeight(462), 260)
-        verify(Layout.cardStep(560, 190, 120) < 300,
-            "adjacent cards no longer overlap")
-        verify(Layout.cardStep(462, 190, 120) < 300,
-            "narrow-panel cards no longer overlap")
+        const preview = Layout.previewWidth(1344, 24, 952, 600, 32, 0.74)
+        const adjacent = Layout.adjacentWidth(preview, 552)
+        const step = Layout.cardStep(preview, 360, 48)
+        compare(preview, 952)
+        compare(Layout.previewHeight(preview), 536)
+        compare(preview / 560, 1.7)
+        compare(adjacent, 552)
+        verify(preview > adjacent, "current card is not dominant")
+        verify(step < adjacent, "adjacent cards no longer overlap")
+        compare(Layout.compositionWidth(preview, adjacent, step), 1272)
+        verify(Layout.compositionWidth(preview, adjacent, step) < 1344 - 48,
+            "target composition exceeds the transparent surface")
+        compare((Layout.compositionWidth(preview, adjacent, step)
+            - preview) / 2, 160)
+    }
+
+    function test_small_surface_clamps_complete_composition() {
+        const preview = Layout.previewWidth(620, 24, 952, 320, 32, 0.74)
+        const adjacent = Layout.adjacentWidth(preview, 552)
+        const step = Layout.cardStep(preview, 360, 48)
+        compare(preview, 423)
+        compare(Layout.previewHeight(preview), 238)
+        verify(Layout.previewHeight(preview) <= 320 - 64,
+            "small-surface preview exceeds vertical bounds")
+        verify(Layout.compositionWidth(preview, adjacent, step) <= 620 - 48,
+            "small-surface carousel exceeds horizontal bounds")
+    }
+
+    function test_one_item_slot_is_centered() {
+        const surfaceWidth = 1344
+        const step = 360
+        compare(Layout.edgeSpacer(surfaceWidth, step) + step / 2,
+            surfaceWidth / 2)
     }
 
     function test_lazy_source_window_for_catalog_sizes() {

@@ -38,6 +38,38 @@ grep -Fq 'onBackgroundPickerRequested: backgroundPicker.open()' "$shell_file" \
     || fail 'Style does not open the shared picker controller'
 grep -Fq 'CenteredOverlay {' "$components_dir/BackgroundPickerPanel.qml" \
     || fail 'picker does not use the shared central-overlay surface'
+grep -Fq 'color: "transparent"' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || fail 'picker surface is not visually transparent'
+if grep -Fq 'radius: root.metrics.panelRadius' \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    || grep -Fq 'border.width: root.metrics.panelOutlineThickness' \
+        "$components_dir/BackgroundPickerPanel.qml"
+then
+    fail 'picker retained visible outer panel chrome'
+fi
+for removed_text in 'Choose background · ' 'Close · Esc' \
+    'Left/Right or wheel to browse' 'Enter or second click to apply' \
+    'Esc to cancel' 'Applying background…'
+do
+    if grep -Fq "$removed_text" "$components_dir/BackgroundPickerPanel.qml"
+    then
+        fail "picker retained normal-state copy: $removed_text"
+    fi
+done
+if grep -Fq 'candidateFilename' "$components_dir/BackgroundPickerPanel.qml" \
+    || grep -Fq 'modeLabel' "$components_dir/BackgroundPickerPanel.qml" \
+    || grep -Eq 'id: (title|filename|statusText|closeAction|closeMouse)' \
+        "$components_dir/BackgroundPickerPanel.qml"
+then
+    fail 'picker retained title, filename, mode, instructions, or close chrome'
+fi
+[ "$(grep -F -c 'text: "Applied"' \
+    "$components_dir/BackgroundPickerPanel.qml")" -eq 1 ] \
+    || fail 'Applied must be the sole normal-state picker label'
+[ "$(grep -F -c 'MouseArea {' \
+    "$components_dir/BackgroundPickerPanel.qml")" -eq 1 ] \
+    || fail 'transparent surface added an unexpected pointer interception area'
 if grep -Eq 'hyprctl[[:space:]]+hyprpaper|hyprpaper[[:space:]]+wallpaper' \
     "$components_dir/BackgroundPickerController.qml" \
     "$components_dir/BackgroundPickerPanel.qml"
