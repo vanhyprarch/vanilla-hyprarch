@@ -55,6 +55,15 @@ appearing output, but never treats that fallback as proof that an existing
 explicit target changed. One selection is intentionally used across all
 outputs in this foundation; per-monitor preference is future work.
 
+The managed Hyprland core sets `misc.disable_hyprland_logo = true`. Appearance
+owns wallpaper presentation, so Hyprland's native logo/default background must
+not become visible beneath Hyprpaper while an output target is replaced. A
+controlled Hyprland 0.56.2 and Hyprpaper 0.8.4 runtime test proved that this
+single setting removes the foreign frame without exposing a black or blank
+frame; no renderer sequencing workaround is required. The shell palette still
+updates after the manager has reconciled and verified external Appearance
+state.
+
 Wallpaper paths are canonicalized and must resolve to a regular file beneath
 the matching mode directory. A symlink whose target remains inside is accepted;
 an escaping symlink is rejected. The installed renderer stack was verified for

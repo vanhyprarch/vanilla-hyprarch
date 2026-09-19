@@ -144,15 +144,28 @@ Because the installed IPC has no escaping for its comma delimiter, Appearance
 rejects a selected path containing a comma instead of misaddressing the
 renderer. Spaces, Unicode, and shell metacharacters remain literal argv data.
 
+Hyprpaper 0.8.4 replaces an explicit output target by rebuilding that target's
+layer surface. During a real Light/Dark switch, this briefly exposed
+Hyprland 0.56.2's native `wall2.png` background: the packaged anime scene was
+visible before the new Hyprpaper surface. A controlled runtime test setting
+only `misc.disable_hyprland_logo = true` removed that foreign frame across four
+alternating switches, with no black or blank frame and no renderer restart.
+The managed Hyprland core therefore disables the native logo/default
+background. `force_default_wallpaper` remains unchanged, splash-text policy is
+unrelated, and Appearance does not add preload, fade, overlay, or request-order
+workarounds. This is a compositor-background ownership boundary, not a general
+claim that Hyprpaper transitions are defective.
+
 The installed binary links hyprgraphics plus libmagic, PNG, JPEG, WebP, SVG,
 and JPEG XL libraries. Tagged hyprgraphics source additionally provides BMP.
 HEIF is not linked, so AVIF is not accepted even though generic upstream source
 can compile that optional decoder. Appearance mirrors this content-based
 contract and treats actual renderer failure as authoritative.
 
-Retest request names, argument form, wildcard semantics, readback, and compiled
-decoder libraries after Hyprpaper, Hyprland, or hyprgraphics upgrades. Remove
-or update the local MIME capability table in the same reviewed change.
+Retest request names, argument form, wildcard semantics, readback, native
+background suppression, and compiled decoder libraries after Hyprpaper,
+Hyprland, or hyprgraphics upgrades. Remove or update the local MIME capability
+table in the same reviewed change.
 
 ## Voxtype 1.0.1 integration boundary
 

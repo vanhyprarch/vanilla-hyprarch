@@ -489,6 +489,14 @@ output, rejects monitor-set races, and verifies every output through
 wallpaper. Missing or failed rendering does not block shell or host mode and is
 represented in strict versioned status.
 
+The managed Hyprland core explicitly disables its native logo/default
+background while Appearance owns wallpaper presentation. A controlled runtime
+test on Hyprland 0.56.2 proved that `misc.disable_hyprland_logo = true` removes
+the packaged anime image that was briefly visible beneath Hyprpaper during a
+target replacement. Four alternating Light/Dark transitions showed no foreign,
+black, or blank frame. No Hyprpaper sequencing change is needed; the shell
+palette continues to update immediately after external reconciliation.
+
 Eight reviewed original Wolkenstein images ship under `assets/wallpapers/` as
 GPL-2.0-only managed distribution content. Appearance seeds exact copies
 non-destructively into the user-owned plural directories, tracks previously
@@ -502,15 +510,14 @@ non-visible boundary; no picker, thumbnails, Style menu, or direct shortcut
 exists yet. See [Appearance foundation](appearance.md).
 
 A controlled local deployment migrated legacy shell mode Light, created the
-new preference and provenance files, and reconciled the host and portal to
-Light. It exposed a Hyprpaper 0.8.4 boundary: an empty-monitor fallback cannot
-replace the adopted process's legacy explicit DP-1 target. It also exposed that
-Hyprland 0.56.2 requires the monitor, path, and fit mode in one comma-delimited
-argument. A single authorized explicit DP-1 request changed the wallpaper to
-the Light pair-1 asset while retaining the existing renderer process. The
-explicit-output correction remains isolated until its controlled follow-up
-deployment; Light/Dark human toggle verification has not resumed. The eight
-existing user files retained their hashes and mtimes.
+new preference and provenance files, and reconciled the host and portal. It
+exposed a Hyprpaper 0.8.4 boundary: an empty-monitor fallback cannot replace an
+adopted process's legacy explicit target, and Hyprland 0.56.2 requires monitor,
+path, and fit mode in one comma-delimited argument. The explicit-output
+correction was deployed locally without replacing the existing renderer.
+Human Light/Dark verification then identified the native-background frame
+described above; the isolated managed-policy correction follows the successful
+runtime proof. The eight existing user files retained their hashes and mtimes.
 
 ## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATED
 

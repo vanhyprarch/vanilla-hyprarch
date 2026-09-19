@@ -152,12 +152,14 @@ hl.config({
     },
 })
 
--- Wallpaper fallback ----------------------------------------------------------
+-- Wallpaper ownership ---------------------------------------------------------
 
 hl.config({
     misc = {
         force_default_wallpaper = -1,
-        disable_hyprland_logo = false,
+        -- Appearance owns wallpaper rendering; never expose Hyprland's native
+        -- logo/default background behind Hyprpaper.
+        disable_hyprland_logo = true,
     },
 })
 
