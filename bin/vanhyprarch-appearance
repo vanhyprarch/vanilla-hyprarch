@@ -665,6 +665,38 @@ class AppearanceManager:
             active[monitor] = path
         return active
 
+    def read_active_monitors(self) -> list[str]:
+        result = self.run([HYPRCTL, "-j", "monitors"])
+        if result.returncode != 0:
+            raise AppearanceError(
+                concise_error(result) or "could not read active Hyprland monitors"
+            )
+        try:
+            value = json.loads(str(result.stdout))
+        except json.JSONDecodeError as error:
+            raise AppearanceError(
+                "Hyprland returned invalid active-monitor JSON"
+            ) from error
+        if not isinstance(value, list):
+            raise AppearanceError("Hyprland returned invalid active-monitor state")
+
+        monitors: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                raise AppearanceError("Hyprland returned invalid active-monitor state")
+            name = entry.get("name")
+            disabled = entry.get("disabled", False)
+            if not isinstance(name, str) or not name or type(disabled) is not bool:
+                raise AppearanceError("Hyprland returned invalid active-monitor state")
+            if disabled:
+                continue
+            if any(character in name for character in (",", "\x00", "\n", "\r")):
+                raise AppearanceError("Hyprland returned an unsupported monitor name")
+            if name in monitors:
+                raise AppearanceError("Hyprland returned a duplicate active monitor")
+            monitors.append(name)
+        return sorted(monitors)
+
     def _mode_for_existing_path(self, path: str) -> tuple[str, str] | None:
         try:
             candidate = Path(path).resolve(strict=True)
@@ -726,7 +758,13 @@ class AppearanceManager:
     def validate_wallpaper(self, mode: str, value: str | Path) -> tuple[Path, str]:
         self.require_mode(mode)
         raw = str(value)
-        if not raw or "\x00" in raw or "\n" in raw or "\r" in raw:
+        if (
+            not raw
+            or "," in raw
+            or "\x00" in raw
+            or "\n" in raw
+            or "\r" in raw
+        ):
             raise AppearanceError("wallpaper path contains unsupported characters")
         candidate_input = Path(raw)
         if not candidate_input.is_absolute():
@@ -849,32 +887,85 @@ class AppearanceManager:
         renderer_error = self.ensure_renderer()
         if renderer_error is not None:
             return [renderer_error]
+
+        wallpaper_text = str(wallpaper)
+        if "," in wallpaper_text:
+            return [
+                "Hyprpaper 0.8.4 cannot safely receive a wallpaper path "
+                "containing a comma"
+            ]
         try:
-            active = self.read_active_wallpapers()
-            already_applied = bool(active) and all(
-                Path(path).resolve(strict=True) == wallpaper
-                for path in active.values()
-            )
-        except (AppearanceError, OSError, RuntimeError):
-            already_applied = False
-        if already_applied:
-            return []
-        result = self.run(
-            [HYPRCTL, "hyprpaper", "wallpaper", "", str(wallpaper), "cover"]
+            monitors_before = self.read_active_monitors()
+        except AppearanceError as error:
+            return [str(error)]
+        if not monitors_before:
+            return ["Hyprland reported no active outputs for wallpaper application"]
+
+        errors: list[str] = []
+        fallback = self.run(
+            [HYPRCTL, "hyprpaper", "wallpaper", f",{wallpaper_text},cover"]
         )
-        if result.returncode != 0:
-            return [concise_error(result) or "Hyprpaper rejected the wallpaper"]
+        if fallback.returncode != 0:
+            errors.append(
+                concise_error(fallback) or "Hyprpaper rejected the fallback wallpaper"
+            )
+
+        for monitor in monitors_before:
+            result = self.run(
+                [
+                    HYPRCTL,
+                    "hyprpaper",
+                    "wallpaper",
+                    f"{monitor},{wallpaper_text},cover",
+                ]
+            )
+            if result.returncode != 0:
+                detail = concise_error(result) or "Hyprpaper rejected the wallpaper"
+                errors.append(f"{monitor}: {detail}")
+
+        try:
+            monitors_after = self.read_active_monitors()
+        except AppearanceError as error:
+            errors.append(str(error))
+            return errors
+        if monitors_after != monitors_before:
+            errors.append("active monitor set changed during wallpaper application")
+
         try:
             active = self.read_active_wallpapers()
         except AppearanceError as error:
-            return [str(error)]
+            errors.append(str(error))
+            return errors
+
+        expected = set(monitors_after)
+        reported = set(active)
+        if reported != expected:
+            missing = sorted(expected - reported)
+            extra = sorted(reported - expected)
+            if missing:
+                errors.append(
+                    "Hyprpaper did not report active wallpaper state for: "
+                    + ", ".join(missing)
+                )
+            if extra:
+                errors.append(
+                    "Hyprpaper reported inactive wallpaper outputs: "
+                    + ", ".join(extra)
+                )
         try:
-            matches = bool(active) and all(
-                Path(path).resolve(strict=True) == wallpaper for path in active.values()
+            mismatched = sorted(
+                monitor
+                for monitor in expected & reported
+                if Path(active[monitor]).resolve(strict=True) != wallpaper
             )
         except (OSError, RuntimeError):
-            matches = False
-        return [] if matches else ["Hyprpaper active wallpaper did not match the selection"]
+            mismatched = sorted(expected & reported)
+        if mismatched:
+            errors.append(
+                "Hyprpaper active wallpaper did not match the selection for: "
+                + ", ".join(mismatched)
+            )
+        return errors
 
     @contextmanager
     def operation_lock(self) -> Iterator[None]:
@@ -971,6 +1062,7 @@ class AppearanceManager:
         result: dict[str, object] = {
             "process_count": len(pids),
             "pids": pids,
+            "monitors": [],
             "active": {},
             "matches": False,
             "state": "available",
@@ -989,18 +1081,40 @@ class AppearanceManager:
             result["error"] = "multiple Hyprpaper processes are running"
             return result
         try:
+            monitors_before = self.read_active_monitors()
+        except AppearanceError as error:
+            result["state"] = "monitor-error"
+            result["error"] = str(error)
+            return result
+        try:
             active = self.read_active_wallpapers()
             result["active"] = active
         except AppearanceError as error:
             result["state"] = "ipc-error"
             result["error"] = str(error)
             return result
+        try:
+            monitors_after = self.read_active_monitors()
+        except AppearanceError as error:
+            result["state"] = "monitor-error"
+            result["error"] = str(error)
+            return result
+        result["monitors"] = monitors_after
+        if monitors_after != monitors_before:
+            result["state"] = "monitor-race"
+            result["error"] = "active monitor set changed while reading renderer state"
+            return result
         if current is None:
             result["state"] = "unselected" if validation_error is None else "invalid-selection"
             return result
+        if not monitors_after:
+            result["state"] = "no-active-outputs"
+            result["error"] = "Hyprland reported no active outputs"
+            return result
         try:
-            result["matches"] = bool(active) and all(
-                Path(path).resolve(strict=True) == current for path in active.values()
+            result["matches"] = set(active) == set(monitors_after) and all(
+                Path(active[monitor]).resolve(strict=True) == current
+                for monitor in monitors_after
             )
         except (OSError, RuntimeError):
             result["matches"] = False

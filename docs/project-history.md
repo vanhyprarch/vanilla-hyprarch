@@ -400,7 +400,7 @@ An isolated candidate replaced the dock button's private theme-file shell code
 with one global Appearance authority. The new public manager owns a versioned
 preference, standard host color-scheme publication and portal readback, one
 remembered wallpaper per mode, strict XDG Pictures containment, and Hyprpaper
-startup and monitor-wildcard IPC. The accepted shell palettes did not change.
+startup and per-output IPC. The accepted shell palettes did not change.
 
 Exact installed portal and Hyprpaper versions were audited before design.
 Deterministic tests use temporary homes and mocked GSettings, D-Bus, process,
@@ -414,6 +414,15 @@ became GPL-2.0-only managed distribution assets; pair 1 is the explicit default.
 A hash receipt supports non-destructive, idempotent seeding while preserving
 user-added and modified same-name files. The live source library was inspected
 read-only and remained unchanged.
+
+Controlled deployment then exposed two installed-version boundaries:
+Hyprpaper 0.8.4 treats the empty monitor as a fallback behind a pre-existing
+explicit DP-1 target, and Hyprland 0.56.2 requires one comma-delimited wallpaper
+argument rather than separate argv fields. One authorized explicit DP-1 request
+changed the live wallpaper without replacing the renderer process. A follow-up
+isolated correction now discovers active monitors through JSON and addresses
+each explicitly; human toggle verification remains paused until that correction
+is deployed.
 
 ## Project maintenance contract
 

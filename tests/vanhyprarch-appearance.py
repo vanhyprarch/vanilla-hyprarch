@@ -37,7 +37,12 @@ class FakeSystem:
         self.portal = 2
         self.portal_override: int | None = None
         self.processes = [1200]
+        self.monitors = ["DP-1"]
+        self.monitor_snapshots: list[list[str]] = []
+        self.monitor_payload: object | None = None
         self.active: dict[str, str] = {}
+        self.fallback: str | None = None
+        self.ignore_wallpaper: set[str] = set()
         self.mime = "image/png"
         self.fail: set[tuple[str, ...]] = set()
         self.calls: list[list[str]] = []
@@ -62,12 +67,40 @@ class FakeSystem:
         if argv[0] == appearance.BUSCTL:
             value = self.portal if self.portal_override is None else self.portal_override
             return subprocess.CompletedProcess(argv, 0, f"v v u {value}\n", "")
+        if argv == [appearance.HYPRCTL, "-j", "monitors"]:
+            if self.monitor_payload is not None:
+                return subprocess.CompletedProcess(
+                    argv, 0, json.dumps(self.monitor_payload), ""
+                )
+            if self.monitor_snapshots:
+                previous = set(self.monitors)
+                self.monitors = list(self.monitor_snapshots.pop(0))
+                if self.fallback is not None:
+                    for monitor in set(self.monitors) - previous:
+                        self.active.setdefault(monitor, self.fallback)
+            output = json.dumps(
+                [{"name": monitor, "disabled": False} for monitor in self.monitors]
+            )
+            return subprocess.CompletedProcess(argv, 0, output, "")
         if argv == [appearance.HYPRCTL, "hyprpaper", "listactive"]:
             output = "".join(f"{monitor}: {path}\n" for monitor, path in self.active.items())
             return subprocess.CompletedProcess(argv, 0, output, "")
         if argv[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]:
-            self.active = {"DP-1": argv[4], "HDMI-A-1": argv[4]}
-            return subprocess.CompletedProcess(argv, 0, "ok\n", "")
+            if len(argv) != 4:
+                return subprocess.CompletedProcess(argv, 1, "", "invalid argument shape")
+            monitor, path, fit_mode = argv[3].split(",", 2)
+            if fit_mode != "cover":
+                return subprocess.CompletedProcess(argv, 1, "", "invalid fit mode")
+            if monitor:
+                if monitor not in self.monitors:
+                    return subprocess.CompletedProcess(argv, 1, "", "invalid monitor")
+                if monitor not in self.ignore_wallpaper:
+                    self.active[monitor] = path
+            else:
+                self.fallback = path
+                for current in self.monitors:
+                    self.active.setdefault(current, path)
+            return subprocess.CompletedProcess(argv, 0, "", "")
         if argv[:4] == [appearance.FILE, "--brief", "--mime-type", "--"]:
             return subprocess.CompletedProcess(argv, 0, self.mime + "\n", "")
         raise AssertionError(f"unexpected command: {argv}")
@@ -330,7 +363,20 @@ class AppearanceTests(unittest.TestCase):
         ]
         self.assertEqual(
             wallpaper_calls,
-            [[appearance.HYPRCTL, "hyprpaper", "wallpaper", "", str(dark), "cover"]],
+            [
+                [
+                    appearance.HYPRCTL,
+                    "hyprpaper",
+                    "wallpaper",
+                    f",{dark},cover",
+                ],
+                [
+                    appearance.HYPRCTL,
+                    "hyprpaper",
+                    "wallpaper",
+                    f"DP-1,{dark},cover",
+                ],
+            ],
         )
         self.assertEqual(self.manager.read_preference().mode, "dark")
 
@@ -481,17 +527,212 @@ class AppearanceTests(unittest.TestCase):
 
     def test_renderer_command_failure_is_reported(self) -> None:
         dark = self.wallpaper("dark", "dark.png")
+        old = self.wallpaper("dark", "old.png")
         self.write_preference("dark", dark=dark.name)
+        self.system.active = {"DP-1": str(old)}
         command = (
             appearance.HYPRCTL,
             "hyprpaper",
             "wallpaper",
-            "",
-            str(dark),
-            "cover",
+            f"DP-1,{dark},cover",
         )
         self.system.fail.add(command)
-        self.assertEqual(self.manager.reconcile(), ["fixture failure"])
+        errors = self.manager.reconcile()
+        self.assertTrue(any("fixture failure" in error for error in errors))
+        self.assertEqual(self.manager.status()["renderer"]["state"], "mismatch")
+
+    def test_existing_explicit_target_is_replaced_without_restarting_renderer(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        old = self.wallpaper("light", "old.png")
+        self.write_preference("light", light=desired.name)
+        self.system.active = {"DP-1": str(old)}
+
+        errors = self.manager.reconcile()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(self.system.active, {"DP-1": str(desired)})
+        self.assertEqual(self.system.processes, [1200])
+        self.assertEqual(self.system.spawn_calls, [])
+        requests = [
+            call[3]
+            for call in self.system.calls
+            if call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+        ]
+        self.assertEqual(requests, [f",{desired},cover", f"DP-1,{desired},cover"])
+
+    def test_fallback_does_not_override_existing_explicit_target(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        old = self.wallpaper("light", "old.png")
+        self.system.active = {"DP-1": str(old)}
+
+        result = self.system.runner(
+            [
+                appearance.HYPRCTL,
+                "hyprpaper",
+                "wallpaper",
+                f",{desired},cover",
+            ]
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.system.active, {"DP-1": str(old)})
+
+    def test_two_active_outputs_each_receive_an_explicit_request(self) -> None:
+        desired = self.wallpaper("dark", "two outputs.png")
+        self.write_preference("dark", dark=desired.name)
+        self.system.host = "prefer-dark"
+        self.system.portal = 1
+        self.system.monitors = ["DP-1", "HDMI-A-1"]
+        self.system.active = {
+            "DP-1": str(self.wallpaper("dark", "old one.png")),
+            "HDMI-A-1": str(self.wallpaper("dark", "old two.png")),
+        }
+
+        self.assertEqual(self.manager.reconcile(), [])
+
+        requests = [
+            call[3]
+            for call in self.system.calls
+            if call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+        ]
+        self.assertEqual(
+            requests,
+            [
+                f",{desired},cover",
+                f"DP-1,{desired},cover",
+                f"HDMI-A-1,{desired},cover",
+            ],
+        )
+        self.assertEqual(set(self.system.active), {"DP-1", "HDMI-A-1"})
+        self.assertEqual(set(self.system.active.values()), {str(desired)})
+
+    def test_one_of_two_monitor_requests_failing_prevents_full_success(self) -> None:
+        desired = self.wallpaper("dark", "desired.png")
+        old = self.wallpaper("dark", "old.png")
+        self.write_preference("dark", dark=desired.name)
+        self.system.host = "prefer-dark"
+        self.system.portal = 1
+        self.system.monitors = ["DP-1", "HDMI-A-1"]
+        self.system.active = {"DP-1": str(old), "HDMI-A-1": str(old)}
+        self.system.fail.add(
+            (
+                appearance.HYPRCTL,
+                "hyprpaper",
+                "wallpaper",
+                f"HDMI-A-1,{desired},cover",
+            )
+        )
+
+        errors = self.manager.reconcile()
+
+        self.assertTrue(any(error.startswith("HDMI-A-1: ") for error in errors))
+        self.assertEqual(self.system.active["DP-1"], str(desired))
+        self.assertEqual(self.system.active["HDMI-A-1"], str(old))
+        status = self.manager.status()
+        self.assertEqual(status["renderer"]["state"], "mismatch")
+        self.assertFalse(status["consistent"])
+
+    def test_successful_request_with_listactive_mismatch_is_not_success(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        old = self.wallpaper("light", "old.png")
+        self.write_preference("light", light=desired.name)
+        self.system.active = {"DP-1": str(old)}
+        self.system.ignore_wallpaper.add("DP-1")
+
+        errors = self.manager.reconcile()
+
+        self.assertTrue(any("did not match" in error for error in errors))
+        status = self.manager.status()
+        self.assertFalse(status["renderer"]["matches"])
+        self.assertFalse(status["consistent"])
+
+    def test_monitor_disappearing_during_apply_requires_reconcile(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        self.write_preference("light", light=desired.name)
+        self.system.monitors = ["DP-1", "HDMI-A-1"]
+        self.system.monitor_snapshots = [
+            ["DP-1", "HDMI-A-1"],
+            ["DP-1"],
+        ]
+
+        errors = self.manager.reconcile()
+
+        self.assertIn("active monitor set changed during wallpaper application", errors)
+        self.assertTrue(any("inactive wallpaper outputs" in error for error in errors))
+
+    def test_new_monitor_race_fails_then_next_reconcile_targets_every_output(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        self.write_preference("light", light=desired.name)
+        self.system.monitor_snapshots = [
+            ["DP-1"],
+            ["DP-1", "HDMI-A-1"],
+        ]
+
+        first_errors = self.manager.reconcile()
+        self.assertIn(
+            "active monitor set changed during wallpaper application", first_errors
+        )
+
+        self.system.calls.clear()
+        self.assertEqual(self.manager.reconcile(), [])
+        explicit = [
+            call[3].split(",", 1)[0]
+            for call in self.system.calls
+            if call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+            and not call[3].startswith(",")
+        ]
+        self.assertEqual(explicit, ["DP-1", "HDMI-A-1"])
+
+    def test_no_active_outputs_reports_failure_without_wildcard_success(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        self.write_preference("light", light=desired.name)
+        self.system.monitors = []
+
+        errors = self.manager.reconcile()
+
+        self.assertEqual(
+            errors, ["Hyprland reported no active outputs for wallpaper application"]
+        )
+        self.assertFalse(
+            any(
+                call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+                for call in self.system.calls
+            )
+        )
+        status = self.manager.status()
+        self.assertEqual(status["renderer"]["state"], "no-active-outputs")
+        self.assertFalse(status["renderer"]["matches"])
+
+    def test_monitor_discovery_failure_prevents_wallpaper_requests(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        self.write_preference("light", light=desired.name)
+        self.system.fail.add((appearance.HYPRCTL, "-j", "monitors"))
+
+        errors = self.manager.reconcile()
+
+        self.assertEqual(errors, ["fixture failure"])
+        self.assertFalse(
+            any(
+                call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+                for call in self.system.calls
+            )
+        )
+        self.assertEqual(self.manager.status()["renderer"]["state"], "monitor-error")
+
+    def test_invalid_monitor_json_shape_fails_closed(self) -> None:
+        desired = self.wallpaper("light", "desired.png")
+        self.write_preference("light", light=desired.name)
+        self.system.monitor_payload = {"name": "DP-1"}
+
+        errors = self.manager.reconcile()
+
+        self.assertEqual(errors, ["Hyprland returned invalid active-monitor state"])
+        self.assertFalse(
+            any(
+                call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+                for call in self.system.calls
+            )
+        )
 
     def test_status_reports_effective_wallpaper_mismatch(self) -> None:
         dark = self.wallpaper("dark", "desired.png")
@@ -505,7 +746,7 @@ class AppearanceTests(unittest.TestCase):
         self.assertFalse(status["renderer"]["matches"])
         self.assertFalse(status["consistent"])
 
-    def test_reconcile_is_idempotent_when_everything_matches(self) -> None:
+    def test_reconcile_preserves_state_while_reasserting_explicit_target(self) -> None:
         light = self.wallpaper("light", "light.png")
         self.write_preference("light", light=light.name)
         self.system.active = {"DP-1": str(light)}
@@ -513,12 +754,18 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(self.manager.reconcile(), [])
         self.assertEqual(self.manager.preference_path.read_bytes(), before)
         self.assertFalse(any(call[:2] == [appearance.GSETTINGS, "set"] for call in self.system.calls))
-        self.assertFalse(
-            any(
-                call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+        self.assertEqual(
+            [
+                call
                 for call in self.system.calls
-            )
+                if call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+            ],
+            [
+                [appearance.HYPRCTL, "hyprpaper", "wallpaper", f",{light},cover"],
+                [appearance.HYPRCTL, "hyprpaper", "wallpaper", f"DP-1,{light},cover"],
+            ],
         )
+        self.assertEqual(self.system.spawn_calls, [])
 
     def test_seed_prefers_legacy_mode_and_only_adopts_contained_active_wallpaper(self) -> None:
         legacy = self.state / "vanhyprarch/theme-mode"
@@ -567,8 +814,28 @@ class AppearanceTests(unittest.TestCase):
         wallpaper_call = next(
             call for call in self.system.calls if call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
         )
-        self.assertEqual(wallpaper_call[4], str(selected))
+        self.assertEqual(wallpaper_call[3], f",{selected},cover")
         self.assertFalse((self.root / "SHOULD_NOT_EXIST").exists())
+
+    def test_comma_in_wallpaper_path_is_not_persisted_or_cataloged(self) -> None:
+        selected = self.wallpaper("light", "mountain, edited.png")
+        existing = self.wallpaper("light", "existing.png")
+        self.write_preference("light", light=existing.name)
+        before = self.manager.preference_path.read_bytes()
+
+        with self.assertRaisesRegex(
+            appearance.AppearanceError, "unsupported characters"
+        ):
+            self.manager.set_wallpaper("light", str(selected))
+
+        self.assertEqual(self.manager.preference_path.read_bytes(), before)
+        self.assertNotIn(str(selected), self.manager.catalog("light")["wallpapers"])
+        self.assertFalse(
+            any(
+                call[:3] == [appearance.HYPRCTL, "hyprpaper", "wallpaper"]
+                for call in self.system.calls
+            )
+        )
 
     def test_status_json_is_machine_readable_and_diagnostics_are_separate(self) -> None:
         self.write_preference("light")

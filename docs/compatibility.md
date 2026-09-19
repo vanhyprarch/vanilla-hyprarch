@@ -120,14 +120,29 @@ upgrades. Do not compensate with per-application configuration.
 **Affected components:** hyprpaper 0.8.4, Hyprland/hyprctl 0.56.2, and
 hyprgraphics 0.5.1
 
-Installed `hyprctl hyprpaper --help` exposes only `wallpaper` with separate
-monitor, path, and optional fit-mode arguments. `listactive` works;
-`listloaded` is invalid on this new protocol. Tagged 0.8.4 source proves that
-an empty monitor is a wildcard, exact monitor settings take precedence, and a
-new wildcard state is recalculated for every registered output. Appearance
-therefore uses the argument vector `wallpaper`, empty monitor, canonical path,
-`cover`, then verifies all `listactive` entries. It never uses the older
-preload/reload workflow or a connector literal.
+Installed `hyprctl hyprpaper --help` exposes only `wallpaper`; Hyprland 0.56.2
+source proves that monitor, path, and optional fit mode are one comma-delimited
+argument. `listactive` works; `listloaded` is invalid on this new protocol.
+Tagged Hyprpaper 0.8.4 source proves that explicit monitor settings are matched
+before an empty or `*` wildcard and that updating a wildcard removes only the
+prior wildcard, not explicit targets. Current upstream documentation likewise
+defines the empty monitor as a fallback only for outputs that have never had a
+specific target.
+
+A controlled live test adopted the existing renderer process, whose legacy
+config had assigned DP-1 explicitly. The deployed attempt supplied separate
+argv fields, which this `hyprctl` joins with spaces and cannot parse as the
+required comma form. Independently, a correctly encoded empty-monitor request
+would remain a fallback and could not replace that explicit target. One exact
+request using `DP-1,<canonical-path>,cover` immediately changed `listactive`
+without a renderer restart. Appearance therefore reads
+active output names from `hyprctl -j monitors`, sends the fallback plus an
+explicit comma-delimited request for every current output, checks for
+monitor-set races, and verifies every output through `listactive`. It never
+uses the older preload/reload workflow or a connector literal.
+Because the installed IPC has no escaping for its comma delimiter, Appearance
+rejects a selected path containing a comma instead of misaddressing the
+renderer. Spaces, Unicode, and shell metacharacters remain literal argv data.
 
 The installed binary links hyprgraphics plus libmagic, PNG, JPEG, WebP, SVG,
 and JPEG XL libraries. Tagged hyprgraphics source additionally provides BMP.

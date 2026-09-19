@@ -47,17 +47,22 @@ applications. Applications that choose their own theme remain in control.
 Hyprpaper is a required renderer, not a preference authority. Hyprland starts
 one session-owned instance through `vanhyprarch-appearance renderer-start`.
 The managed Hyprpaper configuration enables IPC and contains no wallpaper
-choice. Reconciliation sends the selected mode's wallpaper through the
-installed monitor-wildcard `wallpaper` IPC request with `cover` fit, then
-checks `listactive`. One selection is intentionally used across all outputs in
-this foundation; per-monitor preference is future work.
+choice. Reconciliation reads current outputs from `hyprctl -j monitors`, sends
+the installed comma-delimited `wallpaper` request explicitly for every output
+with `cover` fit, and verifies the unchanged monitor set plus every
+`listactive` entry. It also installs an empty-monitor fallback for a newly
+appearing output, but never treats that fallback as proof that an existing
+explicit target changed. One selection is intentionally used across all
+outputs in this foundation; per-monitor preference is future work.
 
 Wallpaper paths are canonicalized and must resolve to a regular file beneath
 the matching mode directory. A symlink whose target remains inside is accepted;
 an escaping symlink is rejected. The installed renderer stack was verified for
 PNG, JPEG, BMP, WebP, SVG, and JPEG XL. The manager uses content MIME detection,
 not a filename-extension filter, and still treats renderer rejection as a
-reported effective-state failure.
+reported effective-state failure. The installed comma-delimited IPC cannot
+represent a filename containing a comma, so that case fails closed; spaces,
+Unicode, and shell metacharacters remain literal process arguments.
 
 On first reconciliation, a valid legacy shell `theme-mode` value preserves the
 existing Vanilla palette choice; otherwise the current host preference is used,

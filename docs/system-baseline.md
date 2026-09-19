@@ -270,8 +270,10 @@ prior seeds and preserves unrelated or user-modified files.
 
 The managed `hyprpaper.conf` enables IPC, disables the splash, and declares no
 wallpaper. The manager applies one selected file to the installed renderer's
-monitor wildcard and checks all `listactive` entries. Hyprpaper absence or IPC
-failure is reported without disabling Vanilla shell colors or host preference.
+fallback and explicitly to every output discovered through Hyprland's JSON
+monitor inventory, then checks the monitor set and all `listactive` entries.
+Hyprpaper absence or IPC failure is reported without disabling Vanilla shell
+colors or host preference.
 
 ## Fonts and icons
 

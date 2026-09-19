@@ -718,10 +718,13 @@ Qt override, or application lifecycle is modified.
 
 Hyprpaper is the required session-owned renderer and never the preference
 authority. Hyprland starts one instance through the public Appearance manager;
-the managed renderer config carries no wallpaper selection. A monitor-wildcard
-IPC request applies one selected wallpaper to every output. Desired preference
-and effective shell, host, portal, renderer-process, and per-output wallpaper
-state remain distinguishable for diagnosis and idempotent reconciliation.
+the managed renderer config carries no wallpaper selection. Appearance uses
+Hyprland's JSON monitor inventory and explicitly applies one selected wallpaper
+to each active output. An empty-monitor request is retained only as a fallback
+for newly appearing unassigned outputs because Hyprpaper 0.8.4 gives explicit
+targets precedence. Monitor-set changes during application require another
+reconciliation. Desired preference and effective shell, host, portal,
+renderer-process, and per-output wallpaper state remain distinguishable.
 
 Preferences use a versioned mode-0600 JSON file in XDG configuration state.
 Wallpaper selections are relative to the matching

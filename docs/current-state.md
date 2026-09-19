@@ -482,10 +482,12 @@ applications.
 Hyprpaper remains a required official package and is renderer only. Hyprland's
 direct session startup now enters it through `vanhyprarch-appearance
 renderer-start`; multiple exact executable identities fail closed. Normal
-reconciliation uses the installed 0.8.4 monitor-wildcard `wallpaper` request
-and verifies every output through `listactive`. The managed renderer config has
-IPC on, splash off, and no user wallpaper. Missing or failed rendering does not
-block shell or host mode and is represented in strict versioned status.
+reconciliation discovers active output names from Hyprland JSON, applies one
+fallback plus an explicit installed 0.8.4 `wallpaper` request to each current
+output, rejects monitor-set races, and verifies every output through
+`listactive`. The managed renderer config has IPC on, splash off, and no user
+wallpaper. Missing or failed rendering does not block shell or host mode and is
+represented in strict versioned status.
 
 Eight reviewed original Wolkenstein images ship under `assets/wallpapers/` as
 GPL-2.0-only managed distribution content. Appearance seeds exact copies
@@ -499,15 +501,16 @@ by defaults. `catalog` and `set-wallpaper current` form the next picker's
 non-visible boundary; no picker, thumbnails, Style menu, or direct shortcut
 exists yet. See [Appearance foundation](appearance.md).
 
-This candidate was implemented and tested only in its isolated worktree. The
-development machine still has a legacy live Hyprpaper config and the old live
-theme/host/wallpaper mismatch; none was changed or reloaded here. Read-only
-inspection found legacy shell mode Light, host/portal Dark, and an active
-wallpaper outside the mode directories. `xdg-user-dir` and `user-dirs.dirs`
-are absent, so portable fallback resolves the definitive product locations to
-the already populated `Pictures/Wallpapers/{Light,Dark}` tree. Those eight
-user-prepared files were inventoried and copied only into the isolated
-repository asset payload; the live tree itself was not changed.
+A controlled local deployment migrated legacy shell mode Light, created the
+new preference and provenance files, and reconciled the host and portal to
+Light. It exposed a Hyprpaper 0.8.4 boundary: an empty-monitor fallback cannot
+replace the adopted process's legacy explicit DP-1 target. It also exposed that
+Hyprland 0.56.2 requires the monitor, path, and fit mode in one comma-delimited
+argument. A single authorized explicit DP-1 request changed the wallpaper to
+the Light pair-1 asset while retaining the existing renderer process. The
+explicit-output correction remains isolated until its controlled follow-up
+deployment; Light/Dark human toggle verification has not resumed. The eight
+existing user files retained their hashes and mtimes.
 
 ## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATED
 
