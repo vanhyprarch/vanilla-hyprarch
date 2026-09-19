@@ -122,6 +122,15 @@ def resolve_configured_directory(value: str, home: Path) -> Path | None:
     return resolved
 
 
+def natural_filename_key(value: str) -> tuple[tuple[int, object, object], ...]:
+    """Return a deterministic, case-insensitive natural filename key."""
+    return tuple(
+        (0, int(part), part) if part.isdigit() else (1, part.casefold(), part)
+        for part in re.split(r"(\d+)", value)
+        if part != ""
+    )
+
+
 def configured_pictures_directory(
     home: Path, environ: Mapping[str, str]
 ) -> Path | None:
@@ -1176,7 +1185,8 @@ class AppearanceManager:
         mode = preference.mode if requested_mode == "current" else requested_mode
         self.require_mode(mode)
         directory = self.mode_directory(mode)
-        entries: list[str] = []
+        selected, _ = self.preference_wallpaper(preference, mode)
+        paths: list[str] = []
         if directory.is_dir():
             for candidate in directory.iterdir():
                 try:
@@ -1184,16 +1194,32 @@ class AppearanceManager:
                 except AppearanceError:
                     continue
                 value = str(path)
-                if value not in entries:
-                    entries.append(value)
-        entries.sort(
-            key=lambda value: (Path(value).name.casefold(), Path(value).name, value)
+                if value not in paths:
+                    paths.append(value)
+        paths.sort(
+            key=lambda value: (
+                natural_filename_key(Path(value).name),
+                Path(value).name,
+                value,
+            )
         )
+        entries = [
+            {
+                "filename": Path(value).name,
+                "path": value,
+                "uri": Path(value).as_uri(),
+                "selected": selected is not None and Path(value) == selected,
+            }
+            for value in paths
+        ]
         return {
             "version": 1,
             "mode": mode,
             "directory": str(directory),
-            "wallpapers": entries,
+            # Keep the original path array for version-1 consumers while the
+            # visual picker uses the richer, additive entry metadata.
+            "wallpapers": paths,
+            "entries": entries,
         }
 
 

@@ -125,7 +125,8 @@ ShellRoot {
             "Power & Idle",
             "Power menu"
         ]
-        const centrals = ["Super+Space", "Keyboard Shortcuts"]
+        const centrals = ["Super+Space", "Keyboard Shortcuts",
+            "Background Picker"]
         for (const dockName of docks) {
             for (const centralName of centrals)
                 verifyFirstActivation(dockName, centralName)
@@ -155,13 +156,30 @@ ShellRoot {
         showWindow(dock)
 
         const shortcuts = createWindow("Keyboard Shortcuts", "central")
+        const picker = createWindow("Background Picker", "central")
         showWindow(central)
         coordinator.releaseCentralPriority(central)
+        showWindow(picker)
+        verify(!central.visible && picker.visible && dock.visible,
+            "SuperSpace-to-picker switch left duplicate central surfaces")
+        coordinator.releaseCentralPriority(picker)
+        showWindow(central)
+        verify(!picker.visible && central.visible && dock.visible,
+            "picker-to-SuperSpace switch lost activation or dock coexistence")
+        coordinator.releaseCentralPriority(central)
         showWindow(shortcuts)
-        verify(!central.visible && central.dismissCount === 2,
+        verify(!central.visible && central.dismissCount === 3,
             "opening another central surface left a duplicate visible")
         verify(shortcuts.visible && dock.visible,
             "central replacement closed the dock or missed activation")
+        coordinator.releaseCentralPriority(shortcuts)
+        showWindow(picker)
+        verify(!shortcuts.visible && picker.visible && dock.visible,
+            "Shortcuts-to-picker switch left duplicate central surfaces")
+        coordinator.releaseCentralPriority(picker)
+        showWindow(shortcuts)
+        verify(!picker.visible && shortcuts.visible && dock.visible,
+            "picker-to-Shortcuts switch lost activation or dock coexistence")
         shortcuts.dismissFromCoordinator()
 
         for (let cycle = 0; cycle < 3; ++cycle) {

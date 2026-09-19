@@ -5,6 +5,10 @@ import Quickshell.Io
 Scope {
     id: root
 
+    signal catalogReady(string mode, var entries)
+    signal catalogFailed(string message)
+    signal wallpaperRequestFinished(string path, bool success, string message)
+
     required property var theme
     property bool checksEnabled: true
     property string mode: "light"
@@ -23,6 +27,7 @@ Scope {
 
     readonly property string backendCommand: "vanhyprarch-appearance"
     readonly property bool busy: actionProcess.running || statusProcess.running
+    readonly property bool catalogBusy: catalogProcess.running
     readonly property bool darkMode: mode === "dark"
     readonly property string effectiveShellMode: theme.darkMode ? "dark" : "light"
     readonly property bool externallyConsistent: ready
@@ -49,17 +54,32 @@ Scope {
         root.startAction([root.backendCommand, "set-mode", requestedMode])
     }
 
-    function setCurrentWallpaper(path: string): void {
+    function setCurrentWallpaper(path: string): bool {
         if (!root.ready || root.busy || path === "")
-            return
-        root.startAction([root.backendCommand, "set-wallpaper", "current", path])
+            return false
+        root.errorMessage = ""
+        actionProcess.startCommand(
+            [root.backendCommand, "set-wallpaper", "current", path],
+            "wallpaper", path)
+        return true
+    }
+
+    function requestCatalog(requestedMode: string): bool {
+        if (!root.ready || root.busy || root.catalogBusy)
+            return false
+        if (["current", "light", "dark"].indexOf(requestedMode) < 0) {
+            root.catalogFailed("Rejected an unknown Appearance catalog mode.")
+            return false
+        }
+        catalogProcess.startRead(requestedMode)
+        return true
     }
 
     function startAction(command: var): void {
         if (root.busy)
             return
         root.errorMessage = ""
-        actionProcess.startCommand(command)
+        actionProcess.startCommand(command, "", "")
     }
 
     function refreshStatus(preserveError: bool): void {
@@ -136,6 +156,36 @@ Scope {
             effectiveWallpapers: value.renderer.active,
             error: errors.length > 0 ? String(errors.join("; ")) : ""
         }
+    }
+
+    function parseCatalog(output: string): var {
+        const value = JSON.parse(String(output || ""))
+        if (value === null || typeof value !== "object" || value.version !== 1
+                || (value.mode !== "light" && value.mode !== "dark")
+                || typeof value.directory !== "string"
+                || !Array.isArray(value.entries))
+            throw new Error("invalid Appearance catalog schema")
+
+        const entries = []
+        const paths = ({})
+        for (const entry of value.entries) {
+            if (entry === null || typeof entry !== "object"
+                    || typeof entry.filename !== "string"
+                    || typeof entry.path !== "string"
+                    || typeof entry.uri !== "string"
+                    || typeof entry.selected !== "boolean"
+                    || entry.filename === "" || entry.path === ""
+                    || entry.uri === "" || paths[entry.path])
+                throw new Error("invalid Appearance catalog entry")
+            paths[entry.path] = true
+            entries.push({
+                filename: entry.filename,
+                path: entry.path,
+                uri: entry.uri,
+                selected: entry.selected
+            })
+        }
+        return { mode: value.mode, entries: entries }
     }
 
     function applyStatus(state: var, preserveError: bool): void {
@@ -228,13 +278,18 @@ Scope {
         property bool stderrReceived: false
         property bool resultHandled: false
         property int lastExitCode: -1
+        property string actionKind: ""
+        property string actionPath: ""
 
-        function startCommand(nextCommand: var): void {
+        function startCommand(nextCommand: var, nextKind: string,
+                nextPath: string): void {
             errorText = ""
             exitReceived = false
             stderrReceived = false
             resultHandled = false
             lastExitCode = -1
+            actionKind = nextKind || ""
+            actionPath = nextPath || ""
             command = nextCommand
             running = true
         }
@@ -243,9 +298,15 @@ Scope {
             if (resultHandled || !exitReceived || !stderrReceived)
                 return
             resultHandled = true
-            if (lastExitCode !== 0)
-                root.errorMessage = root.conciseError(errorText,
-                    "Appearance update did not fully reconcile.")
+            const message = lastExitCode === 0 ? "" : root.conciseError(
+                errorText, "Appearance update did not fully reconcile.")
+            if (message !== "")
+                root.errorMessage = message
+            if (actionKind === "wallpaper")
+                root.wallpaperRequestFinished(actionPath,
+                    lastExitCode === 0, message)
+            actionKind = ""
+            actionPath = ""
             Qt.callLater(function() { root.refreshStatus(lastExitCode !== 0) })
         }
 
@@ -261,6 +322,72 @@ Scope {
             actionProcess.lastExitCode = exitCode
             actionProcess.exitReceived = true
             actionProcess.maybeFinish()
+        }
+    }
+
+    Process {
+        id: catalogProcess
+
+        property string outputText: ""
+        property string errorText: ""
+        property bool exitReceived: false
+        property bool stdoutReceived: false
+        property bool stderrReceived: false
+        property bool resultHandled: false
+        property int lastExitCode: -1
+
+        function startRead(requestedMode: string): void {
+            outputText = ""
+            errorText = ""
+            exitReceived = false
+            stdoutReceived = false
+            stderrReceived = false
+            resultHandled = false
+            lastExitCode = -1
+            command = [root.backendCommand, "catalog", requestedMode]
+            running = true
+        }
+
+        function maybeFinish(): void {
+            if (resultHandled || !exitReceived || !stdoutReceived
+                    || !stderrReceived)
+                return
+            resultHandled = true
+            if (lastExitCode !== 0) {
+                root.catalogFailed(root.conciseError(errorText,
+                    "Could not read the background catalog."))
+                return
+            }
+            try {
+                const result = root.parseCatalog(outputText)
+                root.catalogReady(result.mode, result.entries)
+            } catch (error) {
+                console.warn("Failed to parse vanhyprarch-appearance catalog: "
+                    + error)
+                root.catalogFailed("Could not parse the background catalog.")
+            }
+        }
+
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                catalogProcess.outputText = text
+                catalogProcess.stdoutReceived = true
+                catalogProcess.maybeFinish()
+            }
+        }
+        stderr: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                catalogProcess.errorText = text
+                catalogProcess.stderrReceived = true
+                catalogProcess.maybeFinish()
+            }
+        }
+        onExited: function(exitCode) {
+            catalogProcess.lastExitCode = exitCode
+            catalogProcess.exitReceived = true
+            catalogProcess.maybeFinish()
         }
     }
 }

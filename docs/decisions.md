@@ -104,6 +104,7 @@ The named Quickshell configuration and application state namespace are
 - `vanhyprarch.shell`
 - `vanhyprarch.shortcuts`
 - `vanhyprarch.superSpace`
+- `vanhyprarch.backgroundPicker`
 
 Future project-owned IPC targets use `vanhyprarch.<component>`. The intended
 managed idle fragment name is `vanhyprarch-idle.conf`.
@@ -740,3 +741,12 @@ distinguishes an unchanged prior seed from a modified same-name user file.
 Updates may add assets or replace only an unchanged prior seed; they never
 delete user content. Wolkenstein pair 1 is the explicit deterministic default
 for a new preference, while existing selections remain authoritative.
+
+The visual Background Picker is one global controller with one screen-bound
+presentation per `Variants` delegate. Both `Style -> Choose background` and
+`Super+Ctrl+Space` enter that controller. It queries the manager on every open,
+keeps candidate navigation separate from the applied selection, and routes an
+explicit apply back through the global `AppearanceController`; QML never calls
+Hyprpaper. It uses the existing centered-overlay role and sole shell-global
+focus grab, so SuperSpace, Shortcuts, and the picker remain mutually exclusive
+while retaining the established dock-panel coexistence semantics.

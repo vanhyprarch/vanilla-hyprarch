@@ -37,6 +37,11 @@ ShellRoot {
         theme: shellTheme
     }
 
+    BackgroundPickerController {
+        id: backgroundPicker
+        appearance: appearanceController
+    }
+
     Shortcuts {
         id: shortcuts
     }
@@ -78,6 +83,7 @@ ShellRoot {
         systemComponentsActions: systemComponentsActions
         zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
+        onBackgroundPickerRequested: backgroundPicker.open()
     }
 
     IdleController {
@@ -347,6 +353,18 @@ ShellRoot {
     SuperSpacePanel {
         metrics: visualMetrics
         controller: superSpace
+        theme: shellTheme
+        focusCoordinator: overlayFocusCoordinator
+        targetScreen: screenScope.modelData
+        screenName: screenScope.modelData.name
+        screenWidth: screenScope.modelData.width
+        screenHeight: screenScope.modelData.height
+        dockWidth: root.dockWidth
+    }
+
+    BackgroundPickerPanel {
+        metrics: visualMetrics
+        controller: backgroundPicker
         theme: shellTheme
         focusCoordinator: overlayFocusCoordinator
         targetScreen: screenScope.modelData

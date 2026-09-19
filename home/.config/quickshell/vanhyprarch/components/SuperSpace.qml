@@ -6,6 +6,8 @@ import Quickshell.Io
 Scope {
     id: root
 
+    signal backgroundPickerRequested()
+
     required property InstallActions installActions
     required property RemoveActions removeActions
     required property UpdateActions updateActions
@@ -52,6 +54,14 @@ Scope {
             detail: "Update system and Flatpak packages",
             icon: "system-software-update",
             keywords: ["update", "upgrade", "system", "flatpak", "yay"]
+        },
+        {
+            kind: "section",
+            sectionId: "style",
+            label: "Style",
+            detail: "Choose desktop appearance",
+            icon: "preferences-desktop-wallpaper",
+            keywords: ["style", "appearance", "background", "wallpaper"]
         },
         {
             kind: "section",
@@ -126,7 +136,8 @@ Scope {
     function enterSection(sectionId: string): void {
         if (sectionId !== "apps" && sectionId !== "install"
                 && sectionId !== "remove" && sectionId !== "update"
-                && sectionId !== "components" && sectionId !== "power")
+                && sectionId !== "style" && sectionId !== "components"
+                && sectionId !== "power")
             return
         currentSection = sectionId
         searchText = ""
@@ -364,6 +375,21 @@ Scope {
         }
 
         return result
+    }
+
+    function styleEntries(query: string): var {
+        const label = "Choose background"
+        const searchable = normalize(label + " wallpaper style appearance")
+        if (query !== "" && matchRank(label, searchable, query) < 0)
+            return []
+        return [{
+            kind: "chooseBackground",
+            actionId: "choose-background",
+            label: label,
+            detail: "Browse " + (root.currentSection === "style"
+                ? "the current mode's backgrounds" : "backgrounds"),
+            icon: "preferences-desktop-wallpaper"
+        }]
     }
 
     function componentCatalogEntries(query: string): var {
@@ -753,6 +779,8 @@ Scope {
             return removeEntries(query)
         if (currentSection === "update")
             return updateEntries(query)
+        if (currentSection === "style")
+            return styleEntries(query)
         if (currentSection === "components") {
             if (currentComponentId === "local-dictation")
                 return dictationEntries()
@@ -814,6 +842,10 @@ Scope {
         case "update":
             if (updateActions.execute(entry.actionId))
                 close()
+            break
+        case "chooseBackground":
+            backgroundPickerRequested()
+            close()
             break
         case "component":
             openComponent(entry.componentId)

@@ -25,7 +25,8 @@ TestCase {
     function test_monitorCenterIndependentOfDockPopup() {
         const surfaces = [
             { name: "Super+Space", width: 720, height: 620 },
-            { name: "Keyboard Shortcuts", width: 900, height: 900 }
+            { name: "Keyboard Shortcuts", width: 900, height: 900 },
+            { name: "Background Picker", width: 1040, height: 620 }
         ]
         const monitors = [
             { x: 0, y: 0, width: 1920, height: 1080, dockWidth: 56 },
@@ -64,7 +65,8 @@ TestCase {
         const expectedCenterX = 1564
         const surfaces = [
             { name: "Super+Space", width: 840, expectedMargin: 1088 },
-            { name: "Keyboard Shortcuts", width: 900, expectedMargin: 1058 }
+            { name: "Keyboard Shortcuts", width: 900, expectedMargin: 1058 },
+            { name: "Background Picker", width: 1040, expectedMargin: 988 }
         ]
 
         for (const surface of surfaces) {

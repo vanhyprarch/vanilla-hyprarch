@@ -87,7 +87,7 @@ ShellRoot {
                     "unsafe Install argument present: " + forbidden)
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Additional system components,Power",
+                === "Apps,Install,Remove,Update,Style,Additional system components,Power",
                 "root section order changed")
             superSpace.enterSection("install")
             root.check(superSpace.currentSection === "install",

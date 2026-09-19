@@ -5,6 +5,8 @@ import "../home/.config/quickshell/vanhyprarch/components"
 ShellRoot {
     id: root
 
+    property int backgroundPickerRequests: 0
+
     function check(condition, message) {
         if (!condition)
             throw new Error(message)
@@ -46,6 +48,7 @@ ShellRoot {
         systemComponentsActions: systemComponentsActions
         zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
+        onBackgroundPickerRequested: root.backgroundPickerRequests++
     }
 
     Timer {
@@ -54,7 +57,7 @@ ShellRoot {
         repeat: false
         onTriggered: {
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Additional system components,Power",
+                === "Apps,Install,Remove,Update,Style,Additional system components,Power",
                 "root section order is wrong")
             root.check(updateActions.actions.map(action => action.label).join(",")
                 === "System,Flatpak", "Update action order is wrong")
@@ -93,6 +96,25 @@ ShellRoot {
 
             root.check(updateActions.errorMessage === "",
                 "Update controller began with an error")
+
+            superSpace.enterSection("style")
+            root.check(superSpace.currentSection === "style"
+                    && superSpace.visibleEntries.length === 1,
+                "Style did not open with exactly one action")
+            const styleEntry = superSpace.visibleEntries[0]
+            root.check(styleEntry.kind === "chooseBackground"
+                    && styleEntry.actionId === "choose-background"
+                    && styleEntry.label === "Choose background",
+                "Style contains an unexpected or unstable action")
+            root.check(superSpace.entryIdentity(styleEntry)
+                    === "chooseBackground:choose-background",
+                "Style action has no stable selection identity")
+            superSpace.isOpen = true
+            superSpace.activate(styleEntry)
+            root.check(root.backgroundPickerRequests === 1
+                    && !superSpace.isOpen,
+                "Style action did not transfer away from SuperSpace")
+
             superSpace.enterSection("update")
             root.check(superSpace.currentSection === "update",
                 "Update section was rejected")

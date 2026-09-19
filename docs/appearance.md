@@ -90,6 +90,29 @@ idempotent `reconcile`; it never causes the dock to invent a second mode. If
 Hyprpaper is absent or unavailable, shell and host appearance still reconcile,
 while status reports the wallpaper capability failure.
 
-The `catalog` and `set-wallpaper current PATH` boundaries expose only what the
-next visual picker needs. This milestone deliberately includes no picker,
-thumbnail cache, carousel, Style menu, or background shortcut.
+`catalog current` is the visual picker's machine-readable source. It resolves
+only the current mode directory, validates entries through the same containment
+and MIME boundary as selection, and returns deterministic natural filename
+order plus filename, canonical path, file URI, and selected state. The original
+version-1 `wallpapers` path array remains for compatible consumers. Catalog
+queries neither seed assets nor mutate preferences.
+
+Super+Space exposes `Style` directly below `Update`; its only current action is
+`Choose background`. The same global Background Picker controller is reached
+through that action and `Super+Ctrl+Space`. It refreshes the catalog on every
+open, shows only the current Light or Dark directory, and resets to that mode's
+remembered selection. A mode change while open clears the old previews and
+loads the new mode catalog. The normal dock Light/Dark click first closes a
+central overlay under the established coordinator boundary, so that path
+closes the picker before changing mode instead of creating a ThemeToggle
+exception.
+
+Left and Right, native horizontal wheel scrolling, or a first card click move
+only the navigation candidate. They do not persist a preference or contact
+Hyprpaper. Enter or a second click on the current card calls the global
+Appearance controller, which invokes `set-wallpaper current PATH`; success
+closes the picker, while failure preserves the candidate and displays the
+backend error. Escape and outside dismissal close without mutation. Preview
+images use asynchronous, aspect-preserving crop from the original files, with
+only nearby sources active and a restrained decode-failure fallback; there is
+no thumbnail cache or worker pipeline.

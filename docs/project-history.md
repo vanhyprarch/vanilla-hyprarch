@@ -424,6 +424,22 @@ isolated correction now discovers active monitors through JSON and addresses
 each explicitly; human toggle verification remains paused until that correction
 is deployed.
 
+## 2026-09-19: Style / visual background picker candidate
+
+An isolated `background-picker` candidate added `Style -> Choose background`
+and the conflict-free `Super+Ctrl+Space` binding. Both reach one global picker
+controller, while its per-screen surface reuses the centered usable-desktop
+geometry and sole focus coordinator. No live QML, Hyprland binding, Appearance
+mode, wallpaper, or user wallpaper directory was changed during development.
+
+The existing Appearance manager remains authoritative. Its compatible
+version-1 catalog gained natural filename ordering and additive filename, URI,
+and selected metadata; QML performs no filesystem discovery or validation.
+Browsing changes only the candidate. Explicit Enter or a second click applies
+through `AppearanceController`, preserving independent Light/Dark selections
+and all renderer reconciliation. Asynchronous original-image previews are
+limited to nearby carousel entries, with no thumbnail pipeline.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

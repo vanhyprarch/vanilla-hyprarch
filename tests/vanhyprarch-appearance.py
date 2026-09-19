@@ -211,6 +211,27 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(preference.light_wallpaper, "light.png")
         self.assertEqual(preference.dark_wallpaper, "dark.png")
 
+    def test_picker_sequence_preserves_light_dark_independence(self) -> None:
+        light_one = self.wallpaper("light", "Light 1.png")
+        light_three = self.wallpaper("light", "Light 3.png")
+        dark_one = self.wallpaper("dark", "Dark 1.png")
+        dark_four = self.wallpaper("dark", "Dark 4.png")
+        self.write_preference("light", light_one.name, dark_one.name)
+
+        self.assertEqual(self.manager.set_wallpaper("current", str(light_three)), [])
+        preference = self.manager.read_preference()
+        self.assertEqual(preference.light_wallpaper, light_three.name)
+        self.assertEqual(preference.dark_wallpaper, dark_one.name)
+
+        self.assertEqual(self.manager.set_mode("dark"), [])
+        self.assertEqual(set(self.system.active.values()), {str(dark_one)})
+        self.assertEqual(self.manager.set_wallpaper("current", str(dark_four)), [])
+        preference = self.manager.read_preference()
+        self.assertEqual(preference.dark_wallpaper, dark_four.name)
+        self.assertEqual(preference.light_wallpaper, light_three.name)
+        self.assertEqual(self.manager.set_mode("light"), [])
+        self.assertEqual(set(self.system.active.values()), {str(light_three)})
+
     def test_preference_is_atomic_private_and_schema_strict(self) -> None:
         self.write_preference("dark")
         self.assertEqual(self.manager.preference_path.stat().st_mode & 0o777, 0o600)
@@ -790,10 +811,23 @@ class AppearanceTests(unittest.TestCase):
         self.assertIsNone(preference.dark_wallpaper)
 
     def test_catalog_is_deterministic_and_separate_from_thumbnails(self) -> None:
-        second = self.wallpaper("light", "Žena.png")
-        first = self.wallpaper("light", "alpine.png")
+        tenth = self.wallpaper("light", "Wolkenstein 10 Žena.png")
+        second = self.wallpaper("light", "Wolkenstein 2.png")
+        first = self.wallpaper("light", "Wolkenstein 1.png")
+        self.write_preference("light", light=second.name)
         catalog = self.manager.catalog("light")
-        self.assertEqual(catalog["wallpapers"], [str(first), str(second)])
+        self.assertEqual(
+            catalog["wallpapers"], [str(first), str(second), str(tenth)]
+        )
+        self.assertEqual(
+            [entry["filename"] for entry in catalog["entries"]],
+            [first.name, second.name, tenth.name],
+        )
+        self.assertEqual(
+            [entry["selected"] for entry in catalog["entries"]],
+            [False, True, False],
+        )
+        self.assertEqual(catalog["entries"][1]["uri"], second.as_uri())
         self.assertNotIn("thumbnail", json.dumps(catalog).lower())
 
     def test_current_catalog_is_limited_to_the_current_mode_directory(self) -> None:
@@ -806,6 +840,8 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(catalog["mode"], "dark")
         self.assertEqual(catalog["directory"], str(self.manager.mode_directory("dark")))
         self.assertEqual(catalog["wallpapers"], [str(dark)])
+        self.assertEqual([entry["path"] for entry in catalog["entries"]], [str(dark)])
+        self.assertTrue(catalog["entries"][0]["selected"])
 
     def test_shell_metacharacters_remain_one_literal_argument(self) -> None:
         selected = self.wallpaper("dark", "$(touch SHOULD_NOT_EXIST); dark.png")

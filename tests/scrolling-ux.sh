@@ -40,13 +40,17 @@ fi
 
 list_count=$(grep -R -h --include='*.qml' -F 'ListView {' \
     "$components_dir" | wc -l)
-[ "$list_count" -eq 6 ] \
-    || fail "expected all six production vertical ListViews"
+[ "$list_count" -eq 7 ] \
+    || fail "expected six vertical ListViews and one background carousel"
 
 indicator_count=$(grep -R -h --include='*.qml' \
     -F 'VerticalScrollIndicator {' "$components_dir" | wc -l)
 [ "$indicator_count" -eq 6 ] \
     || fail "expected an indicator on all six production vertical ListViews"
+
+[ "$(grep -F -c 'orientation: ListView.Horizontal' \
+    "$components_dir/BackgroundPickerPanel.qml")" -eq 1 ] \
+    || fail "expected one native horizontal background carousel"
 
 navigation_count=$(grep -R -h --include='*.qml' \
     -F 'WrappedListNavigation {' "$components_dir" | wc -l)

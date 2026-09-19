@@ -13,7 +13,7 @@ fail()
     exit 1
 }
 
-for panel in SuperSpacePanel.qml ShortcutsPanel.qml
+for panel in SuperSpacePanel.qml ShortcutsPanel.qml BackgroundPickerPanel.qml
 do
     grep -Fq 'CenteredOverlay {' "$components_dir/$panel" \
         || fail "$panel does not use the shared centered surface"
@@ -29,7 +29,7 @@ do
         || fail "$panel does not share the shell focus coordinator"
 done
 
-[ "$(grep -F -c 'targetScreen: screenScope.modelData' "$shell_file")" -ge 2 ] \
+[ "$(grep -F -c 'targetScreen: screenScope.modelData' "$shell_file")" -ge 3 ] \
     || fail 'central surfaces do not use their Variants delegate screen'
 grep -Fq 'model: Quickshell.screens' "$shell_file" \
     || fail 'central surfaces are no longer created by the per-screen Variants model'
@@ -37,6 +37,8 @@ grep -Fq 'model: Quickshell.screens' "$shell_file" \
     || fail 'Keyboard Shortcuts must have exactly one declaration per screen delegate'
 [ "$(grep -F -c '    SuperSpacePanel {' "$shell_file")" -eq 1 ] \
     || fail 'SuperSpace must have exactly one declaration per screen delegate'
+[ "$(grep -F -c '    BackgroundPickerPanel {' "$shell_file")" -eq 1 ] \
+    || fail 'Background Picker must have exactly one declaration per screen delegate'
 
 if grep -Fq 'shortcutsAnchor' "$shell_file"
 then
@@ -53,7 +55,8 @@ grep -Fq 'margins.left: OverlayGeometry.usableMargin(root.screenWidth,' \
     || fail 'horizontal position is not derived from usable monitor geometry'
 [ "$(grep -F 'persistentLeftInset: dockWidth' \
     "$components_dir/SuperSpacePanel.qml" \
-    "$components_dir/ShortcutsPanel.qml" | wc -l)" -eq 2 ] \
+    "$components_dir/ShortcutsPanel.qml" \
+    "$components_dir/BackgroundPickerPanel.qml" | wc -l)" -eq 3 ] \
     || fail 'central surfaces do not share the persistent dock inset'
 grep -Fq 'focusable: true' "$components_dir/CenteredOverlay.qml" \
     || fail 'centered surfaces cannot receive keyboard focus'

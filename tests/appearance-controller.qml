@@ -138,6 +138,24 @@ ShellRoot {
                     && controller.darkDirectory.endsWith("/Wallpapers/Dark"),
                 "future picker contract is incomplete")
 
+            const catalog = controller.parseCatalog(JSON.stringify({
+                version: 1,
+                mode: "light",
+                directory: "/pictures/Wallpapers/Light",
+                wallpapers: ["/pictures/Wallpapers/Light/Alpi 2.png"],
+                entries: [{
+                    filename: "Alpi 2.png",
+                    path: "/pictures/Wallpapers/Light/Alpi 2.png",
+                    uri: "file:///pictures/Wallpapers/Light/Alpi%202.png",
+                    selected: true
+                }]
+            }))
+            root.check(catalog.mode === "light"
+                    && catalog.entries.length === 1
+                    && catalog.entries[0].filename === "Alpi 2.png"
+                    && catalog.entries[0].selected,
+                "Appearance catalog metadata was not consumed")
+
             console.log("vanhyprarch Appearance controller self-check passed")
             Qt.quit()
         }

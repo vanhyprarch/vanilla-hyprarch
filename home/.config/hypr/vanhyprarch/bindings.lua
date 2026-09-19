@@ -38,6 +38,8 @@ bind(mainMod .. " + K", "Shell", "Show shortcuts",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.shortcuts toggle"))
 bind(mainMod .. " + SPACE", "Shell", "Open Super + Space",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.superSpace toggle"))
+bind(mainMod .. " + CTRL + SPACE", "Shell", "Choose background",
+    hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.backgroundPicker toggle"))
 
 -- Capture
 bind("PRINT", "Capture", "Screenshot", hl.dsp.exec_cmd("vanhyprarch-screenshot"))

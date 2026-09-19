@@ -255,6 +255,7 @@ Current IPC targets are:
 - `vanhyprarch.shell`, exposing `ping()`
 - `vanhyprarch.shortcuts`, exposing `open()`, `close()`, and `toggle()`
 - `vanhyprarch.superSpace`, exposing `open()`, `close()`, and `toggle()`
+- `vanhyprarch.backgroundPicker`, exposing `open()`, `close()`, and `toggle()`
 
 ## User interface — IMPLEMENTED
 
@@ -285,7 +286,7 @@ The current Quickshell UI includes:
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
 - a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, Update,
-  Additional system components, and Power sections, in-process search over
+  Style, Additional system components, and Power sections, in-process search over
   `DesktopEntries.applications` and typed action metadata, and confirmation for
   logout, reboot, power off, and optional-component removal;
 - a Local Dictation component page with reviewed model and maximum-recording
@@ -505,9 +506,9 @@ modified same-name files. Pair 1 is the explicit Light/Dark default. First-run
 migration preserves a valid legacy shell theme value and adopts a uniform
 active wallpaper already in its mode directory; otherwise both selections use
 the seeded pair-1 defaults. Existing Appearance preferences are never replaced
-by defaults. `catalog` and `set-wallpaper current` form the next picker's
-non-visible boundary; no picker, thumbnails, Style menu, or direct shortcut
-exists yet. See [Appearance foundation](appearance.md).
+by defaults. `catalog` returns the current-mode catalog in stable natural
+filename order with additive entry metadata, and `set-wallpaper current`
+remains the only picker apply boundary. See [Appearance foundation](appearance.md).
 
 A controlled local deployment migrated legacy shell mode Light, created the
 new preference and provenance files, and reconciled the host and portal. It
@@ -518,6 +519,41 @@ correction was deployed locally without replacing the existing renderer.
 Human Light/Dark verification then identified the native-background frame
 described above; the isolated managed-policy correction follows the successful
 runtime proof. The eight existing user files retained their hashes and mtimes.
+
+## Style / visual background picker — REPOSITORY IMPLEMENTED / LIVE ADOPTION PENDING
+
+Super+Space now places `Style` exactly between `Update` and `Additional system
+components`; its only current row is `Choose background`. `Super+Ctrl+Space`
+opens the same shell-global Background Picker controller through the named IPC
+target. The complete managed and active binding inventories had no prior
+`Super+Ctrl+Space` conflict.
+
+One per-screen `CenteredOverlay` presentation follows the existing
+`Variants { model: Quickshell.screens }` lifecycle and is centered in the
+monitor area to the right of the persistent dock. It registers as another
+central surface with the existing shell-global `OverlayFocusCoordinator`; no
+focus grab was added. SuperSpace, Shortcuts, and the picker replace one another,
+while dock-panel coexistence and outside dismissal retain their established
+semantics.
+
+The picker queries `vanhyprarch-appearance catalog current` on every open and
+never discovers files in QML. It displays only the active mode, focuses that
+mode's applied selection when present, and deterministically starts at the
+first manager-ordered entry otherwise. An external mode change while the picker
+remains open clears stale previews before requesting the other catalog. A dock
+Light/Dark click retains the established dock-to-central dismissal boundary and
+therefore closes the picker before changing mode. Empty and one-item catalogs
+are safe; large catalogs instantiate lightweight delegates while activating
+image sources only around the current item.
+
+Previews are widescreen, rectangular, overlapping cards using asynchronous
+original-image loads, bounded decode size, `PreserveAspectCrop`, and a quiet
+error fallback. Left/Right and native horizontal Flickable wheel behavior move
+the candidate without applying. A first click selects; Enter or a second click
+on the current card applies through `AppearanceController`. Success closes;
+failure leaves the picker and candidate visible with a concise error; Escape
+and outside dismissal make no Appearance or renderer request. Applied and
+navigation-current state remain visually distinct.
 
 ## Screenshot workflow — IMPLEMENTED, RUNTIME VALIDATED
 
@@ -743,8 +779,6 @@ workaround. Physical two-monitor validation remains pending.
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Build the visual Style/background picker, thumbnails or carousel, and direct
-  background shortcut on the Appearance controller boundary.
 - Implement System Keyboard Synchronization: graphical XKB state from
   `systemd-localed` is the source of truth, synchronized at session start and
   on relevant property changes. The current Italian machine-file block is

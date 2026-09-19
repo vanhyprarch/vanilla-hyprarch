@@ -34,6 +34,13 @@ QtObject {
     readonly property int actionSurfaceWidth: scaled(300)
     readonly property int compactActionSurfaceWidth: scaled(200)
     readonly property int wideOverlayMaximum: scaled(720)
+    readonly property int backgroundPickerMaximumWidth: scaled(1040)
+    readonly property int backgroundPickerMaximumHeight: scaled(620)
+    readonly property int backgroundPickerVerticalChrome: scaled(160)
+    readonly property int backgroundPreviewMaximumWidth: scaled(560)
+    readonly property int backgroundPreviewAdjacentWidth: scaled(300)
+    readonly property int backgroundPreviewCardStep: scaled(190)
+    readonly property int backgroundPreviewOutlineThickness: 3
 
     // Shared surface geometry.
     readonly property int panelRadius: 0

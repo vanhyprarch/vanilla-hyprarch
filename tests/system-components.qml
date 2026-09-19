@@ -216,11 +216,11 @@ ShellRoot {
             componentActions.acceptStatusJson(JSON.stringify(status))
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Additional system components,Power",
+                === "Apps,Install,Remove,Update,Style,Additional system components,Power",
                 "root order is wrong")
-            root.check(superSpace.sections[4].label === "Additional system components",
+            root.check(superSpace.sections[5].label === "Additional system components",
                 "component root label capitalization is wrong")
-            root.check(superSpace.sections[4].detail
+            root.check(superSpace.sections[5].detail
                     === "Install and configure optional Vanilla HyprArch components",
                 "component root description is wrong")
             const zigAbsent = {
