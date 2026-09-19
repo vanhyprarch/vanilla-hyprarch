@@ -74,6 +74,13 @@ PanelWindow {
     visible: DockGeometry.surfaceVisible(root.requestedVisible,
         root.placementReady)
 
+    TapHandler {
+        parent: root.contentItem
+        acceptedButtons: Qt.LeftButton
+        gesturePolicy: TapHandler.DragThreshold
+        onTapped: root.focusCoordinator.dockSurfaceInteracted()
+    }
+
     Component.onCompleted: root.focusCoordinator.registerDock(root)
     Component.onDestruction: root.focusCoordinator.unregisterDock(root)
 

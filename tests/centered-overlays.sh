@@ -191,6 +191,14 @@ grep -Fq 'Component.onDestruction: root.focusCoordinator.unregisterCentral(root)
 grep -Fq 'root.focusWindows.length > 0' \
     "$components_dir/OverlayFocusCoordinator.qml" \
     || fail 'focus grab can remain active with an empty whitelist'
+for surface_file in "$components_dir/DockPopup.qml" "$shell_file"
+do
+    grep -Fq 'gesturePolicy: TapHandler.DragThreshold' "$surface_file" \
+        || fail "$(basename "$surface_file") does not observe dock interaction passively"
+done
+grep -Fq 'onPressed: overlayFocusCoordinator.dockBackgroundInteracted()' \
+    "$shell_file" \
+    || fail 'persistent dock empty space has no explicit dismissal semantics'
 
 grep -Fq 'event.key === Qt.Key_Escape' "$components_dir/SuperSpacePanel.qml" \
     || fail 'SuperSpace no longer handles Escape'
@@ -260,6 +268,8 @@ run_quickshell_test()
 
 run_quickshell_test "$test_dir/overlay-focus-coordinator.qml" \
     OVERLAY_FOCUS_TEST_PASS
+run_quickshell_test "$test_dir/dock-dismissal.qml" \
+    DOCK_DISMISSAL_TEST_PASS
 run_quickshell_test "$test_dir/row-visuals.qml" \
     ROW_VISUALS_TEST_PASS
 

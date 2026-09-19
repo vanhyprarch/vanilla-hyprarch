@@ -104,7 +104,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: networkPanel.requestedVisible = !networkPanel.requestedVisible
+        onClicked: root.focusCoordinator.toggleDockWindow(networkPanel)
     }
 
     NetworkPanel {

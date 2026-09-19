@@ -142,18 +142,17 @@ ShellRoot {
         verify(!central.visible, "outside clear did not dismiss central")
         verify(central.dismissCount === 1,
             "central was not dismissed exactly once")
-        verify(dock.visible, "outside clear also dismissed dock")
-        verify(dock.dismissCount === 0,
-            "dock received an unintended dismissal")
+        verify(!dock.visible, "outside clear did not dismiss dock")
+        verify(dock.dismissCount === 1,
+            "dock was not dismissed exactly once")
         verify(!coordinator.grabRequested,
             "cleared grab was rearmed in the same event-loop turn")
         coordinator.rearmAfterClear()
-        verify(coordinator.grabRequested,
-            "remaining dock focus grab was not rearmed")
-        verify(coordinator.focusWindows.length === 2
-            && coordinator.focusWindows[0] === dock
-            && coordinator.focusWindows[1] === dockHost,
-            "remaining dock did not regain coordinated focus ownership")
+        verify(!coordinator.grabRequested
+                && coordinator.focusWindows.length === 0,
+            "outside clear left stale coordinated focus ownership")
+
+        showWindow(dock)
 
         const shortcuts = createWindow("Keyboard Shortcuts", "central")
         showWindow(central)

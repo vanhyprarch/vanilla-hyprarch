@@ -74,10 +74,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    monthCalendar.requestedVisible
-                        = !monthCalendar.requestedVisible
-                }
+                onClicked: root.focusCoordinator.toggleDockWindow(monthCalendar)
             }
         }
 

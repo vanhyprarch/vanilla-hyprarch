@@ -111,6 +111,8 @@ ShellRoot {
             required property var modelData
 
     PanelWindow {
+        id: dockWindow
+
         screen: screenScope.modelData
 
         anchors {
@@ -126,6 +128,12 @@ ShellRoot {
         Rectangle {
             anchors.fill: parent
             color: shellTheme.background
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            onPressed: overlayFocusCoordinator.dockBackgroundInteracted()
         }
 
         Image {
@@ -309,6 +317,13 @@ ShellRoot {
                 bottomMargin: dockSystemTray.clockGap
                 horizontalCenter: parent.horizontalCenter
             }
+        }
+
+        TapHandler {
+            parent: dockWindow.contentItem
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.DragThreshold
+            onTapped: overlayFocusCoordinator.dockSurfaceInteracted()
         }
     }
 

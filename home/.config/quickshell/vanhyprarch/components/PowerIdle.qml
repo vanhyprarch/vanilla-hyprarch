@@ -36,7 +36,7 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-            powerIdlePanel.requestedVisible = !powerIdlePanel.requestedVisible
+            root.focusCoordinator.toggleDockWindow(powerIdlePanel)
             if (powerIdlePanel.requestedVisible)
                 root.controller.refreshStatus(false)
         }

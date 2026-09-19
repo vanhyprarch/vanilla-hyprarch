@@ -52,7 +52,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: audioPanel.requestedVisible = !audioPanel.requestedVisible
+        onClicked: root.focusCoordinator.toggleDockWindow(audioPanel)
     }
 
     AudioPanel {

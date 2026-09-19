@@ -40,7 +40,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: bluetoothPanel.requestedVisible = !bluetoothPanel.requestedVisible
+        onClicked: root.focusCoordinator.toggleDockWindow(bluetoothPanel)
     }
 
     BluetoothPanel {

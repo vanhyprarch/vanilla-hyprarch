@@ -368,16 +368,27 @@ monitor's usable desktop region to the right of its persistent dock, as
 independent per-screen layer surfaces. Dock-owned panels use monitor-bound
 layer surfaces too, and one shell-level focus coordinator keeps a central
 surface and the existing dock panel in the same Hyprland focus whitelist.
-Their positions remain independent. Super+Space opens through its
-shortcut, dock logo, or named IPC target, supports pointer activation plus Up,
-Down, Enter, and Escape, and uses the shared panel, row, theme, metric, and
-global text-size foundations. Its light rectangular navigation cursor is
-distinct from the darker persistent-selection fill; Keyboard Shortcuts uses
-the same navigation cursor. Static and offscreen checks cover geometry,
-first-activation coexistence, focus/dismissal state, repeated cycles, and named
-IPC ownership. Controlled live Wayland validation passed the shared focus and
-dismissal behavior; the usable-desktop centering refinement still requires its
-final visual check.
+Their positions remain independent. Interaction and containment are separate
+from that compositor whitelist: a click delivered to a dock panel dismisses a
+visible central overlay without consuming the panel action, while a click on
+non-actionable persistent-dock background dismisses both kinds of transient
+surface. An owning dock control remains an explicit toggle, and opening a
+different dock panel retains the existing one-panel replacement behavior.
+An outside compositor clear dismisses every visible transient shell surface.
+These application-level transitions are covered offscreen; native Wayland
+delivery is recorded in the compatibility register. Hyprland 0.56.2 still
+routes the first stationary same-icon re-click to the newly mapped dock-panel
+surface before correcting native pointer focus back to the dock; Vanilla does
+not synthesize recovery for that compositor-side limitation. Super+Space opens
+through its shortcut, dock logo, or named IPC target, supports pointer
+activation plus Up, Down, Enter, and Escape, and uses the shared panel, row,
+theme, metric, and global text-size foundations. Its light rectangular
+navigation cursor is distinct from the darker persistent-selection fill;
+Keyboard Shortcuts uses the same navigation cursor. Static and offscreen checks
+cover geometry, first-activation coexistence, focus/dismissal state, repeated
+cycles, and named IPC ownership. Controlled live Wayland validation passed the
+shared focus and dismissal behavior; the usable-desktop centering refinement
+still requires its final visual check.
 
 The desktop uses 5-pixel inner and 10-pixel outer Hyprland gaps with square
 application windows. Network, Bluetooth, Audio, and Display use the centralized

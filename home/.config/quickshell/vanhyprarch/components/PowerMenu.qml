@@ -73,7 +73,7 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: popup.requestedVisible = !popup.requestedVisible
+            onClicked: root.focusCoordinator.toggleDockWindow(popup)
 
             containmentMask: QtObject {
                 function contains(point: point): bool {

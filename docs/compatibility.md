@@ -319,6 +319,50 @@ surfaces and shared coordinator may be reconsidered only if a future popup
 implementation can prove both an independent monitor coordinate space and
 compatible nested focus ownership.
 
+The compositor focus whitelist is intentionally broader than each overlay's
+product-level dismissal boundary. Dock-host and dock-panel pointer taps are
+observed with Qt's passive `TapHandler.DragThreshold` policy, so the original
+target remains responsible for the click. A dock-panel tap dismisses only the
+central surface. The persistent dock's background `MouseArea` sits below its
+real controls and dismisses both transient roles only when no actionable child
+accepted the press. Owning controls call the coordinator's explicit toggle;
+they do not reuse background dismissal. A true compositor `cleared` event now
+dismisses both visible transient roles. Keep the shared grab and all three
+surface classes in its whitelist; removing dock surfaces to synthesize these
+semantics would restore the grab-replacement failure above.
+
+## Hyprland layer-surface pointer-refocus boundary
+
+**Affected components:** Hyprland 0.56.2, Quickshell 0.3.1, and Qt 6.11.2 on
+Wayland
+
+On Hyprland 0.56.2, opening Display while the pointer remains stationary over
+its owning dock icon can leave native pointer focus on the newly mapped panel
+surface. A bounded QML and `WAYLAND_DEBUG=client` trace proved that the first
+click reached the icon normally, after which Hyprland sent pointer leave to the
+dock and pointer enter to the Display surface at coordinates outside its
+content. The cursor consequently changed from the pointer to the default
+arrow.
+
+The next stationary button press and release went to that stale native surface;
+no Vanilla icon, dock-host, dock-popup, or panel QML handler received them.
+Hyprland retargeted the dock only after those button events. In the control
+case, physical pointer movement forced the retarget before the next button, so
+the same-icon click reached QML and closed Display normally. Hyprland issues
+#4281 and #4882 and discussion #13116 describe related stale layer-surface
+pointer-focus behavior.
+
+This proves that no Vanilla toggle, dismissal, or coordinator state transition
+runs for the swallowed second click. No pointer warp, synthetic input, replay,
+delay, debounce, or focus hack is carried here. Retain the no-motion same-icon
+case as a Hyprland 0.56.2 limitation unless a supported surface arrangement is
+separately proven to avoid it without regressing the shared-grab architecture.
+
+Retest after any Hyprland change to `InputManager::processMouseDownNormal`,
+`mouseMoveUnified`, `CSeatManager` pointer focus, `CFocusGrab`, or layer-shell
+hit testing, and after any Quickshell or Qt Wayland change to focus-grab or
+cursor handling.
+
 ## Quickshell Bluetooth pairing-agent boundary
 
 **Affected component:** Quickshell 0.3.1 with BlueZ 5.87

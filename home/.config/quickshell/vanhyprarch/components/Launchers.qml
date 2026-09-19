@@ -393,9 +393,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    appPicker.requestedVisible = !appPicker.requestedVisible
-                }
+                onClicked: root.focusCoordinator.toggleDockWindow(appPicker)
             }
         }
 

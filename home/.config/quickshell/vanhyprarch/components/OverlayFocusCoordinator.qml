@@ -91,6 +91,37 @@ Scope {
             window.dismissFromCoordinator()
     }
 
+    function dismissVisibleWindows(windows): void {
+        for (const window of windows) {
+            if (window && window.visible)
+                root.dismissWindow(window)
+        }
+    }
+
+    function dockSurfaceInteracted(): void {
+        // Dock surfaces remain inside the compositor focus whitelist so the
+        // original pointer event reaches them. They are nevertheless outside
+        // the central overlay's application-level dismissal boundary.
+        root.dismissVisibleWindows(root.visibleCentralWindows)
+    }
+
+    function dockBackgroundInteracted(): void {
+        // The persistent dock is not transient content. Its non-actionable
+        // background is outside both kinds of transient surface.
+        root.dismissVisibleWindows(root.visibleCentralWindows)
+        root.dismissVisibleWindows(root.visibleDockWindows)
+    }
+
+    function toggleDockWindow(window): void {
+        if (!window)
+            return
+
+        // An owning control's toggle is explicit and must not be folded into
+        // generic dock-background dismissal.
+        root.dismissVisibleWindows(root.visibleCentralWindows)
+        window.requestedVisible = !window.requestedVisible
+    }
+
     function closeOtherWindows(window, windows): void {
         for (const candidate of windows) {
             if (candidate && candidate !== window && candidate.visible)
@@ -136,14 +167,10 @@ Scope {
         root.grabRequested = false
         root.priorityCentralWindow = null
 
-        const central = root.visibleCentralWindows
-        if (central.length > 0)
-            root.dismissWindow(central[central.length - 1])
-        else {
-            const dock = root.visibleDockWindows
-            if (dock.length > 0)
-                root.dismissWindow(dock[dock.length - 1])
-        }
+        // A compositor clear is a real outside-shell interaction, not an
+        // interaction transfer between whitelisted shell surfaces.
+        root.dismissVisibleWindows(root.visibleCentralWindows)
+        root.dismissVisibleWindows(root.visibleDockWindows)
 
         // Visibility callbacks above may observe another still-visible window.
         // Keep the cleared grab inactive until the next event-loop turn.
