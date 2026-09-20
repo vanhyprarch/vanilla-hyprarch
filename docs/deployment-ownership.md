@@ -103,6 +103,21 @@ version-1 receipt, or an existing Appearance preference when that receipt is
 absent, migrates to initialized without touching user content. Only a user with
 no such durable evidence receives the currently distributed starter set.
 
+## System keyboard synchronization ownership
+
+`$HOME/.local/bin/vanhyprarch-keyboard-sync` and its static systemd user unit
+are `MANAGED` payload. Hyprland owns service startup and reload reconciliation;
+the unit is not enabled independently. `systemd-localed` owns the durable
+graphical XKB tuple, while the helper owns only its validated runtime projection
+into Hyprland.
+
+The project does not own `/etc/vconsole.conf`,
+`/etc/X11/xorg.conf.d/00-keyboard.conf`, locale1 state, active layout groups, or
+per-device input rules. The create-once machine file remains
+`MACHINE_CONFIGURATION`. Its private development-machine Italian block is a
+temporary migration safety net and is not modified by this repository
+prototype.
+
 ## Zig Screensaver ownership
 
 `$HOME/.local/bin/vanhyprarch-screensaver`, its private Python implementation,

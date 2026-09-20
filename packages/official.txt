@@ -18,6 +18,7 @@ hyprpaper
 hyprpolkitagent
 hyprshutdown
 i2c-tools
+libxkbcommon
 ly
 mesa
 networkmanager
@@ -46,3 +47,4 @@ wl-clipboard
 xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-desktop-portal-hyprland
+xkeyboard-config

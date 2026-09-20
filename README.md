@@ -20,7 +20,9 @@ UWSM is not part of the architecture. Hyprland owns the session and starts the
 required session processes. Quickshell provides the desktop UI. Power & Idle
 state belongs to `vanhyprarch-idle`, while Hyprland directly owns one
 `hypridle` process. Appearance state belongs to `vanhyprarch-appearance`, while
-Hyprpaper is only its session-owned wallpaper renderer.
+Hyprpaper is only its session-owned wallpaper renderer. Graphical XKB state
+belongs to `systemd-localed`; the managed keyboard helper projects it into
+Hyprland without owning active groups or per-device rules.
 
 The graphical session prepends `$HOME/.local/bin` exactly once to its inherited
 `PATH`. Public `vanhyprarch-*` session commands are installed there and invoked
@@ -127,7 +129,10 @@ disclosure and practical migration guidance.
 
 The Appearance foundation is implemented only in an isolated candidate and
 still needs human review and controlled deployment; its visual background
-picker is future work. The pinned player release is
+picker is future work. System keyboard synchronization is repository-complete
+but not deployed; its transitional Italian machine fallback remains until
+controlled D-Bus, reload, service-lifecycle, and cold-login validation pass.
+The pinned player release is
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
 and Vanilla HyprArch self-update are not implemented. See

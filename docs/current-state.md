@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-19.
+Snapshot date: 2026-09-20.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -32,7 +32,9 @@ Repository-managed sources:
 - `home/.config/hypr/hypridle.conf`
 - `home/.config/hypr/hyprpaper.conf`
 - `home/.config/hypr/hyprlock.conf`
+- `home/.config/systemd/user/vanhyprarch-keyboard-sync.service`
 - `home/.config/quickshell/vanhyprarch/`
+- `bin/vanhyprarch-keyboard-sync`
 - `install/configure-flatpak`
 - `install/install-zig-player`
 - `install/zig-screensaver/`
@@ -128,12 +130,15 @@ Hyprland starts these processes on `hyprland.start`:
 1. `exec $HOME/.local/bin/vanhyprarch-appearance renderer-start`, which
    preserves one direct session-owned Hyprpaper process
 2. `systemctl --user start hyprpolkitagent`
-3. `exec $HOME/.local/bin/vanhyprarch-idle session-start`, constructed from the
+3. `systemctl --user restart vanhyprarch-keyboard-sync.service`, whose static
+   unit performs one localed-to-Hyprland startup reconciliation and then
+   observes graphical XKB changes
+4. `exec $HOME/.local/bin/vanhyprarch-idle session-start`, constructed from the
    validated `sessionHome`; the leading shell builtin replaces Hyprland's
    transient executor shell before the backend validates its parent, and the
    backend directly execs `/usr/bin/hypridle -v` after reconciliation
-4. `qs -n -c vanhyprarch`
-5. `vanhyprarch-voxtype.service`, only when the exact optional-component
+5. `qs -n -c vanhyprarch`
+6. `vanhyprarch-voxtype.service`, only when the exact optional-component
    marker is installed
 
 The official `hyprpolkitagent` package provides graphical PolicyKit
@@ -170,6 +175,35 @@ runtime validation.
 
 Hyprland's existing input configuration sets `numlock_by_default = true`, so
 Num Lock is enabled by default when the graphical session starts.
+
+## System keyboard synchronization — REPOSITORY IMPLEMENTED / LIVE DEPLOYMENT PENDING
+
+`systemd-localed` is the graphical XKB preference authority. The managed
+`vanhyprarch-keyboard-sync` Python/Gio helper reads its complete
+layout/model/variant/options tuple, preflights it with `xkbcli`, compares the
+current global Hyprland tuple, and applies all four changed values through one
+shell-free `hyprctl eval` / `hl.config()` transaction. It verifies exact
+readback and makes one bounded attempt to restore the captured prior tuple on
+failure. An empty localed layout or invalid tuple leaves Hyprland unchanged;
+the helper never substitutes `us`.
+
+Relevant `PropertiesChanged` notifications cause a fresh complete read and are
+serialized/coalesced through the GLib event loop. Locale and vconsole-only
+reports are ignored. Gio name-owner observation recovers when localed returns,
+and an exact file monitor reconciles when the Hyprland command socket appears
+or reappears without a sleep, timer, or polling loop.
+
+The static user unit has no install target. Hyprland restarts it once on
+`hyprland.start`; `config.reloaded` requests `systemctl --user reload`, whose
+`SIGHUP` handler re-reads both authorities and applies only when runtime state
+actually differs. The helper does not inspect devices, write per-device rules,
+or read/store/switch active groups. See
+[System keyboard synchronization](system-keyboard-synchronization.md).
+
+Repository tests and Controlled Runtime Experiment 1 pass, but the helper and
+unit have not been deployed or started. The private live Italian machine block
+remains the required migration safety net until D-Bus changes, reload recovery,
+service lifecycle, and a cold logout/login pass under controlled validation.
 
 ## Optional local dictation — IMPLEMENTED AND VALIDATED
 
@@ -798,10 +832,6 @@ workaround. Physical two-monitor validation remains pending.
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Implement System Keyboard Synchronization: graphical XKB state from
-  `systemd-localed` is the source of truth, synchronized at session start and
-  on relevant property changes. The current Italian machine-file block is
-  transitional; device-specific rules remain machine configuration.
 - Implement Monitor Control & Safe Apply for per-output resolution, refresh
   rate, scale, color depth, and supported brightness. Risky changes must be
   applied temporarily and confirmed within 10 seconds before persistence;
@@ -810,6 +840,9 @@ workaround. Physical two-monitor validation remains pending.
 
 ### PROVISIONAL
 
+- Deploy and validate System Keyboard Synchronization while retaining the
+  transitional Italian machine block; remove it only after D-Bus, reload,
+  service lifecycle, and cold-login acceptance pass.
 - Validate the external player's physical multi-output and suspend/resume
   behavior.
 - Validate remaining lock-at-suspend and Caffeine lifecycle combinations

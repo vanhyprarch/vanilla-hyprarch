@@ -53,6 +53,12 @@ its MIME detector to validate user wallpaper content against the installed
 Hyprpaper decoder contract. Filename extensions are not trusted as image
 evidence.
 
+`libxkbcommon` and `xkeyboard-config` are explicit because the managed keyboard
+synchronizer directly invokes `xkbcli` and requires the corresponding XKB data;
+they are not left implicit through Hyprland. Python and PyGObject were already
+explicit baseline packages. systemd and its localed service remain part of the
+minimal Arch starting system rather than a desktop-package delta.
+
 ## Installation reproducibility
 
 One future bootstrap will consume this baseline, the package manifests, and
@@ -74,6 +80,7 @@ and unresolved choices are maintained in the canonical
 | Optional screensaver renderer | baseline `python` and `wayland`, external `vanhyprarch-zig-player` v0.1.1 | `python` and Wayland are independently required, so the component adds no official package. `vanhyprarch-screensaver` and immutable pinned metadata are baseline; the native player, license, notices, README/release record, and marker exist only when Zig Screensaver is installed. |
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Appearance and wallpaper | `hyprpaper`, `file` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
+| System keyboard projection | `python`, `python-gobject`, `libxkbcommon`, `xkeyboard-config`, `systemd`, `hyprland` | `systemd-localed` owns the graphical XKB tuple; the static user service projects it into Hyprland without owning active groups or per-device rules. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream
@@ -147,9 +154,13 @@ therefore on by default when the graphical session starts. This is a compositor
 input default; it does not require `numlockx`, `setleds`, an autostart command,
 or an external script.
 
-Keyboard layout and device-specific input rules are machine configuration, not
-managed baseline defaults. The public machine seed intentionally leaves them
-unset.
+The graphical layout/model/variant/options tuple belongs to `systemd-localed`.
+The managed `vanhyprarch-keyboard-sync` helper validates and projects it into
+Hyprland at session start and on relevant D-Bus changes. Active groups remain
+Hyprland/user runtime state, while device-specific input rules remain machine
+configuration. The public machine seed intentionally leaves both layout and
+device rules unset. The development machine's Italian block is a temporary
+live-validation safety net and is not a managed baseline default.
 
 ## Deliberate default applications
 

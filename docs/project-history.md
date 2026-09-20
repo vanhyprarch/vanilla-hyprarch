@@ -470,6 +470,22 @@ or restorations. Development used temporary fixtures for both fresh and
 initialized states; the live main checkout, Appearance state, and user-owned
 wallpaper directories were not deployed or modified.
 
+## 2026-09-20: System keyboard synchronization prototype
+
+The accepted localed authority direction gained a repository-only Python/Gio
+prototype. A static user service observes only graphical locale1 properties,
+re-reads complete tuples, validates them through xkbcommon, and projects changed
+state through one verified Hyprland Lua runtime transaction with one-shot
+rollback. GLib D-Bus, idle dispatch, name-owner tracking, and exact socket file
+monitoring provide event-driven lifecycle recovery without polling.
+
+Hyprland owns service startup and asks the existing daemon to reconcile after
+config reload. The helper never owns active groups or per-device rules. Core,
+event, reload, IPC recovery, service, ownership, and package behavior are
+covered by deterministic tests. No helper or unit was deployed, and the live
+Italian machine fallback remains in place pending controlled D-Bus, reload,
+service-lifecycle, and cold-login validation.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

@@ -628,12 +628,12 @@ ancillary files exist only with a validated component marker.
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Future milestone; not implemented
+**Implementation:** Repository prototype implemented; controlled live deployment pending
 
 The system graphical/XKB configuration exposed by `systemd-localed` is the
-future source of truth for the Hyprland keyboard layout. Vanilla HyprArch will
-synchronize the relevant graphical properties at session start and subscribe
-to localed property changes rather than poll when practical. External changes
+source of truth for the Hyprland keyboard layout. Vanilla HyprArch synchronizes
+the relevant graphical properties at session start and subscribes to localed
+property changes without polling. External changes
 made through normal `localectl`/localed configuration must therefore propagate
 to Hyprland.
 
@@ -641,10 +641,13 @@ The synchronizer must distinguish graphical XKB changes from console-only
 changes: an explicit `localectl --no-convert` console-keymap operation must not
 be misread as a graphical-layout update. A future Vanilla keyboard UI will
 write the system source of truth instead of changing only Hyprland.
-Device-specific keyboard rules remain `MACHINE_CONFIGURATION`. The Italian
-layout preserved in the development machine file is transitional migration
-state, not a permanent public default. This decision records the ownership
-direction only; it does not define or implement the synchronization mechanism.
+Device-specific keyboard rules remain `MACHINE_CONFIGURATION`. The managed
+helper projects the complete graphical tuple through one validated Hyprland
+Lua runtime transaction, verifies readback, and performs one bounded rollback
+on failure. It never owns the active layout group. The Italian layout preserved
+in the development machine file remains transitional migration state and a
+temporary live-validation safety net, not a permanent public default. See
+[System keyboard synchronization](system-keyboard-synchronization.md).
 
 ## ADR-032: Require confirmation before persisting risky monitor changes
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize system graphical keyboard state to Hyprland
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/vanhyprarch-keyboard-sync
+ExecReload=/usr/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2s

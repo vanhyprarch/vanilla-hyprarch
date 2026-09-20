@@ -1,0 +1,617 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+"""Project systemd-localed's graphical XKB tuple into Hyprland."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import logging
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import sys
+from typing import Callable, Protocol, Sequence
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+
+LOCALED_SERVICE = "org.freedesktop.locale1"
+LOCALED_PATH = "/org/freedesktop/locale1"
+LOCALED_INTERFACE = "org.freedesktop.locale1"
+PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
+X11_PROPERTIES = ("X11Layout", "X11Model", "X11Variant", "X11Options")
+XKBCLI = "/usr/bin/xkbcli"
+HYPRCTL = "/usr/bin/hyprctl"
+COMMAND_TIMEOUT_SECONDS = 5
+
+LOG = logging.getLogger("vanhyprarch-keyboard-sync")
+
+
+class SynchronizationError(RuntimeError):
+    """An expected external-state failure that must fail closed."""
+
+
+class LocaledUnavailable(SynchronizationError):
+    pass
+
+
+class HyprlandUnavailable(SynchronizationError):
+    pass
+
+
+class ApplyFailed(SynchronizationError):
+    pass
+
+
+@dataclass(frozen=True)
+class XkbTuple:
+    layout: str
+    model: str
+    variant: str
+    options: str
+
+    @classmethod
+    def from_localed(cls, properties: dict[str, object]) -> "XkbTuple":
+        values: list[str] = []
+        for name in X11_PROPERTIES:
+            if name not in properties:
+                raise LocaledUnavailable(f"localed omitted required property {name}")
+            value = properties[name]
+            if hasattr(value, "unpack"):
+                value = value.unpack()
+            if not isinstance(value, str):
+                raise LocaledUnavailable(f"localed property {name} is not a string")
+            values.append(value)
+        return cls(*values)
+
+    def as_log_dict(self) -> dict[str, str]:
+        return {
+            "layout": self.layout,
+            "model": self.model,
+            "variant": self.variant,
+            "options": self.options,
+        }
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+class Runner(Protocol):
+    def __call__(self, argv: Sequence[str]) -> CommandResult: ...
+
+
+def run_command(argv: Sequence[str]) -> CommandResult:
+    try:
+        result = subprocess.run(
+            list(argv),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            shell=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return CommandResult(127, "", str(error))
+    return CommandResult(result.returncode, result.stdout, result.stderr)
+
+
+def xkbcli_argv(value: XkbTuple) -> list[str]:
+    return [
+        XKBCLI,
+        "compile-keymap",
+        "--test",
+        "--rules",
+        "evdev",
+        "--model",
+        value.model,
+        "--layout",
+        value.layout,
+        "--variant",
+        value.variant,
+        "--options",
+        value.options,
+    ]
+
+
+def validate_tuple(value: XkbTuple, runner: Runner = run_command) -> tuple[bool, str]:
+    result = runner(xkbcli_argv(value))
+    diagnostics = result.stderr.strip() or result.stdout.strip()
+    return result.returncode == 0, diagnostics
+
+
+def lua_string(value: str) -> str:
+    """Return an exact Lua string literal without relying on shell quoting."""
+    encoded = value.encode("utf-8")
+    parts = ['"']
+    for byte in encoded:
+        if 0x20 <= byte <= 0x7E and byte not in (0x22, 0x5C):
+            parts.append(chr(byte))
+        else:
+            parts.append(f"\\x{byte:02x}")
+    parts.append('"')
+    return "".join(parts)
+
+
+def hyprland_eval_source(value: XkbTuple) -> str:
+    return (
+        "hl.config({ input = { "
+        f"kb_layout = {lua_string(value.layout)}, "
+        f"kb_model = {lua_string(value.model)}, "
+        f"kb_variant = {lua_string(value.variant)}, "
+        f"kb_options = {lua_string(value.options)}"
+        " } })"
+    )
+
+
+def hyprland_eval_argv(value: XkbTuple) -> list[str]:
+    return [HYPRCTL, "eval", hyprland_eval_source(value)]
+
+
+def hyprland_getoption_argv(option: str) -> list[str]:
+    return [HYPRCTL, "-j", "getoption", f"input:{option}"]
+
+
+class HyprlandClient:
+    OPTIONS = ("kb_layout", "kb_model", "kb_variant", "kb_options")
+
+    def __init__(self, runner: Runner = run_command) -> None:
+        self.runner = runner
+
+    def read_tuple(self) -> XkbTuple:
+        values: list[str] = []
+        for option in self.OPTIONS:
+            result = self.runner(hyprland_getoption_argv(option))
+            if result.returncode != 0:
+                raise HyprlandUnavailable(
+                    f"hyprctl getoption input:{option} failed: "
+                    f"{result.stderr.strip() or result.stdout.strip()}"
+                )
+            try:
+                payload = json.loads(result.stdout)
+                value = payload["str"]
+            except (json.JSONDecodeError, KeyError, TypeError) as error:
+                raise HyprlandUnavailable(
+                    f"invalid hyprctl getoption response for input:{option}"
+                ) from error
+            if not isinstance(value, str):
+                raise HyprlandUnavailable(
+                    f"hyprctl input:{option} response is not a string"
+                )
+            values.append(value)
+        return XkbTuple(*values)
+
+    def apply_tuple(self, value: XkbTuple) -> None:
+        result = self.runner(hyprland_eval_argv(value))
+        if result.returncode != 0 or result.stdout.strip() != "ok":
+            diagnostic = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
+            raise ApplyFailed(f"hyprctl eval failed: {diagnostic}")
+
+
+class LocaledClient:
+    def __init__(self, connection: Gio.DBusConnection) -> None:
+        self.connection = connection
+
+    def read_tuple(self) -> XkbTuple:
+        try:
+            reply = self.connection.call_sync(
+                LOCALED_SERVICE,
+                LOCALED_PATH,
+                PROPERTIES_INTERFACE,
+                "GetAll",
+                GLib.Variant("(s)", (LOCALED_INTERFACE,)),
+                GLib.VariantType.new("(a{sv})"),
+                Gio.DBusCallFlags.NONE,
+                COMMAND_TIMEOUT_SECONDS * 1000,
+                None,
+            )
+        except GLib.Error as error:
+            raise LocaledUnavailable(f"localed GetAll failed: {error.message}") from error
+        properties = reply.unpack()[0]
+        return XkbTuple.from_localed(properties)
+
+
+class Validator(Protocol):
+    def __call__(self, value: XkbTuple) -> tuple[bool, str]: ...
+
+
+class HyprlandAccess(Protocol):
+    def read_tuple(self) -> XkbTuple: ...
+
+    def apply_tuple(self, value: XkbTuple) -> None: ...
+
+
+class KeyboardSynchronizer:
+    def __init__(
+        self,
+        localed_reader: Callable[[], XkbTuple],
+        hyprland: HyprlandAccess,
+        validator: Validator = validate_tuple,
+        logger: logging.Logger = LOG,
+    ) -> None:
+        self.localed_reader = localed_reader
+        self.hyprland = hyprland
+        self.validator = validator
+        self.logger = logger
+        self.last_observed: XkbTuple | None = None
+        self.last_successful: XkbTuple | None = None
+
+    def _rollback(self, prior: XkbTuple, requested: XkbTuple) -> bool:
+        valid, diagnostic = self.validator(prior)
+        if not prior.layout or not valid:
+            self.logger.error(
+                "cannot safely roll back requested tuple %s to prior tuple %s: %s",
+                requested.as_log_dict(),
+                prior.as_log_dict(),
+                diagnostic or "prior layout is empty or invalid",
+            )
+            return False
+        try:
+            self.hyprland.apply_tuple(prior)
+            restored = self.hyprland.read_tuple()
+        except SynchronizationError as error:
+            self.logger.error(
+                "rollback failed for requested tuple %s: %s",
+                requested.as_log_dict(),
+                error,
+            )
+            return False
+        if restored != prior:
+            self.logger.error(
+                "rollback verification failed: expected %s, got %s",
+                prior.as_log_dict(),
+                restored.as_log_dict(),
+            )
+            return False
+        self.logger.warning("restored prior Hyprland XKB tuple %s", prior.as_log_dict())
+        return True
+
+    def reconcile(self, *, force: bool = False) -> str:
+        try:
+            requested = self.localed_reader()
+        except LocaledUnavailable as error:
+            self.logger.warning("localed is unavailable; keeping Hyprland state: %s", error)
+            return "localed-unavailable"
+
+        previous_observed = self.last_observed
+        self.last_observed = requested
+
+        if not requested.layout:
+            self.logger.warning(
+                "localed has no graphical XKB layout; keeping current Hyprland state"
+            )
+            return "empty-layout"
+
+        valid, diagnostic = self.validator(requested)
+        if not valid:
+            self.logger.error(
+                "localed XKB tuple failed preflight; keeping Hyprland state: %s; %s",
+                requested.as_log_dict(),
+                diagnostic or "xkbcli returned failure without diagnostics",
+            )
+            return "invalid"
+
+        try:
+            prior = self.hyprland.read_tuple()
+        except HyprlandUnavailable as error:
+            self.logger.warning("Hyprland IPC is unavailable; keeping runtime state: %s", error)
+            return "hyprland-unavailable"
+
+        if prior == requested:
+            self.last_successful = requested
+            self.logger.debug(
+                "Hyprland XKB tuple already matches localed%s",
+                " after forced reconciliation" if force else "",
+            )
+            return "unchanged"
+
+        if (
+            not force
+            and previous_observed == requested
+            and self.last_successful == requested
+        ):
+            self.logger.debug(
+                "localed graphical XKB tuple is unchanged; ignoring runtime drift on "
+                "an ordinary property event"
+            )
+            return "unchanged-authority"
+
+        self.logger.info(
+            "applying localed XKB tuple %s over Hyprland tuple %s",
+            requested.as_log_dict(),
+            prior.as_log_dict(),
+        )
+        try:
+            self.hyprland.apply_tuple(requested)
+            applied = self.hyprland.read_tuple()
+            if applied != requested:
+                raise ApplyFailed(
+                    f"readback mismatch: expected {requested.as_log_dict()}, "
+                    f"got {applied.as_log_dict()}"
+                )
+        except SynchronizationError as error:
+            self.logger.error(
+                "failed to apply requested XKB tuple %s: %s",
+                requested.as_log_dict(),
+                error,
+            )
+            return "rolled-back" if self._rollback(prior, requested) else "rollback-failed"
+
+        self.last_successful = requested
+        self.logger.info("synchronized Hyprland XKB tuple %s", requested.as_log_dict())
+        return "applied"
+
+
+def signal_requires_reconcile(
+    interface_name: str,
+    changed_names: Sequence[str],
+    invalidated_names: Sequence[str],
+) -> bool:
+    if interface_name != LOCALED_INTERFACE:
+        return False
+    reported = set(changed_names) | set(invalidated_names)
+    return bool(reported.intersection(X11_PROPERTIES))
+
+
+def dispatch_properties_changed(
+    interface_name: str,
+    changed_names: Sequence[str],
+    invalidated_names: Sequence[str],
+    request_reconcile: Callable[..., None],
+) -> bool:
+    if not signal_requires_reconcile(interface_name, changed_names, invalidated_names):
+        return False
+    request_reconcile(force=False)
+    return True
+
+
+class ReconcileCoordinator:
+    """Coalesce requests and never run two reconciliations concurrently."""
+
+    def __init__(
+        self,
+        worker: Callable[..., object],
+        schedule: Callable[[Callable[[], bool]], object],
+    ) -> None:
+        self.worker = worker
+        self.schedule = schedule
+        self.pending = False
+        self.pending_force = False
+        self.scheduled = False
+        self.running = False
+
+    def request(self, *, force: bool = False) -> None:
+        self.pending = True
+        self.pending_force = self.pending_force or force
+        if not self.running and not self.scheduled:
+            self.scheduled = True
+            self.schedule(self._drain)
+
+    def _drain(self) -> bool:
+        self.scheduled = False
+        if self.running or not self.pending:
+            return GLib.SOURCE_REMOVE
+        force = self.pending_force
+        self.pending = False
+        self.pending_force = False
+        self.running = True
+        try:
+            self.worker(force=force)
+        finally:
+            self.running = False
+        if self.pending and not self.scheduled:
+            self.scheduled = True
+            self.schedule(self._drain)
+        return GLib.SOURCE_REMOVE
+
+
+class RuntimeRequestGate:
+    """Hold requests until the exact Hyprland command socket is available."""
+
+    def __init__(self, coordinator: ReconcileCoordinator) -> None:
+        self.coordinator = coordinator
+        self.ipc_available = False
+        self.pending = False
+        self.pending_force = False
+
+    def request(self, *, force: bool = False) -> None:
+        if self.ipc_available:
+            self.coordinator.request(force=force)
+            return
+        self.pending = True
+        self.pending_force = self.pending_force or force
+
+    def update_ipc(self, available: bool) -> None:
+        if available == self.ipc_available:
+            return
+        self.ipc_available = available
+        if not available:
+            LOG.warning("Hyprland IPC socket disappeared; waiting for an event-driven return")
+            return
+        LOG.info("Hyprland IPC socket is available")
+        self.pending = False
+        self.pending_force = False
+        self.coordinator.request(force=True)
+
+
+class HyprlandIpcMonitor:
+    def __init__(
+        self,
+        socket_path: Path,
+        availability_callback: Callable[[bool], None],
+    ) -> None:
+        self.socket_path = socket_path
+        self.availability_callback = availability_callback
+        self.monitor: Gio.FileMonitor | None = None
+        self.monitored_path: Path | None = None
+        self.rearm_scheduled = False
+        self._rearm()
+
+    def _socket_available(self) -> bool:
+        try:
+            return stat.S_ISSOCK(self.socket_path.stat().st_mode)
+        except OSError:
+            return False
+
+    def _nearest_existing_directory(self) -> Path:
+        runtime_directory = self.socket_path.parents[2]
+        candidate = self.socket_path.parent
+        while not candidate.is_dir():
+            if candidate == runtime_directory:
+                raise RuntimeError("XDG_RUNTIME_DIR is unavailable")
+            parent = candidate.parent
+            candidate = parent
+        return candidate
+
+    def _rearm(self) -> bool:
+        self.rearm_scheduled = False
+        self.availability_callback(self._socket_available())
+        directory = self._nearest_existing_directory()
+        if directory == self.monitored_path and self.monitor is not None:
+            return GLib.SOURCE_REMOVE
+        if self.monitor is not None:
+            self.monitor.cancel()
+        try:
+            self.monitor = Gio.File.new_for_path(str(directory)).monitor_directory(
+                Gio.FileMonitorFlags.WATCH_MOVES,
+                None,
+            )
+        except GLib.Error as error:
+            raise RuntimeError(f"cannot monitor Hyprland IPC path: {error.message}") from error
+        self.monitored_path = directory
+        self.monitor.connect("changed", self._changed)
+        LOG.debug("monitoring %s for Hyprland IPC changes", directory)
+        return GLib.SOURCE_REMOVE
+
+    def _changed(
+        self,
+        _monitor: Gio.FileMonitor,
+        changed_file: Gio.File,
+        other_file: Gio.File | None,
+        event_type: Gio.FileMonitorEvent,
+    ) -> None:
+        changed_paths = {changed_file.get_path()}
+        if other_file is not None:
+            changed_paths.add(other_file.get_path())
+        disappearance_events = {
+            Gio.FileMonitorEvent.DELETED,
+            Gio.FileMonitorEvent.MOVED_OUT,
+            Gio.FileMonitorEvent.UNMOUNTED,
+        }
+        if str(self.socket_path) in changed_paths and event_type in disappearance_events:
+            # Preserve a disappearance edge even if deletion and recreation are
+            # delivered in one busy-loop turn.
+            self.availability_callback(False)
+        if not self.rearm_scheduled:
+            self.rearm_scheduled = True
+            GLib.idle_add(self._rearm)
+
+
+class LocaledObserver:
+    def __init__(
+        self,
+        connection: Gio.DBusConnection,
+        request_reconcile: Callable[..., None],
+    ) -> None:
+        self.request_reconcile = request_reconcile
+        flags = Gio.DBusProxyFlags.DO_NOT_AUTO_START | Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES
+        self.proxy = Gio.DBusProxy.new_sync(
+            connection,
+            flags,
+            None,
+            LOCALED_SERVICE,
+            LOCALED_PATH,
+            LOCALED_INTERFACE,
+            None,
+        )
+        self.proxy.connect("g-properties-changed", self._properties_changed)
+        self.proxy.connect("notify::g-name-owner", self._name_owner_changed)
+
+    def _properties_changed(
+        self,
+        _proxy: Gio.DBusProxy,
+        changed_properties: GLib.Variant,
+        invalidated_properties: Sequence[str],
+    ) -> None:
+        changed_names = tuple(changed_properties.unpack().keys())
+        dispatch_properties_changed(
+            LOCALED_INTERFACE,
+            changed_names,
+            invalidated_properties,
+            self.request_reconcile,
+        )
+
+    def _name_owner_changed(self, proxy: Gio.DBusProxy, _spec: object) -> None:
+        owner = proxy.get_name_owner()
+        if owner:
+            LOG.info("systemd-localed appeared as %s", owner)
+            self.request_reconcile(force=True)
+        else:
+            LOG.warning("systemd-localed disappeared; keeping current Hyprland state")
+
+
+def hyprland_socket_path(environment: dict[str, str]) -> Path:
+    runtime = environment.get("XDG_RUNTIME_DIR", "")
+    signature = environment.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    if not runtime or not Path(runtime).is_absolute():
+        raise RuntimeError("XDG_RUNTIME_DIR must be an absolute path")
+    if not signature or signature in {".", ".."} or "/" in signature:
+        raise RuntimeError("HYPRLAND_INSTANCE_SIGNATURE is missing or invalid")
+    return Path(runtime) / "hypr" / signature / ".socket.sock"
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s vanhyprarch-keyboard-sync: %(message)s",
+    )
+
+
+def main() -> int:
+    configure_logging()
+    try:
+        connection = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        socket_path = hyprland_socket_path(dict(os.environ))
+    except (GLib.Error, RuntimeError) as error:
+        LOG.error("cannot initialize keyboard synchronization: %s", error)
+        return 1
+
+    localed = LocaledClient(connection)
+    synchronizer = KeyboardSynchronizer(localed.read_tuple, HyprlandClient())
+    coordinator = ReconcileCoordinator(synchronizer.reconcile, GLib.idle_add)
+    gate = RuntimeRequestGate(coordinator)
+    observer = LocaledObserver(connection, gate.request)
+    ipc_monitor = HyprlandIpcMonitor(socket_path, gate.update_ipc)
+    loop = GLib.MainLoop()
+
+    def force_reconcile() -> bool:
+        LOG.info("forced reconciliation requested")
+        gate.request(force=True)
+        return GLib.SOURCE_CONTINUE
+
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGHUP, force_reconcile)
+    gate.request(force=True)
+
+    # Keep Gio-owned objects alive for the full loop lifetime.
+    _lifetime = (observer, ipc_monitor)
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

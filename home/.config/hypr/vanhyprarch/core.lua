@@ -52,11 +52,17 @@ hl.env("HYPRCURSOR_SIZE", "24")
 hl.on("hyprland.start", function ()
     hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-appearance renderer-start")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
+    hl.exec_cmd("systemctl --user restart vanhyprarch-keyboard-sync.service")
     hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-idle session-start")
     hl.exec_cmd("qs -n -c vanhyprarch")
     if dictationComponentInstalled() then
         hl.exec_cmd("systemctl --user start vanhyprarch-voxtype.service")
     end
+end)
+
+-- Runtime keyboard projection must be reconciled after a full config reparse.
+hl.on("config.reloaded", function ()
+    hl.exec_cmd("systemctl --user reload vanhyprarch-keyboard-sync.service")
 end)
 
 -- Appearance ------------------------------------------------------------------

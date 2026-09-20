@@ -58,8 +58,11 @@ The shared bootstrap will eventually:
 - deploy the main `vanhyprarch` named Quickshell configuration;
 - atomically install regular executable files for public project commands,
   including `vanhyprarch-idle`, `vanhyprarch-screensaver`, and
-  `vanhyprarch-screenshot`, plus `vanhyprarch-appearance`, under
-  `$HOME/.local/bin` without depending on a Git checkout;
+  `vanhyprarch-screenshot`, under `$HOME/.local/bin` without depending on a Git
+  checkout; install `vanhyprarch-appearance` and
+  `vanhyprarch-keyboard-sync` through the same public-command contract;
+- deploy the static `vanhyprarch-keyboard-sync.service` user unit without
+  enabling it; Hyprland remains its startup and reload-reconciliation owner;
 - deploy immutable Zig Screensaver manager resources, but leave the optional
   `vanhyprarch-zig-player` payload absent until explicitly installed;
 - establish required symlinks and enable or disable documented services;

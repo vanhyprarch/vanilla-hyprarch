@@ -235,6 +235,26 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+source = "bin/vanhyprarch-keyboard-sync"
+target = "$HOME/.local/bin/vanhyprarch-keyboard-sync"
+class = "MANAGED"
+component = "system-keyboard-synchronization"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/systemd/user/vanhyprarch-keyboard-sync.service"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/vanhyprarch-keyboard-sync.service"
+class = "MANAGED"
+component = "system-keyboard-synchronization"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
 source = "bin/vanhyprarch-appearance"
 target = "$HOME/.local/bin/vanhyprarch-appearance"
 class = "MANAGED"

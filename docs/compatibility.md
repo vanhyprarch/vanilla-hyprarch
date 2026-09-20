@@ -58,6 +58,41 @@ Retest the absolute-path resolver, required-file tracking, error behavior, and
 `--verify-config` after a Hyprland Lua-loader upgrade before changing the
 import mechanism.
 
+## System keyboard synchronization boundary
+
+**Affected components:** Hyprland 0.56.2, systemd/systemd-localed 261.3,
+libxkbcommon 1.13.2, and xkeyboard-config 2.48
+
+Hyprland's legacy `hyprctl keyword input:kb_*` path rejects the non-legacy Lua
+parser. The supported projection is one shell-free `hyprctl eval` call whose
+Lua source invokes `hl.config()` with layout, model, variant, and options.
+Controlled Runtime Experiment 1 proved that this operation is runtime-only,
+preserves the positional empty variant in `it,us` / `,`, and leaves a non-zero
+endpoint active-layout index unchanged when the identical tuple is submitted.
+The helper still suppresses identical evals to avoid unnecessary refreshes and
+protect behavior across future versions.
+
+A full configuration reload replaces runtime `hl.config()` values with parsed
+file state, so the managed `config.reloaded` hook requests one forced
+reconciliation. Runtime `hl.config()` property refresh does not itself emit
+`config.reloaded`. Hyprland can fall back to US after an invalid XKB tuple;
+every requested and rollback tuple is therefore checked first with
+`xkbcli compile-keymap --test --rules evdev`.
+
+systemd-localed 261.3 exposes the graphical tuple as `X11Layout`, `X11Model`,
+`X11Variant`, and `X11Options` on `org.freedesktop.locale1` and emits standard
+`PropertiesChanged` notifications. Its console keymap is separate when
+`localectl --no-convert set-keymap` is used. Default `set-keymap` and
+`set-x11-keymap` conversion semantics can update the other domain; explicit
+`--no-convert` prevents that conversion. The helper ignores locale/vconsole
+signals and always re-reads the complete X11 tuple for a relevant report.
+
+Retest the Lua eval API, reload event, identical-tuple active-index behavior,
+global hotplug inheritance, invalid-keymap behavior, and command-socket layout
+after a Hyprland upgrade. Retest locale1 properties, signals, D-Bus activation,
+and `--no-convert` semantics after a systemd major upgrade. Retest command-line
+validation after libxkbcommon or xkeyboard-config changes.
+
 ## Hyprlock portable baseline validation boundary
 
 **Affected component:** hyprlock 0.9.6
