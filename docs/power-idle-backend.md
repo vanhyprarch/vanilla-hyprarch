@@ -33,14 +33,19 @@ are rejected without rewriting another setting.
 version-1 files remain valid and read as `effect=colormix`; the next preference
 write migrates them to version 2 without changing their existing settings.
 
-Caffeine is runtime-only. An atomic file containing `on` at
+Caffeine ON is session-ephemeral. An atomic file containing `on` at
 `${XDG_RUNTIME_DIR}/vanhyprarch/caffeine` means enabled; absence means off. It
-never changes the durable preference file. Reapplying `caffeine on` or
-`caffeine off` is idempotent and reconciles the generated configuration after
-an interrupted operation. Every fresh Hyprland session runs the backend's
-`session-start` path before hypridle parses its configuration. That path removes
-any marker, regenerates the fragment from durable preferences with Caffeine
-off, and only then replaces itself with the packaged hypridle executable.
+never changes the durable preference file. Every fresh login, reboot, or
+shutdown/start starts with Caffeine OFF so a forgotten inhibitor cannot silently
+disable normal lock, display-off, or suspend protection in a later unattended
+session. A config reload or ordinary same-session shell activity neither turns
+Caffeine into a persistent preference nor resets the current session marker.
+Reapplying `caffeine on` or `caffeine off` is idempotent and reconciles the
+generated configuration after an interrupted operation. Every fresh Hyprland
+session runs the backend's `session-start` path before hypridle parses its
+configuration. That path removes any marker, regenerates the fragment from
+durable preferences with Caffeine off, and only then replaces itself with the
+packaged hypridle executable.
 
 The deployed version-2 state is Screen saver `never`, Display `never`, Suspend
 `never`, Lock `none`, effect `colormix`, and Caffeine off. This produces zero
