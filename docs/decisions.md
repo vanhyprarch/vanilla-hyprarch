@@ -399,6 +399,10 @@ without cleanup; no additional runtime dependency is required. Retest and
 remove the helper if a future Quickshell release exposes equivalent complete
 pairing-agent functionality.
 
+Repeated real cold logout/login tests verified that the old helper and BlueZ
+client disappear with Quickshell, no PPID-1 orphan remains, the old logind
+scope closes, and exactly one helper returns under the new Quickshell session.
+
 ## ADR-024: Persist one explicit Bluetooth power preference
 
 **Status:** Accepted
@@ -634,7 +638,7 @@ ancillary files exist only with a validated component marker.
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Repository prototype implemented; controlled live deployment pending
+**Implementation:** Implemented and live validated
 
 The system graphical/XKB configuration exposed by `systemd-localed` is the
 source of truth for the Hyprland keyboard layout. Vanilla HyprArch synchronizes
@@ -655,9 +659,8 @@ actual global Hyprland state; cached success cannot suppress runtime-drift
 repair, while console-only events remain ignored. The session-start action
 publishes the new compositor identity to the systemd user manager before it
 restarts the static service. It never owns the active layout group. The Italian
-layout preserved in the development machine file remains transitional
-migration state and a temporary live-validation safety net, not a permanent
-public default. See
+layout is not duplicated in the validated development-machine file or public
+seed; neither contains a global XKB fallback. See
 [System keyboard synchronization](system-keyboard-synchronization.md).
 
 ## ADR-032: Require confirmation before persisting risky monitor changes
@@ -773,7 +776,7 @@ while retaining the established dock-panel coexistence semantics.
 
 **Status:** Accepted
 **Date:** 2026-09-20
-**Implementation:** Repository implemented; controlled live validation pending
+**Implementation:** Implemented and live validated
 
 The inactive `graphical-session.target` in the direct
 `Ly -> start-hyprland -> Hyprland` architecture cannot own the packaged
@@ -783,10 +786,10 @@ target.
 
 At `hyprland.start`, `vanhyprarch-polkit-session session-start` validates the
 current compositor and Wayland sockets, synchronously imports the current
-signature and display environment, resets any inherited failed/start-limit
-state, and restarts the package service. The shared graceful logout action
-stops that service before it execs `hyprshutdown`; a failed stop prevents the
-logout from proceeding without its required ordering.
+signature and display environment, resets inherited failure state only when
+the service is actually failed, and restarts the package service. The shared
+graceful logout action stops that service before it execs `hyprshutdown`; a
+failed stop prevents the logout from proceeding without its required ordering.
 
 A managed package drop-in adds an `ExecCondition` that revalidates the current
 compositor before every initial or automatic service start, plus a one-second
@@ -796,3 +799,8 @@ restart is skipped cleanly instead of creating an abort loop. Direct manual
 compositor termination has no universal pre-exit callback, so it relies on
 that condition; reboot and poweroff terminate the user manager. Clean
 same-login compositor restart is not a supported product lifecycle.
+
+Repeated real cold logout/login tests verified stop-before-compositor-loss,
+automatic fresh-session startup of exactly one official agent, current
+environment inheritance, and absence of compositor-less restart or start-limit
+storms. The package-owned unit remained unchanged.

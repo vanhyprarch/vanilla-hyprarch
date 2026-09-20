@@ -122,6 +122,13 @@ in `ExecReload` and supplies `$MAINPID` for the service main process; the
 shell-free `/usr/bin/kill -HUP $MAINPID` form remains the smallest exact signal
 delivery for this service.
 
+Final live validation removed the private machine fallback. A fresh Ly login
+exposed Hyprland's built-in `us` tuple, then one preflighted transaction
+projected localed's `it / pc105 / "" / terminate:ctrl_alt_bksp` state and
+verified exact readback. Completion was observed approximately 123 ms after the
+new IPC socket became available, with immediate human Italian input passing;
+this is compatibility evidence, not a timing guarantee.
+
 Retest the Lua eval API, reload event, identical-tuple active-index behavior,
 global hotplug inheritance, activation-environment ordering, invalid-keymap
 behavior, and command-socket layout after a Hyprland upgrade. Retest locale1
@@ -200,6 +207,12 @@ restarts the official service. Each stage writes a concise
 so a later login failure can be assigned to readiness, import, failure reset,
 restart, or final service verification without a wrapper unit.
 
+Repeated controlled cold logins validated the final path: the old agent
+stopped before Wayland loss, no conditioned restart loop occurred, an inactive
+non-failed unit skipped `reset-failed`, and exactly one official agent started
+with the new compositor environment. Graphical authorization then completed
+successfully.
+
 Retest named reset behavior and unit garbage collection after a systemd major
 update. Retest startup-event/socket ordering after a Hyprland upgrade. Retest
 after a hyprpolkitagent package or service-template update, and remove or
@@ -211,7 +224,7 @@ target; do not carry both lifecycle owners.
 
 **Affected components:** Hyprland 0.56.2-3 with Aquamarine 0.15.0 and 0.15.1-1
 
-Seven local Hyprland coredumps from 2026-09-09 through 2026-09-20 occurred only
+Repeated local Hyprland coredumps from 2026-09-09 through 2026-09-20 occurred only
 while Ly sessions were closing. Every dump has SIGSEGV at
 `CDRMBackend::flushAsyncCommitEvents()`, followed by `cancelAsyncOutput()`,
 `SDRMConnector::disconnect()`, and the DRM backend destructor. The logout still

@@ -512,6 +512,33 @@ owner B appearing, and owner B's later signal driving an actual newest-state
 apply; stale-owner, activation, read-race, console-only, and warning-free
 SIGHUP cases are covered. The corrected helper is not yet redeployed.
 
+## 2026-09-20: Keyboard synchronization and session lifecycle closure
+
+The corrected direct D-Bus implementation was deployed and passed graphical
+Italian-to-US-to-Italian changes, console-only isolation, localed owner
+reincarnation, config-reload reconciliation, service restart, and a cold Ly
+login. Runtime drift was always compared against fresh authoritative state, and
+the new daemon inherited the current compositor signature and exact IPC path.
+
+The supporting session lifecycle work also passed repeated real logouts.
+Linux parent-death signaling removed each old Bluetooth pairing helper with its
+Quickshell parent and allowed the old logind scope to close. Vanilla's direct
+PolicyKit helper stopped the official package service before compositor loss,
+published the next session environment, skipped `reset-failed` for an unloaded
+non-failed unit, and started exactly one healthy official agent without a
+restart storm. Caffeine remained same-session runtime state and reset OFF on
+fresh login. The package-owned PolicyKit unit was never replaced or edited.
+
+After those gates passed, the private transitional Italian machine block was
+removed. Both a controlled config reload and the final no-fallback cold login
+observed Hyprland's built-in `us` state before keyboard synchronization
+restored localed's `it / pc105 / "" / terminate:ctrl_alt_bksp` tuple. The
+final startup used one validation/apply/readback cycle, completed about 123 ms
+after IPC availability, and passed immediate human Italian typing. No global
+machine or override fallback remains. The repeatable Aquamarine 0.15.1
+teardown SIGSEGV remains an upstream compatibility record; it did not prevent
+logout or session closure.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

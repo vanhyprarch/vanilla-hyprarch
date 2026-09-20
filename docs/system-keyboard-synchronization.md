@@ -143,23 +143,24 @@ synchronizer.
 
 systemd's service manager is the singleton authority. An additional advisory
 runtime lock would add a second lifecycle mechanism and stale-lock recovery for
-no current supported caller, so the prototype deliberately omits one. Manual
-direct invocation is diagnostic and unsupported; normal startup always uses
-the unit.
+no current supported caller, so the implementation deliberately omits one.
+Manual direct invocation is diagnostic and unsupported; normal startup always
+uses the unit.
 
-## Transitional safety net
+## Validated deployment and migration
 
-The development machine's private machine configuration still contains its
-explicit Italian `hl.config({ input = ... })` block. It is a temporary migration
-safety net, not a public default, and this repository implementation does not
-edit or remove it. Removal requires all of the following controlled live
-checks while it remains available for recovery:
+Controlled live tests covered daemon startup, real graphical localed changes,
+console-only isolation, repeated localed owner reincarnation, config-reload
+reconciliation without a feedback loop, service restart, and fresh Ly login.
+The transitional private Italian machine block was removed after those tests;
+the create-once seed, live machine file, and user override now contain no
+global XKB preference.
 
-1. daemon startup and initial reconciliation;
-2. real localed D-Bus change propagation;
-3. config-reload reconciliation without a feedback loop;
-4. service restart and IPC disappearance/reappearance behavior;
-5. one cold logout/login with the expected Italian effective state.
-
-Only after those checks pass may a separate migration remove the live block.
-The create-once machine seed remains keyboard-neutral.
+During the final no-fallback cold login, the first tuple observed by the new
+daemon was Hyprland's built-in `us` state with unset model, variant, and
+options. The daemon read localed's authoritative
+`it / pc105 / "" / terminate:ctrl_alt_bksp` tuple, validated it, applied it
+once, and verified exact readback. Synchronization completed approximately
+123 ms after the compositor IPC socket became available, and immediate human
+Italian typing passed. That timing is validation evidence from one machine,
+not a service-level guarantee.

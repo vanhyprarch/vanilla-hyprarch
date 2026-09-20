@@ -114,9 +114,9 @@ into Hyprland.
 The project does not own `/etc/vconsole.conf`,
 `/etc/X11/xorg.conf.d/00-keyboard.conf`, locale1 state, active layout groups, or
 per-device input rules. The create-once machine file remains
-`MACHINE_CONFIGURATION`. Its private development-machine Italian block is a
-temporary migration safety net and is not modified by this repository
-prototype.
+`MACHINE_CONFIGURATION`; the validated development-machine file contains no
+global XKB fallback. Explicit per-device exceptions may remain machine- or
+user-owned without becoming synchronizer state.
 
 ## PolicyKit session lifecycle ownership
 

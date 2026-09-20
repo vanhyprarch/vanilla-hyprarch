@@ -158,9 +158,9 @@ The graphical layout/model/variant/options tuple belongs to `systemd-localed`.
 The managed `vanhyprarch-keyboard-sync` helper validates and projects it into
 Hyprland at session start and on relevant D-Bus changes. Active groups remain
 Hyprland/user runtime state, while device-specific input rules remain machine
-configuration. The public machine seed intentionally leaves both layout and
-device rules unset. The development machine's Italian block is a temporary
-live-validation safety net and is not a managed baseline default.
+configuration. The public machine seed and validated development-machine file
+both leave the global XKB tuple unset; explicit per-device exceptions may still
+belong in machine configuration.
 
 ## Deliberate default applications
 

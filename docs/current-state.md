@@ -80,10 +80,10 @@ absolute `require()` calls.
 
 The controlled live migration now runs the managed loader, core, and bindings
 as regular files. Its machine-owned file preserves the development machine's
-explicit `DP-1` profile and transitional Italian keyboard setting; neither is
-a public default. The user override remains the exact header-only seed. The old
-root `~/.config/hypr/bindings.lua` was removed only after validation and
-remains in the migration recovery material.
+explicit `DP-1` profile but contains no global XKB preference. The user
+override remains the exact header-only seed. The old root
+`~/.config/hypr/bindings.lua` was removed only after validation and remains in
+the migration recovery material.
 
 The Monitor panel now resolves `XDG_CONFIG_HOME`, targets only the regular
 user-owned machine file, matches the focused connector to its explicit output
@@ -162,6 +162,13 @@ service synchronously before it execs `hyprshutdown`; a compositor crash instead
 reaches one conditioned package restart and becomes inactive when no live
 compositor remains. The packaged unit itself is not replaced.
 
+Repeated controlled cold logout/login tests validated that the old PolicyKit
+agent stops before compositor loss, no compositor-less restart storm occurs,
+and one new official agent starts automatically with the new session
+environment. The same tests proved that the Bluetooth pairing helper's parent
+death binding removes the old helper and BlueZ client, the old logind scope
+closes, and one helper returns as a child of the new Quickshell process.
+
 The earlier shell wrapper was introduced after a real reboot showed that bare
 hypridle lacked the public-command path. The unified session PATH remains
 validated for normal launched session applications, including Quickshell,
@@ -192,7 +199,7 @@ runtime validation.
 Hyprland's existing input configuration sets `numlock_by_default = true`, so
 Num Lock is enabled by default when the graphical session starts.
 
-## System keyboard synchronization — REPOSITORY IMPLEMENTED / LIVE DEPLOYMENT PENDING
+## System Keyboard Synchronization — IMPLEMENTED AND LIVE VALIDATED
 
 `systemd-localed` is the graphical XKB preference authority. The managed
 `vanhyprarch-keyboard-sync` Python/Gio helper reads its complete
@@ -229,15 +236,21 @@ applies only when runtime state actually differs. The helper does not inspect
 devices, write per-device rules, or read/store/switch active groups. See
 [System keyboard synchronization](system-keyboard-synchronization.md).
 
-Controlled Runtime Experiment 1 passed. A later live prototype startup also
-reconciled successfully, but repeated natural localed owner cycling exposed a
-proxy signal-delivery defect before the first graphical-change test could
-complete. The live service was stopped and system state restored. The
-repository implementation now uses direct owner-authenticated connection
-signals and has not yet been redeployed. The private live Italian machine
-block remains the required migration safety net until resumed D-Bus tests,
-reload recovery, service lifecycle, and a cold logout/login pass under
-controlled validation.
+Controlled live validation covered graphical Italian-to-US-to-Italian localed
+changes, console-only isolation, repeated localed owner reincarnation, config
+reload reconciliation, service restart, and fresh Ly login. The original proxy
+signal-delivery defect was reproduced, replaced by the direct owner-aware
+connection design above, and verified against a later owner before migration
+continued.
+
+The transitional private Italian machine block was then removed. A controlled
+reload and a final cold login both exposed Hyprland's built-in `us` state before
+the service projected localed's
+`it / pc105 / "" / terminate:ctrl_alt_bksp` tuple. On the final login,
+validation, one runtime apply, and exact readback completed about 123 ms after
+the IPC socket became available; immediate human Italian typing passed. This
+is one-machine evidence, not a performance SLA. The live machine and user
+override contain no hidden global XKB fallback.
 
 ## Optional local dictation — IMPLEMENTED AND VALIDATED
 
@@ -879,14 +892,6 @@ workaround. Physical two-monitor validation remains pending.
 
 ### PROVISIONAL
 
-- System Keyboard Synchronization passed its first real cold-login lifecycle
-  test with authoritative Italian state. Retain the transitional Italian
-  machine block until the separate session-lifecycle fixes pass controlled
-  live validation; fallback removal remains a distinct authorized migration.
-- Deploy and validate the Bluetooth parent-death and PolicyKit direct-session
-  lifecycle fixes in one controlled cold logout/login. Confirm the old logind
-  scope closes and the graphical PolicyKit agent returns without a restart
-  storm.
 - Validate the external player's physical multi-output and suspend/resume
   behavior.
 - Validate remaining lock-at-suspend and Caffeine lifecycle combinations

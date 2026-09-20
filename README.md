@@ -45,6 +45,8 @@ Matrix, Doom, and Game of Life.
 - per-screen dock and desktop frame with launchers, workspaces, tray, clock,
   theme and power controls;
 - native Quickshell audio, NetworkManager Wi-Fi, and BlueZ Bluetooth controls;
+- event-driven projection of systemd-localed's graphical XKB tuple into
+  Hyprland, without owning active layout groups or per-device rules;
 - DDC/CI brightness and development-machine scale presets;
 - persistent Power & Idle preferences, Caffeine, automatic locking, display
   power-off and suspend/resume, with capability-aware support for the optional
@@ -129,10 +131,10 @@ disclosure and practical migration guidance.
 
 The Appearance foundation is implemented only in an isolated candidate and
 still needs human review and controlled deployment; its visual background
-picker is future work. System keyboard synchronization passed its first real
-cold-login lifecycle test; its transitional Italian machine fallback remains
-until the separate session-lifecycle hardening candidate passes controlled
-live validation and fallback removal is separately authorized.
+picker is future work. System keyboard synchronization and the supporting
+direct-session lifecycle hardening are live-validated. The development machine
+has no global keyboard fallback: localed is the persistent graphical authority
+and the managed service is its sole global runtime projection into Hyprland.
 The pinned player release is
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application
