@@ -315,6 +315,7 @@ io.write(table.concat(loaded, "\n"))
     def test_public_commands_keep_regular_user_local_targets(self) -> None:
         command_classes = {
             "vanhyprarch-idle": "MANAGED",
+            "vanhyprarch-polkit-session": "MANAGED",
             "vanhyprarch-screenshot": "MANAGED",
             "vanhyprarch-dictation": "MANAGED",
             "vanhyprarch-screensaver": "MANAGED",

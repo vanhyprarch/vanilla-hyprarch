@@ -74,8 +74,8 @@ and unresolved choices are maintained in the canonical
 | --- | --- | --- |
 | Compositor and window manager | `hyprland` | Hyprland owns composition, windows, input, bindings, and session autostart. |
 | Project shell | `quickshell`, `qt6-svg` | Quickshell owns the main desktop shell. |
-| Graphical authorization | `hyprpolkitagent` | Hyprland starts its packaged systemd user service for the direct graphical session. |
-| Session logout | `hyprshutdown` | The Power Menu uses Hyprland's graceful shutdown utility to end the direct session cleanly. |
+| Graphical authorization | `hyprpolkitagent` | Hyprland invokes the managed direct-session lifecycle helper, which publishes the display environment and owns ordered start/stop around the packaged systemd user service. |
+| Session logout | `hyprshutdown` | The Power Menu stops the graphical PolicyKit agent and then execs Hyprland's graceful shutdown utility. |
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
 | Optional screensaver renderer | baseline `python` and `wayland`, external `vanhyprarch-zig-player` v0.1.1 | `python` and Wayland are independently required, so the component adds no official package. `vanhyprarch-screensaver` and immutable pinned metadata are baseline; the native player, license, notices, README/release record, and marker exist only when Zig Screensaver is installed. |
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
@@ -247,15 +247,21 @@ Vanilla HyprArch uses the direct
 `Ly -> /usr/bin/start-hyprland -> Hyprland` session path; UWSM is not part of
 the project architecture. The required official `hyprpolkitagent` package
 provides graphical PolicyKit authentication for GUI applications that need
-privileged authorization. Hyprland starts its packaged user service from the
-existing `hyprland.start` callback with:
+privileged authorization. Hyprland invokes the managed direct-session
+lifecycle helper from the existing `hyprland.start` callback with:
 
 ```text
-systemctl --user start hyprpolkitagent
+exec $HOME/.local/bin/vanhyprarch-polkit-session session-start
 ```
 
-The project does not enable the unit separately; the direct Hyprland session
-remains its startup owner.
+The helper validates the current Hyprland and Wayland sockets, synchronously
+imports the current display environment, clears a prior service failure, and
+restarts exactly one packaged agent. The project does not enable the unit
+separately. Its managed user drop-in adds a compositor-aware `ExecCondition`
+and a one-second restart delay without replacing `/usr/lib` package content.
+The shared Power action synchronously stops the service before replacing
+itself with `/usr/bin/hyprshutdown`; compositor crashes are handled by the
+drop-in's conditioned package restart instead of a graceful-exit callback.
 
 The GTK portal backend supplies `org.freedesktop.impl.portal.Settings` because
 the Hyprland backend does not implement that interface. Appearance writes only

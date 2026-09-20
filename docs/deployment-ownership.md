@@ -118,6 +118,15 @@ per-device input rules. The create-once machine file remains
 temporary migration safety net and is not modified by this repository
 prototype.
 
+## PolicyKit session lifecycle ownership
+
+`$HOME/.local/bin/vanhyprarch-polkit-session` and the
+`hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf` user drop-in
+are `MANAGED` payload. They own ordered start and graceful logout stop for the
+real direct Hyprland session. The official package continues to own the base
+`/usr/lib/systemd/user/hyprpolkitagent.service` unit and agent executable;
+Vanilla neither copies nor edits that package file.
+
 ## Zig Screensaver ownership
 
 `$HOME/.local/bin/vanhyprarch-screensaver`, its private Python implementation,

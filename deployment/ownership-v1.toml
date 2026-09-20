@@ -255,6 +255,26 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+source = "bin/vanhyprarch-polkit-session"
+target = "$HOME/.local/bin/vanhyprarch-polkit-session"
+class = "MANAGED"
+component = "polkit-session-lifecycle"
+mode = "0755"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+source = "home/.config/systemd/user/hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf"
+class = "MANAGED"
+component = "polkit-session-lifecycle"
+mode = "0644"
+authority = "vanilla-hyprarch"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
 source = "bin/vanhyprarch-appearance"
 target = "$HOME/.local/bin/vanhyprarch-appearance"
 class = "MANAGED"

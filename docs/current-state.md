@@ -129,7 +129,10 @@ Hyprland starts these processes on `hyprland.start`:
 
 1. `exec $HOME/.local/bin/vanhyprarch-appearance renderer-start`, which
    preserves one direct session-owned Hyprpaper process
-2. `systemctl --user start hyprpolkitagent`
+2. `exec $HOME/.local/bin/vanhyprarch-polkit-session session-start`, which
+   publishes the current display environment, clears an inherited service
+   failure, and restarts one graphical PolicyKit agent only after validating
+   the current Hyprland and Wayland sockets
 3. `exec $HOME/.local/bin/vanhyprarch-keyboard-sync session-start`, which
    imports only the new compositor's signature and display variables into the
    user manager before restarting the static service; the unit then performs
@@ -145,8 +148,14 @@ Hyprland starts these processes on `hyprland.start`:
 
 The official `hyprpolkitagent` package provides graphical PolicyKit
 authentication for GUI applications that require privileged authorization.
-Its packaged user service is started by the direct Hyprland session and is not
-enabled as a separate login-time startup owner.
+Its packaged user service is not enabled as a separate login-time startup
+owner. Vanilla's direct session helper owns ordered start and graceful stop,
+while a managed drop-in conditions every package-service start on the current
+compositor and slows failure recovery to one second. A fresh session resets
+any old `start-limit-hit` before restart. The common Power logout path stops
+the service synchronously before it execs `hyprshutdown`; a compositor crash
+instead reaches one conditioned package restart and becomes inactive when no
+live compositor remains. The packaged unit itself is not replaced.
 
 The earlier shell wrapper was introduced after a real reboot showed that bare
 hypridle lacked the public-command path. The unified session PATH remains

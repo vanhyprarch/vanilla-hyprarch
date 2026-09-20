@@ -60,7 +60,7 @@ Scope {
             Quickshell.execDetached(["systemctl", "suspend"])
             return true
         case "logout":
-            Quickshell.execDetached(["hyprshutdown"])
+            Quickshell.execDetached(["vanhyprarch-polkit-session", "logout"])
             return true
         case "reboot":
             Quickshell.execDetached(["systemctl", "reboot"])

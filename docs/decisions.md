@@ -434,7 +434,9 @@ Vanilla HyprArch does not persist or wrap a second application catalog.
 Power operations are explicit project actions shared with PowerMenu. Lock and
 Suspend execute immediately. Logout, Reboot, and Power off require
 confirmation. The commands remain `loginctl lock-session`, `systemctl
-suspend`, `hyprshutdown`, `systemctl reboot`, and `systemctl poweroff`.
+suspend`, `vanhyprarch-polkit-session logout`, `systemctl reboot`, and
+`systemctl poweroff`; the logout helper stops graphical authorization before
+it execs `hyprshutdown`.
 
 Filtering is synchronous and in-process over native objects and typed action
 metadata. It does not invoke a subprocess per keystroke or turn search results
@@ -766,3 +768,31 @@ explicit apply back through the global `AppearanceController`; QML never calls
 Hyprpaper. It uses the existing centered-overlay role and sole shell-global
 focus grab, so SuperSpace, Shortcuts, and the picker remain mutually exclusive
 while retaining the established dock-panel coexistence semantics.
+
+## ADR-035: Own PolicyKit around the direct graphical session
+
+**Status:** Accepted
+**Date:** 2026-09-20
+**Implementation:** Repository implemented; controlled live validation pending
+
+The inactive `graphical-session.target` in the direct
+`Ly -> start-hyprland -> Hyprland` architecture cannot own the packaged
+`hyprpolkitagent.service` lifecycle. Vanilla therefore owns the session edge
+explicitly without replacing the package unit or introducing a new session
+target.
+
+At `hyprland.start`, `vanhyprarch-polkit-session session-start` validates the
+current compositor and Wayland sockets, synchronously imports the current
+signature and display environment, resets any inherited failed/start-limit
+state, and restarts the package service. The shared graceful logout action
+stops that service before it execs `hyprshutdown`; a failed stop prevents the
+logout from proceeding without its required ordering.
+
+A managed package drop-in adds an `ExecCondition` that revalidates the current
+compositor before every initial or automatic service start, plus a one-second
+restart interval. The package's `Restart=on-failure` therefore still recovers
+an agent-only active-session crash. Once the compositor is absent, the next
+restart is skipped cleanly instead of creating an abort loop. Direct manual
+compositor termination has no universal pre-exit callback, so it relies on
+that condition; reboot and poweroff terminate the user manager. Clean
+same-login compositor restart is not a supported product lifecycle.
