@@ -5,37 +5,68 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import re
+import selectors
 import stat
 import subprocess
 import sys
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 
 SYSTEMCTL = "/usr/bin/systemctl"
+LOGGER = "/usr/bin/logger"
 HYPRSHUTDOWN = "/usr/bin/hyprshutdown"
 SERVICE = "hyprpolkitagent.service"
+LOG_IDENTIFIER = "vanhyprarch-polkit-session"
+READINESS_TIMEOUT_MS = 10_000
 SIGNATURE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
-Runner = Callable[[Sequence[str]], int]
+IN_ATTRIB = 0x00000004
+IN_CREATE = 0x00000100
+IN_DELETE = 0x00000200
+IN_DELETE_SELF = 0x00000400
+IN_MOVE_SELF = 0x00000800
+IN_MOVED_TO = 0x00000080
+INOTIFY_MASK = (
+    IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF | IN_MOVED_TO
+)
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    returncode: int
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class SessionIdentity:
+    runtime: Path
+    signature: str
+    wayland_display: str
+    display: str
+    instance: Path
+    compositor_socket: Path
+    wayland_socket: Path
+    instance_device: int
+    instance_inode: int
+
+
+Runner = Callable[[Sequence[str]], CommandResult | int]
+Logger = Callable[[str, str], None]
+Waiter = Callable[[SessionIdentity], str]
 
 
 class SessionUnavailable(RuntimeError):
     pass
 
 
-def owned_socket(path: Path, uid: int) -> bool:
-    try:
-        metadata = path.stat()
-    except OSError:
-        return False
-    return stat.S_ISSOCK(metadata.st_mode) and metadata.st_uid == uid
-
-
-def require_session_environment(
+def read_session_identity(
     environment: Mapping[str, str] | None = None,
-) -> tuple[Path, str, str, str]:
+) -> SessionIdentity:
     values = os.environ if environment is None else environment
     runtime_text = values.get("XDG_RUNTIME_DIR", "")
     signature = values.get("HYPRLAND_INSTANCE_SIGNATURE", "")
@@ -60,50 +91,290 @@ def require_session_environment(
         raise SessionUnavailable("XDG_RUNTIME_DIR ownership is invalid")
 
     instance = runtime / "hypr" / signature
-    compositor_socket = instance / ".socket.sock"
-    wayland_socket = runtime / wayland_display
-    if not owned_socket(compositor_socket, uid):
-        raise SessionUnavailable("Hyprland command socket is unavailable")
-    if not owned_socket(wayland_socket, uid):
-        raise SessionUnavailable("Wayland display socket is unavailable")
+    try:
+        instance_metadata = instance.stat()
+    except OSError as error:
+        raise SessionUnavailable("Hyprland instance directory is unavailable") from error
+    if not stat.S_ISDIR(instance_metadata.st_mode) or instance_metadata.st_uid != uid:
+        raise SessionUnavailable("Hyprland instance directory ownership is invalid")
 
-    return runtime, signature, wayland_display, display
+    return SessionIdentity(
+        runtime=runtime,
+        signature=signature,
+        wayland_display=wayland_display,
+        display=display,
+        instance=instance,
+        compositor_socket=instance / ".socket.sock",
+        wayland_socket=runtime / wayland_display,
+        instance_device=instance_metadata.st_dev,
+        instance_inode=instance_metadata.st_ino,
+    )
 
 
-def run_systemctl(arguments: Sequence[str]) -> int:
+def require_current_identity(identity: SessionIdentity) -> None:
+    try:
+        metadata = identity.instance.stat()
+    except OSError as error:
+        raise SessionUnavailable("Hyprland instance disappeared") from error
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or metadata.st_dev != identity.instance_device
+        or metadata.st_ino != identity.instance_inode
+    ):
+        raise SessionUnavailable("Hyprland instance identity became stale")
+
+
+def socket_state(path: Path, uid: int, label: str) -> bool:
+    try:
+        metadata = path.stat()
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise SessionUnavailable(f"{label} could not be inspected") from error
+    if not stat.S_ISSOCK(metadata.st_mode) or metadata.st_uid != uid:
+        raise SessionUnavailable(f"{label} is invalid")
+    return True
+
+
+def session_sockets_ready(identity: SessionIdentity) -> bool:
+    require_current_identity(identity)
+    uid = os.getuid()
+    compositor_ready = socket_state(
+        identity.compositor_socket, uid, "Hyprland command socket"
+    )
+    wayland_ready = socket_state(identity.wayland_socket, uid, "Wayland display socket")
+    return compositor_ready and wayland_ready
+
+
+def wait_for_session_sockets(
+    identity: SessionIdentity,
+    timeout_ms: int = READINESS_TIMEOUT_MS,
+) -> str:
+    if session_sockets_ready(identity):
+        return "already-ready"
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    inotify_init1 = libc.inotify_init1
+    inotify_init1.argtypes = (ctypes.c_int,)
+    inotify_init1.restype = ctypes.c_int
+    inotify_add_watch = libc.inotify_add_watch
+    inotify_add_watch.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32)
+    inotify_add_watch.restype = ctypes.c_int
+
+    descriptor = inotify_init1(os.O_CLOEXEC | os.O_NONBLOCK)
+    if descriptor < 0:
+        raise SessionUnavailable(
+            f"could not initialize compositor socket monitor: errno {ctypes.get_errno()}"
+        )
+
+    directories = (identity.runtime, identity.runtime / "hypr", identity.instance)
+    try:
+        for directory in directories:
+            watch = inotify_add_watch(
+                descriptor,
+                os.fsencode(directory),
+                INOTIFY_MASK,
+            )
+            if watch < 0:
+                raise SessionUnavailable(
+                    "could not monitor compositor socket paths: "
+                    f"errno {ctypes.get_errno()}"
+                )
+
+        if session_sockets_ready(identity):
+            return "became-ready"
+
+        deadline = time.monotonic() + timeout_ms / 1_000
+        with selectors.DefaultSelector() as selector:
+            selector.register(descriptor, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SessionUnavailable(
+                        f"compositor sockets were not ready within {timeout_ms} ms"
+                    )
+                if not selector.select(remaining):
+                    raise SessionUnavailable(
+                        f"compositor sockets were not ready within {timeout_ms} ms"
+                    )
+                try:
+                    os.read(descriptor, 64 * 1024)
+                except BlockingIOError:
+                    pass
+                if session_sockets_ready(identity):
+                    return "became-ready"
+    finally:
+        os.close(descriptor)
+
+
+def require_session_environment(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[Path, str, str, str]:
+    identity = read_session_identity(environment)
+    if not session_sockets_ready(identity):
+        raise SessionUnavailable("compositor sockets are unavailable")
+    return (
+        identity.runtime,
+        identity.signature,
+        identity.wayland_display,
+        identity.display,
+    )
+
+
+def run_systemctl(arguments: Sequence[str]) -> CommandResult:
     result = subprocess.run(
         [SYSTEMCTL, "--user", *arguments],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        shell=False,
+    )
+    detail = (result.stderr or result.stdout).strip()
+    return CommandResult(result.returncode, detail)
+
+
+def journal_log(level: str, message: str) -> None:
+    result = subprocess.run(
+        [
+            LOGGER,
+            "--tag",
+            LOG_IDENTIFIER,
+            "--priority",
+            f"user.{level}",
+            "--stderr",
+            "--",
+            message,
+        ],
         stdin=subprocess.DEVNULL,
         check=False,
         shell=False,
     )
-    return result.returncode
+    if result.returncode != 0:
+        print(f"{LOG_IDENTIFIER}: {message}", file=sys.stderr)
 
 
-def session_start(runner: Runner = run_systemctl) -> int:
+def emit(logger: Logger, level: str, message: str) -> None:
     try:
-        require_session_environment()
-    except SessionUnavailable as error:
-        print(f"PolicyKit session start refused: {error}", file=sys.stderr)
-        return 1
+        logger(level, message)
+    except Exception as error:
+        print(f"{LOG_IDENTIFIER}: logging failed: {error}", file=sys.stderr)
+        print(f"{LOG_IDENTIFIER}: {message}", file=sys.stderr)
 
-    operations = (
+
+def as_result(result: CommandResult | int) -> CommandResult:
+    if isinstance(result, CommandResult):
+        return result
+    return CommandResult(result)
+
+
+def run_stage(
+    runner: Runner,
+    logger: Logger,
+    stage: str,
+    arguments: Sequence[str],
+) -> bool:
+    result = as_result(runner(arguments))
+    if result.returncode == 0:
+        emit(logger, "info", f"session-start {stage} succeeded")
+        return True
+    detail = f": {result.detail}" if result.detail else ""
+    emit(
+        logger,
+        "err",
+        f"session-start failed at {stage} (exit {result.returncode}){detail}",
+    )
+    return False
+
+
+def session_start(
+    runner: Runner = run_systemctl,
+    logger: Logger = journal_log,
+    waiter: Waiter = wait_for_session_sockets,
+) -> int:
+    emit(logger, "info", "session-start invoked")
+    try:
+        identity = read_session_identity()
+        emit(
+            logger,
+            "info",
+            "session-start identity "
+            f"signature={identity.signature} "
+            f"wayland={identity.wayland_display} display={identity.display}",
+        )
+        readiness = waiter(identity)
+        if not session_sockets_ready(identity):
+            raise SessionUnavailable("compositor sockets changed after readiness")
+    except SessionUnavailable as error:
+        emit(logger, "err", f"session-start readiness failed: {error}")
+        return 1
+    emit(logger, "info", f"session-start readiness {readiness}")
+
+    if not run_stage(
+        runner,
+        logger,
+        "environment-import",
         (
             "import-environment",
             "HYPRLAND_INSTANCE_SIGNATURE",
             "WAYLAND_DISPLAY",
             "DISPLAY",
         ),
-        ("reset-failed", SERVICE),
-        ("restart", SERVICE),
-    )
-    for operation in operations:
-        if runner(operation) != 0:
-            print(
-                f"PolicyKit session start failed at {operation[0]}",
-                file=sys.stderr,
-            )
+    ):
+        return 1
+
+    try:
+        if not session_sockets_ready(identity):
+            raise SessionUnavailable("compositor sockets changed after environment import")
+    except SessionUnavailable as error:
+        emit(logger, "err", f"session-start stale after environment import: {error}")
+        return 1
+
+    failed_state = as_result(runner(("is-failed", "--quiet", SERVICE)))
+    if failed_state.returncode == 0:
+        if not run_stage(
+            runner,
+            logger,
+            "reset-failed",
+            ("reset-failed", SERVICE),
+        ):
             return 1
+    elif failed_state.returncode == 1:
+        emit(logger, "info", "session-start reset-failed not required")
+    else:
+        detail = f": {failed_state.detail}" if failed_state.detail else ""
+        emit(
+            logger,
+            "err",
+            "session-start failed at failure-state inspection "
+            f"(exit {failed_state.returncode}){detail}",
+        )
+        return 1
+
+    try:
+        if not session_sockets_ready(identity):
+            raise SessionUnavailable("compositor sockets changed before service restart")
+    except SessionUnavailable as error:
+        emit(logger, "err", f"session-start stale before service restart: {error}")
+        return 1
+
+    if not run_stage(
+        runner,
+        logger,
+        "service-restart",
+        ("restart", SERVICE),
+    ):
+        return 1
+    if not run_stage(
+        runner,
+        logger,
+        "service-verification",
+        ("is-active", "--quiet", SERVICE),
+    ):
+        return 1
+    emit(logger, "info", "session-start completed")
     return 0
 
 
@@ -120,7 +391,8 @@ def logout(
     runner: Runner = run_systemctl,
     execer: Callable[[str, Sequence[str]], None] = os.execv,
 ) -> int:
-    if runner(("stop", SERVICE)) != 0:
+    result = as_result(runner(("stop", SERVICE)))
+    if result.returncode != 0:
         print("PolicyKit service stop failed; logout was not started", file=sys.stderr)
         return 1
     execer(HYPRSHUTDOWN, (HYPRSHUTDOWN,))

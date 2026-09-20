@@ -166,11 +166,46 @@ and a one-second restart interval. Active-session failures retain the package's
 `Restart=on-failure`; compositor-absent restart attempts become cleanly skipped,
 and each fresh session clears old rate-limit state before one restart.
 
-Retest after a hyprpolkitagent package or service-template update and after a
-systemd major update. Remove or reduce the drop-in if upstream makes
-compositor-loss restart safe. Reconsider the direct ownership helper if
-Vanilla adopts an active graphical session target; do not carry both lifecycle
-owners.
+The first logout after that adaptation proved that the old agent stopped before
+Wayland teardown and did not restart, but the following login exposed a second,
+narrow systemd 261.3 boundary. A named `systemctl --user reset-failed
+hyprpolkitagent.service` returns “Unit ... not loaded” after the inactive unit
+has been garbage-collected, even though there is no failure state to clear. The
+short-lived helper treated that as fatal and never requested the restart. A
+same-session execution reproduced the failure after both compositor sockets
+were already valid; `systemctl --user is-failed --quiet` returned the documented
+non-failed status for the unloaded installed unit. Startup now resets only an
+actually failed unit, then requests and verifies one restart.
+
+Hyprland 0.56.2 does not make socket micro-timing part of Vanilla's product
+contract. In the failed login, the Wayland socket was created at
+13:19:12.919142, the command socket at 13:19:12.924143, the keyboard startup
+service at 13:19:13.319, and `hyprland.lock` only at 13:19:13.433735. Thus the
+observed failure was not a socket-readiness race, while the later lock confirms
+that not every instance artifact exists when startup children can run. The
+PolicyKit helper uses inotify on only the inherited session's runtime,
+`hypr/$HYPRLAND_INSTANCE_SIGNATURE`, and exact socket paths. Missing sockets
+therefore cause event-driven bounded waiting, not a fixed delay or scan for
+another instance. Directory device/inode identity and socket ownership/type are
+rechecked before environment import and service restart. A ten-second timer is
+only a fail-safe bound.
+
+The direct helper remains the lifecycle owner instead of a user-manager
+oneshot. It inherits the new compositor identity directly; a oneshot would
+start from the possibly stale user-manager environment that this operation is
+responsible for replacing. Startup imports only `HYPRLAND_INSTANCE_SIGNATURE`,
+`WAYLAND_DISPLAY`, and `DISPLAY`, then conditionally resets failure state and
+restarts the official service. Each stage writes a concise
+`vanhyprarch-polkit-session` journal record through the installed system logger,
+so a later login failure can be assigned to readiness, import, failure reset,
+restart, or final service verification without a wrapper unit.
+
+Retest named reset behavior and unit garbage collection after a systemd major
+update. Retest startup-event/socket ordering after a Hyprland upgrade. Retest
+after a hyprpolkitagent package or service-template update, and remove or
+reduce the drop-in if upstream makes compositor-loss restart safe. Reconsider
+the direct ownership helper if Vanilla adopts an active graphical session
+target; do not carry both lifecycle owners.
 
 ## Aquamarine DRM teardown SIGSEGV
 
