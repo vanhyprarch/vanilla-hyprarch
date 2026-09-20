@@ -130,9 +130,11 @@ Hyprland starts these processes on `hyprland.start`:
 1. `exec $HOME/.local/bin/vanhyprarch-appearance renderer-start`, which
    preserves one direct session-owned Hyprpaper process
 2. `systemctl --user start hyprpolkitagent`
-3. `systemctl --user restart vanhyprarch-keyboard-sync.service`, whose static
-   unit performs one localed-to-Hyprland startup reconciliation and then
-   observes graphical XKB changes
+3. `exec $HOME/.local/bin/vanhyprarch-keyboard-sync session-start`, which
+   imports only the new compositor's signature and display variables into the
+   user manager before restarting the static service; the unit then performs
+   one localed-to-Hyprland startup reconciliation and observes graphical XKB
+   changes
 4. `exec $HOME/.local/bin/vanhyprarch-idle session-start`, constructed from the
    validated `sessionHome`; the leading shell builtin replaces Hyprland's
    transient executor shell before the backend validates its parent, and the
@@ -187,17 +189,25 @@ readback and makes one bounded attempt to restore the captured prior tuple on
 failure. An empty localed layout or invalid tuple leaves Hyprland unchanged;
 the helper never substitutes `us`.
 
-Relevant `PropertiesChanged` notifications cause a fresh complete read and are
+Relevant `PropertiesChanged` notifications cause a fresh complete localed read
+and a current global Hyprland read; runtime drift is repaired even when the
+localed tuple equals the helper's last successful tuple. Requests are
 serialized/coalesced through the GLib event loop. Locale and vconsole-only
-reports are ignored. Gio name-owner observation recovers when localed returns,
-and an exact file monitor reconciles when the Hyprland command socket appears
-or reappears without a sleep, timer, or polling loop.
+reports are ignored without a graphical state read. Gio name-owner observation
+recovers when localed returns, and an exact file monitor reconciles when the
+Hyprland command socket appears or reappears without a sleep, timer, or polling
+loop.
 
-The static user unit has no install target. Hyprland restarts it once on
-`hyprland.start`; `config.reloaded` requests `systemctl --user reload`, whose
-`SIGHUP` handler re-reads both authorities and applies only when runtime state
-actually differs. The helper does not inspect devices, write per-device rules,
-or read/store/switch active groups. See
+The static user unit has no install target. On `hyprland.start`, a one-shot
+helper running in the new compositor environment imports only
+`HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY`, and `DISPLAY` into the user
+manager, waits for success, and then restarts the service. This closes the race
+in Hyprland 0.56.2's asynchronous built-in activation-environment publication
+and ensures same-login restarts select the new IPC path. `XDG_RUNTIME_DIR`
+remains user-manager-owned. `config.reloaded` only requests
+`systemctl --user reload`; its `SIGHUP` handler re-reads both authorities and
+applies only when runtime state actually differs. The helper does not inspect
+devices, write per-device rules, or read/store/switch active groups. See
 [System keyboard synchronization](system-keyboard-synchronization.md).
 
 Repository tests and Controlled Runtime Experiment 1 pass, but the helper and

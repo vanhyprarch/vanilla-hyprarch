@@ -285,31 +285,23 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(hyprland.apply_calls, [])
         self.assertEqual(validator.calls, [])
 
-    def test_malformed_tuple_is_rejected_before_hyprland(self) -> None:
+    def test_malformed_tuple_is_rejected_before_apply(self) -> None:
         hyprland = FakeHyprland(self.PRIOR)
         validator = FakeValidator({self.DESIRED})
         sync = self.synchronizer(self.DESIRED, hyprland, validator)
         self.assertEqual(sync.reconcile(), "invalid")
-        self.assertEqual(hyprland.read_calls, 0)
+        self.assertEqual(hyprland.read_calls, 1)
         self.assertEqual(hyprland.apply_calls, [])
 
     def test_identical_current_tuple_suppresses_eval(self) -> None:
         hyprland = FakeHyprland(self.DESIRED)
-        sync = self.synchronizer(self.DESIRED, hyprland)
+        validator = FakeValidator()
+        sync = self.synchronizer(self.DESIRED, hyprland, validator)
         self.assertEqual(sync.reconcile(), "unchanged")
         self.assertEqual(hyprland.read_calls, 1)
         self.assertEqual(hyprland.apply_calls, [])
+        self.assertEqual(validator.calls, [])
         self.assertEqual(sync.last_successful, self.DESIRED)
-
-    def test_unchanged_authority_event_does_not_repair_runtime_drift(self) -> None:
-        runtime_drift = XkbTuple("de", "pc105", "", "")
-        hyprland = FakeHyprland(runtime_drift)
-        sync = self.synchronizer(self.DESIRED, hyprland)
-        sync.last_observed = self.DESIRED
-        sync.last_successful = self.DESIRED
-        self.assertEqual(sync.reconcile(force=False), "unchanged-authority")
-        self.assertEqual(hyprland.read_calls, 1)
-        self.assertEqual(hyprland.apply_calls, [])
 
     def test_changed_tuple_applies_once_and_verifies(self) -> None:
         hyprland = FakeHyprland(self.PRIOR)
@@ -407,11 +399,23 @@ class EventTests(unittest.TestCase):
             )
         )
 
-    def test_duplicate_events_coalesce_to_one_full_fetch(self) -> None:
+    def test_duplicate_events_coalesce_to_one_final_state_apply(self) -> None:
         scheduler = QueueScheduler()
-        calls: list[bool] = []
+        final = XkbTuple("us,it", "pc105", ",", "grp:alt_shift_toggle")
+        authoritative = [XkbTuple("it", "", "", "")]
+        fetches = 0
+
+        def read_localed() -> XkbTuple:
+            nonlocal fetches
+            fetches += 1
+            return authoritative[0]
+
+        hyprland = FakeHyprland(XkbTuple("de", "pc105", "", ""))
+        synchronizer = keyboard_sync.KeyboardSynchronizer(
+            read_localed, hyprland, FakeValidator()
+        )
         coordinator = keyboard_sync.ReconcileCoordinator(
-            lambda *, force=False: calls.append(force), scheduler
+            synchronizer.reconcile, scheduler
         )
         keyboard_sync.dispatch_properties_changed(
             keyboard_sync.LOCALED_INTERFACE,
@@ -425,9 +429,11 @@ class EventTests(unittest.TestCase):
             [],
             coordinator.request,
         )
+        authoritative[0] = final
         self.assertEqual(len(scheduler.queue), 1)
         scheduler.run_all()
-        self.assertEqual(calls, [False])
+        self.assertEqual(fetches, 1)
+        self.assertEqual(hyprland.apply_calls, [final])
 
     def test_relevant_signal_fetches_complete_tuple_and_applies_once(self) -> None:
         scheduler = QueueScheduler()
@@ -458,6 +464,35 @@ class EventTests(unittest.TestCase):
         self.assertEqual(fetches, 1)
         self.assertEqual(hyprland.apply_calls, [desired])
 
+    def test_relevant_signal_matching_runtime_reads_and_skips_eval(self) -> None:
+        scheduler = QueueScheduler()
+        desired = XkbTuple("it", "pc105", "", "")
+        hyprland = FakeHyprland(desired)
+        fetches = 0
+
+        def read_localed() -> XkbTuple:
+            nonlocal fetches
+            fetches += 1
+            return desired
+
+        synchronizer = keyboard_sync.KeyboardSynchronizer(
+            read_localed, hyprland, FakeValidator()
+        )
+        synchronizer.last_successful = desired
+        coordinator = keyboard_sync.ReconcileCoordinator(
+            synchronizer.reconcile, scheduler
+        )
+        keyboard_sync.dispatch_properties_changed(
+            keyboard_sync.LOCALED_INTERFACE,
+            ["X11Model"],
+            [],
+            coordinator.request,
+        )
+        scheduler.run_all()
+        self.assertEqual(fetches, 1)
+        self.assertEqual(hyprland.read_calls, 1)
+        self.assertEqual(hyprland.apply_calls, [])
+
     def test_event_during_reconcile_runs_newest_state_afterward(self) -> None:
         scheduler = QueueScheduler()
         states = ["first", "newest"]
@@ -474,30 +509,55 @@ class EventTests(unittest.TestCase):
         scheduler.run_all()
         self.assertEqual(seen, ["first", "newest"])
 
-    def test_console_signal_with_unchanged_x11_never_schedules(self) -> None:
-        scheduler = QueueScheduler()
-        calls: list[bool] = []
-        coordinator = keyboard_sync.ReconcileCoordinator(
-            lambda *, force=False: calls.append(force), scheduler
-        )
-        if keyboard_sync.signal_requires_reconcile(
-            keyboard_sync.LOCALED_INTERFACE,
-            ["VConsoleKeymap", "Locale"],
-            [],
-        ):
-            coordinator.request()
-        scheduler.run_all()
-        self.assertEqual(calls, [])
-
-    def test_mixed_console_and_graphical_report_with_unchanged_tuple_skips_eval(self) -> None:
+    def test_console_only_signal_does_not_repair_runtime_drift(self) -> None:
         scheduler = QueueScheduler()
         desired = XkbTuple("it", "pc105", "", "")
         hyprland = FakeHyprland(XkbTuple("de", "pc105", "", ""))
+        fetches = 0
+
+        def read_localed() -> XkbTuple:
+            nonlocal fetches
+            fetches += 1
+            return desired
+
         synchronizer = keyboard_sync.KeyboardSynchronizer(
-            lambda: desired, hyprland, FakeValidator()
+            read_localed, hyprland, FakeValidator()
         )
-        synchronizer.last_observed = desired
         synchronizer.last_successful = desired
+        coordinator = keyboard_sync.ReconcileCoordinator(
+            synchronizer.reconcile, scheduler
+        )
+        self.assertFalse(
+            keyboard_sync.dispatch_properties_changed(
+                keyboard_sync.LOCALED_INTERFACE,
+                ["VConsoleKeymap", "Locale"],
+                [],
+                coordinator.request,
+            )
+        )
+        scheduler.run_all()
+        self.assertEqual(fetches, 0)
+        self.assertEqual(hyprland.read_calls, 0)
+        self.assertEqual(hyprland.apply_calls, [])
+
+    def test_relevant_event_repairs_drift_even_when_authority_cache_matches(self) -> None:
+        scheduler = QueueScheduler()
+        desired = XkbTuple("it", "pc105", "", "")
+        drifted = XkbTuple("de", "pc105", "", "")
+        hyprland = FakeHyprland(desired)
+        validator = FakeValidator()
+        fetches = 0
+
+        def read_localed() -> XkbTuple:
+            nonlocal fetches
+            fetches += 1
+            return desired
+
+        synchronizer = keyboard_sync.KeyboardSynchronizer(
+            read_localed, hyprland, validator
+        )
+        self.assertEqual(synchronizer.reconcile(), "unchanged")
+        hyprland.current = drifted
         coordinator = keyboard_sync.ReconcileCoordinator(
             synchronizer.reconcile, scheduler
         )
@@ -508,8 +568,11 @@ class EventTests(unittest.TestCase):
             coordinator.request,
         )
         scheduler.run_all()
-        self.assertEqual(hyprland.apply_calls, [])
-        self.assertEqual(hyprland.read_calls, 1)
+        self.assertEqual(fetches, 2)
+        self.assertEqual(hyprland.read_calls, 3)
+        self.assertEqual(validator.calls, [desired])
+        self.assertEqual(hyprland.apply_calls, [desired])
+        self.assertEqual(hyprland.current, desired)
 
 
 class IpcRecoveryTests(unittest.TestCase):
@@ -543,18 +606,100 @@ class IpcRecoveryTests(unittest.TestCase):
         scheduler.run_all()
         self.assertEqual(seen, [authoritative[0]])
 
-    def test_socket_path_is_exact_and_rejects_unsafe_signature(self) -> None:
-        environment = {
+    def test_socket_path_is_rebuilt_from_each_process_environment(self) -> None:
+        old_environment = {
             "XDG_RUNTIME_DIR": "/run/user/1000",
-            "HYPRLAND_INSTANCE_SIGNATURE": "signature_123",
+            "HYPRLAND_INSTANCE_SIGNATURE": "old_signature",
         }
+        new_environment = dict(old_environment)
+        new_environment["HYPRLAND_INSTANCE_SIGNATURE"] = "new_signature"
         self.assertEqual(
-            keyboard_sync.hyprland_socket_path(environment),
-            Path("/run/user/1000/hypr/signature_123/.socket.sock"),
+            keyboard_sync.hyprland_socket_path(old_environment),
+            Path("/run/user/1000/hypr/old_signature/.socket.sock"),
         )
-        environment["HYPRLAND_INSTANCE_SIGNATURE"] = "../wrong"
+        self.assertEqual(
+            keyboard_sync.hyprland_socket_path(new_environment),
+            Path("/run/user/1000/hypr/new_signature/.socket.sock"),
+        )
+        new_environment["HYPRLAND_INSTANCE_SIGNATURE"] = "../wrong"
         with self.assertRaises(RuntimeError):
-            keyboard_sync.hyprland_socket_path(environment)
+            keyboard_sync.hyprland_socket_path(new_environment)
+
+
+class SessionEnvironmentTests(unittest.TestCase):
+    ENVIRONMENT = {
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "HYPRLAND_INSTANCE_SIGNATURE": "new_signature",
+        "WAYLAND_DISPLAY": "wayland-1",
+        "DISPLAY": ":0",
+        "UNRELATED_SECRET": "must-not-be-imported",
+    }
+
+    def test_publication_completes_before_service_restart(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(argv: object) -> CommandResult:
+            calls.append(list(argv))
+            return CommandResult(0, "", "")
+
+        self.assertEqual(
+            keyboard_sync.publish_session_environment_and_restart(
+                dict(self.ENVIRONMENT), runner
+            ),
+            0,
+        )
+        self.assertEqual(
+            calls,
+            [
+                [
+                    "/usr/bin/systemctl",
+                    "--user",
+                    "import-environment",
+                    "HYPRLAND_INSTANCE_SIGNATURE",
+                    "WAYLAND_DISPLAY",
+                    "DISPLAY",
+                ],
+                [
+                    "/usr/bin/systemctl",
+                    "--user",
+                    "restart",
+                    "vanhyprarch-keyboard-sync.service",
+                ],
+            ],
+        )
+        self.assertNotIn("XDG_RUNTIME_DIR", calls[0])
+        self.assertNotIn("UNRELATED_SECRET", calls[0])
+
+    def test_failed_publication_never_restarts_with_stale_environment(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(argv: object) -> CommandResult:
+            calls.append(list(argv))
+            return CommandResult(1, "", "fixture failure")
+
+        self.assertEqual(
+            keyboard_sync.publish_session_environment_and_restart(
+                dict(self.ENVIRONMENT), runner
+            ),
+            1,
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][2], "import-environment")
+
+    def test_missing_session_identity_fails_before_any_systemctl_call(self) -> None:
+        calls: list[list[str]] = []
+        environment = dict(self.ENVIRONMENT)
+        del environment["HYPRLAND_INSTANCE_SIGNATURE"]
+
+        def runner(argv: object) -> CommandResult:
+            calls.append(list(argv))
+            return CommandResult(0, "", "")
+
+        self.assertEqual(
+            keyboard_sync.publish_session_environment_and_restart(environment, runner),
+            1,
+        )
+        self.assertEqual(calls, [])
 
 
 class StaticIntegrationTests(unittest.TestCase):
@@ -594,10 +739,14 @@ class StaticIntegrationTests(unittest.TestCase):
 
     def test_hyprland_has_exactly_one_start_and_reload_hook(self) -> None:
         core = CORE.read_text(encoding="utf-8")
-        start = "systemctl --user restart vanhyprarch-keyboard-sync.service"
+        start = "/.local/bin/vanhyprarch-keyboard-sync session-start"
         reload = "systemctl --user reload vanhyprarch-keyboard-sync.service"
         self.assertEqual(core.count(start), 1)
         self.assertEqual(core.count(reload), 1)
+        self.assertNotIn(
+            "systemctl --user restart vanhyprarch-keyboard-sync.service", core
+        )
+        self.assertNotIn("import-environment", core)
         self.assertEqual(core.count('hl.on("config.reloaded"'), 1)
         self.assertEqual(core.count('hl.on("hyprland.start"'), 1)
         self.assertNotIn("uwsm", core.lower())

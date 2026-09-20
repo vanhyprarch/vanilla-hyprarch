@@ -22,10 +22,22 @@ layout lists, and positional empty variants.
 
 The static `vanhyprarch-keyboard-sync.service` is restarted by the managed
 `hyprland.start` callback. Restarting rather than enabling the unit keeps the
-direct `Ly -> start-hyprland -> Hyprland` session as lifecycle owner and
-refreshes the service's compositor environment after a same-login Hyprland
-restart. The helper performs one startup reconciliation as soon as the exact
-Hyprland command socket exists.
+direct `Ly -> start-hyprland -> Hyprland` session as lifecycle owner. The
+callback invokes `vanhyprarch-keyboard-sync session-start` in the new
+compositor environment. That one-shot first uses an exact argument vector to
+import only `HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY`, and `DISPLAY`
+into the systemd user manager, waits for success, and only then restarts the
+unit. `XDG_RUNTIME_DIR` remains the stable user-manager value. A failed import
+does not restart the service with a stale compositor identity. The restarted
+helper therefore derives the exact command-socket path from its fresh process
+environment and performs one startup reconciliation when that socket exists.
+
+Hyprland 0.56.2 also schedules a broader systemd activation-environment import
+immediately before emitting its ready event. That upstream process is
+asynchronous, so its presence explains why the current manager environment is
+correct but does not order completion before Vanilla's `hyprland.start`
+callback. The explicit narrow import above closes that same-login restart race
+without introducing UWSM or importing the full child environment.
 
 The helper uses a Gio D-Bus proxy to observe standard
 `org.freedesktop.DBus.Properties.PropertiesChanged` notifications. Only
@@ -33,14 +45,17 @@ reports involving one of the four X11 properties request reconciliation.
 Locale and vconsole-only reports are ignored. Every relevant report causes a
 fresh complete `GetAll`; partial signal payloads are never assembled into a
 candidate tuple. GLib idle dispatch serializes work and coalesces pending
-requests without a timer or polling loop.
+requests without a timer or polling loop. Every relevant report fetches the
+complete localed tuple and reads the actual global Hyprland tuple. Equality
+suppresses eval; a difference is validated and reconciled even when the
+localed tuple equals the helper's last successful tuple. The cache is
+observability only and cannot mask compositor runtime drift. A console-only
+report schedules no localed fetch, Hyprland read, validation, or apply.
 
-The helper also remembers the last observed and last successfully projected
-X11 tuple. If systemd reports an X11 property during a console transaction but
-the complete X11 tuple is unchanged, an ordinary event does not apply anything,
-even if unrelated runtime drift exists. Startup, localed/IPC recovery, and the
-explicit config-reload path are forced reconciliations: they still read current
-Hyprland state because the compositor projection may have been recreated.
+Startup, localed/IPC recovery, and the explicit config-reload path request the
+same authority-versus-runtime reconciliation. The forced marker coalesces with
+other pending work but never substitutes a cache comparison for the live
+Hyprland read.
 
 `systemd-localed` is D-Bus activated and may leave the bus when idle. The proxy
 tracks its name owner. Disappearance preserves the current Hyprland state;
@@ -64,7 +79,8 @@ An empty `X11Layout` means localed has no graphical preference. The helper logs
 that condition and leaves all current Hyprland XKB fields unchanged. It never
 substitutes `us`.
 
-Every non-empty candidate is preflighted with an exact argv invocation of:
+Every non-empty candidate that differs from current Hyprland state is
+preflighted with an exact argv invocation of:
 
 ```text
 /usr/bin/xkbcli compile-keymap --test --rules evdev \

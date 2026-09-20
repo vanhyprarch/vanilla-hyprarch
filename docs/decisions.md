@@ -644,9 +644,14 @@ write the system source of truth instead of changing only Hyprland.
 Device-specific keyboard rules remain `MACHINE_CONFIGURATION`. The managed
 helper projects the complete graphical tuple through one validated Hyprland
 Lua runtime transaction, verifies readback, and performs one bounded rollback
-on failure. It never owns the active layout group. The Italian layout preserved
-in the development machine file remains transitional migration state and a
-temporary live-validation safety net, not a permanent public default. See
+on failure. Every relevant graphical event compares fresh localed state with
+actual global Hyprland state; cached success cannot suppress runtime-drift
+repair, while console-only events remain ignored. The session-start action
+publishes the new compositor identity to the systemd user manager before it
+restarts the static service. It never owns the active layout group. The Italian
+layout preserved in the development machine file remains transitional
+migration state and a temporary live-validation safety net, not a permanent
+public default. See
 [System keyboard synchronization](system-keyboard-synchronization.md).
 
 ## ADR-032: Require confirmation before persisting risky monitor changes

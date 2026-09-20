@@ -29,6 +29,13 @@ PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 X11_PROPERTIES = ("X11Layout", "X11Model", "X11Variant", "X11Options")
 XKBCLI = "/usr/bin/xkbcli"
 HYPRCTL = "/usr/bin/hyprctl"
+SYSTEMCTL = "/usr/bin/systemctl"
+SERVICE_NAME = "vanhyprarch-keyboard-sync.service"
+SESSION_ENVIRONMENT_VARIABLES = (
+    "HYPRLAND_INSTANCE_SIGNATURE",
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+)
 COMMAND_TIMEOUT_SECONDS = 5
 
 LOG = logging.getLogger("vanhyprarch-keyboard-sync")
@@ -245,7 +252,6 @@ class KeyboardSynchronizer:
         self.hyprland = hyprland
         self.validator = validator
         self.logger = logger
-        self.last_observed: XkbTuple | None = None
         self.last_successful: XkbTuple | None = None
 
     def _rollback(self, prior: XkbTuple, requested: XkbTuple) -> bool:
@@ -285,23 +291,11 @@ class KeyboardSynchronizer:
             self.logger.warning("localed is unavailable; keeping Hyprland state: %s", error)
             return "localed-unavailable"
 
-        previous_observed = self.last_observed
-        self.last_observed = requested
-
         if not requested.layout:
             self.logger.warning(
                 "localed has no graphical XKB layout; keeping current Hyprland state"
             )
             return "empty-layout"
-
-        valid, diagnostic = self.validator(requested)
-        if not valid:
-            self.logger.error(
-                "localed XKB tuple failed preflight; keeping Hyprland state: %s; %s",
-                requested.as_log_dict(),
-                diagnostic or "xkbcli returned failure without diagnostics",
-            )
-            return "invalid"
 
         try:
             prior = self.hyprland.read_tuple()
@@ -317,16 +311,14 @@ class KeyboardSynchronizer:
             )
             return "unchanged"
 
-        if (
-            not force
-            and previous_observed == requested
-            and self.last_successful == requested
-        ):
-            self.logger.debug(
-                "localed graphical XKB tuple is unchanged; ignoring runtime drift on "
-                "an ordinary property event"
+        valid, diagnostic = self.validator(requested)
+        if not valid:
+            self.logger.error(
+                "localed XKB tuple failed preflight; keeping Hyprland state: %s; %s",
+                requested.as_log_dict(),
+                diagnostic or "xkbcli returned failure without diagnostics",
             )
-            return "unchanged-authority"
+            return "invalid"
 
         self.logger.info(
             "applying localed XKB tuple %s over Hyprland tuple %s",
@@ -572,6 +564,44 @@ def hyprland_socket_path(environment: dict[str, str]) -> Path:
     return Path(runtime) / "hypr" / signature / ".socket.sock"
 
 
+def session_start_argvs(environment: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Build the ordered session-start commands from this process's environment."""
+    # Validate the two values that select the compositor before updating the
+    # manager. XDG_RUNTIME_DIR remains user-manager-owned and is not imported.
+    hyprland_socket_path(environment)
+    for name in SESSION_ENVIRONMENT_VARIABLES:
+        if not environment.get(name):
+            raise RuntimeError(f"{name} is missing from the Hyprland session")
+    return (
+        [SYSTEMCTL, "--user", "import-environment", *SESSION_ENVIRONMENT_VARIABLES],
+        [SYSTEMCTL, "--user", "restart", SERVICE_NAME],
+    )
+
+
+def publish_session_environment_and_restart(
+    environment: dict[str, str], runner: Runner = run_command
+) -> int:
+    """Publish the new compositor identity, then restart its singleton helper."""
+    try:
+        import_argv, restart_argv = session_start_argvs(environment)
+    except RuntimeError as error:
+        LOG.error("cannot publish Hyprland session environment: %s", error)
+        return 1
+
+    imported = runner(import_argv)
+    if imported.returncode != 0:
+        diagnostic = imported.stderr.strip() or imported.stdout.strip() or "no diagnostic"
+        LOG.error("cannot import Hyprland session environment: %s", diagnostic)
+        return 1
+
+    restarted = runner(restart_argv)
+    if restarted.returncode != 0:
+        diagnostic = restarted.stderr.strip() or restarted.stdout.strip() or "no diagnostic"
+        LOG.error("cannot restart %s: %s", SERVICE_NAME, diagnostic)
+        return 1
+    return 0
+
+
 def configure_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -579,8 +609,7 @@ def configure_logging() -> None:
     )
 
 
-def main() -> int:
-    configure_logging()
+def run_daemon() -> int:
     try:
         connection = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
         socket_path = hyprland_socket_path(dict(os.environ))
@@ -611,6 +640,17 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     return 0
+
+
+def main(arguments: Sequence[str] | None = None) -> int:
+    configure_logging()
+    arguments = list(sys.argv[1:] if arguments is None else arguments)
+    if arguments == ["session-start"]:
+        return publish_session_environment_and_restart(dict(os.environ))
+    if arguments:
+        LOG.error("usage: vanhyprarch-keyboard-sync [session-start]")
+        return 2
+    return run_daemon()
 
 
 if __name__ == "__main__":

@@ -486,6 +486,18 @@ covered by deterministic tests. No helper or unit was deployed, and the live
 Italian machine fallback remains in place pending controlled D-Bus, reload,
 service-lifecycle, and cold-login validation.
 
+Pre-live review found two lifecycle defects in the initial prototype. An
+ordinary relevant event could treat the last-successful tuple as authoritative
+and skip repairing unrelated Hyprland runtime drift. Relevant reports now
+always compare a complete fresh localed tuple with current global compositor
+state; console-only reports remain ignored. Review also found that Hyprland
+0.56.2 asynchronously schedules its own user-manager environment import before
+the start event, leaving a race with the service restart. The managed
+`session-start` action now imports only the new signature/display variables and
+waits for success before restarting the service. Deterministic tests cover
+runtime drift, console isolation, coalescing, command ordering, import failure,
+and old/new signature socket paths. The repository remains undeployed.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

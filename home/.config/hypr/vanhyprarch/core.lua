@@ -52,7 +52,7 @@ hl.env("HYPRCURSOR_SIZE", "24")
 hl.on("hyprland.start", function ()
     hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-appearance renderer-start")
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
-    hl.exec_cmd("systemctl --user restart vanhyprarch-keyboard-sync.service")
+    hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-keyboard-sync session-start")
     hl.exec_cmd("exec " .. sessionHome .. "/.local/bin/vanhyprarch-idle session-start")
     hl.exec_cmd("qs -n -c vanhyprarch")
     if dictationComponentInstalled() then

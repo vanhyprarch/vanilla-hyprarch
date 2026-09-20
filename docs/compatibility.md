@@ -87,11 +87,32 @@ systemd-localed 261.3 exposes the graphical tuple as `X11Layout`, `X11Model`,
 `--no-convert` prevents that conversion. The helper ignores locale/vconsole
 signals and always re-reads the complete X11 tuple for a relevant report.
 
+Hyprland 0.56.2's `CCompositor::startCompositor()` schedules
+`systemctl --user import-environment` and D-Bus activation-environment
+publication before it emits the ready event, but the executor spawn is
+asynchronous. The user manager happened to contain the current compositor
+signature in the audited session; that does not guarantee completion before a
+`hyprland.start` callback starts a user service. Vanilla's startup callback
+therefore runs the managed helper's `session-start` action. It imports only
+`HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY`, and `DISPLAY`, waits for that
+exact-argv systemctl call, and restarts the keyboard service only on success.
+The daemon then constructs its one-instance socket path from its own fresh
+`XDG_RUNTIME_DIR` and signature environment. Config reload neither republishes
+the environment nor restarts the daemon.
+
+systemd 261.3 documents client-side named-variable import through `systemctl
+--user import-environment`. It also explicitly supports environment expansion
+in `ExecReload` and supplies `$MAINPID` for the service main process; the
+shell-free `/usr/bin/kill -HUP $MAINPID` form remains the smallest exact signal
+delivery for this service.
+
 Retest the Lua eval API, reload event, identical-tuple active-index behavior,
-global hotplug inheritance, invalid-keymap behavior, and command-socket layout
-after a Hyprland upgrade. Retest locale1 properties, signals, D-Bus activation,
-and `--no-convert` semantics after a systemd major upgrade. Retest command-line
-validation after libxkbcommon or xkeyboard-config changes.
+global hotplug inheritance, activation-environment ordering, invalid-keymap
+behavior, and command-socket layout after a Hyprland upgrade. Retest locale1
+properties, signals, D-Bus activation, named environment import,
+`ExecReload`/`$MAINPID`, and `--no-convert` semantics after a systemd major
+upgrade. Retest command-line validation after libxkbcommon or xkeyboard-config
+changes.
 
 ## Hyprlock portable baseline validation boundary
 
