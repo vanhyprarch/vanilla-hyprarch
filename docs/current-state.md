@@ -206,8 +206,10 @@ helper running in the new compositor environment imports only
 `HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY`, and `DISPLAY` into the user
 manager, waits for success, and then restarts the service. This closes the race
 in Hyprland 0.56.2's asynchronous built-in activation-environment publication
-and ensures same-login restarts select the new IPC path. `XDG_RUNTIME_DIR`
-remains user-manager-owned. `config.reloaded` only requests
+and ensures every fresh compositor launched by a normal Ly login selects its
+own IPC path. `XDG_RUNTIME_DIR` remains user-manager-owned. Vanilla does not
+expose a clean user-requested same-login compositor restart; upstream launcher
+crash/safe-mode recovery is not a release gate. `config.reloaded` only requests
 `systemctl --user reload`; its `SIGHUP` handler re-reads both authorities and
 applies only when runtime state actually differs. The helper does not inspect
 devices, write per-device rules, or read/store/switch active groups. See

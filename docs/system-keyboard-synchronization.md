@@ -36,8 +36,13 @@ Hyprland 0.56.2 also schedules a broader systemd activation-environment import
 immediately before emitting its ready event. That upstream process is
 asynchronous, so its presence explains why the current manager environment is
 correct but does not order completion before Vanilla's `hyprland.start`
-callback. The explicit narrow import above closes that same-login restart race
-without introducing UWSM or importing the full child environment.
+callback. The explicit narrow import above closes that fresh-session startup
+race without introducing UWSM or importing the full child environment.
+
+The supported lifecycle covers a normal fresh login from Ly, a Hyprland config
+reload, and a keyboard-sync service restart. Vanilla does not expose a clean
+user-requested same-login Hyprland restart. `start-hyprland` crash/safe-mode
+recovery remains upstream behavior and is not a release gate for this feature.
 
 The helper uses one long-lived Gio connection to the system bus for all
 localed transport. It subscribes directly to
