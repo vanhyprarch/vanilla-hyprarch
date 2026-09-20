@@ -39,16 +39,25 @@ correct but does not order completion before Vanilla's `hyprland.start`
 callback. The explicit narrow import above closes that same-login restart race
 without introducing UWSM or importing the full child environment.
 
-The helper uses a Gio D-Bus proxy to observe standard
-`org.freedesktop.DBus.Properties.PropertiesChanged` notifications. Only
-reports involving one of the four X11 properties request reconciliation.
-Locale and vconsole-only reports are ignored. Every relevant report causes a
-fresh complete `GetAll`; partial signal payloads are never assembled into a
-candidate tuple. GLib idle dispatch serializes work and coalesces pending
-requests without a timer or polling loop. Every relevant report fetches the
-complete localed tuple and reads the actual global Hyprland tuple. Equality
-suppresses eval; a difference is validated and reconciled even when the
-localed tuple equals the helper's last successful tuple. The cache is
+The helper uses one long-lived Gio connection to the system bus for all
+localed transport. It subscribes directly to
+`org.freedesktop.DBus.Properties.PropertiesChanged`, filtered by locale1's
+object path and interface payload, without binding the subscription to one
+transient unique owner. A connection-scoped name watcher maintains the current
+unique owner. The callback accepts a signal only when its actual D-Bus sender
+equals that owner, so a late signal from a retired owner cannot trigger work.
+
+Only reports involving one of the four X11 properties request reconciliation.
+Locale and vconsole-only reports are ignored. Every accepted relevant report
+causes an explicit complete `Properties.GetAll` on the same connection;
+partial signal payloads and proxy caches are never assembled into a candidate
+tuple. The read is bracketed by owner checks. If activation or an idle-exit
+race changes the owner, that result is discarded and one reconciliation is
+queued for the newest owner. GLib idle dispatch serializes work and coalesces
+pending requests without a timer or polling loop. Every relevant report
+fetches the complete localed tuple and reads the actual global Hyprland tuple.
+Equality suppresses eval; a difference is validated and reconciled even when
+the localed tuple equals the helper's last successful tuple. The cache is
 observability only and cannot mask compositor runtime drift. A console-only
 report schedules no localed fetch, Hyprland read, validation, or apply.
 
@@ -57,21 +66,22 @@ same authority-versus-runtime reconciliation. The forced marker coalesces with
 other pending work but never substitutes a cache comparison for the live
 Hyprland read.
 
-`systemd-localed` is D-Bus activated and may leave the bus when idle. The proxy
-tracks its name owner. Disappearance preserves the current Hyprland state;
-reappearance requests a fresh full reconciliation. An exact Gio file monitor
-watches the Hyprland command-socket path or its nearest existing runtime
-ancestor. Socket appearance requests one fresh reconciliation, disappearance
-causes no fallback, and a later appearance reconciles the newest localed tuple.
-There is no sleep or recurring IPC probe.
+`systemd-localed` is D-Bus activated and may leave the bus when idle. Name
+disappearance is an informational lifecycle transition: it clears the owner,
+preserves Hyprland state, and schedules no retry. Every new owner appearance
+requests a fresh full reconciliation, including after repeated idle exits.
+An exact Gio file monitor watches the Hyprland command-socket path or its
+nearest existing runtime ancestor. Socket appearance requests one fresh
+reconciliation, disappearance causes no fallback, and a later appearance
+reconciles the newest localed tuple. There is no sleep or recurring IPC probe.
 
 A full Hyprland config reload reparses the static files and can replace runtime
 XKB values. The managed `config.reloaded` callback asks systemd to reload the
-existing service. `ExecReload` sends `SIGHUP`; the helper then re-reads both
-localed and Hyprland. It applies only when the current global tuple differs, so
-the forced path does not disturb an already-correct active group. Runtime
-`hl.config()` changes do not emit `config.reloaded`, preventing a feedback
-loop.
+existing service. `ExecReload` sends `SIGHUP`; the helper registers that signal
+with `GLibUnix.signal_add()` and then re-reads both localed and Hyprland. It
+applies only when the current global tuple differs, so the forced path does not
+disturb an already-correct active group. Runtime `hl.config()` changes do not
+emit `config.reloaded`, preventing a feedback loop.
 
 ## Validation and application
 

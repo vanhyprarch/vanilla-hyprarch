@@ -191,12 +191,15 @@ the helper never substitutes `us`.
 
 Relevant `PropertiesChanged` notifications cause a fresh complete localed read
 and a current global Hyprland read; runtime drift is repaired even when the
-localed tuple equals the helper's last successful tuple. Requests are
-serialized/coalesced through the GLib event loop. Locale and vconsole-only
-reports are ignored without a graphical state read. Gio name-owner observation
-recovers when localed returns, and an exact file monitor reconciles when the
-Hyprland command socket appears or reappears without a sleep, timer, or polling
-loop.
+localed tuple equals the helper's last successful tuple. One long-lived system
+bus connection provides direct signal subscription, current unique-owner
+tracking, sender authentication, and explicit `GetAll`; no proxy cache or
+proxy signal lifecycle remains. Requests are serialized/coalesced through the
+GLib event loop. Locale and vconsole-only reports are ignored without a
+graphical state read. Every new localed owner forces reconciliation, while
+ordinary idle disappearance preserves runtime state. An exact file monitor
+reconciles when the Hyprland command socket appears or reappears without a
+sleep, timer, or polling loop.
 
 The static user unit has no install target. On `hyprland.start`, a one-shot
 helper running in the new compositor environment imports only
@@ -210,10 +213,15 @@ applies only when runtime state actually differs. The helper does not inspect
 devices, write per-device rules, or read/store/switch active groups. See
 [System keyboard synchronization](system-keyboard-synchronization.md).
 
-Repository tests and Controlled Runtime Experiment 1 pass, but the helper and
-unit have not been deployed or started. The private live Italian machine block
-remains the required migration safety net until D-Bus changes, reload recovery,
-service lifecycle, and a cold logout/login pass under controlled validation.
+Controlled Runtime Experiment 1 passed. A later live prototype startup also
+reconciled successfully, but repeated natural localed owner cycling exposed a
+proxy signal-delivery defect before the first graphical-change test could
+complete. The live service was stopped and system state restored. The
+repository implementation now uses direct owner-authenticated connection
+signals and has not yet been redeployed. The private live Italian machine
+block remains the required migration safety net until resumed D-Bus tests,
+reload recovery, service lifecycle, and a cold logout/login pass under
+controlled validation.
 
 ## Optional local dictation — IMPLEMENTED AND VALIDATED
 

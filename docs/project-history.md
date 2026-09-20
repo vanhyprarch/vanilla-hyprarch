@@ -498,6 +498,20 @@ waits for success before restarting the service. Deterministic tests cover
 runtime drift, console isolation, coalescing, command ordering, import failure,
 and old/new signature socket paths. The repository remains undeployed.
 
+The first controlled live deployment reconciled correctly at startup, then
+exposed a localed lifecycle defect: after repeated normal idle exits and new
+unique owners, the GDBusProxy path observed ownership transitions but missed a
+later graphical `PropertiesChanged` signal. The test stopped, restored the
+Italian localed/Hyprland state, and left the service inactive. The follow-up
+implementation removes proxy event ownership in favor of one system-bus
+connection with a direct filtered subscription, current-owner sender
+authentication, explicit owner-bracketed `GetAll`, and fresh reconciliation on
+each appearance. It also replaces deprecated `GLib.unix_signal_add()` with
+`GLibUnix.signal_add()`. Deterministic tests reproduce owner A disappearing,
+owner B appearing, and owner B's later signal driving an actual newest-state
+apply; stale-owner, activation, read-race, console-only, and warning-free
+SIGHUP cases are covered. The corrected helper is not yet redeployed.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

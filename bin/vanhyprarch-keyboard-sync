@@ -19,13 +19,17 @@ from typing import Callable, Protocol, Sequence
 import gi
 
 gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib  # noqa: E402
+gi.require_version("GLibUnix", "2.0")
+from gi.repository import Gio, GLib, GLibUnix  # noqa: E402
 
 
 LOCALED_SERVICE = "org.freedesktop.locale1"
 LOCALED_PATH = "/org/freedesktop/locale1"
 LOCALED_INTERFACE = "org.freedesktop.locale1"
 PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
+DBUS_SERVICE = "org.freedesktop.DBus"
+DBUS_PATH = "/org/freedesktop/DBus"
+DBUS_INTERFACE = "org.freedesktop.DBus"
 X11_PROPERTIES = ("X11Layout", "X11Model", "X11Variant", "X11Options")
 XKBCLI = "/usr/bin/xkbcli"
 HYPRCTL = "/usr/bin/hyprctl"
@@ -47,6 +51,10 @@ class SynchronizationError(RuntimeError):
 
 class LocaledUnavailable(SynchronizationError):
     pass
+
+
+class LocaledOwnerChanged(LocaledUnavailable):
+    """A localed read raced with a normal D-Bus owner transition."""
 
 
 class HyprlandUnavailable(SynchronizationError):
@@ -207,11 +215,113 @@ class HyprlandClient:
             raise ApplyFailed(f"hyprctl eval failed: {diagnostic}")
 
 
+class LocaledLifecycle:
+    """Authenticate localed signals and track its current unique D-Bus owner."""
+
+    def __init__(
+        self,
+        request_reconcile: Callable[..., None],
+        logger: logging.Logger = LOG,
+    ) -> None:
+        self.request_reconcile = request_reconcile
+        self.logger = logger
+        self.current_owner: str | None = None
+        self.generation = 0
+
+    def update_owner(self, owner: str | None) -> bool:
+        if owner == self.current_owner:
+            return False
+        previous = self.current_owner
+        self.current_owner = owner
+        self.generation += 1
+        if owner is None:
+            self.logger.info(
+                "systemd-localed owner %s disappeared; keeping Hyprland state",
+                previous,
+            )
+        else:
+            self.logger.info("systemd-localed appeared as %s", owner)
+            self.request_reconcile(force=True)
+        return True
+
+    def properties_changed(
+        self,
+        sender: str | None,
+        interface_name: str,
+        changed_names: Sequence[str],
+        invalidated_names: Sequence[str],
+    ) -> bool:
+        if sender is None or sender != self.current_owner:
+            self.logger.debug(
+                "ignoring localed-shaped signal from stale sender %s (current %s)",
+                sender,
+                self.current_owner,
+            )
+            return False
+        return dispatch_properties_changed(
+            interface_name,
+            changed_names,
+            invalidated_names,
+            self.request_reconcile,
+        )
+
+
 class LocaledClient:
-    def __init__(self, connection: Gio.DBusConnection) -> None:
+    """Read localed explicitly and reject tuples spanning an owner transition."""
+
+    def __init__(
+        self,
+        connection: Gio.DBusConnection,
+        lifecycle: LocaledLifecycle,
+        owner_reader: Callable[[], str | None] | None = None,
+    ) -> None:
         self.connection = connection
+        self.lifecycle = lifecycle
+        self.owner_reader = owner_reader or self._read_owner
+
+    def _read_owner(self) -> str | None:
+        try:
+            reply = self.connection.call_sync(
+                DBUS_SERVICE,
+                DBUS_PATH,
+                DBUS_INTERFACE,
+                "GetNameOwner",
+                GLib.Variant("(s)", (LOCALED_SERVICE,)),
+                GLib.VariantType.new("(s)"),
+                Gio.DBusCallFlags.NONE,
+                COMMAND_TIMEOUT_SECONDS * 1000,
+                None,
+            )
+        except GLib.Error as error:
+            if Gio.DBusError.get_remote_error(error) == (
+                "org.freedesktop.DBus.Error.NameHasNoOwner"
+            ):
+                return None
+            raise LocaledUnavailable(
+                f"cannot determine localed D-Bus owner: {error.message}"
+            ) from error
+        owner = reply.unpack()[0]
+        if not isinstance(owner, str) or not owner.startswith(":"):
+            raise LocaledUnavailable("D-Bus returned an invalid localed unique owner")
+        return owner
+
+    def _refresh_owner_after_failure(self) -> bool:
+        try:
+            owner = self.owner_reader()
+        except LocaledUnavailable:
+            return False
+        return self.lifecycle.update_owner(owner)
 
     def read_tuple(self) -> XkbTuple:
+        owner_before = self.owner_reader()
+        if owner_before != self.lifecycle.current_owner:
+            previous = self.lifecycle.current_owner
+            self.lifecycle.update_owner(owner_before)
+            if owner_before is not None or previous is not None:
+                raise LocaledOwnerChanged(
+                    "localed owner changed before GetAll; a fresh reconciliation is queued"
+                )
+        generation_before = self.lifecycle.generation
         try:
             reply = self.connection.call_sync(
                 LOCALED_SERVICE,
@@ -225,7 +335,22 @@ class LocaledClient:
                 None,
             )
         except GLib.Error as error:
+            if self._refresh_owner_after_failure():
+                raise LocaledOwnerChanged(
+                    "localed owner changed while GetAll failed; current state is kept"
+                ) from error
             raise LocaledUnavailable(f"localed GetAll failed: {error.message}") from error
+
+        owner_after = self.owner_reader()
+        if (
+            owner_after != owner_before
+            or self.lifecycle.generation != generation_before
+            or owner_after is None
+        ):
+            self.lifecycle.update_owner(owner_after)
+            raise LocaledOwnerChanged(
+                "localed owner changed during GetAll; a fresh reconciliation is queued"
+            )
         properties = reply.unpack()[0]
         return XkbTuple.from_localed(properties)
 
@@ -287,6 +412,9 @@ class KeyboardSynchronizer:
     def reconcile(self, *, force: bool = False) -> str:
         try:
             requested = self.localed_reader()
+        except LocaledOwnerChanged as error:
+            self.logger.debug("localed owner changed during reconciliation: %s", error)
+            return "localed-owner-changed"
         except LocaledUnavailable as error:
             self.logger.warning("localed is unavailable; keeping Hyprland state: %s", error)
             return "localed-unavailable"
@@ -512,46 +640,66 @@ class HyprlandIpcMonitor:
 
 
 class LocaledObserver:
+    """Bind direct localed observation to one long-lived system-bus connection."""
+
     def __init__(
         self,
         connection: Gio.DBusConnection,
-        request_reconcile: Callable[..., None],
+        lifecycle: LocaledLifecycle,
+        watch_name: Callable[..., int] = Gio.bus_watch_name_on_connection,
     ) -> None:
-        self.request_reconcile = request_reconcile
-        flags = Gio.DBusProxyFlags.DO_NOT_AUTO_START | Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES
-        self.proxy = Gio.DBusProxy.new_sync(
-            connection,
-            flags,
+        self.connection = connection
+        self.lifecycle = lifecycle
+        self.subscription_id = connection.signal_subscribe(
             None,
-            LOCALED_SERVICE,
+            PROPERTIES_INTERFACE,
+            "PropertiesChanged",
             LOCALED_PATH,
             LOCALED_INTERFACE,
+            Gio.DBusSignalFlags.NONE,
+            self._properties_changed,
             None,
         )
-        self.proxy.connect("g-properties-changed", self._properties_changed)
-        self.proxy.connect("notify::g-name-owner", self._name_owner_changed)
+        self.name_watch_id = watch_name(
+            connection,
+            LOCALED_SERVICE,
+            Gio.BusNameWatcherFlags.NONE,
+            self._name_appeared,
+            self._name_vanished,
+        )
 
     def _properties_changed(
         self,
-        _proxy: Gio.DBusProxy,
-        changed_properties: GLib.Variant,
-        invalidated_properties: Sequence[str],
+        _connection: Gio.DBusConnection,
+        sender: str | None,
+        _object_path: str,
+        _interface_name: str,
+        _signal_name: str,
+        parameters: GLib.Variant,
+        _user_data: object,
     ) -> None:
-        changed_names = tuple(changed_properties.unpack().keys())
-        dispatch_properties_changed(
-            LOCALED_INTERFACE,
-            changed_names,
+        interface_name, changed_properties, invalidated_properties = parameters.unpack()
+        self.lifecycle.properties_changed(
+            sender,
+            interface_name,
+            tuple(changed_properties.keys()),
             invalidated_properties,
-            self.request_reconcile,
         )
 
-    def _name_owner_changed(self, proxy: Gio.DBusProxy, _spec: object) -> None:
-        owner = proxy.get_name_owner()
-        if owner:
-            LOG.info("systemd-localed appeared as %s", owner)
-            self.request_reconcile(force=True)
-        else:
-            LOG.warning("systemd-localed disappeared; keeping current Hyprland state")
+    def _name_appeared(
+        self,
+        _connection: Gio.DBusConnection,
+        _name: str,
+        owner: str,
+    ) -> None:
+        self.lifecycle.update_owner(owner)
+
+    def _name_vanished(
+        self,
+        _connection: Gio.DBusConnection,
+        _name: str,
+    ) -> None:
+        self.lifecycle.update_owner(None)
 
 
 def hyprland_socket_path(environment: dict[str, str]) -> Path:
@@ -609,6 +757,10 @@ def configure_logging() -> None:
     )
 
 
+def install_sighup_handler(handler: Callable[[], bool]) -> int:
+    return GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGHUP, handler)
+
+
 def run_daemon() -> int:
     try:
         connection = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
@@ -617,11 +769,15 @@ def run_daemon() -> int:
         LOG.error("cannot initialize keyboard synchronization: %s", error)
         return 1
 
-    localed = LocaledClient(connection)
+    # Owner tracking, direct signal subscription, and authoritative GetAll
+    # calls share this single long-lived system-bus connection.
+    lifecycle = LocaledLifecycle(lambda **_arguments: None)
+    localed = LocaledClient(connection, lifecycle)
     synchronizer = KeyboardSynchronizer(localed.read_tuple, HyprlandClient())
     coordinator = ReconcileCoordinator(synchronizer.reconcile, GLib.idle_add)
     gate = RuntimeRequestGate(coordinator)
-    observer = LocaledObserver(connection, gate.request)
+    lifecycle.request_reconcile = gate.request
+    observer = LocaledObserver(connection, lifecycle)
     ipc_monitor = HyprlandIpcMonitor(socket_path, gate.update_ipc)
     loop = GLib.MainLoop()
 
@@ -630,7 +786,7 @@ def run_daemon() -> int:
         gate.request(force=True)
         return GLib.SOURCE_CONTINUE
 
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGHUP, force_reconcile)
+    install_sighup_handler(force_reconcile)
     gate.request(force=True)
 
     # Keep Gio-owned objects alive for the full loop lifetime.

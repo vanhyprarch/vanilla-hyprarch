@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+import warnings
 
 
 REPOSITORY = Path(__file__).resolve().parent.parent
@@ -118,7 +119,13 @@ class TupleAndCommandTests(unittest.TestCase):
                 )
 
         connection = Connection()
-        client = keyboard_sync.LocaledClient(connection)
+        lifecycle = keyboard_sync.LocaledLifecycle(lambda **_arguments: None)
+        lifecycle.update_owner(":1.10")
+        client = keyboard_sync.LocaledClient(
+            connection,
+            lifecycle,
+            owner_reader=lambda: ":1.10",
+        )
         self.assertEqual(
             client.read_tuple(),
             XkbTuple("us,it", "pc105", ",", "grp:alt_shift_toggle"),
@@ -147,6 +154,35 @@ class TupleAndCommandTests(unittest.TestCase):
                 "grp:alt_shift_toggle,terminate:ctrl_alt_bksp",
             ),
         )
+
+    def test_localed_owner_lookup_uses_bus_daemon_and_handles_no_owner(self) -> None:
+        class Connection:
+            def __init__(self) -> None:
+                self.calls: list[tuple[object, ...]] = []
+                self.owner: str | None = ":1.42"
+
+            def call_sync(self, *arguments: object) -> object:
+                self.calls.append(arguments)
+                if self.owner is None:
+                    raise keyboard_sync.Gio.DBusError.new_for_dbus_error(
+                        "org.freedesktop.DBus.Error.NameHasNoOwner",
+                        "fixture has no owner",
+                    )
+                return keyboard_sync.GLib.Variant("(s)", (self.owner,))
+
+        connection = Connection()
+        lifecycle = keyboard_sync.LocaledLifecycle(lambda **_arguments: None)
+        client = keyboard_sync.LocaledClient(connection, lifecycle)
+        self.assertEqual(client._read_owner(), ":1.42")
+        call = connection.calls[0]
+        self.assertEqual(call[0], keyboard_sync.DBUS_SERVICE)
+        self.assertEqual(call[1], keyboard_sync.DBUS_PATH)
+        self.assertEqual(call[2], keyboard_sync.DBUS_INTERFACE)
+        self.assertEqual(call[3], "GetNameOwner")
+        self.assertEqual(call[4].unpack(), (keyboard_sync.LOCALED_SERVICE,))
+
+        connection.owner = None
+        self.assertIsNone(client._read_owner())
 
     def test_missing_or_non_string_property_is_rejected(self) -> None:
         complete = {
@@ -575,6 +611,388 @@ class EventTests(unittest.TestCase):
         self.assertEqual(hyprland.current, desired)
 
 
+class LocaledLifecycleTests(unittest.TestCase):
+    OWNER_A = ":1.100"
+    OWNER_B = ":1.200"
+
+    def lifecycle(self) -> tuple[object, FakeCoordinator]:
+        requests = FakeCoordinator()
+        return keyboard_sync.LocaledLifecycle(requests.request), requests
+
+    def test_owner_reincarnation_delivers_later_relevant_signal(self) -> None:
+        lifecycle, requests = self.lifecycle()
+
+        self.assertTrue(lifecycle.update_owner(self.OWNER_A))
+        self.assertEqual(requests.requests, [True])
+        self.assertTrue(
+            lifecycle.properties_changed(
+                self.OWNER_A,
+                keyboard_sync.LOCALED_INTERFACE,
+                ["X11Layout"],
+                [],
+            )
+        )
+        self.assertEqual(requests.requests, [True, False])
+
+        self.assertTrue(lifecycle.update_owner(None))
+        self.assertEqual(requests.requests, [True, False])
+        self.assertTrue(lifecycle.update_owner(self.OWNER_B))
+        self.assertEqual(requests.requests, [True, False, True])
+        self.assertTrue(
+            lifecycle.properties_changed(
+                self.OWNER_B,
+                keyboard_sync.LOCALED_INTERFACE,
+                ["X11Options"],
+                [],
+            )
+        )
+        self.assertEqual(requests.requests, [True, False, True, False])
+
+    def test_owner_b_signal_after_reincarnation_applies_newest_tuple(self) -> None:
+        scheduler = QueueScheduler()
+        authoritative = [XkbTuple("it", "pc105", "", "")]
+        fetches = 0
+
+        def read_localed() -> XkbTuple:
+            nonlocal fetches
+            fetches += 1
+            return authoritative[0]
+
+        hyprland = FakeHyprland(authoritative[0])
+        synchronizer = keyboard_sync.KeyboardSynchronizer(
+            read_localed, hyprland, FakeValidator()
+        )
+        coordinator = keyboard_sync.ReconcileCoordinator(
+            synchronizer.reconcile, scheduler
+        )
+        lifecycle = keyboard_sync.LocaledLifecycle(coordinator.request)
+
+        lifecycle.update_owner(self.OWNER_A)
+        scheduler.run_all()
+        lifecycle.update_owner(None)
+        lifecycle.update_owner(self.OWNER_B)
+        scheduler.run_all()
+        authoritative[0] = XkbTuple(
+            "us", "pc105", "", "terminate:ctrl_alt_bksp"
+        )
+        self.assertTrue(
+            lifecycle.properties_changed(
+                self.OWNER_B,
+                keyboard_sync.LOCALED_INTERFACE,
+                ["X11Layout", "X11Options"],
+                [],
+            )
+        )
+        scheduler.run_all()
+
+        self.assertEqual(fetches, 3)
+        self.assertEqual(hyprland.apply_calls, [authoritative[0]])
+        self.assertEqual(hyprland.current, authoritative[0])
+
+    def test_stale_owner_signal_is_ignored_after_reincarnation(self) -> None:
+        lifecycle, requests = self.lifecycle()
+        lifecycle.update_owner(self.OWNER_A)
+        lifecycle.update_owner(None)
+        lifecycle.update_owner(self.OWNER_B)
+        requests.requests.clear()
+
+        self.assertFalse(
+            lifecycle.properties_changed(
+                self.OWNER_A,
+                keyboard_sync.LOCALED_INTERFACE,
+                ["X11Layout"],
+                [],
+            )
+        )
+        self.assertEqual(requests.requests, [])
+
+    def test_console_only_signal_from_current_owner_does_nothing(self) -> None:
+        lifecycle, requests = self.lifecycle()
+        lifecycle.update_owner(self.OWNER_B)
+        requests.requests.clear()
+
+        for property_name in ("VConsoleKeymap", "VConsoleKeymapToggle", "Locale"):
+            with self.subTest(property_name=property_name):
+                self.assertFalse(
+                    lifecycle.properties_changed(
+                        self.OWNER_B,
+                        keyboard_sync.LOCALED_INTERFACE,
+                        [property_name],
+                        [],
+                    )
+                )
+        self.assertEqual(requests.requests, [])
+
+    def test_appearance_and_immediate_signal_coalesce(self) -> None:
+        scheduler = QueueScheduler()
+        desired = XkbTuple("us", "pc105", "", "terminate:ctrl_alt_bksp")
+        fetches = 0
+
+        def read_localed() -> XkbTuple:
+            nonlocal fetches
+            fetches += 1
+            return desired
+
+        hyprland = FakeHyprland(XkbTuple("it", "", "", ""))
+        synchronizer = keyboard_sync.KeyboardSynchronizer(
+            read_localed, hyprland, FakeValidator()
+        )
+        coordinator = keyboard_sync.ReconcileCoordinator(
+            synchronizer.reconcile, scheduler
+        )
+        lifecycle = keyboard_sync.LocaledLifecycle(coordinator.request)
+        lifecycle.update_owner(self.OWNER_B)
+        lifecycle.properties_changed(
+            self.OWNER_B,
+            keyboard_sync.LOCALED_INTERFACE,
+            ["X11Layout"],
+            [],
+        )
+
+        self.assertEqual(len(scheduler.queue), 1)
+        scheduler.run_all()
+        self.assertEqual(fetches, 1)
+        self.assertEqual(hyprland.apply_calls, [desired])
+
+    def test_direct_subscription_uses_payload_filter_and_actual_sender(self) -> None:
+        class Connection:
+            def __init__(self) -> None:
+                self.subscription: tuple[object, ...] | None = None
+
+            def signal_subscribe(self, *arguments: object) -> int:
+                self.subscription = arguments
+                return 17
+
+        connection = Connection()
+        lifecycle, requests = self.lifecycle()
+        watched: list[tuple[object, ...]] = []
+
+        def watch_name(*arguments: object) -> int:
+            watched.append(arguments)
+            return 23
+
+        observer = keyboard_sync.LocaledObserver(connection, lifecycle, watch_name)
+        self.assertEqual(observer.subscription_id, 17)
+        self.assertEqual(observer.name_watch_id, 23)
+        self.assertIsNotNone(connection.subscription)
+        subscription = connection.subscription
+        self.assertIsNone(subscription[0])
+        self.assertEqual(subscription[1], keyboard_sync.PROPERTIES_INTERFACE)
+        self.assertEqual(subscription[2], "PropertiesChanged")
+        self.assertEqual(subscription[3], keyboard_sync.LOCALED_PATH)
+        self.assertEqual(subscription[4], keyboard_sync.LOCALED_INTERFACE)
+        self.assertEqual(watched[0][1], keyboard_sync.LOCALED_SERVICE)
+
+        observer._name_appeared(connection, keyboard_sync.LOCALED_SERVICE, self.OWNER_B)
+        requests.requests.clear()
+        parameters = keyboard_sync.GLib.Variant(
+            "(sa{sv}as)",
+            (
+                keyboard_sync.LOCALED_INTERFACE,
+                {"X11Layout": keyboard_sync.GLib.Variant("s", "it")},
+                [],
+            ),
+        )
+        observer._properties_changed(
+            connection,
+            self.OWNER_B,
+            keyboard_sync.LOCALED_PATH,
+            keyboard_sync.PROPERTIES_INTERFACE,
+            "PropertiesChanged",
+            parameters,
+            None,
+        )
+        self.assertEqual(requests.requests, [False])
+
+
+class LocaledReadRaceTests(unittest.TestCase):
+    OWNER_A = ":1.100"
+    OWNER_B = ":1.200"
+    TUPLE_A = XkbTuple("it", "pc105", "", "terminate:ctrl_alt_bksp")
+    TUPLE_B = XkbTuple("us", "pc105", "", "terminate:ctrl_alt_bksp")
+
+    class Connection:
+        def __init__(self, value: XkbTuple) -> None:
+            self.value = value
+            self.calls: list[tuple[object, ...]] = []
+
+        def call_sync(self, *arguments: object) -> object:
+            self.calls.append(arguments)
+            value = self.value
+            return keyboard_sync.GLib.Variant(
+                "(a{sv})",
+                (
+                    {
+                        "X11Layout": keyboard_sync.GLib.Variant("s", value.layout),
+                        "X11Model": keyboard_sync.GLib.Variant("s", value.model),
+                        "X11Variant": keyboard_sync.GLib.Variant("s", value.variant),
+                        "X11Options": keyboard_sync.GLib.Variant("s", value.options),
+                    },
+                ),
+            )
+
+    @staticmethod
+    def queued_reader(values: list[str | None]) -> object:
+        def read() -> str | None:
+            return values.pop(0)
+
+        return read
+
+    def test_getall_activation_queues_fresh_owner_reconcile(self) -> None:
+        requests = FakeCoordinator()
+        lifecycle = keyboard_sync.LocaledLifecycle(requests.request)
+        connection = self.Connection(self.TUPLE_A)
+        client = keyboard_sync.LocaledClient(
+            connection,
+            lifecycle,
+            self.queued_reader([None, self.OWNER_B]),
+        )
+
+        with self.assertRaises(keyboard_sync.LocaledOwnerChanged):
+            client.read_tuple()
+        self.assertEqual(lifecycle.current_owner, self.OWNER_B)
+        self.assertEqual(requests.requests, [True])
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_owner_change_during_getall_rejects_stale_tuple(self) -> None:
+        requests = FakeCoordinator()
+        lifecycle = keyboard_sync.LocaledLifecycle(requests.request)
+        lifecycle.update_owner(self.OWNER_A)
+        requests.requests.clear()
+        connection = self.Connection(self.TUPLE_A)
+        client = keyboard_sync.LocaledClient(
+            connection,
+            lifecycle,
+            self.queued_reader([self.OWNER_A, self.OWNER_B]),
+        )
+
+        with self.assertRaises(keyboard_sync.LocaledOwnerChanged):
+            client.read_tuple()
+        self.assertEqual(lifecycle.current_owner, self.OWNER_B)
+        self.assertEqual(requests.requests, [True])
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_disappearance_during_getall_keeps_runtime_and_does_not_retry(self) -> None:
+        requests = FakeCoordinator()
+        lifecycle = keyboard_sync.LocaledLifecycle(requests.request)
+        lifecycle.update_owner(self.OWNER_A)
+        requests.requests.clear()
+        connection = self.Connection(self.TUPLE_A)
+        client = keyboard_sync.LocaledClient(
+            connection,
+            lifecycle,
+            self.queued_reader([self.OWNER_A, None]),
+        )
+
+        with self.assertRaises(keyboard_sync.LocaledOwnerChanged):
+            client.read_tuple()
+        self.assertIsNone(lifecycle.current_owner)
+        self.assertEqual(requests.requests, [])
+
+    def test_recovery_reads_newest_owner_and_complete_tuple(self) -> None:
+        requests = FakeCoordinator()
+        lifecycle = keyboard_sync.LocaledLifecycle(requests.request)
+        lifecycle.update_owner(self.OWNER_B)
+        requests.requests.clear()
+        connection = self.Connection(self.TUPLE_B)
+        client = keyboard_sync.LocaledClient(
+            connection,
+            lifecycle,
+            self.queued_reader([self.OWNER_B, self.OWNER_B]),
+        )
+
+        self.assertEqual(client.read_tuple(), self.TUPLE_B)
+        self.assertEqual(requests.requests, [])
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_owner_changed_before_getall_skips_stale_read(self) -> None:
+        requests = FakeCoordinator()
+        lifecycle = keyboard_sync.LocaledLifecycle(requests.request)
+        lifecycle.update_owner(self.OWNER_A)
+        requests.requests.clear()
+        connection = self.Connection(self.TUPLE_A)
+        client = keyboard_sync.LocaledClient(
+            connection,
+            lifecycle,
+            self.queued_reader([self.OWNER_B]),
+        )
+
+        with self.assertRaises(keyboard_sync.LocaledOwnerChanged):
+            client.read_tuple()
+        self.assertEqual(connection.calls, [])
+        self.assertEqual(lifecycle.current_owner, self.OWNER_B)
+        self.assertEqual(requests.requests, [True])
+
+    def test_owner_change_during_reconcile_applies_only_newest_state(self) -> None:
+        scheduler = QueueScheduler()
+        connection = self.Connection(self.TUPLE_A)
+        owner_values = [self.OWNER_A, self.OWNER_B, self.OWNER_B, self.OWNER_B]
+        lifecycle: object
+
+        def owner_reader() -> str:
+            owner = owner_values.pop(0)
+            if owner == self.OWNER_B:
+                connection.value = self.TUPLE_B
+            return owner
+
+        lifecycle = keyboard_sync.LocaledLifecycle(lambda **_arguments: None)
+        lifecycle.update_owner(self.OWNER_A)
+        client = keyboard_sync.LocaledClient(connection, lifecycle, owner_reader)
+        hyprland = FakeHyprland(XkbTuple("de", "pc105", "", ""))
+        synchronizer = keyboard_sync.KeyboardSynchronizer(
+            client.read_tuple, hyprland, FakeValidator()
+        )
+        coordinator = keyboard_sync.ReconcileCoordinator(
+            synchronizer.reconcile, scheduler
+        )
+        lifecycle.request_reconcile = coordinator.request
+
+        coordinator.request(force=True)
+        scheduler.run_all()
+
+        self.assertEqual(owner_values, [])
+        self.assertEqual(len(connection.calls), 2)
+        self.assertEqual(hyprland.apply_calls, [self.TUPLE_B])
+        self.assertEqual(hyprland.current, self.TUPLE_B)
+
+
+class UnixSignalTests(unittest.TestCase):
+    def test_supported_sighup_registration_is_warning_free(self) -> None:
+        with warnings.catch_warnings(record=True) as emitted:
+            warnings.simplefilter("always")
+            source_id = keyboard_sync.install_sighup_handler(
+                lambda: keyboard_sync.GLib.SOURCE_CONTINUE
+            )
+        keyboard_sync.GLib.source_remove(source_id)
+        self.assertFalse(
+            any(item.category.__name__ == "PyGIDeprecationWarning" for item in emitted)
+        )
+
+    def test_sighup_handler_requests_one_forced_reconciliation(self) -> None:
+        calls: list[tuple[object, ...]] = []
+
+        def registrar(*arguments: object) -> int:
+            calls.append(arguments)
+            return 19
+
+        original = keyboard_sync.GLibUnix.signal_add
+        keyboard_sync.GLibUnix.signal_add = registrar
+        requested = FakeCoordinator()
+
+        def handler() -> bool:
+            requested.request(force=True)
+            return keyboard_sync.GLib.SOURCE_CONTINUE
+
+        try:
+            self.assertEqual(keyboard_sync.install_sighup_handler(handler), 19)
+        finally:
+            keyboard_sync.GLibUnix.signal_add = original
+        self.assertEqual(calls[0][0], keyboard_sync.GLib.PRIORITY_DEFAULT)
+        self.assertEqual(calls[0][1], keyboard_sync.signal.SIGHUP)
+        self.assertEqual(calls[0][2](), keyboard_sync.GLib.SOURCE_CONTINUE)
+        self.assertEqual(requested.requests, [True])
+
+
 class IpcRecoveryTests(unittest.TestCase):
     def test_unavailable_start_appearance_and_reappearance_are_event_driven(self) -> None:
         coordinator = FakeCoordinator()
@@ -724,8 +1142,14 @@ class StaticIntegrationTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
         self.assertIn('monitor_directory(', source)
-        self.assertIn('"g-properties-changed"', source)
-        self.assertIn('"notify::g-name-owner"', source)
+        self.assertIn("connection.signal_subscribe(", source)
+        self.assertIn("Gio.bus_watch_name_on_connection", source)
+        self.assertIn('"PropertiesChanged"', source)
+        self.assertNotIn("Gio.DBusProxy", source)
+        self.assertNotIn('"g-properties-changed"', source)
+        self.assertNotIn('"notify::g-name-owner"', source)
+        self.assertNotIn("GLib.unix_signal_add", source)
+        self.assertIn("GLibUnix.signal_add", source)
 
     def test_unit_is_static_session_owned_and_restart_on_failure(self) -> None:
         unit = UNIT.read_text(encoding="utf-8")

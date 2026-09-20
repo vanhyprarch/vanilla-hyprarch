@@ -87,6 +87,20 @@ systemd-localed 261.3 exposes the graphical tuple as `X11Layout`, `X11Model`,
 `--no-convert` prevents that conversion. The helper ignores locale/vconsole
 signals and always re-reads the complete X11 tuple for a relevant report.
 
+A controlled live prototype exposed that a `GDBusProxy` created for the
+well-known locale1 name could observe owner changes yet miss a later
+`PropertiesChanged` after systemd-localed repeatedly exited idle and returned
+under new unique owners. The proxy is therefore not the event authority. One
+long-lived system-bus `GDBusConnection` now owns a direct signal subscription,
+the name watcher, and explicit `Properties.GetAll` calls. Signals are accepted
+only from the currently watched unique owner. Owner transitions around a read
+discard that tuple and coalesce a fresh reconciliation for the newest owner;
+idle disappearance alone leaves Hyprland unchanged and schedules no retry.
+
+PyGObject 3.56.3 warns that `GLib.unix_signal_add()` is deprecated. The SIGHUP
+reload path uses the supported `GLibUnix.signal_add()` API provided by GLib
+2.88.3 instead; this changes registration only, not forced-reconcile behavior.
+
 Hyprland 0.56.2's `CCompositor::startCompositor()` schedules
 `systemctl --user import-environment` and D-Bus activation-environment
 publication before it emits the ready event, but the executor spawn is
@@ -109,10 +123,11 @@ delivery for this service.
 Retest the Lua eval API, reload event, identical-tuple active-index behavior,
 global hotplug inheritance, activation-environment ordering, invalid-keymap
 behavior, and command-socket layout after a Hyprland upgrade. Retest locale1
-properties, signals, D-Bus activation, named environment import,
-`ExecReload`/`$MAINPID`, and `--no-convert` semantics after a systemd major
-upgrade. Retest command-line validation after libxkbcommon or xkeyboard-config
-changes.
+properties, direct signal sender identity, repeated owner reincarnation, D-Bus
+activation, named environment import, `ExecReload`/`$MAINPID`, and
+`--no-convert` semantics after a systemd major upgrade. Retest Unix-signal
+registration after a PyGObject/GLib major upgrade and command-line validation
+after libxkbcommon or xkeyboard-config changes.
 
 ## Hyprlock portable baseline validation boundary
 
