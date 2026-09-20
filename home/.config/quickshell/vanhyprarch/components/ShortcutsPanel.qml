@@ -22,6 +22,10 @@ CenteredOverlay {
     property int categoryHeight: 36
     property int columnHeaderHeight: 32
     property real actionColumnRatio: 0.43
+    property string selectedEntryId: ""
+    property int selectedEntryIndex: -1
+    property bool reconcilingSelection: false
+    property bool selectionReconcilePending: false
     readonly property int categoryHeadingFontSize:
         metrics.fontPixels(17 / metrics.fontReferenceSize)
     readonly property int categoryHeadingFontWeight:
@@ -34,6 +38,34 @@ CenteredOverlay {
         const shouldShow = controller.isOpen && activeForScreen
         if (visible !== shouldShow)
             visible = shouldShow
+    }
+
+    function rememberSelection(): void {
+        if (reconcilingSelection || shortcutsView.currentIndex < 0
+                || shortcutsView.currentIndex >= shortcutsView.count)
+            return
+        const entry = root.controller.filteredEntries[shortcutsView.currentIndex]
+        selectedEntryId = entry.id
+        selectedEntryIndex = shortcutsView.currentIndex
+    }
+
+    function reconcileSelection(): void {
+        selectionReconcilePending = false
+        reconcilingSelection = true
+        const nextIndex = root.controller.selectionIndex(
+            root.controller.filteredEntries, selectedEntryId, selectedEntryIndex)
+        shortcutsView.currentIndex = nextIndex
+        selectedEntryIndex = nextIndex
+        selectedEntryId = nextIndex >= 0
+            ? root.controller.filteredEntries[nextIndex].id : ""
+        reconcilingSelection = false
+    }
+
+    function scheduleSelectionReconcile(): void {
+        if (selectionReconcilePending)
+            return
+        selectionReconcilePending = true
+        Qt.callLater(root.reconcileSelection)
     }
 
     implicitWidth: panelWidth
@@ -49,6 +81,9 @@ CenteredOverlay {
         if (visible) {
             searchInput.text = root.controller.searchText
             shortcutsView.currentIndex = shortcutsView.count > 0 ? 0 : -1
+            selectedEntryIndex = shortcutsView.currentIndex
+            selectedEntryId = shortcutsView.currentIndex >= 0
+                ? root.controller.filteredEntries[shortcutsView.currentIndex].id : ""
             shortcutsView.positionViewAtBeginning()
             Qt.callLater(function() { searchInput.forceActiveFocus() })
         } else if (root.controller.isOpen && root.activeForScreen) {
@@ -65,6 +100,10 @@ CenteredOverlay {
 
         function onActiveScreenNameChanged(): void {
             root.syncVisibility()
+        }
+
+        function onFilteredEntriesChanged(): void {
+            root.scheduleSelectionReconcile()
         }
     }
 
@@ -183,6 +222,9 @@ CenteredOverlay {
                     if (root.controller.searchText !== text)
                         root.controller.searchText = text
                     shortcutsView.currentIndex = shortcutsView.count > 0 ? 0 : -1
+                    root.selectedEntryIndex = shortcutsView.currentIndex
+                    root.selectedEntryId = shortcutsView.currentIndex >= 0
+                        ? root.controller.filteredEntries[shortcutsView.currentIndex].id : ""
                     shortcutsView.positionViewAtBeginning()
                 }
 
@@ -314,11 +356,10 @@ CenteredOverlay {
             }
 
             onCountChanged: {
-                if (count === 0)
-                    currentIndex = -1
-                else if (currentIndex < 0 || currentIndex >= count)
-                    currentIndex = 0
+                root.scheduleSelectionReconcile()
             }
+
+            onCurrentIndexChanged: root.rememberSelection()
 
             delegate: Item {
                 id: shortcutDelegate

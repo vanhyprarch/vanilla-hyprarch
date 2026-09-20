@@ -539,6 +539,22 @@ machine or override fallback remains. The repeatable Aquamarine 0.15.1
 teardown SIGSEGV remains an upstream compatibility record; it did not prevent
 logout or session closure.
 
+## 2026-09-20: Shortcut availability architecture
+
+The shortcut coverage review preserved the original binding ownership instead
+of creating a QML catalog. `bindings.lua` now carries optional capability
+metadata in the same described binding that defines the real shortcut, and
+Super+K continues to ingest only active `hyprctl -j binds` output. The first
+consumer is existing F9 hold-to-dictate: its real binding remains marker-gated,
+while authoritative component health supplies an additional display guard.
+
+The versioned metadata transport uses default-ignorable Unicode tag characters
+after unchanged visible description text. Lua, JSON, QML parsing, legacy text
+width, malformed data, unknown versions, category ordering, search composition,
+and stable selection behavior gained deterministic coverage. Manual/on-demand
+Screensaver invocation was explicitly rejected; the Zig component remains part
+of automatic Power & Idle behavior only.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

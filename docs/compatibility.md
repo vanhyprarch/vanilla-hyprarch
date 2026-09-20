@@ -703,6 +703,28 @@ Retest the file-loading and `AutoEnable` behavior after a BlueZ upgrade.
 Until that bootstrap exists, users must not copy the tracked file blindly over
 an existing customized BlueZ configuration.
 
+## Shortcut description metadata transport
+
+Validated on 2026-09-20 with Hyprland 0.56.2, Lua 5.5.1, Quickshell 0.3.1,
+Qt 6.11.2, and Python's standard JSON implementation. Hyprland descriptions
+have no separate project-metadata field, while Super+K must continue to derive
+rows from actual active described bindings rather than a second catalog.
+
+The local transport appends a framed version-1 ASCII payload encoded as Unicode
+tag characters after the normal `Category | Action` text. A deterministic
+repository experiment passed the description through Lua UTF-8 generation,
+JSON serialization and parsing, QML decoding, and Qt text measurement. Bytes
+survived without truncation or escaping ambiguity, tagged and legacy text had
+identical rendered width, normal text cannot collide with the non-BMP framing,
+and malformed or unknown payloads failed closed. Bindings without availability
+metadata remain byte-for-byte legacy descriptions.
+
+This is an internal transport, not a public interface. Retest the Lua-to-runtime
+description and `hyprctl -j binds` JSON path after a Hyprland config-provider or
+JSON-output change, and retest default-ignorable rendering after a Qt upgrade.
+Remove or replace the encoding if Hyprland gains a structured binding-metadata
+field that survives runtime inspection.
+
 ## Current screensaver validation
 
 **Status:** validated with `vanhyprarch-zig-player` v0.1.1

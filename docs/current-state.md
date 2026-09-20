@@ -374,7 +374,10 @@ The current Quickshell UI includes:
   selectors plus one unified Languages page: real Automatic detection or one
   to three reviewed manual languages, with no language-specific Done step;
 - a searchable, read-only shortcut viewer populated from described Hyprland
-  bindings;
+  bindings. `bindings.lua` remains the shortcut-definition and display-metadata
+  authority: versioned invisible description metadata can name an optional
+  capability, and the viewer filters that row through the existing authoritative
+  component controller without a QML shortcut catalog, marker check, or polling;
 - consistent long-list navigation: Qt Quick's native Flickable wheel tuning is
   configured process-wide with `QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000`,
   scrollable views retain a thin project-owned persistent position indicator,
@@ -832,7 +835,7 @@ unlock, and automatic locking at the Screen saver and Display stages have
 passed controlled manual testing. Physical multi-monitor acceptance and
 untested combinations remain separate work.
 
-## Zig Screensaver optional component — REPOSITORY IMPLEMENTED / LIVE ADOPTION PENDING
+## Zig Screensaver optional component — IMPLEMENTED AND LIVE ADOPTED
 
 When the optional component is installed, production uses:
 
@@ -849,9 +852,9 @@ The baseline remains complete without the player. Super+Space lists Local
 Dictation and Zig Screensaver as explicit siblings. `component-status --json`
 requires the exact marker plus the complete canonical payload; absent or
 incomplete capability removes every screensaver control and listener while
-Display, Suspend, Automatic Lock, and Caffeine remain operational. This
-repository candidate has not adopted the player or published a component
-marker on the current development machine.
+Display, Suspend, Automatic Lock, and Caffeine remain operational. The current
+development machine reports the pinned v0.1.1 x86_64 component installed, its
+marker valid, its complete payload clean-up safe, and capability `installed`.
 
 `bin/vanhyprarch-screensaver` provides explicit `start --idle`, bounded `test`,
 idempotent `stop` and runtime `status`, plus install/adopt/reinstall/repair/
@@ -874,6 +877,11 @@ was restored.
 Separate manual tests also confirmed pointer-click and scroll absorption.
 Input routing is owned by the player; Vanilla HyprArch carries no input
 workaround. Physical two-monitor validation remains pending.
+
+Screensaver invocation remains automatic Power & Idle behavior. There is no
+manual/on-demand screensaver shortcut, no Super+K Screensaver row, and no
+unbounded manual start operation; adding one is rejected unless a future
+explicit product decision reopens it.
 
 ## Known open work
 

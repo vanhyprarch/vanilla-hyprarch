@@ -6,6 +6,7 @@ import Quickshell.Io
 Scope {
     id: root
 
+    required property var systemComponentsActions
     property bool isOpen: false
     property bool loading: false
     property string activeScreenName: ""
@@ -31,12 +32,14 @@ Scope {
         errorMessage = ""
         loading = true
         isOpen = true
+        systemComponentsActions.refreshStatus()
         bindsProcess.startLoad()
     }
 
     function close(): void {
         isOpen = false
         searchText = ""
+        bindsProcess.reloadPending = false
     }
 
     function toggle(): void {
@@ -102,11 +105,95 @@ Scope {
     }
 
     function categoryRank(category: string): int {
-        const preferred = ["Apps", "Window", "Workspace", "Audio"]
+        const preferred = ["Apps", "Shell", "System", "Capture",
+            "Dictation", "Window", "Workspace", "Audio"]
         const index = preferred.indexOf(category)
         if (index >= 0)
             return index
         return category === "Other" ? 10000 : 100
+    }
+
+    function decodeMetadataDescription(value: string): var {
+        const metadataStart = String.fromCodePoint(0xE0001)
+        const metadataEnd = String.fromCodePoint(0xE007F)
+        const start = value.indexOf(metadataStart)
+        const strayEnd = value.indexOf(metadataEnd)
+        if (start < 0)
+            return strayEnd < 0 ? { visible: value, availability: "" } : null
+        if (!value.endsWith(metadataEnd) || strayEnd < start)
+            return null
+
+        const bodyStart = start + metadataStart.length
+        const bodyEnd = value.length - metadataEnd.length
+        let payload = ""
+        for (let index = bodyStart; index < bodyEnd;) {
+            const point = value.codePointAt(index)
+            if (point < 0xE0020 || point > 0xE007E)
+                return null
+            payload += String.fromCharCode(point - 0xE0000)
+            index += point > 0xFFFF ? 2 : 1
+        }
+
+        const match = /^vh1;availability=([a-z0-9-]+)$/.exec(payload)
+        if (match === null)
+            return null
+        return {
+            visible: value.slice(0, start),
+            availability: match[1]
+        }
+    }
+
+    function parseDescription(value: string): var {
+        const decoded = decodeMetadataDescription(value)
+        if (decoded === null)
+            return null
+
+        const description = decoded.visible.trim()
+        if (description === "")
+            return null
+        const separator = description.indexOf("|")
+        let category = "Other"
+        let action = description
+        if (separator >= 0) {
+            category = description.slice(0, separator).trim()
+            action = description.slice(separator + 1).trim()
+            if (category === "")
+                category = "Other"
+            if (action === "")
+                action = description.replace("|", "").trim()
+        }
+        if (action === "")
+            action = "Unnamed shortcut"
+        return {
+            category: category,
+            action: action,
+            availability: decoded.availability
+        }
+    }
+
+    function entryIdentity(category: string, action: string,
+        availability: string): string {
+        return category + "\u0000" + action + "\u0000" + availability
+    }
+
+    function availabilityIsSatisfied(availability: string): bool {
+        switch (availability) {
+        case "": return true
+        case "local-dictation": return systemComponentsActions.installed
+        default: return false
+        }
+    }
+
+    function selectionIndex(visibleEntries: var, selectedId: string,
+        previousIndex: int): int {
+        if (!Array.isArray(visibleEntries) || visibleEntries.length === 0)
+            return -1
+        if (selectedId !== "") {
+            const retained = visibleEntries.findIndex(entry => entry.id === selectedId)
+            if (retained >= 0)
+                return retained
+        }
+        return Math.min(Math.max(previousIndex, 0), visibleEntries.length - 1)
     }
 
     function parseBindings(output: string): var {
@@ -123,33 +210,22 @@ Scope {
                     || typeof binding.description !== "string")
                 continue
 
-            const description = binding.description.trim()
-            if (description === "")
+            const description = parseDescription(binding.description)
+            if (description === null)
                 continue
-
-            const separator = description.indexOf("|")
-            let category = "Other"
-            let action = description
-            if (separator >= 0) {
-                category = description.slice(0, separator).trim()
-                action = description.slice(separator + 1).trim()
-                if (category === "")
-                    category = "Other"
-                if (action === "")
-                    action = description.replace("|", "").trim()
-            }
-            if (action === "")
-                action = "Unnamed shortcut"
 
             const chord = displayChord(Number(binding.modmask) || 0,
                 typeof binding.key === "string" ? binding.key.trim() : "",
                 Number(binding.keycode) || 0)
-            const groupKey = category + "\u0000" + action
+            const groupKey = entryIdentity(description.category,
+                description.action, description.availability)
             let group = grouped[groupKey]
             if (group === undefined) {
                 group = {
-                    category: category,
-                    action: action,
+                    id: groupKey,
+                    category: description.category,
+                    action: description.action,
+                    availability: description.availability,
                     chords: [],
                     firstIndex: index
                 }
@@ -183,14 +259,18 @@ Scope {
 
         for (let index = 0; index < entries.length; ++index) {
             const entry = entries[index]
+            if (!availabilityIsSatisfied(entry.availability))
+                continue
             const searchable = normalizedSearch(entry.category + " "
                 + entry.action + " " + entry.chords.join(" "))
             if (query !== "" && searchable.indexOf(query) < 0)
                 continue
 
             result.push({
+                id: entry.id,
                 category: entry.category,
                 action: entry.action,
+                availability: entry.availability,
                 chords: entry.chords,
                 showCategory: entry.category !== previousCategory
             })
@@ -198,6 +278,15 @@ Scope {
         }
 
         return result
+    }
+
+    Connections {
+        target: root.systemComponentsActions
+
+        function onHyprlandReloadCompleted(exitCode): void {
+            if (exitCode === 0 && root.isOpen)
+                bindsProcess.startLoad()
+        }
     }
 
     IpcHandler {
@@ -224,9 +313,14 @@ Scope {
         property bool exitReceived: false
         property bool stdoutReceived: false
         property bool resultHandled: false
+        property bool reloadPending: false
         property int lastExitCode: -1
 
         function startLoad(): void {
+            if (running) {
+                reloadPending = true
+                return
+            }
             outputText = ""
             exitReceived = false
             stdoutReceived = false
@@ -247,6 +341,7 @@ Scope {
                     + lastExitCode + ")."
                 root.entries = []
                 outputText = ""
+                reloadPending = false
                 return
             }
 
@@ -260,6 +355,10 @@ Scope {
             }
 
             outputText = ""
+            const shouldReload = reloadPending && root.isOpen
+            reloadPending = false
+            if (shouldReload)
+                Qt.callLater(startLoad)
         }
 
         stdout: StdioCollector {

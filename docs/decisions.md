@@ -715,6 +715,9 @@ bounded manual `test` never arms it.
 Idle invocation is explicit `start --idle`; manual testing uses a bounded
 `test`. Exact player termination is completed independently of cursor
 restoration, and pending cursor ownership remains recoverable by later stop.
+The product has no manual/on-demand screensaver shortcut or unbounded manual
+start operation. Screensaver invocation remains owned by automatic Power &
+Idle behavior unless a future explicit decision reopens that scope.
 
 ## ADR-034: Make Appearance the Light/Dark authority
 
@@ -804,3 +807,23 @@ Repeated real cold logout/login tests verified stop-before-compositor-loss,
 automatic fresh-session startup of exactly one official agent, current
 environment inheritance, and absence of compositor-less restart or start-limit
 storms. The package-owned unit remained unchanged.
+
+## ADR-036: Keep described bindings authoritative for shortcut discovery
+
+**Status:** Accepted
+**Date:** 2026-09-20
+**Implementation:** Availability metadata and Dictation filtering implemented
+
+`home/.config/hypr/vanhyprarch/bindings.lua` remains the one definition of
+ordinary user-facing shortcuts, including keys, action labels, categories,
+dispatchers, and optional availability. Super+K reads the active described
+bindings from `hyprctl -j binds`; QML does not maintain a parallel shortcut
+catalog.
+
+Legacy descriptions remain exact `Category | Action` text. Conditional binds
+append a versioned internal payload encoded with Unicode tag characters, which
+are default-ignorable in legacy presentation. Project-only options are removed
+before `hl.bind`. Super+K decodes the payload, rejects malformed or unknown
+versions, and fails closed for unknown capabilities. The `local-dictation`
+capability consumes the already-validated `SystemComponentsActions.installed`
+projection and performs no marker inspection, per-row process launch, or poll.

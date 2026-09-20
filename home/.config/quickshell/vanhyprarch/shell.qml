@@ -44,6 +44,7 @@ ShellRoot {
 
     Shortcuts {
         id: shortcuts
+        systemComponentsActions: systemComponentsActions
     }
 
     PowerActions {

@@ -65,8 +65,12 @@ grep -Fq 'systemctl --user start vanhyprarch-voxtype.service' "$hyprland_config"
     fail 'Hyprland no longer starts the optional service'
 grep -Fq 'bind("F9", "Dictation", "Start recording"' "$bindings" ||
     fail 'F9 press binding is missing'
-grep -Fq 'hl.dsp.exec_cmd("voxtype record stop"), { release = true })' "$bindings" ||
+grep -Fq '{ availability = "local-dictation" })' "$bindings" ||
+    fail 'F9 press binding lacks availability metadata'
+grep -Fq 'hl.dsp.exec_cmd("voxtype record stop"),' "$bindings" ||
     fail 'F9 release binding is missing'
+grep -Fq '{ release = true, availability = "local-dictation" })' "$bindings" ||
+    fail 'F9 release binding lacks phase or availability metadata'
 grep -Fq 'hl.env("PATH", prependPathOnce(inheritedPath, sessionHome .. "/.local/bin"))' \
     "$hyprland_config" || fail 'session PATH policy changed'
 

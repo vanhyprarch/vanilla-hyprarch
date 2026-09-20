@@ -1,9 +1,41 @@
 -- Vanilla HyprArch managed curated bindings.
 
 -- Descriptions are consumed by the searchable shortcut viewer.
+-- Project metadata uses invisible Unicode tag characters so legacy readers
+-- keep displaying only the ordinary "Category | Action" description.
+local metadataStart = utf8.char(0xE0001)
+local metadataEnd = utf8.char(0xE007F)
+
+local function encodeMetadata(availability)
+    if availability == nil then
+        return ""
+    end
+    assert(type(availability) == "string" and
+        availability:match("^[a-z0-9%-]+$") ~= nil,
+        "binding availability must be a lowercase capability ID")
+
+    local payload = "vh1;availability=" .. availability
+    local encoded = { metadataStart }
+    for index = 1, #payload do
+        local byte = payload:byte(index)
+        assert(byte >= 0x20 and byte <= 0x7E,
+            "binding metadata must be printable ASCII")
+        table.insert(encoded, utf8.char(0xE0000 + byte))
+    end
+    table.insert(encoded, metadataEnd)
+    return table.concat(encoded)
+end
+
 local function bind(keys, category, action, dispatcher, options)
-    local opts = options or {}
+    local requested = options or {}
+    local opts = {}
+    for key, value in pairs(requested) do
+        if key ~= "availability" then
+            opts[key] = value
+        end
+    end
     opts.description = category .. " | " .. action
+        .. encodeMetadata(requested.availability)
     return hl.bind(keys, dispatcher, opts)
 end
 
@@ -36,7 +68,7 @@ bind(mainMod .. " + SHIFT + F", "Apps", "File manager", hl.dsp.exec_cmd("thunar"
 -- Shell
 bind(mainMod .. " + K", "Shell", "Show shortcuts",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.shortcuts toggle"))
-bind(mainMod .. " + SPACE", "Shell", "Open Super + Space",
+bind(mainMod .. " + SPACE", "Shell", "Open command center",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.superSpace toggle"))
 bind(mainMod .. " + CTRL + SPACE", "Shell", "Choose background",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.backgroundPicker toggle"))
@@ -47,9 +79,11 @@ bind("PRINT", "Capture", "Screenshot", hl.dsp.exec_cmd("vanhyprarch-screenshot")
 -- Optional local dictation
 if dictationComponentInstalled() then
     bind("F9", "Dictation", "Start recording",
-        hl.dsp.exec_cmd("voxtype record start"))
+        hl.dsp.exec_cmd("voxtype record start"),
+        { availability = "local-dictation" })
     bind("F9", "Dictation", "Stop and transcribe",
-        hl.dsp.exec_cmd("voxtype record stop"), { release = true })
+        hl.dsp.exec_cmd("voxtype record stop"),
+        { release = true, availability = "local-dictation" })
 end
 
 -- Window state
