@@ -11,6 +11,8 @@ and removable local mitigations. Package selection belongs in
 | --- | --- | --- |
 | Arch Linux | Rolling snapshot, 2026-09-10 | Standard minimal base, packaging, and systemd |
 | Hyprland | 0.56.2 (`hyprland 0.56.2-3`) | Compositor, Lua configuration, input, and session ownership |
+| Aquamarine | 0.15.1 (`aquamarine 0.15.1-1`) | Hyprland DRM backend; teardown-only SIGSEGV tracked upstream |
+| hyprpolkitagent | 0.1.3 (`hyprpolkitagent 0.1.3-10`) | Package-owned graphical authorization service with a managed direct-session lifecycle adaptation |
 | hypridle | 0.1.8 (`hypridle 0.1.8-2`) | Idle notifications and pre-sleep hooks |
 | hyprlock | 0.9.6 (`hyprlock 0.9.6-3`) | Manual/password unlock and Screen saver/Display automatic-lock paths validated; portable repository baseline added but not live-migrated |
 | Quickshell | 0.3.1 (`quickshell 0.3.1-1`) | Main desktop shell; no longer part of screensaver rendering |
@@ -128,6 +130,70 @@ activation, named environment import, `ExecReload`/`$MAINPID`, and
 `--no-convert` semantics after a systemd major upgrade. Retest Unix-signal
 registration after a PyGObject/GLib major upgrade and command-line validation
 after libxkbcommon or xkeyboard-config changes.
+
+## Hyprpolkitagent direct-session lifecycle boundary
+
+**Affected components:** hyprpolkitagent 0.1.3-10 and systemd 261.3
+
+The official package owns
+`/usr/lib/systemd/user/hyprpolkitagent.service`. Its content matches the
+upstream
+[service template](https://github.com/hyprwm/hyprpolkitagent/blob/main/assets/hyprpolkitagent-service.in):
+`PartOf=` and `After=` reference
+`graphical-session.target`, `ConditionEnvironment=WAYLAND_DISPLAY`, and the
+service uses `Restart=on-failure`. Vanilla neither edits nor copies that unit.
+The upstream target integration was
+[added for sessions that start Hyprland as a systemd service](https://github.com/hyprwm/hyprpolkitagent/pull/3);
+Vanilla instead uses direct
+`Ly -> start-hyprland -> Hyprland`, where `graphical-session.target` remains
+inactive.
+
+During the 2026-09-20 cold logout, the old agent first lost Wayland and exited
+255. The package restart then repeatedly reached Qt without a display, aborted
+with SIGABRT, and reached `start-limit-hit` after six scheduled restarts. The
+new session's direct start was rejected by that retained failure state. This
+closely matches upstream
+[hyprpolkitagent issue #16](https://github.com/hyprwm/hyprpolkitagent/issues/16),
+which records logout coredumps, six restart attempts, start-limit failure, and
+failure to return on the next login. That report confirms the symptom, while
+Vanilla's journal and inactive-target audit establish the local lifecycle
+cause.
+
+The local adaptation is deliberately smaller than a replacement unit.
+`vanhyprarch-polkit-session` owns ordered direct-session start and graceful
+stop. A managed package drop-in adds only a compositor-socket `ExecCondition`
+and a one-second restart interval. Active-session failures retain the package's
+`Restart=on-failure`; compositor-absent restart attempts become cleanly skipped,
+and each fresh session clears old rate-limit state before one restart.
+
+Retest after a hyprpolkitagent package or service-template update and after a
+systemd major update. Remove or reduce the drop-in if upstream makes
+compositor-loss restart safe. Reconsider the direct ownership helper if
+Vanilla adopts an active graphical session target; do not carry both lifecycle
+owners.
+
+## Aquamarine DRM teardown SIGSEGV
+
+**Affected components:** Hyprland 0.56.2-3 with Aquamarine 0.15.0 and 0.15.1-1
+
+Seven local Hyprland coredumps from 2026-09-09 through 2026-09-20 occurred only
+while Ly sessions were closing. Every dump has SIGSEGV at
+`CDRMBackend::flushAsyncCommitEvents()`, followed by `cancelAsyncOutput()`,
+`SDRMConnector::disconnect()`, and the DRM backend destructor. The logout still
+completed, and no active-session occurrence has been observed.
+
+The stack and timing match open upstream
+[Aquamarine issue #383](https://github.com/hyprwm/aquamarine/issues/383), which
+reports the same teardown stack on Hyprland exit beginning with Aquamarine
+0.15.0. Related [issue #386](https://github.com/hyprwm/aquamarine/issues/386)
+tracks a different connector-disconnect failure introduced by the same async
+commit change and explicitly identifies #383 as the related exit-crash path.
+
+Vanilla carries no workaround and does not alter logout to hide the coredump.
+Treat this as an upstream teardown-only compatibility defect unless a future
+observation shows active-session impact or failed logout. Retest the controlled
+logout after the next relevant Aquamarine or Hyprland upgrade and retire this
+record when the upstream path no longer crashes.
 
 ## Hyprlock portable baseline validation boundary
 
@@ -405,6 +471,12 @@ republished the configured Caffeine-off listeners, left one direct
 Hyprland-owned `/usr/bin/hypridle -v`, and the 120-second screensaver fired.
 The runtime error record remained absent. This validates the mitigation for the
 observed command-executor and instance-lock timing behavior.
+
+The 2026-09-20 cold logout/login began with Caffeine ON and initialized the new
+session with Caffeine OFF. This is PASS: Caffeine is intentionally
+session-ephemeral, and resetting it prevents a forgotten override from
+silently disabling idle, lock, or suspend protection in a later session. It
+must not be persisted across logout, reboot, or shutdown/startup.
 
 Retest both command execution and instance-lock timing after a Hyprland upgrade.
 The leading `exec` can be reconsidered if a future Lua API provides direct

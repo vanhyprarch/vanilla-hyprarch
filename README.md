@@ -129,9 +129,10 @@ disclosure and practical migration guidance.
 
 The Appearance foundation is implemented only in an isolated candidate and
 still needs human review and controlled deployment; its visual background
-picker is future work. System keyboard synchronization is repository-complete
-but not deployed; its transitional Italian machine fallback remains until
-controlled D-Bus, reload, service-lifecycle, and cold-login validation pass.
+picker is future work. System keyboard synchronization passed its first real
+cold-login lifecycle test; its transitional Italian machine fallback remains
+until the separate session-lifecycle hardening candidate passes controlled
+live validation and fallback removal is separately authorized.
 The pinned player release is
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
 hardware/pairing matrix remain pending, while Super+Space Remove Application

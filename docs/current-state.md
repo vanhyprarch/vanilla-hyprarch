@@ -874,9 +874,14 @@ workaround. Physical two-monitor validation remains pending.
 
 ### PROVISIONAL
 
-- Deploy and validate System Keyboard Synchronization while retaining the
-  transitional Italian machine block; remove it only after D-Bus, reload,
-  service lifecycle, and cold-login acceptance pass.
+- System Keyboard Synchronization passed its first real cold-login lifecycle
+  test with authoritative Italian state. Retain the transitional Italian
+  machine block until the separate session-lifecycle fixes pass controlled
+  live validation; fallback removal remains a distinct authorized migration.
+- Deploy and validate the Bluetooth parent-death and PolicyKit direct-session
+  lifecycle fixes in one controlled cold logout/login. Confirm the old logind
+  scope closes and the graphical PolicyKit agent returns without a restart
+  storm.
 - Validate the external player's physical multi-output and suspend/resume
   behavior.
 - Validate remaining lock-at-suspend and Caffeine lifecycle combinations
