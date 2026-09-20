@@ -482,6 +482,11 @@ last-active appropriate screen. Displayed PIN/passkey callbacks receive their
 D-Bus reply only after a panel confirms that the challenge is visible. Pairing
 intent is limited to one agent-session-bound transaction, and the agent fails
 closed if its authenticated BlueZ owner, UI, IPC, or process owner disappears.
+Normal component teardown sends SIGTERM and pipe closure remains a protocol
+fallback. The helper also arms Linux `PR_SET_PDEATHSIG` before registering with
+BlueZ and verifies that its original parent survived that operation. This
+kernel-enforced final layer bounds the helper lifetime to its owning
+Quickshell process even when the shell exits without running QML destruction.
 No `bluetoothctl` polling, listing, or interactive-prompt parsing is used.
 An explicit panel power choice is stored as `on` or `off` in
 `${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/bluetooth-power.conf`. One

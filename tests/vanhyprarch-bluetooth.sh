@@ -7,6 +7,7 @@ repository_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 helper=$repository_dir/home/.config/quickshell/vanhyprarch/helpers/vanhyprarch_bluetooth_agent.py
 power_test=$script_dir/vanhyprarch-bluetooth-power.sh
 template=$script_dir/bluetooth-controller.qml
+lifecycle_test=$script_dir/vanhyprarch-bluetooth-lifecycle.py
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-bluetooth-test.XXXXXX")
 
 cleanup()
@@ -36,6 +37,7 @@ fi
 grep -Fq 'vanhyprarch Bluetooth agent self-check passed' "$agent_log" ||
     fail 'Bluetooth agent self-check did not report success'
 printf '%s\n' 'vanhyprarch Bluetooth agent self-check passed (fail-closed paths exercised)'
+PYTHONPYCACHEPREFIX=$test_dir/pycache python "$lifecycle_test"
 "$power_test"
 
 components_uri=components

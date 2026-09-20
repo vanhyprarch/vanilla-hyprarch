@@ -392,8 +392,12 @@ It uses the official `python`, `python-dbus`, and `python-gobject` packages and
 fails closed if its BlueZ owner, UI, IPC, or process owner disappears. Display
 callbacks are acknowledged to BlueZ only after the target panel reports them
 visible, and automatic trust/connect is scoped to one user transaction in the
-current agent session. Retest and remove the helper if a future Quickshell
-release exposes equivalent complete pairing-agent functionality.
+current agent session. QML SIGTERM teardown and private-pipe closure are the
+cooperative lifecycle layers. Linux `PR_SET_PDEATHSIG` plus an immediate parent
+PID recheck is the final guarantee when the owning Quickshell process dies
+without cleanup; no additional runtime dependency is required. Retest and
+remove the helper if a future Quickshell release exposes equivalent complete
+pairing-agent functionality.
 
 ## ADR-024: Persist one explicit Bluetooth power preference
 

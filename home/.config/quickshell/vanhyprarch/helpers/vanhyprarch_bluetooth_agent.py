@@ -9,6 +9,7 @@ exchanges pairing prompts with Quickshell as newline-delimited JSON.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
@@ -48,6 +49,7 @@ UUID128_PATTERN = re.compile(
     r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
 )
 BLUETOOTH_BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"
+PR_SET_PDEATHSIG = 1
 
 REQUEST_KINDS = {
     "requestPinCode",
@@ -57,6 +59,38 @@ REQUEST_KINDS = {
     "authorizeService",
 }
 DISPLAY_KINDS = {"displayPinCode", "displayPasskey"}
+
+
+class ParentProcessExited(RuntimeError):
+    pass
+
+
+def arm_parent_death_signal() -> int:
+    """Request SIGTERM when the process that launched this helper exits."""
+    expected_parent = os.getppid()
+    if expected_parent <= 1:
+        raise ParentProcessExited("pairing agent has no live session parent")
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    prctl = libc.prctl
+    prctl.argtypes = [
+        ctypes.c_int,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+    ]
+    prctl.restype = ctypes.c_int
+    if prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0) != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number))
+
+    # PR_SET_PDEATHSIG cannot report a death that happened before prctl().
+    # Comparing the parent afterwards closes that race; a later death is
+    # covered by the armed kernel signal.
+    if os.getppid() != expected_parent:
+        raise ParentProcessExited("pairing agent session parent already exited")
+    return expected_parent
 
 
 class Rejected(dbus.DBusException):
@@ -1030,6 +1064,7 @@ def run_self_check() -> int:
     assert actions == ["monitor", "owner", "manager", "register", "default", "owner"]
     assert agent.registered and agent.bluez_owner == ":1.50"
     agent._unregister()
+    assert actions[-1] == "unregister" and not agent.registered
 
     owner_shutdowns: list[tuple[str, int]] = []
     agent = harness([])
@@ -1041,36 +1076,70 @@ def run_self_check() -> int:
     return 0
 
 
+def run_parent_death_probe() -> int:
+    expected_parent = arm_parent_death_signal()
+    print(
+        f"ready pid={os.getpid()} parent={expected_parent}",
+        flush=True,
+    )
+    while True:
+        signal.pause()
+
+
 def main() -> int:
     if len(sys.argv) == 2 and sys.argv[1] == "--check":
         return run_self_check()
+    if len(sys.argv) == 2 and sys.argv[1] == "--parent-death-probe":
+        return run_parent_death_probe()
     if len(sys.argv) != 1:
-        print("usage: vanhyprarch_bluetooth_agent.py [--check]", file=sys.stderr)
+        print(
+            "usage: vanhyprarch_bluetooth_agent.py "
+            "[--check|--parent-death-probe]",
+            file=sys.stderr,
+        )
         return 2
+
+    try:
+        arm_parent_death_signal()
+    except (OSError, ParentProcessExited) as error:
+        print(
+            "Bluetooth pairing agent parent binding failed: "
+            + error.__class__.__name__,
+            file=sys.stderr,
+        )
+        return 1
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     loop = GLib.MainLoop()
+    agent: BluetoothAgent | None = None
+    termination_requested = False
+
+    def handle_signal(_signum: int, _frame: Any) -> None:
+        nonlocal termination_requested
+        termination_requested = True
+        if agent is not None:
+            GLib.idle_add(agent.shutdown, "Bluetooth pairing agent terminated", 0)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
     try:
         bus = dbus.SystemBus()
         agent = BluetoothAgent(bus, loop)
         agent.start()
+        if termination_requested:
+            agent.shutdown("Bluetooth pairing agent terminated", 0)
+        loop.run()
     except Exception as error:
         print(
             "Bluetooth pairing agent startup failed: " + error.__class__.__name__,
             file=sys.stderr,
         )
         return 1
-
-    def handle_signal(_signum: int, _frame: Any) -> None:
-        GLib.idle_add(agent.shutdown, "Bluetooth pairing agent terminated", 0)
-
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
-    try:
-        loop.run()
     finally:
-        agent.shutdown("Bluetooth pairing agent exited", agent.exit_code)
-        agent.remove_from_connection()
+        if agent is not None:
+            agent.shutdown("Bluetooth pairing agent exited", agent.exit_code)
+            agent.remove_from_connection()
+    assert agent is not None
     return agent.exit_code
 
 
