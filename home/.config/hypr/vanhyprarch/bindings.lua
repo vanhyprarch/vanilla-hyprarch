@@ -145,7 +145,7 @@ bind(mainMod .. " + mouse:272", "Window", "Move window", hl.dsp.window.drag(),
 bind(mainMod .. " + mouse:273", "Window", "Resize window", hl.dsp.window.resize(),
     { mouse = true })
 
--- Audio hardware keys
+-- Audio hardware keys: continuous adjustments may repeat; toggles execute once per press.
 bind("XF86AudioRaiseVolume", "Audio", "Volume up",
     hl.dsp.exec_cmd("wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"),
     { locked = true, repeating = true })
@@ -154,7 +154,7 @@ bind("XF86AudioLowerVolume", "Audio", "Volume down",
     { locked = true, repeating = true })
 bind("XF86AudioMute", "Audio", "Toggle mute",
     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"),
-    { locked = true, repeating = true })
+    { locked = true })
 bind("XF86AudioMicMute", "Audio", "Toggle microphone mute",
     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"),
-    { locked = true, repeating = true })
+    { locked = true })

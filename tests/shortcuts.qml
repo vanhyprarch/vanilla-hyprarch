@@ -22,14 +22,15 @@ ShellRoot {
         return result + String.fromCodePoint(0xE007F)
     }
 
-    function binding(description, modmask, key, keycode, release) {
+    function binding(description, modmask, key, keycode, release, repeat) {
         return {
             has_description: true,
             description: description,
             modmask: modmask || 0,
             key: key || "",
             keycode: keycode || 0,
-            release: release === true
+            release: release === true,
+            repeat: repeat === true
         }
     }
 
@@ -58,13 +59,18 @@ ShellRoot {
             binding("System | Core action", 68, "I"),
             binding("Capture | Screenshot", 0, "PRINT"),
             binding("Workspace | Workspace 1", 64, "1"),
-            binding("Audio | Volume up", 0, "XF86AudioRaiseVolume")
+            binding("Audio | Volume up", 0, "XF86AudioRaiseVolume",
+                0, false, true),
+            binding("Audio | Volume down", 0, "XF86AudioLowerVolume",
+                0, false, true),
+            binding("Audio | Toggle mute", 0, "XF86AudioMute"),
+            binding("Audio | Toggle microphone mute", 0, "XF86AudioMicMute")
         ]
         parsedEntries = shortcuts.parseBindings(JSON.stringify(fixtures))
         shortcuts.entries = parsedEntries
 
         check(parsedEntries.map(entry => entry.category).join(",")
-            === "Apps,Shell,System,Capture,Dictation,Dictation,Window,Workspace,Audio,Unknown",
+            === "Apps,Shell,System,Capture,Dictation,Dictation,Window,Workspace,Audio,Audio,Audio,Audio,Unknown",
             "preferred category order is wrong")
         const terminal = parsedEntries.find(entry => entry.action === "Terminal")
         const close = parsedEntries.find(entry => entry.action === "Close window")
@@ -82,6 +88,13 @@ ShellRoot {
             "keycode fallback is wrong")
         check(shortcuts.displayChord(68, "RETURN", 0) === "Super + Ctrl + Return",
             "modifier/key display is wrong")
+        const audio = shortcuts.filteredEntries.filter(entry => entry.category === "Audio")
+        check(audio.length === 4, "Super+K does not contain exactly four Audio rows")
+        check(audio.map(entry => entry.action + "=" + entry.chords.join(",")).join("|")
+            === "Volume up=Volume Up|Volume down=Volume Down|Toggle mute=Volume Mute|Toggle microphone mute=Microphone Mute",
+            "Super+K Audio labels or shortcuts changed")
+        check(audio.every((entry, index) => entry.showCategory === (index === 0)),
+            "Super+K Audio rows are not grouped under one category")
         check(shortcuts.filteredEntries.every(entry => entry.category !== "Dictation"),
             "unavailable Dictation rows remained visible")
         check(shortcuts.filteredEntries.every((entry, index, entries) =>

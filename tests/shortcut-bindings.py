@@ -222,19 +222,40 @@ class ShortcutBindingTests(unittest.TestCase):
             "qs ipc -c vanhyprarch call vanhyprarch.backgroundPicker toggle",
         )
 
-    def test_four_audio_hardware_rows_remain_described_and_visible(self) -> None:
+    def test_audio_hardware_bindings_follow_exact_contract(self) -> None:
         audio = [item for item in self.absent if item["category"] == "Audio"]
-        self.assertEqual(
-            {item["keys"] for item in audio},
-            {
-                "XF86AudioRaiseVolume",
-                "XF86AudioLowerVolume",
-                "XF86AudioMute",
-                "XF86AudioMicMute",
+        expected = {
+            "XF86AudioRaiseVolume": {
+                "description": "Audio | Volume up",
+                "dispatcher": "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+",
+                "repeating": True,
             },
-        )
-        self.assertTrue(all(item["locked"] for item in audio))
-        self.assertTrue(all(item["repeating"] for item in audio))
+            "XF86AudioLowerVolume": {
+                "description": "Audio | Volume down",
+                "dispatcher": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
+                "repeating": True,
+            },
+            "XF86AudioMute": {
+                "description": "Audio | Toggle mute",
+                "dispatcher": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+                "repeating": False,
+            },
+            "XF86AudioMicMute": {
+                "description": "Audio | Toggle microphone mute",
+                "dispatcher": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle",
+                "repeating": False,
+            },
+        }
+        self.assertEqual({item["keys"] for item in audio}, set(expected))
+        for item in audio:
+            contract = expected[str(item["keys"])]
+            self.assertEqual(item["description"], contract["description"])
+            self.assertEqual(item["visible"], contract["description"])
+            self.assertEqual(item["dispatcher"], contract["dispatcher"])
+            self.assertTrue(item["locked"])
+            self.assertEqual(item["repeating"], contract["repeating"])
+            self.assertFalse(item["release"])
+            self.assertEqual(item["availability"], "")
 
     def test_super_k_has_no_manual_action_catalog(self) -> None:
         production_qml = SHORTCUTS_QML.read_text(
