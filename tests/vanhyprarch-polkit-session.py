@@ -499,6 +499,9 @@ class PolkitSessionLifecycleTests(unittest.TestCase):
         self.assertIn(
             '["vanhyprarch-polkit-session", "logout"]', power_actions
         )
+        self.assertIn('target: "vanhyprarch.power"', power_actions)
+        self.assertIn('return root.execute("lock")', power_actions)
+        self.assertIn('["loginctl", "lock-session"]', power_actions)
         self.assertNotIn('execDetached(["hyprshutdown"])', power_actions)
 
     def test_drop_in_and_helper_are_managed_without_replacing_package_unit(self) -> None:

@@ -818,42 +818,55 @@ run_caffeine_transaction()
 
 write_session_preferences display
 "$idle" render 37 91 143 display off matrix > "$session_fragment"
+toggle_preferences_digest=$(sha256sum "$session_preferences" |
+    sed 's/[[:space:]].*$//')
 rm -f "$session_runtime/vanhyprarch/caffeine"
-if ! run_caffeine_transaction on > "$session_root/caffeine-on.out" \
-    2> "$session_root/caffeine-on.err"; then
-    sed -n '1,160p' "$session_root/caffeine-on.err" >&2
+if ! run_caffeine_transaction toggle > "$session_root/caffeine-toggle-on.out" \
+    2> "$session_root/caffeine-toggle-on.err"; then
+    sed -n '1,160p' "$session_root/caffeine-toggle-on.err" >&2
     if [ -f "$session_runtime/vanhyprarch/hypridle-managed.log" ]; then
         sed -n '1,160p' "$session_runtime/vanhyprarch/hypridle-managed.log" >&2
     fi
-    fail 'manual Caffeine ON transaction failed'
+    fail 'Caffeine OFF-to-ON toggle transaction failed'
 fi
+require_line "$(cat "$session_root/caffeine-toggle-on.out")" 'caffeine on'
 require_line "$(cat "$session_fragment")" '# Caffeine: on'
 [ "$(grep -c '^listener {$' "$session_fragment" || true)" -eq 0 ] ||
-    fail 'manual Caffeine ON retained automatic listeners'
+    fail 'Caffeine OFF-to-ON toggle retained automatic listeners'
 require_line "$(cat "$session_runtime/vanhyprarch/caffeine")" 'on'
+[ "$toggle_preferences_digest" = \
+    "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
+    fail 'Caffeine OFF-to-ON toggle changed durable preferences'
 
-run_caffeine_transaction off >/dev/null
+run_caffeine_transaction toggle > "$session_root/caffeine-toggle-off.out"
+require_line "$(cat "$session_root/caffeine-toggle-off.out")" 'caffeine off'
 require_line "$(cat "$session_fragment")" '# Caffeine: off'
 [ "$(grep -c '^listener {$' "$session_fragment")" -eq 3 ] ||
-    fail 'manual Caffeine OFF did not restore configured listeners'
+    fail 'Caffeine ON-to-OFF toggle did not restore configured listeners'
 [ ! -e "$session_runtime/vanhyprarch/caffeine" ] ||
-    fail 'manual Caffeine OFF retained its runtime marker'
+    fail 'Caffeine ON-to-OFF toggle retained its runtime marker'
+[ "$toggle_preferences_digest" = \
+    "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
+    fail 'Caffeine ON-to-OFF toggle changed durable preferences'
 
 rollback_fragment_digest=$(sha256sum "$session_fragment" | sed 's/[[:space:]].*$//')
-if run_caffeine_transaction on true > "$session_root/rollback.out" \
+if run_caffeine_transaction toggle true > "$session_root/rollback.out" \
     2> "$session_root/rollback.err"; then
-    fail 'manual Caffeine transaction unexpectedly survived a bad replacement'
+    fail 'Caffeine toggle unexpectedly survived a bad replacement'
 fi
 [ "$rollback_fragment_digest" = \
     "$(sha256sum "$session_fragment" | sed 's/[[:space:]].*$//')" ] ||
-    fail 'manual Caffeine rollback did not restore the prior fragment'
+    fail 'Caffeine toggle rollback did not restore the prior fragment'
 [ ! -e "$session_runtime/vanhyprarch/caffeine" ] ||
-    fail 'manual Caffeine rollback did not restore the prior OFF marker state'
+    fail 'Caffeine toggle rollback did not restore the prior OFF marker state'
+[ "$toggle_preferences_digest" = \
+    "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
+    fail 'failed Caffeine toggle changed durable preferences'
 [ "$(cat "$session_root/launch-count")" -eq 2 ] ||
-    fail 'manual Caffeine rollback did not launch exactly one rollback daemon'
+    fail 'Caffeine toggle rollback did not launch exactly one rollback daemon'
 grep -Fq 'restored previous hypridle configuration' \
     "$session_root/rollback.err" ||
-    fail 'manual Caffeine rollback did not report restored daemon state'
+    fail 'Caffeine toggle rollback did not report restored daemon state'
 
 reconcile_runner=$session_root/reconcile-runner
 cat > "$reconcile_runner" <<'EOF'

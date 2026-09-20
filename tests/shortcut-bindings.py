@@ -35,13 +35,18 @@ local function proxy()
     })
 end
 
+local dispatchers = proxy()
+dispatchers.exec_cmd = function(command) return command end
+
 hl = {
-    dsp = proxy(),
+    dsp = dispatchers,
     bind = function(keys, dispatcher, options)
         local opts = options or {}
         io.write(keys, "\31", opts.description or "", "\31",
             tostring(opts.release == true), "\31",
-            tostring(opts.availability), "\n")
+            tostring(opts.availability), "\31", tostring(dispatcher), "\31",
+            tostring(opts.locked == true), "\31",
+            tostring(opts.repeating == true), "\n")
         return proxy()
     end,
 }
@@ -99,7 +104,15 @@ def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
 
     records: list[dict[str, object]] = []
     for line in result.stdout.splitlines():
-        keys, description, released, leaked_availability = line.split(SEPARATOR)
+        (
+            keys,
+            description,
+            released,
+            leaked_availability,
+            dispatcher,
+            locked,
+            repeating,
+        ) = line.split(SEPARATOR)
         visible, availability = decode_description(description)
         category, action = (part.strip() for part in visible.split("|", 1))
         records.append(
@@ -112,6 +125,9 @@ def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
                 "availability": availability,
                 "release": released == "true",
                 "leaked_availability": leaked_availability,
+                "dispatcher": dispatcher,
+                "locked": locked == "true",
+                "repeating": repeating == "true",
             }
         )
     return records
@@ -178,6 +194,47 @@ class ShortcutBindingTests(unittest.TestCase):
             seen.add(identity)
         self.assertIn(("F9", False), seen)
         self.assertIn(("F9", True), seen)
+
+    def test_core_system_bindings_use_authoritative_actions(self) -> None:
+        lock = next(
+            item for item in self.absent if item["keys"] == "SUPER + CTRL + L"
+        )
+        caffeine = next(
+            item for item in self.absent if item["keys"] == "SUPER + CTRL + I"
+        )
+        background = next(
+            item for item in self.absent if item["keys"] == "SUPER + CTRL + SPACE"
+        )
+        self.assertEqual(
+            (lock["category"], lock["action"]), ("System", "Lock system")
+        )
+        self.assertEqual(
+            lock["dispatcher"],
+            "qs ipc -c vanhyprarch call vanhyprarch.power lock",
+        )
+        self.assertEqual(
+            (caffeine["category"], caffeine["action"], caffeine["dispatcher"]),
+            ("System", "Toggle Caffeine", "vanhyprarch-idle caffeine toggle"),
+        )
+        self.assertEqual(background["action"], "Choose background")
+        self.assertEqual(
+            background["dispatcher"],
+            "qs ipc -c vanhyprarch call vanhyprarch.backgroundPicker toggle",
+        )
+
+    def test_four_audio_hardware_rows_remain_described_and_visible(self) -> None:
+        audio = [item for item in self.absent if item["category"] == "Audio"]
+        self.assertEqual(
+            {item["keys"] for item in audio},
+            {
+                "XF86AudioRaiseVolume",
+                "XF86AudioLowerVolume",
+                "XF86AudioMute",
+                "XF86AudioMicMute",
+            },
+        )
+        self.assertTrue(all(item["locked"] for item in audio))
+        self.assertTrue(all(item["repeating"] for item in audio))
 
     def test_super_k_has_no_manual_action_catalog(self) -> None:
         production_qml = SHORTCUTS_QML.read_text(

@@ -40,8 +40,10 @@ shutdown/start starts with Caffeine OFF so a forgotten inhibitor cannot silently
 disable normal lock, display-off, or suspend protection in a later unattended
 session. A config reload or ordinary same-session shell activity neither turns
 Caffeine into a persistent preference nor resets the current session marker.
-Reapplying `caffeine on` or `caffeine off` is idempotent and reconciles the
-generated configuration after an interrupted operation. Every fresh Hyprland
+Reapplying `caffeine on` or `caffeine off` is idempotent, while `caffeine
+toggle` reads and changes the session state under the backend's existing
+exclusive lock. All three operations reconcile the generated configuration
+after an interrupted operation. Every fresh Hyprland
 session runs the backend's `session-start` path before hypridle parses its
 configuration. That path removes any marker, regenerates the fragment from
 durable preferences with Caffeine off, and only then replaces itself with the
@@ -76,7 +78,7 @@ vanhyprarch-idle session-start
 vanhyprarch-idle apply
 vanhyprarch-idle configure <screensaver> <display> <suspend> <lock>
 vanhyprarch-idle set <screensaver|display|suspend|lock|effect> <value>
-vanhyprarch-idle caffeine <on|off>
+vanhyprarch-idle caffeine <on|off|toggle>
 vanhyprarch-idle screensaver-effect
 vanhyprarch-idle reconcile-screensaver <installed|absent>
 vanhyprarch-idle screensaver-uninstall-plan
@@ -94,7 +96,9 @@ field and rejects the result if it breaks ordering or lock ownership. `apply`
 regenerates runtime configuration without changing preferences. Effect-only
 updates persist without applying or restarting hypridle; the controller reads
 the selection through `screensaver-effect` when starting. The `validate` and
-`render` commands are development aids.
+`render` commands are development aids. `caffeine toggle` performs its read,
+decision, marker update, generated-fragment deployment, and rollback inside one
+serialized backend transaction; it never writes durable preferences.
 
 ## Generated configuration
 

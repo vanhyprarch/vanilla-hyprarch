@@ -73,6 +73,12 @@ bind(mainMod .. " + SPACE", "Shell", "Open command center",
 bind(mainMod .. " + CTRL + SPACE", "Shell", "Choose background",
     hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.backgroundPicker toggle"))
 
+-- System
+bind(mainMod .. " + CTRL + L", "System", "Lock system",
+    hl.dsp.exec_cmd("qs ipc -c vanhyprarch call vanhyprarch.power lock"))
+bind(mainMod .. " + CTRL + I", "System", "Toggle Caffeine",
+    hl.dsp.exec_cmd("vanhyprarch-idle caffeine toggle"))
+
 -- Capture
 bind("PRINT", "Capture", "Screenshot", hl.dsp.exec_cmd("vanhyprarch-screenshot"))
 

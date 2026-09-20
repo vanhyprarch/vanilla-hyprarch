@@ -316,6 +316,11 @@ and the startup-only backend path proves that parent's exact executable, UID,
 and stable `/proc` start time. Later manual daemon transactions continue to use
 normal Hyprland instance discovery for targeted replacement.
 
+Caffeine's shortcut calls one backend `caffeine toggle` operation. The backend
+decides ON or OFF only after acquiring its existing exclusive lock and uses the
+same marker, fragment deployment, and rollback transaction as explicit ON/OFF;
+the shell does not race a separate status read against a later write.
+
 Caffeine does not disable manual locking or other explicit power actions.
 Listeners that perform screensaver, display, lock, or suspend actions remain
 inhibitor-aware.
@@ -441,6 +446,11 @@ confirmation. The commands remain `loginctl lock-session`, `systemctl
 suspend`, `vanhyprarch-polkit-session logout`, `systemctl reboot`, and
 `systemctl poweroff`; the logout helper stops graphical authorization before
 it execs `hyprshutdown`.
+
+The same `PowerActions` controller exposes a narrow named `lock` IPC method for
+the described `Super+Ctrl+L` binding. The endpoint delegates to the controller's
+existing Lock action, so the Power Menu, Super+Space, and keyboard shortcut do
+not duplicate lock semantics.
 
 Filtering is synchronous and in-process over native objects and typed action
 metadata. It does not invoke a subprocess per keystroke or turn search results

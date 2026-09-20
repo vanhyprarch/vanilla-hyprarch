@@ -555,6 +555,13 @@ and stable selection behavior gained deterministic coverage. Manual/on-demand
 Screensaver invocation was explicitly rejected; the Zig component remains part
 of automatic Power & Idle behavior only.
 
+Phase 1 also added actual described System bindings for direct Lock and
+Caffeine toggle. Lock reaches the existing shared `PowerActions` implementation
+through a narrow named IPC method. Caffeine gained one atomic backend toggle,
+so its state decision occurs under the same lock and rollback transaction as
+marker and generated-fragment changes; the established fresh-session OFF
+contract and durable preferences remain unchanged.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

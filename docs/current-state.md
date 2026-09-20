@@ -468,6 +468,12 @@ visible central overlay without consuming the panel action, while a click on
 non-actionable persistent-dock background dismisses both kinds of transient
 surface. An owning dock control remains an explicit toggle, and opening a
 different dock panel retains the existing one-panel replacement behavior.
+
+The described binding set also exposes `Super+Ctrl+L` as **Lock system** and
+`Super+Ctrl+I` as **Toggle Caffeine** in the System shortcut category. Lock
+uses the shared `PowerActions` lock implementation through its named shell IPC
+endpoint. Caffeine uses the backend's serialized atomic toggle; it does not
+compose separate status and on/off calls.
 An outside compositor clear dismisses every visible transient shell surface.
 These application-level transitions are covered offscreen; native Wayland
 delivery is recorded in the compatibility register. Hyprland 0.56.2 still
@@ -728,7 +734,10 @@ Preferences use a strict `key=value` file at
 session-only marker under `${XDG_RUNTIME_DIR}/vanhyprarch/`; enabling it
 generates no automatic actions without changing stored preferences. The CLI
 provides deterministic status output and atomic configure, set, apply, and
-Caffeine operations for the Quickshell UI.
+Caffeine operations for the Quickshell UI and the direct shortcut. The
+`caffeine toggle` operation reads and changes runtime state while holding the
+same backend lock used for marker and fragment deployment; it leaves durable
+preferences untouched.
 
 Status version 3 separates stored from effective screensaver values. Unexpected
 component damage preserves stored timeout, effect, and lock choice while

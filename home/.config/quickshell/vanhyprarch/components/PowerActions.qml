@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 
 Scope {
     id: root
@@ -71,6 +72,14 @@ Scope {
         default:
             console.warn("Refusing unknown power action: " + actionId)
             return false
+        }
+    }
+
+    IpcHandler {
+        target: "vanhyprarch.power"
+
+        function lock(): bool {
+            return root.execute("lock")
         }
     }
 }

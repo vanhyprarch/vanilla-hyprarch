@@ -22,7 +22,7 @@ Usage:
   $program_name apply
   $program_name configure <screensaver> <display> <suspend> <lock>
   $program_name set <screensaver|display|suspend|lock|effect> <value>
-  $program_name caffeine <on|off>
+  $program_name caffeine <on|off|toggle>
   $program_name screensaver-effect
   $program_name screensaver-resume-lock
   $program_name reconcile-screensaver <installed|absent>
@@ -1159,13 +1159,23 @@ command_screensaver_resume_lock()
 
 command_caffeine()
 {
-    [ "$#" -eq 1 ] || fail 'caffeine requires on or off'
+    [ "$#" -eq 1 ] || fail 'caffeine requires on, off, or toggle'
     requested_caffeine=$1
-    case $requested_caffeine in on|off) ;; *) fail 'caffeine requires on or off' ;; esac
+    case $requested_caffeine in
+        on|off|toggle) ;;
+        *) fail 'caffeine requires on, off, or toggle' ;;
+    esac
     load_preferences
     validate_preferences
     load_screensaver_capability
     load_caffeine
+    if [ "$requested_caffeine" = toggle ]; then
+        if [ "$caffeine" = on ]; then
+            requested_caffeine=off
+        else
+            requested_caffeine=on
+        fi
+    fi
     begin_caffeine_transaction
     write_caffeine "$requested_caffeine" ||
         fail "could not set Caffeine $requested_caffeine"
