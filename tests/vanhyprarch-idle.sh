@@ -764,6 +764,36 @@ grep -Fq 'session-start parent identity changed during validation' \
     "$session_root/identity-change.err" ||
     fail 'changed parent start time was not rejected clearly'
 
+mock_qs=$session_root/qs-mock
+selected_qs=$session_root/qs-selected
+qs_log=$session_root/qs.log
+cat > "$mock_qs" <<'EOF'
+#!/bin/sh
+fragment_state=$(sed -n 's/^# Caffeine: //p' "$MOCK_QS_FRAGMENT")
+launches=$(cat "$MOCK_LAUNCH_COUNT_FILE")
+exec 9> "$MOCK_BACKEND_LOCK"
+if flock -n 9; then
+    lock_state=released
+else
+    lock_state=held
+fi
+printf 'argv=%s caffeine=%s launches=%s lock=%s\n' \
+    "$*" "$fragment_state" "$launches" "$lock_state" \
+    >> "$MOCK_QS_LOG"
+case $MOCK_QS_BEHAVIOR in
+    success) exit 0 ;;
+    unavailable) exit 1 ;;
+    nonzero) exit 42 ;;
+    hang)
+        trap '' TERM
+        /usr/bin/sleep 30
+        ;;
+    *) exit 64 ;;
+esac
+EOF
+chmod 755 "$mock_qs"
+: > "$qs_log"
+
 transaction_runner=$session_root/transaction-runner
 cat > "$transaction_runner" <<'EOF'
 #!/bin/sh
@@ -793,9 +823,18 @@ run_caffeine_transaction()
 {
     caffeine_operation=$1
     fail_first_launch=${2:-false}
+    qs_behavior=${3:-success}
+    if [ "$qs_behavior" = missing ]; then
+        : > "$selected_qs"
+        chmod 600 "$selected_qs"
+    else
+        cp -- "$mock_qs" "$selected_qs"
+        chmod 755 "$selected_qs"
+    fi
     rm -f "$session_root/daemon.pid" "$session_root/launch-count"
     bwrap --ro-bind / / --proc /proc --dev /dev --unshare-pid --die-with-parent \
         --bind "$session_root" "$session_root" \
+        --ro-bind "$selected_qs" /usr/bin/quickshell \
         /usr/bin/env -i \
             HOME="$session_home" \
             XDG_CONFIG_HOME="$session_home/.config" \
@@ -813,6 +852,10 @@ run_caffeine_transaction()
             MOCK_REAL_STAT="$session_real_stat" \
             MOCK_ALLOW_INSTANCES=true \
             MOCK_HYPRCTL_LOG="$session_hyprctl_log" \
+            MOCK_QS_BEHAVIOR="$qs_behavior" \
+            MOCK_BACKEND_LOCK="$session_runtime/vanhyprarch/idle.lock" \
+            MOCK_QS_FRAGMENT="$session_fragment" \
+            MOCK_QS_LOG="$qs_log" \
             /bin/sh "$transaction_runner"
 }
 
@@ -848,8 +891,53 @@ require_line "$(cat "$session_fragment")" '# Caffeine: off'
 [ "$toggle_preferences_digest" = \
     "$(sha256sum "$session_preferences" | sed 's/[[:space:]].*$//')" ] ||
     fail 'Caffeine ON-to-OFF toggle changed durable preferences'
+[ "$(wc -l < "$qs_log")" -eq 2 ] ||
+    fail 'successful Caffeine toggles did not notify exactly once each'
+[ "$(grep -Fxc 'argv=ipc -c vanhyprarch call vanhyprarch.idle refresh caffeine=on launches=1 lock=released' \
+    "$qs_log")" -eq 1 ] || fail 'Caffeine ON notification was malformed'
+[ "$(grep -Fxc 'argv=ipc -c vanhyprarch call vanhyprarch.idle refresh caffeine=off launches=1 lock=released' \
+    "$qs_log")" -eq 1 ] || fail 'Caffeine OFF notification was malformed'
+
+run_caffeine_transaction on > "$session_root/caffeine-explicit-on.out"
+require_line "$(cat "$session_root/caffeine-explicit-on.out")" 'caffeine on'
+run_caffeine_transaction off > "$session_root/caffeine-explicit-off.out"
+require_line "$(cat "$session_root/caffeine-explicit-off.out")" 'caffeine off'
+[ "$(wc -l < "$qs_log")" -eq 4 ] ||
+    fail 'explicit Caffeine ON/OFF did not notify exactly once each'
+
+run_caffeine_transaction on false unavailable \
+    > "$session_root/caffeine-unavailable.out"
+require_line "$(cat "$session_root/caffeine-unavailable.out")" 'caffeine on'
+run_caffeine_transaction off false nonzero \
+    > "$session_root/caffeine-nonzero.out"
+require_line "$(cat "$session_root/caffeine-nonzero.out")" 'caffeine off'
+[ "$(wc -l < "$qs_log")" -eq 6 ] ||
+    fail 'failed IPC calls changed backend success or notification count'
+
+run_caffeine_transaction on false missing \
+    > "$session_root/caffeine-missing.out"
+require_line "$(cat "$session_root/caffeine-missing.out")" 'caffeine on'
+[ "$(wc -l < "$qs_log")" -eq 6 ] ||
+    fail 'missing qs executable unexpectedly ran a notification'
+
+hang_started=$(date +%s%N)
+run_caffeine_transaction off false hang > "$session_root/caffeine-hang.out"
+hang_finished=$(date +%s%N)
+hang_milliseconds=$(((hang_finished - hang_started) / 1000000))
+require_line "$(cat "$session_root/caffeine-hang.out")" 'caffeine off'
+[ "$hang_milliseconds" -lt 2500 ] ||
+    fail "hung IPC was not bounded: ${hang_milliseconds}ms"
+[ "$(wc -l < "$qs_log")" -eq 7 ] ||
+    fail 'hung IPC changed backend success or notification count'
+[ "$(grep -Fc 'argv=ipc -c vanhyprarch call vanhyprarch.idle refresh ' \
+    "$qs_log")" -eq 7 ] || fail 'IPC notification carried unexpected arguments'
+if grep -Fv 'lock=released' "$qs_log" >/dev/null; then
+    fail 'IPC notification ran before the backend lock was released'
+fi
+printf 'Caffeine IPC timeout test: PASS (%sms)\n' "$hang_milliseconds"
 
 rollback_fragment_digest=$(sha256sum "$session_fragment" | sed 's/[[:space:]].*$//')
+notifications_before_rollback=$(wc -l < "$qs_log")
 if run_caffeine_transaction toggle true > "$session_root/rollback.out" \
     2> "$session_root/rollback.err"; then
     fail 'Caffeine toggle unexpectedly survived a bad replacement'
@@ -867,6 +955,8 @@ fi
 grep -Fq 'restored previous hypridle configuration' \
     "$session_root/rollback.err" ||
     fail 'Caffeine toggle rollback did not report restored daemon state'
+[ "$(wc -l < "$qs_log")" -eq "$notifications_before_rollback" ] ||
+    fail 'failed Caffeine transaction emitted a success notification'
 
 reconcile_runner=$session_root/reconcile-runner
 cat > "$reconcile_runner" <<'EOF'

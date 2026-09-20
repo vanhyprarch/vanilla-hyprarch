@@ -21,7 +21,7 @@ Item {
         anchors.centerIn: parent
         width: root.iconSize
         height: root.iconSize
-        source: Quickshell.iconPath(root.controller.visualCaffeine
+        source: Quickshell.iconPath(root.controller.caffeine
             ? "caffeine" : "preferences-system-power")
         sourceSize: Qt.size(root.iconSize, root.iconSize)
         fillMode: Image.PreserveAspectFit

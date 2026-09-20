@@ -18,13 +18,14 @@ Scope {
     property int effectiveListeners: 0
     property bool ready: false
     property string errorMessage: ""
-    property string pendingCaffeine: ""
+    property bool errorFromStatus: false
     property var queuedAction: null
+    property bool refreshNeeded: false
+    property bool refreshNeededPreserveError: true
 
-    readonly property bool busy: actionProcess.running || queuedAction !== null
+    readonly property bool busy: actionProcess.active || queuedAction !== null
+    readonly property bool refreshing: statusProcess.active
     readonly property bool screensaverAvailable: screensaverCapability === "installed"
-    readonly property bool visualCaffeine: pendingCaffeine !== ""
-        ? pendingCaffeine === "on" : caffeine
     readonly property string backendCommand: "vanhyprarch-idle"
     readonly property var timeoutPresets: ({
         screensaver: ["never", "120", "300", "600", "1200"],
@@ -175,7 +176,6 @@ Scope {
         if (requested === (root.caffeine ? "on" : "off"))
             return
 
-        root.pendingCaffeine = requested
         root.startAction([root.backendCommand, "caffeine", requested])
     }
 
@@ -194,7 +194,8 @@ Scope {
             return
 
         root.errorMessage = ""
-        if (statusProcess.running) {
+        root.errorFromStatus = false
+        if (statusProcess.active) {
             root.queuedAction = command
             return
         }
@@ -208,24 +209,56 @@ Scope {
         const command = root.queuedAction
         root.queuedAction = null
         root.errorMessage = ""
+        root.errorFromStatus = false
         actionProcess.startCommand(command)
     }
 
-    function refreshStatus(preserveError: bool): void {
-        if (!root.checksEnabled || root.busy || statusProcess.running)
-            return
-        if (!preserveError) {
-            root.errorMessage = ""
+    function rememberRefresh(preserveError: bool): void {
+        if (!root.refreshNeeded) {
+            root.refreshNeeded = true
+            root.refreshNeededPreserveError = preserveError
+        } else if (!preserveError) {
+            root.refreshNeededPreserveError = false
         }
-        statusProcess.preserveError = preserveError
+    }
+
+    function refreshStatus(preserveError: bool): void {
+        if (!root.checksEnabled)
+            return
+        if (actionProcess.active || root.queuedAction !== null
+                || statusProcess.active) {
+            root.rememberRefresh(preserveError)
+            return
+        }
+
+        let effectivePreserveError = preserveError
+        if (root.refreshNeeded) {
+            effectivePreserveError = effectivePreserveError
+                && root.refreshNeededPreserveError
+            root.refreshNeeded = false
+            root.refreshNeededPreserveError = true
+        }
+        if (!effectivePreserveError) {
+            root.errorMessage = ""
+            root.errorFromStatus = false
+        }
+        statusProcess.preserveError = effectivePreserveError
         statusProcess.startRead()
     }
 
     function refreshAfterAction(): void {
-        if (statusProcess.running)
+        root.refreshStatus(false)
+    }
+
+    function continuePendingWork(): void {
+        if (actionProcess.active || statusProcess.active)
             return
-        statusProcess.preserveError = false
-        statusProcess.startRead()
+        if (root.queuedAction !== null) {
+            root.startQueuedAction()
+            return
+        }
+        if (root.refreshNeeded)
+            root.refreshStatus(true)
     }
 
     function parseStatus(output: string): var {
@@ -328,6 +361,7 @@ Scope {
         property bool stdoutReceived: false
         property bool stderrReceived: false
         property bool resultHandled: false
+        property bool active: false
         property bool preserveError: false
         property int lastExitCode: -1
 
@@ -338,6 +372,7 @@ Scope {
             stdoutReceived = false
             stderrReceived = false
             resultHandled = false
+            active = true
             lastExitCode = -1
             command = [root.backendCommand, "status"]
             running = true
@@ -348,13 +383,13 @@ Scope {
                 return
 
             resultHandled = true
-            if (root.queuedAction === null && !actionProcess.running)
-                root.pendingCaffeine = ""
             if (lastExitCode !== 0) {
                 root.failClosedScreensaverCapability()
                 root.errorMessage = root.conciseError(errorText,
                     "Could not read Power & Idle status.")
-                Qt.callLater(root.startQueuedAction)
+                root.errorFromStatus = true
+                active = false
+                Qt.callLater(root.continuePendingWork)
                 return
             }
 
@@ -382,14 +417,18 @@ Scope {
                     root.effectiveListeners = state.effectiveListeners
                 if (!root.ready)
                     root.ready = true
-                if (!preserveError)
+                if (!preserveError || root.errorFromStatus) {
                     root.errorMessage = ""
+                    root.errorFromStatus = false
+                }
             } catch (error) {
                 root.failClosedScreensaverCapability()
                 root.errorMessage = "Could not parse Power & Idle status."
+                root.errorFromStatus = true
                 console.warn("Failed to parse vanhyprarch-idle status: " + error)
             }
-            Qt.callLater(root.startQueuedAction)
+            active = false
+            Qt.callLater(root.continuePendingWork)
         }
 
         stdout: StdioCollector {
@@ -426,6 +465,7 @@ Scope {
         property bool stdoutReceived: false
         property bool stderrReceived: false
         property bool resultHandled: false
+        property bool active: false
         property int lastExitCode: -1
 
         function startCommand(nextCommand: var): void {
@@ -435,6 +475,7 @@ Scope {
             stdoutReceived = false
             stderrReceived = false
             resultHandled = false
+            active = true
             lastExitCode = -1
             command = nextCommand
             running = true
@@ -445,10 +486,11 @@ Scope {
                 return
 
             resultHandled = true
+            active = false
             if (lastExitCode !== 0) {
-                root.pendingCaffeine = ""
                 root.errorMessage = root.conciseError(errorText,
                     "Power & Idle update failed.")
+                root.errorFromStatus = false
                 Qt.callLater(function() { root.refreshStatus(true) })
                 return
             }

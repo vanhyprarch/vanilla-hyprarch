@@ -105,6 +105,8 @@ The named Quickshell configuration and application state namespace are
 - `vanhyprarch.shortcuts`
 - `vanhyprarch.superSpace`
 - `vanhyprarch.backgroundPicker`
+- `vanhyprarch.power`
+- `vanhyprarch.idle`
 
 Future project-owned IPC targets use `vanhyprarch.<component>`. The intended
 managed idle fragment name is `vanhyprarch-idle.conf`.
@@ -320,6 +322,16 @@ Caffeine's shortcut calls one backend `caffeine toggle` operation. The backend
 decides ON or OFF only after acquiring its existing exclusive lock and uses the
 same marker, fragment deployment, and rollback transaction as explicit ON/OFF;
 the shell does not race a separate status read against a later write.
+
+After a Caffeine transaction has validated and committed the complete backend
+state, it releases its exclusive lock and issues one bounded best-effort call to
+the eagerly registered `vanhyprarch.idle refresh()` IPC method. The message
+carries no Caffeine value and cannot assign presentation state; the global
+controller immediately requests authoritative backend status. A coalesced
+follow-up prevents lost invalidations without replacing the conservative
+periodic reconciliation timer. Missing, failed, or hung IPC never changes the
+successful backend result, and the direct shortcut remains fully operational
+without Quickshell.
 
 Caffeine does not disable manual locking or other explicit power actions.
 Listeners that perform screensaver, display, lock, or suspend actions remain

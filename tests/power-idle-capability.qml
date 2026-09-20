@@ -15,7 +15,6 @@ ShellRoot {
         property bool screensaverAvailable: false
         property bool ready: true
         property bool busy: false
-        property bool visualCaffeine: false
         property bool caffeine: false
         property string effect: "matrix"
         property string lockPoint: "display"

@@ -37,6 +37,29 @@ This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
 separately when required.
 
+## Quickshell IPC handler reload boundary
+
+**Affected component:** Quickshell 0.3.1
+
+Power & Idle uses Quickshell's native `IpcHandler` only as a state-free
+invalidation transport. The `vanhyprarch.idle` handler is a direct `ShellRoot`
+child and calls the already-eager global `IdleController`; it is not placed in a
+lazy popup, singleton, or screen delegate. A native named-config fixture requires
+`qs ipc show` to expose `refresh()` before any Power & Idle interaction, invokes
+it, and repeats both checks after a same-process reload.
+
+Quickshell 0.3.1 registers handlers through its post-reload hook. Headless
+offscreen reload tests must set the installed `QS_NO_RELOAD_POPUP` switch because
+there is no `PanelWindow` backend for Quickshell's internal reload popup;
+otherwise the test instance remains at `Not ready to accept queries yet` even
+though the new handler registry was created. This switch is test-only and is not
+used by the live shell.
+
+Retest eager target registration, invocation, and same-process reload after a
+Quickshell upgrade or any material `IpcHandler` lifecycle change. The backend's
+notification remains bounded and nonfatal, and startup plus the 30-second
+authoritative refresh remain recovery paths if IPC is unavailable.
+
 ## Hyprland Lua import boundary
 
 **Affected component:** Hyprland 0.56.2

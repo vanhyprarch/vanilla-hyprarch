@@ -562,6 +562,26 @@ so its state decision occurs under the same lock and rollback transaction as
 marker and generated-fragment changes; the established fresh-session OFF
 contract and durable preferences remain unchanged.
 
+## 2026-09-20: Caffeine confirmed-state synchronization
+
+The first UI synchronization candidate removed optimistic Caffeine presentation
+and added bounded authoritative refresh coalescing. Controlled live measurement
+proved the backend had already committed coherent ON state about 312 ms after
+fragment publication while the dock remained stale; opening Power & Idle fixed
+the icon only because panel open requested status explicitly. Two later live
+checks found no fragment or parent-directory inotify registration even after a
+healthy stable same-PID Quickshell load, so `FileView` was rejected as this
+feature's invalidation transport.
+
+The replacement uses the existing Quickshell IPC architecture. Only after a
+successful Caffeine transaction has validated its replacement daemon and
+released the backend lock does it issue one bounded, nonfatal, state-free
+`vanhyprarch.idle refresh()` call. An eager root handler asks the single global
+controller to read authoritative backend status. Deterministic tests cover IPC
+absence, errors and timeout, eager registration before UI interaction,
+same-process reload, rollback suppression, confirmed-only presentation, and
+coalescing. Corrected controlled live timing remains pending.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate
@@ -590,3 +610,7 @@ silently become permanent architecture.
 - Inferring Lua-backed binding commands from opaque `hyprctl -j binds` arguments
   was rejected; runtime description and deployed source must be verified
   separately.
+- Watching the generated Caffeine fragment with Quickshell `FileView` was
+  rejected after repeated live instances had no target or parent watch despite
+  healthy configuration loads; backend-completion IPC now carries invalidation
+  only, while status remains authoritative.

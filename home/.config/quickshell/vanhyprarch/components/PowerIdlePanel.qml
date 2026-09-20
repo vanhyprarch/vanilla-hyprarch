@@ -129,7 +129,7 @@ DockPopup {
         spacing: root.metrics.contentGap
         opacity: !root.controller.ready
             ? root.metrics.disabledInteractiveOpacity
-            : root.controller.visualCaffeine
+            : root.controller.caffeine
                 ? root.metrics.informationalMutedOpacity : 1.0
 
         Item {
@@ -249,7 +249,7 @@ DockPopup {
                         anchors.centerIn: parent
                         metrics: root.metrics
                         theme: root.theme
-                        checked: root.controller.visualCaffeine
+                        checked: root.controller.caffeine
                         interactive: false
                         enabled: root.controller.ready && !root.controller.busy
                     }

@@ -337,6 +337,8 @@ Current IPC targets are:
 - `vanhyprarch.shortcuts`, exposing `open()`, `close()`, and `toggle()`
 - `vanhyprarch.superSpace`, exposing `open()`, `close()`, and `toggle()`
 - `vanhyprarch.backgroundPicker`, exposing `open()`, `close()`, and `toggle()`
+- `vanhyprarch.power`, exposing `lock()`
+- `vanhyprarch.idle`, exposing the state-free `refresh()` invalidation
 
 ## User interface — IMPLEMENTED
 
@@ -829,12 +831,28 @@ the previous fragment and daemon on failure.
 
 The first Quickshell panel is implemented between Monitor and Theme. One global
 `IdleController` reads the backend at shell startup, on panel open, after every
-operation, and at a conservative 30-second interval. Per-screen buttons and
-popups consume that shared state. The panel exposes the documented presets,
-disables choices that would violate stage ordering, clears automatic lock to
-`None` atomically when its stage is changed to `Never`, and shows backend errors
-without retaining failed optimistic state. The dock icon changes between
-Papirus `preferences-system-power` and `caffeine`.
+operation, and at a conservative 30-second reconciliation interval. After a
+successful Caffeine transaction has fully validated its fragment, replacement
+hypridle, listener count, and ownership, the backend releases its lock and makes
+one bounded best-effort call to `vanhyprarch.idle refresh()`. That message carries
+no state: the eagerly instantiated global controller runs `vanhyprarch-idle
+status`, and only the parsed authoritative result changes presentation. Refresh
+requests arriving during an action or status read coalesce into one bounded
+follow-up. The direct shortcut and manual backend commands remain successful
+when Quickshell or its IPC target is unavailable. Startup and the unchanged
+30-second timer provide missed-notification, drift, capability, and status-error
+recovery rather than normal transaction feedback.
+
+Per-screen buttons and popups consume that shared confirmed state. The panel
+exposes the documented presets, disables choices that would violate stage
+ordering, clears automatic lock to `None` atomically when its stage is changed
+to `Never`, and shows backend errors without presenting a requested Caffeine
+value before a successful status confirmation. The dock icon changes between
+Papirus `preferences-system-power` and `caffeine`. Repository-native tests cover
+eager IPC registration and same-process reload, both Caffeine directions,
+rollback, unavailable and hung IPC, external transactions, refresh coalescing,
+and stale status-error recovery; corrected controlled live timing validation
+remains pending.
 
 The QML loads in the live named configuration. The panel, its Caffeine state,
 timeout presentation, effect persistence, error-only feedback, and

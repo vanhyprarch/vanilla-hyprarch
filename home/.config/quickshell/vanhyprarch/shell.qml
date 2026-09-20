@@ -91,6 +91,14 @@ ShellRoot {
         id: idleController
     }
 
+    IpcHandler {
+        target: "vanhyprarch.idle"
+
+        function refresh(): void {
+            idleController.refreshStatus(true)
+        }
+    }
+
     BluetoothAgentController {
         id: bluetoothAgentController
     }

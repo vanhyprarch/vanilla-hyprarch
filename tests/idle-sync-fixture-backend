@@ -1,0 +1,133 @@
+#!/bin/sh
+
+set -eu
+
+root=${IDLE_SYNC_ROOT:?}
+state=$root/state
+fragment=$XDG_CONFIG_HOME/hypr/vanhyprarch-idle.conf
+lock=$root/backend.lock
+status_log=$root/status.log
+published=$root/published
+gate=$root/gate
+action_outcome=${IDLE_SYNC_ACTION_OUTCOME:-success}
+
+publish_fragment()
+{
+    value=$1
+    temporary=${fragment}.fixture.$$
+    printf '# fixture\n# Caffeine: %s\n' "$value" > "$temporary"
+    chmod 600 -- "$temporary"
+    mv -f -- "$temporary" "$fragment"
+}
+
+publish_signal()
+{
+    value=$1
+    temporary=${published}.fixture.$$
+    printf '%s\n' "$value" > "$temporary"
+    mv -f -- "$temporary" "$published"
+}
+
+wait_for_gate()
+{
+    remaining=1000
+    while [ ! -e "$gate" ]; do
+        [ "$remaining" -gt 0 ] || {
+            printf '%s\n' 'fixture transaction gate timed out' >&2
+            return 1
+        }
+        remaining=$((remaining - 1))
+        sleep 0.01
+    done
+    rm -f -- "$gate"
+}
+
+emit_status()
+{
+    value=$(cat "$state")
+    cat <<EOF
+version=3
+screensaver=never
+display=never
+suspend=never
+lock=none
+effective_screensaver=never
+effective_lock=none
+effect=colormix
+screensaver_capability=absent
+caffeine=$value
+effective_listeners=0
+EOF
+}
+
+run_transaction()
+{
+    target=$1
+    outcome=$2
+    exec 9> "$lock"
+    flock -x 9
+    original=$(cat "$state")
+    printf '%s\n' "$target" > "$state"
+    publish_fragment "$target"
+    publish_signal "$target"
+    wait_for_gate
+    if [ "$outcome" = rollback ]; then
+        printf '%s\n' "$original" > "$state"
+        publish_fragment "$original"
+        printf '%s\n' 'fixture backend rolled back' >&2
+        return 1
+    fi
+    printf 'caffeine %s\n' "$target"
+}
+
+command=${1:-}
+case $command in
+    status)
+        printf 'status\n' >> "$status_log"
+        exec 9> "$lock"
+        flock -x 9
+        if [ -e "$root/fail-next-status" ]; then
+            rm -f -- "$root/fail-next-status"
+            printf '%s\n' 'fixture status failure' >&2
+            exit 1
+        fi
+        emit_status
+        ;;
+    caffeine)
+        [ "$#" -eq 2 ] || exit 2
+        run_transaction "$2" "$action_outcome"
+        ;;
+    test-external)
+        [ "$#" -eq 3 ] || exit 2
+        run_transaction "$2" "$3"
+        ;;
+    test-burst)
+        exec 9> "$lock"
+        flock -x 9
+        for value in on off on; do
+            printf '%s\n' "$value" > "$state"
+            publish_fragment "$value"
+        done
+        publish_signal on
+        wait_for_gate
+        ;;
+    test-rapid)
+        for value in on off on; do
+            (
+                exec 9> "$lock"
+                flock -x 9
+                printf '%s\n' "$value" > "$state"
+                publish_fragment "$value"
+            )
+        done
+        publish_signal on
+        ;;
+    test-status-failure)
+        : > "$root/fail-next-status"
+        publish_fragment "$(cat "$state")"
+        publish_signal "$(cat "$state")"
+        ;;
+    *)
+        exit 2
+        ;;
+esac

@@ -1021,6 +1021,18 @@ release_backend_lock()
     exec 8>&- || fail 'could not close the Power & Idle backend lock descriptor'
 }
 
+notify_quickshell_idle_refresh()
+{
+    [ -x /usr/bin/qs ] || return 0
+    [ -x /usr/bin/timeout ] || return 0
+
+    {
+        /usr/bin/timeout --signal=TERM --kill-after=0.2s 0.5s \
+            /usr/bin/qs ipc -c vanhyprarch call vanhyprarch.idle refresh \
+            >/dev/null 2>&1 || true
+    } 2>/dev/null
+}
+
 command_session_start()
 {
     [ "$#" -eq 0 ] || fail 'session-start takes no arguments'
@@ -1182,6 +1194,8 @@ command_caffeine()
     caffeine=$requested_caffeine
     apply_effective_configuration
     finish_caffeine_transaction
+    release_backend_lock
+    notify_quickshell_idle_refresh
     printf 'caffeine %s\n' "$caffeine"
 }
 

@@ -274,6 +274,29 @@ A single global
 controller owns backend processes and parsed state; screen-bound buttons and
 popups follow the existing `Quickshell.screens` delegate lifecycle.
 
+After a successful `caffeine on`, `off`, or `toggle` transaction has committed
+the marker, atomically published and validated the fragment, replaced and
+validated the sole Hyprland-owned hypridle, and confirmed listener ownership,
+the backend releases its exclusive lock. It then makes one state-free,
+best-effort call to `vanhyprarch.idle refresh()`. A 0.5-second timeout with a
+0.2-second forced-termination grace bounds an unhealthy IPC client. A missing
+Quickshell executable, absent instance or target, nonzero result, or timeout is
+ignored and never changes backend success or initiates rollback.
+Failed or rolled-back transactions emit no success notification. A
+controller-owned failure still requests its explicit authoritative
+reconciliation; the periodic refresh remains recovery for a failed arbitrary
+CLI transaction.
+
+The IPC handler is a direct `ShellRoot` child and is registered before any Power
+& Idle UI interaction. It requests `vanhyprarch-idle status`; it never receives
+or assigns a Caffeine value. Requests that arrive during an action or status read
+coalesce into one bounded follow-up. Dock controls retain their last confirmed
+presentation while an action is pending and update only from successfully parsed
+status. This path covers the direct `Super+Ctrl+I` backend toggle and manual
+commands without making either depend on the shell. Startup and the existing
+30-second status timer remain recovery and reconciliation safety nets, not the
+normal feedback path.
+
 Installed Papirus provides exact icons named `preferences-system-power` and
 `caffeine`. Use the former normally and the latter while Caffeine is active.
 The panel and passive synchronization behavior have passed manual visual
