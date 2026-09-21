@@ -141,6 +141,25 @@ ShellRoot {
         })
     }
 
+    function failedResponse(state: string, sequence: int, transactionId: string,
+            candidate: var, failure: string, recoveryRequired: bool): string {
+        return JSON.stringify({
+            version: 3,
+            ok: true,
+            status: {
+                transaction_id: transactionId,
+                policy: "safe-confirmed",
+                candidate: candidate,
+                state: state,
+                sequence: sequence,
+                deadline_monotonic: null,
+                remaining_seconds: null,
+                failure: failure,
+                recovery_required: recoveryRequired
+            }
+        })
+    }
+
     function run(): void {
         check(controller.acceptInspectionJson(inspection(false), false),
             "valid inspection was rejected")
@@ -302,17 +321,54 @@ ShellRoot {
             "combined confirmation description is not normalized")
         combinedController.destroy()
 
+        controller.statusTransportError = true
+        controller.errorMessage = "vanhyprarch-monitor: [Errno 104] Connection reset by peer"
         check(controller.acceptStatusJson(response("reverted", 4,
             "transaction-new", candidate, null), false),
             "reverted status was rejected")
         check(!controller.confirmationActive,
             "terminal rollback left confirmation visible")
+        check(!controller.statusTransportError && controller.errorMessage === "",
+            "safe terminal reconciliation retained a stale transport error")
         check(controller.resetPendingOnNextInspect,
             "terminal Safe Apply did not defer reset to authoritative inspection")
         check(controller.acceptInspectionJson(inspection(false), false)
                 && !controller.resetPendingOnNextInspect
                 && controller.ensurePending("DP-1").width === 3840,
             "terminal reconciliation retained stale pending state")
+
+        const raceController = controllerComponent.createObject(root)
+        check(raceController !== null
+                && raceController.acceptInspectionJson(inspection(false), false),
+            "status-race controller setup failed")
+        raceController.statusTransportError = true
+        raceController.errorMessage = "fixture status transport reset"
+        check(raceController.acceptStatusJson(response("temporary-active", 2,
+            "transaction-race", candidate, 5), false)
+                && raceController.errorMessage === "fixture status transport reset"
+                && raceController.statusTransportError,
+            "nonterminal status incorrectly suppressed a transport error")
+        check(raceController.acceptStatusJson(failedResponse("reverted", 3,
+            "transaction-race", candidate, "fixture backend failure", false), false)
+                && raceController.errorMessage
+                    === "Display settings were reverted: fixture backend failure"
+                && !raceController.statusTransportError,
+            "actual backend failure was hidden by terminal reconciliation")
+        raceController.destroy()
+
+        const committedRaceController = controllerComponent.createObject(root)
+        check(committedRaceController !== null
+                && committedRaceController.acceptInspectionJson(
+                    inspection(false), false),
+            "committed-race controller setup failed")
+        committedRaceController.statusTransportError = true
+        committedRaceController.errorMessage = "fixture committed transport reset"
+        check(committedRaceController.acceptStatusJson(response("committed", 4,
+            "transaction-committed", candidate, null), false)
+                && committedRaceController.errorMessage === ""
+                && !committedRaceController.statusTransportError,
+            "committed reconciliation retained a stale transport error")
+        committedRaceController.destroy()
 
         controller.transactionState = "applying"
         check(!controller.requestScale("DP-1", "1.50"),

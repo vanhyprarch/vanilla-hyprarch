@@ -712,21 +712,29 @@ DockPopup {
                 theme: root.theme
             }
 
-            InfoRow {
-                label: "Resolution"
-                value: root.resolutionText()
-            }
+            Column {
+                id: displayReadouts
 
-            InfoRow {
-                label: "Refresh rate"
-                value: root.refreshText()
-            }
+                width: parent.width
+                spacing: 0
 
-            InfoRow {
-                label: "Color depth"
-                value: root.inspectedOutput !== null
-                    && root.inspectedOutput.effective_bitdepth !== null
-                    ? root.inspectedOutput.effective_bitdepth + "-bit" : "Unavailable"
+                InfoRow {
+                    label: "Resolution"
+                    value: root.resolutionText()
+                }
+
+                InfoRow {
+                    label: "Refresh rate"
+                    value: root.refreshText()
+                }
+
+                InfoRow {
+                    label: "Color depth"
+                    value: root.inspectedOutput !== null
+                        && root.inspectedOutput.effective_bitdepth !== null
+                        ? root.inspectedOutput.effective_bitdepth + "-bit"
+                        : "Unavailable"
+                }
             }
 
             ChoiceRow {

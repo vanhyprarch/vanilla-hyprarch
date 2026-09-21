@@ -41,6 +41,10 @@ grep -Fq 'running: root.transactionInFlight && root.checksEnabled' "$controller"
     || fail 'status polling is not limited to an active backend transaction'
 grep -Fq 'Hyprland.refreshMonitors()' "$controller" \
     || fail 'terminal operations do not refresh Quickshell monitor projections'
+grep -Fq 'id: displayReadouts' "$panel" \
+    || fail 'top monitor readouts are not grouped independently'
+grep -A4 -F 'id: displayReadouts' "$panel" | grep -Fq 'spacing: 0' \
+    || fail 'top monitor readouts still inherit section-sized gaps'
 
 grep -Fq 'CenteredOverlay {' "$confirmation" \
     || fail 'confirmation bypasses the central overlay architecture'

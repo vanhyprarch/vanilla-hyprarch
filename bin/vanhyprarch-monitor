@@ -3118,6 +3118,24 @@ def send_control(request: dict[str, object]) -> dict[str, object]:
     return value
 
 
+def local_status_response(*, require_safe_terminal: bool = False) -> dict[str, object]:
+    journal = RuntimeStore(runtime_root()).read()
+    if require_safe_terminal and (
+        journal is None
+        or journal.state not in TERMINAL_SAFE_STATES
+        or journal.recovery_required
+    ):
+        raise MonitorError(
+            "monitor authority reset the status connection before publishing "
+            "a recovery-disarmed terminal state"
+        )
+    return {
+        "version": PROTOCOL_VERSION,
+        "ok": True,
+        "status": _status_payload(journal, SystemClock()),
+    }
+
+
 def client_command(arguments: argparse.Namespace) -> int:
     if arguments.action in {"apply", "scale", "materialize"}:
         result = run_command([SYSTEMCTL, "--user", "start", SERVICE_NAME])
@@ -3173,16 +3191,14 @@ def client_command(arguments: argparse.Namespace) -> int:
             request["transaction_id"] = arguments.transaction_id
         try:
             response = send_control(request)
+        except ConnectionResetError:
+            if arguments.action != "status":
+                raise
+            response = local_status_response(require_safe_terminal=True)
         except (FileNotFoundError, ConnectionRefusedError):
             if arguments.action != "status":
                 raise
-            store = RuntimeStore(runtime_root())
-            journal = store.read()
-            response = {
-                "version": PROTOCOL_VERSION,
-                "ok": True,
-                "status": _status_payload(journal, SystemClock()),
-            }
+            response = local_status_response()
     print(json.dumps(response, sort_keys=True))
     return 0 if response.get("ok") is True else 1
 

@@ -12,6 +12,7 @@ Scope {
     property bool ready: false
     property bool statusReady: false
     property string errorMessage: ""
+    property bool statusTransportError: false
     property bool refreshPending: false
     property bool resetPendingOnNextInspect: false
     property var pendingByConnector: ({})
@@ -513,6 +514,10 @@ Scope {
             root.transactionCandidate = null
             root.backendRemainingSeconds = 0
             root.presentationRemainingSeconds = 0
+            if (root.statusTransportError) {
+                root.errorMessage = ""
+                root.statusTransportError = false
+            }
             return
         }
         const states = ["preparing", "applying", "temporary-active", "committing",
@@ -551,13 +556,17 @@ Scope {
         root.remainingSampleMs = Date.now()
         if (status.state === "rollback-failed"
                 || status.state === "instance-vanished") {
+            root.statusTransportError = false
             root.errorMessage = status.failure || "Display recovery needs attention."
         } else if (status.state === "reverted" && status.failure !== null
                 && status.failure !== "manual revert"
                 && status.failure !== "confirmation deadline expired") {
+            root.statusTransportError = false
             root.errorMessage = "Display settings were reverted: " + status.failure
-        } else if (status.state === "committed") {
+        } else if ((status.state === "committed" || status.state === "reverted")
+                && !status.recovery_required) {
             root.errorMessage = ""
+            root.statusTransportError = false
         }
         if (["committed", "reverted", "instance-vanished"].indexOf(
                 status.state) >= 0) {
@@ -576,6 +585,7 @@ Scope {
             return true
         } catch (error) {
             root.statusReady = false
+            root.statusTransportError = false
             root.errorMessage = "Could not reconcile the display transaction."
             console.warn("Failed to parse monitor status: " + error)
             return false
@@ -703,6 +713,7 @@ Scope {
             active = false
             if (lastExitCode !== 0) {
                 root.statusReady = false
+                root.statusTransportError = true
                 root.errorMessage = root.conciseError(errorText,
                     "Could not reconcile the display transaction.")
             } else {
@@ -742,11 +753,13 @@ Scope {
             if (!active || !exitReceived || !stdoutReceived || !stderrReceived)
                 return
             active = false
-            if (lastExitCode !== 0 || !root.acceptStatusJson(outputText, true))
+            if (lastExitCode !== 0 || !root.acceptStatusJson(outputText, true)) {
+                root.statusTransportError = false
                 root.errorMessage = root.conciseError(errorText,
                     kind === "materialize"
                     ? "Could not enable advanced display settings."
                     : "Display update failed.")
+            }
             root.actionFinished()
         }
         stdout: StdioCollector { waitForEnd: true; onStreamFinished: {

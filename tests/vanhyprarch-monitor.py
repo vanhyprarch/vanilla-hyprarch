@@ -811,6 +811,112 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(result, [0])
         self.assertFalse(store.socket_path.exists())
 
+    def test_status_reset_race_reconciles_terminal_timeout_revert_and_keep(self) -> None:
+        _, _, active = self.begin_success()
+        terminal_cases = (
+            (
+                "timeout",
+                replace(
+                    active,
+                    state="reverted",
+                    sequence=active.sequence + 1,
+                    deadline_monotonic=None,
+                    failure="confirmation deadline expired",
+                    recovery_required=False,
+                ),
+            ),
+            (
+                "manual-revert",
+                replace(
+                    active,
+                    state="reverted",
+                    sequence=active.sequence + 1,
+                    deadline_monotonic=None,
+                    failure="manual revert",
+                    recovery_required=False,
+                ),
+            ),
+            (
+                "keep",
+                replace(
+                    active,
+                    state="committed",
+                    sequence=active.sequence + 1,
+                    deadline_monotonic=None,
+                    failure=None,
+                    persistence_verified=True,
+                    recovery_required=False,
+                    planned_machine_sha256="0" * 64,
+                    persistence_phase="candidate-verified",
+                ),
+            ),
+        )
+        arguments = monitor.argument_parser().parse_args(["status"])
+        for label, terminal in terminal_cases:
+            with self.subTest(label=label):
+                self.store.write(terminal)
+                output_text = io.StringIO()
+                with (
+                    mock.patch.object(
+                        monitor,
+                        "send_control",
+                        side_effect=ConnectionResetError(
+                            104, "Connection reset by peer"
+                        ),
+                    ) as send,
+                    mock.patch.dict(
+                        monitor.os.environ,
+                        {"XDG_RUNTIME_DIR": str(self.runtime)},
+                        clear=False,
+                    ),
+                    redirect_stdout(output_text),
+                ):
+                    self.assertEqual(monitor.client_command(arguments), 0)
+                response = json.loads(output_text.getvalue())
+                send.assert_called_once()
+                self.assertTrue(response["ok"])
+                self.assertEqual(response["status"]["state"], terminal.state)
+                self.assertFalse(response["status"]["recovery_required"])
+
+    def test_status_reset_race_does_not_hide_nonterminal_or_action_errors(self) -> None:
+        _, _, active = self.begin_success()
+        self.assertEqual(active.state, "temporary-active")
+        status_arguments = monitor.argument_parser().parse_args(["status"])
+        revert_arguments = monitor.argument_parser().parse_args(
+            ["revert", active.transaction_id]
+        )
+        with (
+            mock.patch.object(
+                monitor,
+                "send_control",
+                side_effect=ConnectionResetError(104, "Connection reset by peer"),
+            ),
+            mock.patch.dict(
+                monitor.os.environ,
+                {"XDG_RUNTIME_DIR": str(self.runtime)},
+                clear=False,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                monitor.MonitorError, "before publishing a recovery-disarmed terminal state"
+            ):
+                monitor.client_command(status_arguments)
+            with self.assertRaises(ConnectionResetError):
+                monitor.client_command(revert_arguments)
+
+        rejected = {
+            "version": monitor.PROTOCOL_VERSION,
+            "ok": False,
+            "error": "fixture backend failure",
+        }
+        output_text = io.StringIO()
+        with (
+            mock.patch.object(monitor, "send_control", return_value=rejected),
+            redirect_stdout(output_text),
+        ):
+            self.assertEqual(monitor.client_command(status_arguments), 1)
+        self.assertEqual(json.loads(output_text.getvalue()), rejected)
+
     def test_recovery_entry_point_removes_dead_control_socket_under_lock(self) -> None:
         runtime = self.root / "recovery-runtime"
         runtime.mkdir(mode=0o700)
