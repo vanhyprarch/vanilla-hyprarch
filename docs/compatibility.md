@@ -98,6 +98,13 @@ runtime `desc:` selector; [upstream issue 15961](https://github.com/hyprwm/Hyprl
 records that description-addressed runtime rules can report success without
 applying on this version.
 
+If no exact `rule.m_name == output` rule exists, 0.56.2 begins from monitor-rule
+defaults before applying supplied fields. B1 consequently rejects missing,
+catch-all-only, description-addressed, duplicate, or override-superseded
+machine profiles before it writes a journal state that permits `eval`. Sending
+every protected field is intentionally not used as a substitute for this
+invariant.
+
 The eval command's `ok` response proves parser/command acceptance only. Mode
 selection may choose a nearby/fallback mode, scale is normalized by compositor
 rules, 10-bit requests may fall back, output commits may fail, and multiple
@@ -105,10 +112,14 @@ outputs are refreshed sequentially rather than as one atomic DRM transaction.
 The mitigation is fresh `hyprctl --instance <signature> -j monitors all`
 readback after every candidate and rollback operation. B1 compares the chosen
 advertised resolution/refresh tuple, scale, physical identity, full output set,
-and protected position/transform/enablement/DPMS/mirror/format/color/VRR state.
-It stores refresh as integer millihertz and permits only a 10-millihertz active
-readback tolerance; scale preflight requires the 1/120 grid and readback within
-one millionth.
+and protected position/transform/enablement/DPMS/mirror/format/color/ICC/VRR/
+reserved-area state. It stores refresh as integer millihertz and permits a
+5-millihertz active readback tolerance only when the requested two-decimal mode
+is uniquely nearest; ties between adjacent advertised entries fail closed.
+Catalogue comparison deduplicates and sorts complete resolution/refresh tuples,
+because upstream JSON list order and duplicate multiplicity carry no selectable
+identity. Scale preflight requires the 1/120 grid and readback within one
+millionth.
 
 A full configuration reload discards runtime monitor-rule projection and
 reapplies parsed persistent configuration. It is intentionally not normal B1

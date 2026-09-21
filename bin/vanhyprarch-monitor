@@ -41,7 +41,8 @@ DEFAULT_CONFIRM_SECONDS = 10.0
 APPLY_SETTLE_SECONDS = 2.0
 READBACK_INTERVAL_SECONDS = 0.05
 COMMAND_TIMEOUT_SECONDS = 5.0
-REFRESH_TOLERANCE_MILLIHZ = 10
+COMMAND_TIMEOUT_RETURN_CODE = 124
+REFRESH_TOLERANCE_MILLIHZ = 5
 SCALE_TOLERANCE = Decimal("0.000001")
 MIN_SCALE = Decimal("0.5")
 MAX_SCALE = Decimal("4.0")
@@ -162,7 +163,13 @@ def run_command(argv: Sequence[str]) -> CommandResult:
             shell=False,
             timeout=COMMAND_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except subprocess.TimeoutExpired:
+        return CommandResult(
+            COMMAND_TIMEOUT_RETURN_CODE,
+            "",
+            f"command timed out after {COMMAND_TIMEOUT_SECONDS:g} seconds",
+        )
+    except OSError as error:
         return CommandResult(127, "", str(error))
     return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
@@ -277,6 +284,7 @@ class MonitorState:
     mirror_of: str
     current_format: str
     vrr: object
+    reserved: object
     color_state: dict[str, object]
     advertised_modes: tuple[Mode, ...]
 
@@ -299,13 +307,17 @@ class MonitorState:
             self.mirror_of,
             self.current_format,
             json.dumps(self.vrr, sort_keys=True, separators=(",", ":")),
+            json.dumps(self.reserved, sort_keys=True, separators=(",", ":")),
             json.dumps(self.color_state, sort_keys=True, separators=(",", ":")),
-            tuple(
-                sorted(
-                    self.advertised_modes,
-                    key=lambda mode: (mode.width, mode.height, mode.refresh_millihz),
-                )
-            ),
+            self.canonical_advertised_modes(),
+        )
+
+    def canonical_advertised_modes(self) -> tuple[Mode, ...]:
+        return tuple(
+            sorted(
+                set(self.advertised_modes),
+                key=lambda mode: (mode.width, mode.height, mode.refresh_millihz),
+            )
         )
 
 
@@ -339,6 +351,8 @@ COLOR_FIELD_NAMES = {
     "sdrsaturation",
     "supportshdr",
     "supportswidecolor",
+    "icc",
+    "iccprofile",
 }
 
 
@@ -407,6 +421,9 @@ def parse_monitor_payload(payload: object) -> Topology:
         if "vrr" not in raw:
             raise ValidationError(f"{label} omitted vrr")
         vrr = _json_value(raw["vrr"], f"{label}.vrr")
+        if "reserved" not in raw:
+            raise ValidationError(f"{label} omitted reserved")
+        reserved = _json_value(raw["reserved"], f"{label}.reserved")
         available = _required(raw, "availableModes", list, label)
         modes = tuple(Mode.parse_advertised(mode) for mode in available)
         color_state = _color_state(raw, label)
@@ -432,6 +449,7 @@ def parse_monitor_payload(payload: object) -> Topology:
                 mirror_of,
                 current_format,
                 vrr,
+                reserved,
                 color_state,
                 modes,
             )
@@ -661,6 +679,26 @@ def _same_refresh(left: int, right: int) -> bool:
     return abs(left - right) <= REFRESH_TOLERANCE_MILLIHZ
 
 
+def _selected_refresh_matches(
+    active_refresh: int, requested: Mode, advertised_modes: tuple[Mode, ...]
+) -> bool:
+    if not _same_refresh(active_refresh, requested.refresh_millihz):
+        return False
+    refreshes = {
+        mode.refresh_millihz
+        for mode in advertised_modes
+        if mode.width == requested.width and mode.height == requested.height
+    }
+    if requested.refresh_millihz not in refreshes:
+        return False
+    distance = abs(active_refresh - requested.refresh_millihz)
+    return all(
+        refresh == requested.refresh_millihz
+        or abs(active_refresh - refresh) > distance
+        for refresh in refreshes
+    )
+
+
 def verify_candidate_readback(
     snapshot: Topology, candidate: Candidate, readback: Topology, identity: PhysicalIdentity
 ) -> None:
@@ -687,7 +725,9 @@ def verify_candidate_readback(
         raise ValidationError("target connector physical identity changed")
     if target.width != candidate.mode.width or target.height != candidate.mode.height:
         raise ValidationError("requested resolution is not active")
-    if not _same_refresh(target.refresh_millihz, candidate.mode.refresh_millihz):
+    if not _selected_refresh_matches(
+        target.refresh_millihz, candidate.mode, target.advertised_modes
+    ):
         raise ValidationError("requested refresh is not active")
     if abs(target.scale_millionths - candidate.scale_millionths) > int(
         SCALE_TOLERANCE * 1_000_000
@@ -1128,7 +1168,7 @@ def _monitor_from_dict(value: object, label: str) -> MonitorState:
         "connector", "monitor_id", "identity", "width", "height",
         "refresh_millihz", "x", "y", "scale_millionths", "transform",
         "disabled", "dpms", "mirror_of", "current_format", "vrr",
-        "color_state", "advertised_modes",
+        "reserved", "color_state", "advertised_modes",
     }
     raw = _strict_object(value, keys, label)
     integer_keys = {
@@ -1148,6 +1188,7 @@ def _monitor_from_dict(value: object, label: str) -> MonitorState:
         raw["width"], raw["height"], raw["refresh_millihz"], raw["x"], raw["y"],
         raw["scale_millionths"], raw["transform"], raw["disabled"], raw["dpms"],
         raw["mirror_of"], raw["current_format"], _json_value(raw["vrr"], f"{label}.vrr"),
+        _json_value(raw["reserved"], f"{label}.reserved"),
         _json_value(raw["color_state"], f"{label}.color_state"),
         tuple(_mode_from_dict(mode, f"{label}.advertised_modes") for mode in raw["advertised_modes"]),
     )

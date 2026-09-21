@@ -9,10 +9,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -60,6 +62,7 @@ def output(
         "mirrorOf": "none",
         "currentFormat": "XRGB8888",
         "vrr": False,
+        "reserved": [0, 0, 0, 0],
         "colorManagementPreset": "srgb",
         "sdrBrightness": 1.0,
         "availableModes": available
@@ -226,6 +229,7 @@ class MonitorBackendTests(unittest.TestCase):
         active = topology.target("DP-1")
         self.assertEqual(active.mode, monitor.Mode(2560, 1440, 59950))
         self.assertEqual(len(active.advertised_modes), 3)
+        self.assertEqual(len(active.canonical_advertised_modes()), 2)
         self.assertFalse(topology.target("HDMI-A-1").usable)
         self.assertEqual(topology.target("HDMI-A-1").refresh_millihz, 0)
 
@@ -234,11 +238,15 @@ class MonitorBackendTests(unittest.TestCase):
         raw["lastIpcObject"] = {
             "cm": "wide",
             "bitdepth": 10,
+            "icc": "/example/profile.icc",
             "unrelated": "ignored",
         }
         parsed = monitor.parse_monitor_payload([raw]).target("DP-1")
         self.assertEqual(parsed.color_state["lastIpcObject.cm"], "wide")
         self.assertEqual(parsed.color_state["lastIpcObject.bitdepth"], 10)
+        self.assertEqual(
+            parsed.color_state["lastIpcObject.icc"], "/example/profile.icc"
+        )
         self.assertNotIn("lastIpcObject.unrelated", parsed.color_state)
 
     def test_malformed_monitor_data_fails_closed(self) -> None:
@@ -271,6 +279,57 @@ class MonitorBackendTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(monitor.ValidationError):
                     monitor.Candidate.create("DP-1", 1920, 1080, "60", value)
+
+    def test_refresh_matching_respects_two_decimal_catalogue_precision(self) -> None:
+        mode_6000 = monitor.Mode(1920, 1080, 60000)
+        mode_5994 = monitor.Mode(1920, 1080, 59940)
+        mode_5995 = monitor.Mode(1920, 1080, 59950)
+        self.assertTrue(monitor._selected_refresh_matches(60000, mode_6000, (mode_6000,)))
+        self.assertTrue(monitor._selected_refresh_matches(59940, mode_5994, (mode_5994,)))
+        self.assertTrue(
+            monitor._selected_refresh_matches(59944, mode_5994, (mode_5994, mode_5995))
+        )
+        self.assertFalse(
+            monitor._selected_refresh_matches(59945, mode_5994, (mode_5994, mode_5995))
+        )
+        self.assertFalse(
+            monitor._selected_refresh_matches(59945, mode_5995, (mode_5994, mode_5995))
+        )
+        self.assertFalse(
+            monitor._selected_refresh_matches(59990, mode_6000, (mode_6000,))
+        )
+
+    def test_duplicate_catalogue_entries_are_one_selectable_mode(self) -> None:
+        topology = monitor.parse_monitor_payload(
+            [
+                output(
+                    width=1920,
+                    height=1080,
+                    refresh=59.943,
+                    available=[
+                        "1920x1080@59.94Hz",
+                        "1920x1080@59.94Hz",
+                    ],
+                )
+            ]
+        )
+        target = topology.target("DP-1")
+        requested = monitor.Mode(1920, 1080, 59940)
+        self.assertEqual(target.canonical_advertised_modes(), (requested,))
+        self.assertTrue(
+            monitor._selected_refresh_matches(
+                target.refresh_millihz, requested, target.advertised_modes
+            )
+        )
+
+    def test_production_command_runner_has_explicit_timeout(self) -> None:
+        timeout = monitor.subprocess.TimeoutExpired([monitor.HYPRCTL], 5)
+        with mock.patch.object(monitor.subprocess, "run", side_effect=timeout) as run:
+            result = monitor.run_command([monitor.HYPRCTL, "--help"])
+        self.assertEqual(result.returncode, monitor.COMMAND_TIMEOUT_RETURN_CODE)
+        self.assertIn("timed out after 5 seconds", result.stderr)
+        self.assertEqual(run.call_args.kwargs["timeout"], monitor.COMMAND_TIMEOUT_SECONDS)
+        self.assertFalse(run.call_args.kwargs["shell"])
 
     def test_candidate_protocol_rejects_out_of_scope_fields(self) -> None:
         request = {
@@ -318,6 +377,13 @@ class MonitorBackendTests(unittest.TestCase):
                 self.store.journal_path.chmod(0o600)
                 with self.assertRaises(monitor.JournalError):
                     self.store.read()
+
+    def test_truncated_journal_fails_closed(self) -> None:
+        self.begin_success()
+        self.store.journal_path.write_text('{"schema_version":1')
+        self.store.journal_path.chmod(0o600)
+        with self.assertRaisesRegex(monitor.JournalError, "cannot read"):
+            self.store.read()
 
     def test_journal_with_broad_permissions_fails_closed(self) -> None:
         self.begin_success()
@@ -373,7 +439,39 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertIn('output = "DP-1"', runner.calls[1][-1])
         self.assertIn('mode = "1920x1080@60"', runner.calls[1][-1])
         self.assertIn("scale = 1.5", runner.calls[1][-1])
+        fields = set(
+            re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", runner.calls[1][-1])
+        )
+        self.assertEqual(fields, {"output", "mode", "scale"})
         self.assertEqual(runner.calls[2][-3:], ["-j", "monitors", "all"])
+
+    def test_catch_all_only_profile_cannot_reach_runtime_apply(self) -> None:
+        self.machine.write_bytes(
+            b'''hl.monitor({
+    output = "",
+    mode = "preferred",
+    position = "auto",
+    scale = "auto",
+})
+'''
+        )
+        self.machine.chmod(0o600)
+        authority, runner = self.authority([[output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "existing explicit"):
+            authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 0)
+
+    def test_desc_only_profile_cannot_reach_runtime_apply(self) -> None:
+        self.machine.write_bytes(
+            machine_configuration().replace(
+                b'output = "DP-1"', b'output = "desc:Example"'
+            )
+        )
+        self.machine.chmod(0o600)
+        authority, runner = self.authority([[output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "description-addressed"):
+            authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 0)
 
     def assert_failed_apply_rolls_back(self, wrong: dict[str, object]) -> None:
         authority, runner = self.authority(
@@ -403,10 +501,64 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(journal.state, "reverted")
         self.assertEqual(len([call for call in runner.calls if "eval" in call]), 2)
 
+    def test_timed_out_apply_enters_verified_rollback(self) -> None:
+        timed_out = monitor.CommandResult(
+            monitor.COMMAND_TIMEOUT_RETURN_CODE,
+            "",
+            "command timed out after 5 seconds",
+        )
+        authority, runner = self.authority(
+            [[output()], timed_out, [output()], OK, [output()]]
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(journal.state, "reverted")
+        self.assertIn("timed out", journal.failure)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 2)
+
     def test_unexpected_protected_field_drift_rolls_back(self) -> None:
         drift = candidate_output()
         drift["transform"] = 1
         self.assert_failed_apply_rolls_back(drift)
+
+    def test_reserved_area_drift_rolls_back(self) -> None:
+        drift = candidate_output()
+        drift["reserved"] = [0, 0, 32, 0]
+        self.assert_failed_apply_rolls_back(drift)
+
+    def test_reordered_equivalent_mode_catalogue_is_not_drift(self) -> None:
+        original = output(
+            available=[
+                "2560x1440@59.95Hz",
+                "1920x1080@60.00Hz",
+                "1920x1080@60.00Hz",
+            ]
+        )
+        applied = candidate_output()
+        applied["availableModes"] = [
+            "1920x1080@60.00Hz",
+            "2560x1440@59.95Hz",
+        ]
+        snapshot = monitor.parse_monitor_payload([original])
+        readback = monitor.parse_monitor_payload([applied])
+        monitor.verify_candidate_readback(
+            snapshot,
+            self.candidate,
+            readback,
+            snapshot.target("DP-1").identity,
+        )
+
+    def test_genuinely_changed_mode_catalogue_is_protected_drift(self) -> None:
+        snapshot = monitor.parse_monitor_payload([output()])
+        applied = candidate_output()
+        applied["availableModes"] = ["1920x1080@60.00Hz"]
+        readback = monitor.parse_monitor_payload([applied])
+        with self.assertRaisesRegex(monitor.ValidationError, "protected"):
+            monitor.verify_candidate_readback(
+                snapshot,
+                self.candidate,
+                readback,
+                snapshot.target("DP-1").identity,
+            )
 
     def test_topology_change_and_hotplug_roll_back(self) -> None:
         extra = output(name="DP-2", make="Second", model="Panel", serial="SECOND", x=2560)
@@ -434,6 +586,25 @@ class MonitorBackendTests(unittest.TestCase):
         reverted = authority.rollback(journal.transaction_id)
         self.assertEqual(reverted.state, "reverted")
 
+    def test_topology_comparison_ignores_array_order_and_monitor_ids(self) -> None:
+        first = output()
+        second = output(
+            name="DP-2", make="Second", model="Panel", serial="SECOND", x=2560
+        )
+        second["id"] = 1
+        applied = candidate_output()
+        applied["id"] = 9
+        reordered_second = dict(second)
+        reordered_second["id"] = 4
+        snapshot = monitor.parse_monitor_payload([first, second])
+        readback = monitor.parse_monitor_payload([reordered_second, applied])
+        monitor.verify_candidate_readback(
+            snapshot,
+            self.candidate,
+            readback,
+            snapshot.target("DP-1").identity,
+        )
+
     def test_manual_rollback_uses_targeted_eval_and_verifies(self) -> None:
         authority, runner, journal = self.begin_success()
         runner.responses.extend([[candidate_output()], OK, [output()]])
@@ -442,6 +613,10 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertFalse(reverted.recovery_required)
         self.assertIn('output = "DP-1"', runner.calls[-2][-1])
         self.assertNotIn("reload", " ".join(runner.calls[-2]))
+        fields = set(
+            re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", runner.calls[-2][-1])
+        )
+        self.assertEqual(fields, {"output", "mode", "scale"})
 
     def test_timeout_is_backend_monotonic_rollback(self) -> None:
         authority, runner, journal = self.begin_success()
@@ -502,6 +677,33 @@ class MonitorBackendTests(unittest.TestCase):
         call_count = len(runner.calls)
         repeated = authority.recover()
         self.assertEqual(repeated.state, "reverted")
+        self.assertEqual(len(runner.calls), call_count)
+
+    def test_timed_out_recovery_remains_armed_and_can_retry(self) -> None:
+        authority, runner, journal = self.begin_success()
+        timed_out = monitor.CommandResult(
+            monitor.COMMAND_TIMEOUT_RETURN_CODE,
+            "",
+            "command timed out after 5 seconds",
+        )
+        runner.responses.append(timed_out)
+        failed = authority.recover()
+        self.assertEqual(failed.state, "rollback-failed")
+        self.assertTrue(failed.recovery_required)
+        runner.responses.extend([[candidate_output()], OK, [output()]])
+        recovered = authority.recover()
+        self.assertEqual(recovered.state, "reverted")
+        self.assertFalse(recovered.recovery_required)
+
+    def test_recover_is_no_op_after_committed_terminal_state(self) -> None:
+        persister = monitor.MachineConfigPersister(lambda content: None)
+        authority, runner, journal = self.begin_success(persister=persister)
+        runner.responses.extend([[candidate_output()], [candidate_output()]])
+        committed = authority.confirm(journal.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        call_count = len(runner.calls)
+        repeated = authority.recover()
+        self.assertEqual(repeated.state, "committed")
         self.assertEqual(len(runner.calls), call_count)
 
     def test_pre_mutation_crash_recovery_needs_no_runtime_command(self) -> None:

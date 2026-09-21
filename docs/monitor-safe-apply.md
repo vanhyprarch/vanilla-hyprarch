@@ -52,13 +52,45 @@ It applies the candidate through connector-specific Lua evaluation:
 hyprctl --instance <signature> eval 'hl.monitor({...})'
 ```
 
+Hyprland 0.56.2 overlays these fields on an existing rule only when its output
+name exactly equals the requested connector. Before any journaled mutation, the
+backend therefore requires one unambiguous exact connector profile in the
+machine file, rejects every description-addressed machine profile, rejects a
+same-connector override, and proves that the selected profile's mode and scale
+are replaceable. A catch-all-only, `desc:`-only, missing, or duplicate profile
+cannot reach `eval`; the backend never relies on Hyprland's new-rule defaults.
+
 An `ok` response is only command acceptance. Resolution and refresh must match
 the selected advertised tuple, with refresh normalized to integer millihertz
-and a 10-millihertz readback tolerance. Scale must pass the bounded 0.5 through
-4.0 and 1/120-increment preflight, then match readback within one millionth.
-Full-topology validation rejects physical-identity changes, added or removed
-outputs, protected-field drift, changes to another output's owned fields, or a
-result with no usable output.
+and a 5-millihertz readback tolerance. The requested value must also be the
+unique nearest two-decimal advertised refresh; a boundary tie fails closed, so
+an adjacent 10-millihertz catalogue entry cannot be accepted accidentally.
+Duplicate public mode strings are one selectable entry because Hyprland exposes
+no identity that distinguishes them. Catalogue comparison uses a sorted set of
+resolution/two-decimal-refresh tuples, making list order and duplicate count
+irrelevant while preserving genuine catalogue changes. Scale must pass the
+bounded 0.5 through 4.0 and 1/120-increment preflight, then match readback
+within one millionth. Full-topology validation indexes outputs by connector and
+physical identity rather than JSON order or numeric monitor ID. It rejects
+physical-identity changes, added or removed outputs, protected-field drift,
+changes to another output's owned fields, or a result with no usable output.
+The generated candidate and rollback calls contain exactly `output`, `mode`,
+and `scale`; they do not intentionally write position, transform, mirror,
+bit depth, color/ICC intent, VRR, enablement, reserved area, or any other rule
+field. Their observable effective values remain protected readback state.
+
+All production subprocesses currently share a five-second timeout:
+`hyprctl eval`, `hyprctl -j monitors all`, and the client-side `systemctl --user
+start`. Five seconds is conservative for local Unix-socket/D-Bus IPC while
+keeping one worst-case recovery attempt below the service's 30-second stop
+timeout: initial read, apply, and final read are each bounded to five seconds;
+the final convergence window adds at most approximately two seconds before its
+last bounded call, keeping the external-command portion below roughly 17
+seconds.
+Timeout during apply enters rollback; timeout during rollback leaves
+`rollback-failed` recovery-armed for one later bounded retry. There is no
+production config-validation subprocess in B1; a future verifier must use the
+same explicit-bound rule.
 
 Primary rollback sends another connector-specific `hl.monitor()` containing
 only the snapshot mode and scale, followed by full-topology readback. A normal
@@ -72,9 +104,13 @@ The private `${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/` directory holds
 one version-1 atomic `transaction.json`, one advisory `transaction.lock`, and
 one version-1 `control.sock`. Directory and file ownership and permissions are
 validated; the journal and lock are mode `0600`, the directory is mode `0700`,
-and malformed or unknown journal schemas fail closed. Exact machine and user
-override bytes, hashes, stat identity, ownership and modes are recovery
-material, not a second monitor preference.
+and malformed or unknown journal schemas fail closed. Every journal publication
+writes and `fsync`s a same-directory temporary file, atomically replaces the
+journal, then `fsync`s its parent directory. A crash therefore leaves the prior
+complete state or the next complete state; a truncated or semantically
+inconsistent record authorizes no recovery command. Exact machine and user
+override bytes, hashes, stat identity, ownership and modes are recovery material,
+not a second monitor preference.
 
 The static, non-enabled
 `vanhyprarch-monitor-safe-apply.service` runs only for a requested transaction.
