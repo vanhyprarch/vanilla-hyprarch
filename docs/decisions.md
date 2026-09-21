@@ -645,8 +645,9 @@ to the transaction backend so runtime readback, prospective validation,
 persistence, reload, and technical rollback remain one operation. It contains
 no fallback machine-file writer. The backend fails closed instead of creating
 or guessing a profile; neither policy edits the catch-all rule or exposes a
-general multi-monitor schema during Alpha. UI deployment remains separately
-controlled.
+general multi-monitor schema during Alpha. The deployed UI and backend have
+completed controlled single-monitor live acceptance; physical multi-monitor
+acceptance remains a separate hardware-dependent boundary.
 
 Create-once seeds are never normal managed-update payloads. Machine files and
 override files are preserved, but preservation of an override file does not
@@ -691,9 +692,8 @@ seed; neither contains a global XKB fallback. See
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Schema-v3 backend deployed and live-accepted for Mode,
-bitdepth, and immediate Scale; repository UI integration implemented but not
-yet deployed
+**Implementation:** Schema-v3 backend and UI deployed; single-monitor runtime,
+persistence, confirmation, dismissal, and Quickshell-reload paths live-accepted
 
 Future monitor control is per explicit output profile. Resolution/refresh is one
 Mode tuple, bitdepth is 8 or 10 bpc, and Scale is per output. Text Size remains
@@ -729,12 +729,19 @@ backend status after shell reload. Its countdown never owns expiry. The
 per-screen confirmation surface uses the shared centered-overlay/focus
 architecture, prefers the transaction target screen, and falls back to another
 registered screen without affecting backend transaction survival.
+Escape and outside dismissal both request backend Revert. A Quickshell reload
+reconstructs the overlay from backend status with the same transaction ID and
+remaining deadline; it neither cancels nor extends the transaction.
 
 Monitor transactions require an existing unambiguous explicit connector profile
 in machine configuration. They neither edit the portable catch-all nor
 materialize a new profile. Safe fresh-install profile materialization is a
 separate product requirement before Alpha release. Brightness and Text Size are
 not routed through this backend.
+
+Single-monitor acceptance is complete. Physical multi-monitor behavior remains
+architecturally covered and fixture-tested but has not been accepted with two
+real simultaneously connected outputs.
 
 ## ADR-033: Make Zig Screensaver an explicit capability
 

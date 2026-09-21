@@ -87,11 +87,12 @@ override remains the exact header-only seed. The old root
 `~/.config/hypr/bindings.lua` was removed only after validation and remains in
 the migration recovery material.
 
-The repository Monitor UI candidate no longer edits machine configuration.
+The deployed Monitor UI no longer edits machine configuration directly.
 Each per-screen panel maps its own `ShellScreen` through
 `Hyprland.monitorFor(screen)` and sends display operations to the global
-Monitor controller. The deployed shell still predates this repository-only UI
-candidate; controlled QML deployment and live acceptance remain pending.
+Monitor controller. The controller consumes the backend's normalized read-only
+`inspect` projection and reconciles transaction status; it does not duplicate
+Hyprland monitor parsing or claim optimistic display state.
 
 A deliberately authored portable managed `hyprlock.conf` baseline now exists
 in the repository. It was not copied from the live development configuration
@@ -910,7 +911,7 @@ manual/on-demand screensaver shortcut, no Super+K Screensaver row, and no
 unbounded manual start operation; adding one is rejected unless a future
 explicit product decision reopens it.
 
-## Monitor backend and UI — BACKEND LIVE-ACCEPTED, UI REPOSITORY CANDIDATE
+## Monitor backend and UI — SINGLE-MONITOR LIVE-ACCEPTED
 
 The project now contains the independently supervised, fixture-tested
 `vanhyprarch-monitor` transaction authority and its static user service. The
@@ -947,10 +948,12 @@ Both policies share prospective verification, atomic persistence, reload
 reconciliation, and crash recovery. Bitdepth verification uses the effective
 DRM format rather than a requested-state flag and permits only the documented
 `cm="auto"` dependent effective color transition. Controlled live acceptance
-has passed for Mode-only and bitdepth-only temporary apply plus timeout
-rollback, and for an immediate Scale 1.25→1.50→1.25 durable round trip.
+has passed for Mode-only and bitdepth-only timeout rollback and durable Keep,
+explicit Mode Revert, and an immediate Scale 1.25→1.50→1.25 durable round
+trip. Every persistence round trip restored the known-good machine
+configuration exactly.
 
-The repository UI candidate adds a read-only `inspect` projection, one global
+The deployed UI adds a read-only `inspect` projection, one global
 `MonitorController`, pending Mode/bitdepth controls, immediate Scale routing,
 and a per-screen confirmation surface using the shared centered-overlay focus
 architecture. Backend status reconstructs an active confirmation after a
@@ -959,9 +962,19 @@ backend deadline remains authoritative. The panel's output authority is its
 own `ShellScreen`, not the focused monitor. QML does not parse raw Hyprland
 monitor JSON or machine configuration.
 
-This is not yet a completed user feature: the new QML and inspection-capable
-helper have not been deployed or live-accepted together. Brightness remains
-the existing DDC/CI path and global Text Size remains separate. The backend
+Real UI acceptance covered timeout, explicit Revert, durable Keep, Escape and
+outside dismissal as Revert, immediate Scale without a confirmation overlay,
+and a same-process Quickshell reload while a Mode transaction was
+`temporary-active`. The reloaded controller reconstructed the overlay with the
+same transaction ID and remaining backend deadline, and the original deadline
+performed rollback. Brightness remains the existing DDC/CI path and global
+Text Size remains separate.
+
+Single-monitor acceptance is complete on the development machine's LG `DP-1`
+output. Physical multi-monitor acceptance remains deferred because two real
+outputs were not simultaneously available; this is an untested hardware
+boundary, not a known failure. Deterministic tests cover multi-output ordering,
+identity, protected-topology, and target-screen semantics. The backend still
 requires one existing explicit machine-owned connector profile and never edits
 the portable catch-all. Fresh-install safe profile materialization remains
 required before Alpha release. See [Monitor Safe Apply backend](monitor-safe-apply.md).
@@ -975,11 +988,11 @@ required before Alpha release. See [Monitor Safe Apply backend](monitor-safe-app
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Deploy and live-accept the repository Monitor UI candidate without changing
-  the backend policy. Exercise panel-to-output mapping, Mode/bitdepth pending
-  Apply, immediate Scale, Keep/Revert, timeout, and Quickshell-reload
-  reconstruction under controlled checkpoints. Brightness remains DDC/CI and
-  Text Size remains global.
+- Materialize an explicit machine-owned monitor profile safely on fresh
+  installations before exposing Monitor editing.
+- Perform physical multi-monitor acceptance when two suitable outputs are
+  simultaneously available; deterministic multi-output coverage already
+  exists and no failure is currently known.
 
 ### PROVISIONAL
 

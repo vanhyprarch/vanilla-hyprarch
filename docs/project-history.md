@@ -618,6 +618,28 @@ machinery. Text Size and DDC/CI Brightness remain separate. This policy-aligned
 generation is repository-only pending separate schema deployment and live
 acceptance.
 
+## 2026-09-21: Monitor Safe Apply single-monitor acceptance
+
+Schema v3 and the final Monitor UI were deployed in controlled stages. Real
+single-monitor acceptance covered Mode timeout, explicit Revert, and durable
+Keep; bitdepth timeout and durable Keep; immediate Scale persistence; and exact
+machine-file restoration after every round trip. The backend remained the
+authoritative source for runtime readback and UI reconciliation. Escape and
+outside dismissal both invoked Revert.
+
+A same-process Quickshell reload during `temporary-active` preserved the exact
+transaction ID and original backend deadline. The new controller reconstructed
+the confirmation overlay from backend status, its countdown continued rather
+than restarting, and the original deadline restored the known-good Mode.
+Keyboard synchronization, the Quickshell singleton, Appearance, and Power &
+Idle remained healthy through real Hyprland configuration reloads.
+
+Single-monitor acceptance is complete. Physical multi-monitor acceptance is
+deferred until two suitable outputs can be tested simultaneously; deterministic
+multi-output tests remain coverage, not a claim of physical validation. The
+catch-all-only public seed still needs safe explicit-profile materialization
+before Monitor editing is complete for a fresh Alpha installation.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

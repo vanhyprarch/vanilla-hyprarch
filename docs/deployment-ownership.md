@@ -133,7 +133,7 @@ user-owned without becoming synchronizer state.
 
 `$HOME/.local/bin/vanhyprarch-monitor` and the static, non-enabled
 `vanhyprarch-monitor-safe-apply.service` are `MANAGED`. The helper is the sole
-authority for one bounded transaction; Quickshell is a future client and owns
+authority for one bounded transaction; Quickshell is a deployed client and owns
 no duplicate countdown or candidate state. Its journal, lock, and control
 socket are private `RUNTIME` recovery material under `XDG_RUNTIME_DIR`, not a
 persistent preference.
@@ -141,10 +141,12 @@ persistent preference.
 Confirmed monitor preference belongs only in the existing
 `MACHINE_CONFIGURATION` file. The production Confirm path uses the tested
 exact-byte replacement, prospective verification, reload reconciliation, and
-recovery machinery, but its live acceptance remains a separate controlled
-step. The helper never changes the create-once seed, portable catch-all,
-managed Hyprland files, or user override. Fresh-install explicit-profile
-materialization remains deferred.
+recovery machinery. Mode and bitdepth durable Confirm plus immediate Scale
+persistence have completed controlled single-monitor live acceptance through
+the deployed UI. The helper never changes the create-once seed, portable
+catch-all, managed Hyprland files, or user override. Fresh-install
+explicit-profile materialization and physical multi-monitor acceptance remain
+deferred.
 
 ## PolicyKit session lifecycle ownership
 

@@ -81,7 +81,7 @@ and unresolved choices are maintained in the canonical
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Appearance and wallpaper | `hyprpaper`, `file` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
 | System keyboard projection | `python`, `python-gobject`, `libxkbcommon`, `xkeyboard-config`, `systemd`, `hyprland` | `systemd-localed` owns the graphical XKB tuple; the static user service projects it into Hyprland without owning active groups or per-device rules. |
-| Monitor transactions | `python`, `hyprland`, `bubblewrap`, `systemd` | The static authority owns confirmed Safe Apply for mode/bitdepth and immediate validated Scale. Bubblewrap isolates prospective full-config verification from the live session; the schema-v3 policy candidate remains repository-only pending controlled acceptance. |
+| Monitor transactions | `python`, `hyprland`, `bubblewrap`, `systemd` | The static authority owns confirmed Safe Apply for mode/bitdepth and immediate validated Scale. Bubblewrap isolates prospective full-config verification from the live session; schema v3 and its UI have completed single-monitor live acceptance. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream
@@ -357,10 +357,11 @@ keyboard choices. The seed's portable catch-all monitor rule uses preferred
 mode, automatic position, and automatic scale; it is machine-owned but is not a
 Monitor panel write target. The live ownership migration uses
 `vanhyprarchMonitorScale` only in the development machine's explicit output
-profile. The Monitor panel resolves the XDG configuration root, matches the
-focused output, and fails closed unless exactly that profile and field are
-present in the expected machine-owned file; it cannot edit the catch-all rule
-or managed Hyprland files. No general multi-monitor schema is promised during
+profile. Each Monitor panel maps its own `ShellScreen` through
+`Hyprland.monitorFor(screen)` and consumes the backend's normalized read-only
+inspection. The backend fails closed unless one unambiguous explicit connector
+profile exists in the machine-owned file; it cannot edit the catch-all rule or
+managed Hyprland files. No general multi-monitor schema is promised during
 Alpha.
 
 The managed `vanhyprarch-monitor` Python command and static, non-enabled
@@ -368,10 +369,10 @@ The managed `vanhyprarch-monitor` Python command and static, non-enabled
 Hyprland, and Bubblewrap. The service starts only for a transaction, is bounded
 by `RuntimeMaxSec=90s`, and invokes an idempotent recovery entry point through
 `ExecStopPost`; journal, lock, and socket material is private XDG runtime
-state. The deployed schema-v2 engine remains disconnected from QML. Its
-schema-v3 repository successor gives Mode/bitdepth an explicit-confirmation
-window and makes Scale an immediate validated persistence operation. Schema v3
-has not been deployed or live-accepted.
+state. The deployed schema-v3 engine gives Mode/bitdepth an
+explicit-confirmation window and makes Scale an immediate validated persistence
+operation. Its real UI and single-monitor runtime/persistence paths are
+live-accepted. Physical multi-monitor acceptance remains deferred.
 
 ## Screenshots
 

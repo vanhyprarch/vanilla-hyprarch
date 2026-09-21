@@ -180,11 +180,13 @@ connector that now has different available physical identity data.
 
 The schema-v2 engine was live-validated with a deliberately temporary Scale
 change solely as a lower-risk proof of apply, readback, timeout, and recovery.
-The policy-aligned schema-v3 backend is now deployed and separately
-live-accepted for Mode-only and bitdepth-only timeout rollback plus an
-immediate Scale durable round trip. The repository Monitor UI candidate uses a
-normalized read-only backend inspection instead of interpreting this
-version-specific JSON in QML; its deployment remains pending.
+The policy-aligned schema-v3 backend and Monitor UI are deployed and have
+completed single-monitor live acceptance for Mode and bitdepth timeout,
+Revert/Keep persistence, immediate Scale persistence, dismissal semantics, and
+Quickshell reload during an armed transaction. The UI uses normalized read-only
+backend inspection instead of interpreting this version-specific JSON in QML.
+Physical multi-monitor acceptance remains deferred; deterministic multi-output
+coverage is not presented as a real two-output hardware result.
 After every Hyprland upgrade, retest Lua monitor eval,
 connector matching, advertised and active refresh representation, scale
 normalization, inactive output JSON, color/readback fields, config reload,

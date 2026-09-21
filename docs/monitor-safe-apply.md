@@ -2,12 +2,15 @@
 
 ## Status and invariant
 
-The deployed schema-v3 backend has passed controlled live acceptance for
-Mode-only and bitdepth-only temporary changes with automatic rollback, plus an
-immediate Scale 1.25→1.50→1.25 durable persistence round trip. The earlier
+The deployed schema-v3 backend and Monitor UI have completed single-monitor
+live acceptance. Mode-only and bitdepth-only changes passed automatic timeout
+rollback and durable Keep, Mode passed explicit Revert, and immediate Scale
+passed a 1.25→1.50→1.25 durable persistence round trip. Escape and outside
+dismissal both perform Revert. A same-process Quickshell reload during
+`temporary-active` preserved the transaction ID and original backend deadline,
+reconstructed the overlay, and still rolled back at that deadline. The earlier
 temporary Scale exercise validated the rollback engine at lower risk; it does
-not define the final Scale UX. Repository-side Monitor UI integration now
-exists but has not been deployed or live-accepted.
+not define the final Scale UX.
 
 The final policy has two transaction classes:
 
@@ -50,9 +53,9 @@ preparing -> applying -> committing -> committed
 
 The confirmation deadline is backend monotonic time and begins only after
 fresh full-topology readback verifies the candidate. The default presentation
-window is ten seconds and exists only for mode/bitdepth candidates. A later UI
-may display the remaining time, but does not own it. Scale has no deadline or
-Confirm operation.
+window is ten seconds and exists only for mode/bitdepth candidates. The UI
+displays the backend's remaining time but does not own it. Scale has no deadline
+or Confirm operation.
 
 ## Runtime transaction
 
@@ -256,12 +259,12 @@ replacement or reload step. Every nonterminal commit milestone, including
 only the terminal `committed` publication is retained. Unrelated bytes remain
 untouched and recovery-armed.
 
-The production authority now wires the tested machine-file persister,
-Bubblewrap prospective verifier, and exact-instance reload coordinator. This
-makes the durable Confirm path available for the next controlled live
-acceptance; it does not itself begin a transaction or write configuration.
-Fixture and isolated verifier coverage remains the prerequisite, and durable
-Confirm is not considered accepted until that separate live test passes.
+The production authority wires the tested machine-file persister, Bubblewrap
+prospective verifier, and exact-instance reload coordinator. Durable Confirm
+has been live-accepted through the real UI for both Mode and bitdepth, including
+exact restoration round trips. Immediate Scale persistence has also been
+live-accepted. Fixture and isolated verifier coverage remain prerequisites for
+future changes to these paths.
 
 The policy-aligned journal is strict schema version 3. It intentionally does
 not interpret schema-v2 recovery material because the old candidate encoded
@@ -282,7 +285,7 @@ requirement that must be completed before Alpha release. The backend parser
 permits multiple unique explicit connector profiles so that later
 materialization does not require replacing the transaction architecture.
 
-## Repository UI integration and deferred live work
+## Deployed UI integration and acceptance boundary
 
 One global `MonitorController` coalesces read-only inspection, sends Safe Apply
 or immediate Scale requests, reconciles status, and refreshes Quickshell's
@@ -301,8 +304,16 @@ samples, but only backend `remaining_seconds` and its monotonic deadline have
 authority. A restarted Quickshell queries status and reconstructs the overlay
 without changing or extending that deadline.
 
-Controlled deployment and live UI acceptance remain later work. They must
-validate output mapping, pending combined Mode/bitdepth Apply, immediate Scale,
-Keep/Revert/timeout, and shell reload during confirmation. Safe fresh-install
-profile materialization also remains later work. DDC/CI Brightness and global
-Text Size remain deliberately separate.
+Controlled single-monitor deployment and live UI acceptance are complete.
+Accepted real-session paths include Mode timeout, Revert, and Keep; bitdepth
+timeout and Keep; immediate Scale persistence; Escape and outside dismissal as
+Revert; and same-process Quickshell reload during confirmation without deadline
+or transaction replacement. Combined Mode+bitdepth remains deterministically
+covered by the same candidate and persistence machinery.
+
+Physical multi-monitor acceptance is deferred until appropriate hardware is
+available. The architecture and deterministic suite cover multiple outputs,
+per-screen connector mapping, output-order independence, identity changes, and
+protected-topology failures; no physical multi-monitor success is claimed.
+Safe fresh-install profile materialization also remains later work. DDC/CI
+Brightness and global Text Size remain deliberately separate.
