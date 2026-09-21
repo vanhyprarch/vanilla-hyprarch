@@ -234,6 +234,12 @@ Scope {
         return pending
     }
 
+    function pendingFor(connector: string): var {
+        root.pendingRevision
+        const pending = root.pendingByConnector[connector]
+        return pending === undefined ? null : pending
+    }
+
     function resetPending(connector: string): void {
         const copy = Object.assign({}, root.pendingByConnector)
         delete copy[connector]
@@ -356,7 +362,7 @@ Scope {
     function hasSafeChanges(connector: string): bool {
         root.pendingRevision
         const output = root.outputFor(connector)
-        const pending = root.ensurePending(connector)
+        const pending = root.pendingFor(connector)
         return output !== null && pending !== null && (
             pending.width !== output.current_mode.width
             || pending.height !== output.current_mode.height

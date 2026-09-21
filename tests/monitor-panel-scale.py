@@ -75,7 +75,9 @@ class MonitorPanelPolicyTests(unittest.TestCase):
     def test_soft_reload_guards_controller_and_selector_colors(self) -> None:
         self.assertIn("monitorControllerReady", self.panel)
         self.assertIn("? root.monitorController.outputFor", self.panel)
-        self.assertIn("? root.monitorController.ensurePending", self.panel)
+        self.assertIn("? root.monitorController.pendingFor", self.panel)
+        self.assertNotIn("? root.monitorController.ensurePending", self.panel)
+        self.assertIn("const pending = root.pendingFor(connector)", self.controller)
         self.assertNotIn("color: root.text }", self.panel)
         self.assertEqual(self.panel.count("color: root.textColor }"), 2)
 

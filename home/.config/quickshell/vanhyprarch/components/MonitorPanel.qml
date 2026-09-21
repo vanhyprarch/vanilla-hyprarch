@@ -35,7 +35,7 @@ DockPopup {
             ? root.monitorController.outputFor(root.connectorName) : null
     readonly property var pendingState:
         root.monitorControllerReady
-            ? root.monitorController.ensurePending(root.connectorName) : null
+            ? root.monitorController.pendingFor(root.connectorName) : null
     readonly property string monitorDescription: {
         if (root.inspectedOutput !== null)
             return root.inspectedOutput.label
