@@ -76,8 +76,18 @@ physical-identity changes, added or removed outputs, protected-field drift,
 changes to another output's owned fields, or a result with no usable output.
 The generated candidate and rollback calls contain exactly `output`, `mode`,
 and `scale`; they do not intentionally write position, transform, mirror,
-bit depth, color/ICC intent, VRR, enablement, reserved area, or any other rule
-field. Their observable effective values remain protected readback state.
+bit depth, color-management intent, VRR, enablement, reserved area, or any
+other rule field. Values exposed by the authoritative monitor JSON remain
+protected readback state; ICC profile state is not exposed by that Hyprland
+0.56.2 response and is therefore not claimed as directly observable.
+
+The Hyprland 0.56.2 JSON boundary follows `CHyprCtl::getMonitorData()` exactly:
+physical serial is read from `serial`, while the direct protected color fields
+are `colorManagementPreset`, `sdrBrightness`, `sdrSaturation`,
+`sdrMinLuminance`, and `sdrMaxLuminance`. Required consumed keys and their
+types fail closed. Unrelated additional upstream keys are ignored so a new
+informational field does not break readback; the project-owned transaction
+journal retains its separate exact-key, unknown-key-rejecting schema.
 
 All production subprocesses currently share a five-second timeout:
 `hyprctl eval`, `hyprctl -j monitors all`, and the client-side `systemctl --user

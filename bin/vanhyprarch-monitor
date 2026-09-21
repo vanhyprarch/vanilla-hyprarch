@@ -264,7 +264,7 @@ class PhysicalIdentity:
     description: str
 
     def has_evidence(self) -> bool:
-        return any((self.make, self.model, self.serial, self.description))
+        return any((self.make, self.model, self.serial))
 
 
 @dataclass(frozen=True)
@@ -343,39 +343,20 @@ class Topology:
         return any(monitor.usable for monitor in self.monitors)
 
 
-COLOR_KEY_RE = re.compile(r"(?:color|sdr|hdr|wide|luminance)", re.IGNORECASE)
-COLOR_FIELD_NAMES = {
-    "bitdepth",
-    "cm",
-    "sdrbrightness",
-    "sdrsaturation",
-    "supportshdr",
-    "supportswidecolor",
-    "icc",
-    "iccprofile",
-}
+HYPRLAND_COLOR_NUMBER_FIELDS = (
+    "sdrBrightness",
+    "sdrSaturation",
+    "sdrMinLuminance",
+    "sdrMaxLuminance",
+)
 
 
-def _color_state(raw: Mapping[str, object], label: str) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in raw.items():
-        lowered = key.lower()
-        if COLOR_KEY_RE.search(key) is not None or lowered in COLOR_FIELD_NAMES:
-            result[key] = _json_value(value, f"{label}.{key}")
-    last_ipc = raw.get("lastIpcObject")
-    if isinstance(last_ipc, dict):
-        for key, value in last_ipc.items():
-            if not isinstance(key, str):
-                raise ValidationError(f"{label}.lastIpcObject has a non-string key")
-            lowered = key.lower()
-            if COLOR_KEY_RE.search(key) is not None or lowered in COLOR_FIELD_NAMES:
-                result[f"lastIpcObject.{key}"] = _json_value(
-                    value, f"{label}.lastIpcObject.{key}"
-                )
-    return result
-
-
-def _required(payload: Mapping[str, object], key: str, expected: type, label: str) -> object:
+def _required(
+    payload: Mapping[str, object],
+    key: str,
+    expected: type | tuple[type, ...],
+    label: str,
+) -> object:
     if key not in payload:
         raise ValidationError(f"{label} omitted {key}")
     value = payload[key]
@@ -384,6 +365,34 @@ def _required(payload: Mapping[str, object], key: str, expected: type, label: st
             raise ValidationError(f"{label}.{key} has the wrong type")
     elif not isinstance(value, expected):
         raise ValidationError(f"{label}.{key} has the wrong type")
+    return value
+
+
+def _required_number(payload: Mapping[str, object], key: str, label: str) -> object:
+    value = _required(payload, key, (int, float), label)
+    if isinstance(value, bool):
+        raise ValidationError(f"{label}.{key} has the wrong type")
+    _decimal(value, f"{label}.{key}")
+    return value
+
+
+def _color_state(raw: Mapping[str, object], label: str) -> dict[str, object]:
+    result: dict[str, object] = {
+        "colorManagementPreset": _required(
+            raw, "colorManagementPreset", str, label
+        )
+    }
+    for key in HYPRLAND_COLOR_NUMBER_FIELDS:
+        result[key] = _required_number(raw, key, label)
+    return result
+
+
+def _reserved_state(raw: Mapping[str, object], label: str) -> list[int]:
+    value = _required(raw, "reserved", list, label)
+    if len(value) != 4 or any(
+        isinstance(item, bool) or not isinstance(item, int) for item in value
+    ):
+        raise ValidationError(f"{label}.reserved must contain exactly four integers")
     return value
 
 
@@ -402,28 +411,26 @@ def parse_monitor_payload(payload: object) -> Topology:
         monitor_id = _required(raw, "id", int, label)
         make = _required(raw, "make", str, label)
         model = _required(raw, "model", str, label)
-        serial_number = _required(raw, "serialNumber", str, label)
+        serial_number = _required(raw, "serial", str, label)
         description = _required(raw, "description", str, label)
         width = _required(raw, "width", int, label)
         height = _required(raw, "height", int, label)
         refresh = refresh_to_millihz(
-            _required(raw, "refreshRate", (int, float), label),
+            _required_number(raw, "refreshRate", label),
             f"{label}.refreshRate",
             allow_zero=disabled,
         )
         x = _required(raw, "x", int, label)
         y = _required(raw, "y", int, label)
-        scale = scale_to_millionths(_required(raw, "scale", (int, float), label))
+        scale = scale_to_millionths(_required_number(raw, "scale", label))
         transform = _required(raw, "transform", int, label)
         dpms = _required(raw, "dpmsStatus", bool, label)
         mirror_of = _required(raw, "mirrorOf", str, label)
+        if mirror_of != "none" and not mirror_of.isdecimal():
+            raise ValidationError(f"{label}.mirrorOf is neither 'none' nor a monitor id")
         current_format = _required(raw, "currentFormat", str, label)
-        if "vrr" not in raw:
-            raise ValidationError(f"{label} omitted vrr")
-        vrr = _json_value(raw["vrr"], f"{label}.vrr")
-        if "reserved" not in raw:
-            raise ValidationError(f"{label} omitted reserved")
-        reserved = _json_value(raw["reserved"], f"{label}.reserved")
+        vrr = _required(raw, "vrr", bool, label)
+        reserved = _reserved_state(raw, label)
         available = _required(raw, "availableModes", list, label)
         modes = tuple(Mode.parse_advertised(mode) for mode in available)
         color_state = _color_state(raw, label)

@@ -51,7 +51,7 @@ def output(
         "description": f"{make} {model} {serial}",
         "make": make,
         "model": model,
-        "serialNumber": serial,
+        "serial": serial,
         "width": width,
         "height": height,
         "refreshRate": refresh,
@@ -66,7 +66,10 @@ def output(
         "vrr": False,
         "reserved": [0, 0, 0, 0],
         "colorManagementPreset": "srgb",
-        "sdrBrightness": 1.0,
+        "sdrBrightness": 1,
+        "sdrSaturation": 1,
+        "sdrMinLuminance": 0.2,
+        "sdrMaxLuminance": 80,
         "availableModes": available
         if available is not None
         else ["2560x1440@59.95Hz", "1920x1080@60.00Hz"],
@@ -86,6 +89,64 @@ def inactive_output() -> dict[str, object]:
         disabled=True,
         available=[],
     )
+
+
+def captured_hyprland_0562_output() -> dict[str, object]:
+    return {
+        "id": 1,
+        "name": "DP-1",
+        "description": "LG Electronics LG ULTRAFINE 301MALFM3V64",
+        "make": "LG Electronics",
+        "model": "LG ULTRAFINE",
+        "serial": "301MALFM3V64",
+        "width": 3840,
+        "height": 2160,
+        "physicalWidth": 600,
+        "physicalHeight": 340,
+        "refreshRate": 60.0,
+        "x": 0,
+        "y": 0,
+        "activeWorkspace": {"id": 1, "name": "1"},
+        "specialWorkspace": {"id": 0, "name": ""},
+        "reserved": [56, 0, 0, 0],
+        "scale": 1.25,
+        "transform": 0,
+        "focused": True,
+        "dpmsStatus": True,
+        "vrr": False,
+        "solitary": "0",
+        "solitaryBlockedBy": ["WINDOWED", "CANDIDATE"],
+        "activelyTearing": False,
+        "tearingBlockedBy": ["NOT_TORN", "USER", "CANDIDATE", "HW_CURSOR"],
+        "directScanoutTo": "0",
+        "directScanoutBlockedBy": ["USER", "CANDIDATE"],
+        "disabled": False,
+        "currentFormat": "XRGB2101010",
+        "mirrorOf": "none",
+        "availableModes": [
+            "3840x2160@60.00Hz",
+            "3840x2160@29.98Hz",
+            "2560x1440@59.95Hz",
+            "1920x1080@60.00Hz",
+            "1920x1080@60.00Hz",
+            "1920x1080@59.94Hz",
+            "1280x720@60.00Hz",
+            "1280x720@59.94Hz",
+            "1024x768@60.00Hz",
+            "800x600@60.32Hz",
+            "720x480@60.00Hz",
+            "720x480@59.94Hz",
+            "640x480@60.00Hz",
+            "640x480@59.94Hz",
+            "640x480@59.94Hz",
+        ],
+        "colorManagementPreset": "wide",
+        "sdrBrightness": 1,
+        "sdrSaturation": 1,
+        "sdrMinLuminance": 0.2,
+        "sdrMaxLuminance": 80,
+        "hardwareCursorsInUse": True,
+    }
 
 
 def candidate_output() -> dict[str, object]:
@@ -235,28 +296,81 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertFalse(topology.target("HDMI-A-1").usable)
         self.assertEqual(topology.target("HDMI-A-1").refresh_millihz, 0)
 
-    def test_nested_observable_color_state_is_protected(self) -> None:
+    def test_exact_observable_color_state_is_protected_and_extras_are_ignored(self) -> None:
         raw = output()
-        raw["lastIpcObject"] = {
-            "cm": "wide",
-            "bitdepth": 10,
-            "icc": "/example/profile.icc",
-            "unrelated": "ignored",
-        }
+        raw["colorManagementPreset"] = "wide"
+        raw["sdrBrightness"] = 1.2
+        raw["sdrSaturation"] = 0.9
+        raw["sdrMinLuminance"] = 0.1
+        raw["sdrMaxLuminance"] = 120.0
+        raw["futureUnrelatedField"] = {"may": "be ignored"}
         parsed = monitor.parse_monitor_payload([raw]).target("DP-1")
-        self.assertEqual(parsed.color_state["lastIpcObject.cm"], "wide")
-        self.assertEqual(parsed.color_state["lastIpcObject.bitdepth"], 10)
         self.assertEqual(
-            parsed.color_state["lastIpcObject.icc"], "/example/profile.icc"
+            parsed.color_state,
+            {
+                "colorManagementPreset": "wide",
+                "sdrBrightness": 1.2,
+                "sdrSaturation": 0.9,
+                "sdrMinLuminance": 0.1,
+                "sdrMaxLuminance": 120.0,
+            },
         )
-        self.assertNotIn("lastIpcObject.unrelated", parsed.color_state)
+
+    def test_captured_hyprland_0562_schema_parses_and_validates_read_only(self) -> None:
+        runner = QueueRunner([[captured_hyprland_0562_output()]])
+        client = monitor.HyprlandClient(
+            self.instance.signature,
+            self.instance,
+            self.provider,
+            runner=runner,
+            clock=self.clock,
+        )
+        topology = client.read_topology()
+        target = topology.target("DP-1")
+        self.assertEqual(target.identity.serial, "301MALFM3V64")
+        self.assertEqual(target.identity.make, "LG Electronics")
+        self.assertEqual(target.identity.model, "LG ULTRAFINE")
+        self.assertEqual(target.reserved, [56, 0, 0, 0])
+        self.assertEqual(len(target.canonical_advertised_modes()), 13)
+        candidate = monitor.Candidate.create(
+            "DP-1", 3840, 2160, "60.00", "1.25"
+        )
+        self.assertEqual(monitor.validate_candidate(candidate, topology), target)
+        self.assertEqual(runner.calls, [monitor.monitors_argv(self.instance.signature)])
+        self.assertNotIn("eval", runner.calls[0])
+
+    def test_v0562_serial_contract_is_strict(self) -> None:
+        missing = output()
+        del missing["serial"]
+        invented = {**missing, "serialNumber": "ABC123"}
+        malformed = {**output(), "serial": 123}
+        for value in (missing, invented, malformed):
+            with self.subTest(value=value):
+                with self.assertRaises(monitor.ValidationError):
+                    monitor.parse_monitor_payload([value])
+
+    def test_safety_critical_monitor_fields_are_strictly_typed(self) -> None:
+        cases = [
+            {**output(), "vrr": 0},
+            {**output(), "reserved": [0, 0, 0]},
+            {**output(), "reserved": [False, 0, 0, 0]},
+            {**output(), "mirrorOf": "DP-2"},
+            {**output(), "colorManagementPreset": None},
+            {**output(), "sdrBrightness": "bright"},
+            {key: value for key, value in output().items() if key != "dpmsStatus"},
+            {key: value for key, value in output().items() if key != "sdrMaxLuminance"},
+        ]
+        for value in cases:
+            with self.subTest(value=value):
+                with self.assertRaises(monitor.ValidationError):
+                    monitor.parse_monitor_payload([value])
 
     def test_malformed_monitor_data_fails_closed(self) -> None:
         cases = [
             {},
             {**output(), "refreshRate": "fast"},
             {**output(), "availableModes": ["not-a-mode"]},
-            {**output(), "make": "", "model": "", "serialNumber": "", "description": ""},
+            {**output(), "make": "", "model": "", "serial": "", "description": ""},
         ]
         for value in cases:
             with self.subTest(value=value):
@@ -706,7 +820,7 @@ class MonitorBackendTests(unittest.TestCase):
             {
                 "make": "Other",
                 "model": "Replacement",
-                "serialNumber": "DIFFERENT",
+                "serial": "DIFFERENT",
                 "description": "Other Replacement DIFFERENT",
             }
         )

@@ -112,8 +112,14 @@ outputs are refreshed sequentially rather than as one atomic DRM transaction.
 The mitigation is fresh `hyprctl --instance <signature> -j monitors all`
 readback after every candidate and rollback operation. B1 compares the chosen
 advertised resolution/refresh tuple, scale, physical identity, full output set,
-and protected position/transform/enablement/DPMS/mirror/format/color/ICC/VRR/
-reserved-area state. It stores refresh as integer millihertz and permits a
+and protected position/transform/enablement/DPMS/mirror/format/observable
+color-management/VRR/reserved-area state. Hyprland 0.56.2 reports the physical
+serial as `serial` (not `serialNumber`) and exposes color state directly as
+`colorManagementPreset` plus four SDR numeric fields; the backend consumes
+those exact `CHyprCtl::getMonitorData()` keys. ICC profile state is not present
+in this response and is not claimed as directly validated. Required consumed
+fields are type-checked while unrelated new upstream keys are ignored. It
+stores refresh as integer millihertz and permits a
 5-millihertz active readback tolerance only when the requested two-decimal mode
 is uniquely nearest; ties between adjacent advertised entries fail closed.
 Catalogue comparison deduplicates and sorts complete resolution/refresh tuples,
