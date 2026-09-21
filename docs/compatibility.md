@@ -83,6 +83,17 @@ Retest the absolute-path resolver, required-file tracking, error behavior, and
 `--verify-config` after a Hyprland Lua-loader upgrade before changing the
 import mechanism.
 
+Hyprland 0.56.2 `--verify-config` evaluates the Lua configuration rather than
+only parsing it. A read-only baseline verification on the development machine
+therefore invoked the registered `config.reloaded` callback and requested a
+keyboard-sync service reload, even though it did not mutate configuration or
+monitor state. Monitor Safe Apply prospective verification consequently stages
+the complete import tree and runs the installed verifier inside an unshared
+Bubblewrap environment with no live user bus and no writable live config. Exit
+status is authoritative and the subprocess is bounded to five seconds. Retest
+both successful validation and callback containment after a Hyprland verifier
+or Bubblewrap upgrade.
+
 ## Hyprland monitor runtime transaction boundary
 
 **Affected components:** Hyprland 0.56.2 (`hyprland 0.56.2-3`) and Python's

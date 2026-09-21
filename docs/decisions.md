@@ -689,8 +689,9 @@ seed; neither contains a global XKB fallback. See
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Phase B1 backend foundation implemented in the repository;
-UI, production persistence, deployment, and live validation remain pending
+**Implementation:** Runtime backend deployed and live validated; repository
+persistence/reconciliation foundation implemented; production persistence and
+UI remain pending controlled acceptance
 
 Future monitor control is per explicit output profile and may cover resolution,
 refresh rate, scale, color depth, and brightness where the output and available
@@ -704,9 +705,9 @@ Risky display changes follow one invariant:
 
 Application failure or confirmation timeout automatically restores the
 known-good runtime configuration. An unconfirmed display configuration is
-never persisted. The Phase B1 backend foundation does not complete Safe Apply,
-define a general multi-monitor schema, or connect UI; those remain within the
-separate Monitor Control & Safe Apply milestone.
+never persisted. The backend and persistence foundation do not complete Safe
+Apply, define a general multi-monitor schema, or connect UI; those remain
+within the separate Monitor Control & Safe Apply milestone.
 
 The first implementation scope is resolution/refresh as one advertised mode
 tuple plus per-output scale. Normal rollback uses connector-specific runtime

@@ -226,6 +226,82 @@ class QueueRunner:
 OK = monitor.CommandResult(0, "ok\n", "")
 
 
+class RecordingVerifier:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.calls: list[tuple[object, bytes]] = []
+        self.error = error
+
+    def __call__(self, journal: object, content: bytes) -> None:
+        self.calls.append((journal, content))
+        if self.error is not None:
+            raise self.error
+
+
+class FakeReloadWatch:
+    def __init__(self, events: list[bool] | None = None) -> None:
+        self.events = list(events if events is not None else [True])
+        self.closed = False
+
+    def wait(self, timeout: float) -> bool:
+        if not self.events:
+            return False
+        return self.events.pop(0)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeReloadCoordinator:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.watches: list[FakeReloadWatch] = []
+        self.reconciliations: list[str] = []
+
+    def arm(self, journal: object) -> FakeReloadWatch:
+        watch = FakeReloadWatch()
+        self.watches.append(watch)
+        return watch
+
+    def reconcile(
+        self, journal: object, client: object, watch: FakeReloadWatch,
+    ) -> None:
+        self.reconciliations.append(journal.persistence_phase)
+        if self.error is not None:
+            raise self.error
+
+
+class SequenceReloadCoordinator(FakeReloadCoordinator):
+    def __init__(self, outcomes: list[Exception | None]) -> None:
+        super().__init__()
+        self.outcomes = list(outcomes)
+
+    def reconcile(
+        self, journal: object, client: object, watch: FakeReloadWatch,
+    ) -> None:
+        self.reconciliations.append(journal.persistence_phase)
+        outcome = self.outcomes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+
+class StubCandidatePersister:
+    def __init__(self, state: str = "candidate") -> None:
+        self.state = state
+
+    def prepare(self, journal: object) -> tuple[bytes, str]:
+        raise AssertionError("recovery must not prepare a new candidate")
+
+    def persist(self, journal: object, content: bytes) -> None:
+        raise AssertionError("recovery must not rewrite the candidate")
+
+    def machine_state(self, journal: object) -> str:
+        return self.state
+
+    def recover_original(self, journal: object) -> bool:
+        self.state = "original"
+        return True
+
+
 class MonitorBackendTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -258,6 +334,7 @@ class MonitorBackendTests(unittest.TestCase):
         responses: list[object],
         *,
         persister: object | None = None,
+        reload_coordinator: object | None = None,
     ) -> tuple[object, QueueRunner]:
         runner = QueueRunner(responses)
         authority = monitor.TransactionAuthority(
@@ -267,6 +344,8 @@ class MonitorBackendTests(unittest.TestCase):
             runner=runner,
             clock=self.clock,
             persister=persister,
+            reload_coordinator=reload_coordinator
+            or (FakeReloadCoordinator() if persister is not None else None),
         )
         return authority, runner
 
@@ -447,6 +526,18 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["timeout"], monitor.COMMAND_TIMEOUT_SECONDS)
         self.assertFalse(run.call_args.kwargs["shell"])
 
+        with mock.patch.object(
+            monitor.subprocess, "run", side_effect=timeout
+        ) as verify_run:
+            verify_result = monitor.run_verify_command(["/usr/bin/Hyprland"])
+        self.assertEqual(
+            verify_result.returncode, monitor.COMMAND_TIMEOUT_RETURN_CODE
+        )
+        self.assertEqual(
+            verify_run.call_args.kwargs["timeout"],
+            monitor.VERIFY_CONFIG_TIMEOUT_SECONDS,
+        )
+
     def test_real_unix_control_socket_accepts_pathlike_runtime_address(self) -> None:
         runtime = self.root / "socket-runtime"
         runtime.mkdir(mode=0o700)
@@ -544,9 +635,16 @@ class MonitorBackendTests(unittest.TestCase):
         self.begin_success()
         original = json.loads(self.store.journal_path.read_text())
         cases = [
-            {**original, "schema_version": 2},
+            {**original, "schema_version": 3},
             {**original, "state": "surprise"},
             {**original, "mutation_attempted": "yes"},
+            {**original, "persistence_phase": "invented"},
+            {
+                **original,
+                "state": "committing",
+                "deadline_monotonic": None,
+                "persistence_phase": "original",
+            },
         ]
         for payload in cases:
             with self.subTest(payload=payload):
@@ -873,7 +971,7 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertFalse(recovered.recovery_required)
 
     def test_recover_is_no_op_after_committed_terminal_state(self) -> None:
-        persister = monitor.MachineConfigPersister(lambda content: None)
+        persister = monitor.MachineConfigPersister(lambda journal, content: None)
         authority, runner, journal = self.begin_success(persister=persister)
         runner.responses.extend([[candidate_output()], [candidate_output()]])
         committed = authority.confirm(journal.transaction_id)
@@ -900,19 +998,426 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(len(runner.calls), call_count)
 
     def test_confirm_state_transition_with_fixture_persistence(self) -> None:
-        verified: list[bytes] = []
-        persister = monitor.MachineConfigPersister(verified.append)
-        authority, runner, journal = self.begin_success(persister=persister)
+        verifier = RecordingVerifier()
+        persister = monitor.MachineConfigPersister(verifier)
+        coordinator = FakeReloadCoordinator()
+        authority, runner = self.authority(
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
         runner.responses.extend([[candidate_output()], [candidate_output()]])
         committed = authority.confirm(journal.transaction_id)
         self.assertEqual(committed.state, "committed")
         self.assertTrue(committed.persistence_verified)
         self.assertFalse(committed.recovery_required)
-        self.assertEqual(len(verified), 1)
+        self.assertEqual(len(verifier.calls), 1)
+        self.assertEqual(
+            coordinator.reconciliations,
+            ["candidate-installed"],
+        )
+        self.assertEqual(committed.persistence_phase, "candidate-verified")
         after = self.machine.read_text()
         self.assertIn('mode = "1920x1080@60"', after)
         self.assertIn("local vanhyprarchMonitorScale = 1.5", after)
         self.assertEqual(stat.S_IMODE(self.machine.stat().st_mode), 0o600)
+
+    def test_sandboxed_verifier_stages_complete_import_tree(self) -> None:
+        hypr = self.config / "hypr"
+        managed = hypr / "vanhyprarch"
+        managed.mkdir(parents=True)
+        (hypr / "hyprland.lua").write_text(
+            'require(os.getenv("XDG_CONFIG_HOME") .. "/hypr/vanhyprarch/core.lua")\n'
+            'require(os.getenv("XDG_CONFIG_HOME") .. "/vanhyprarch/machine/hyprland.lua")\n'
+            'require(os.getenv("XDG_CONFIG_HOME") .. "/vanhyprarch/overrides/hyprland.lua")\n'
+        )
+        (managed / "core.lua").write_text("-- managed fixture\n")
+        captured: dict[str, object] = {}
+
+        def runner(argv: object) -> object:
+            arguments = list(argv)
+            stage = Path(arguments[arguments.index("/config") - 1])
+            captured["argv"] = arguments
+            captured["machine"] = (
+                stage / "vanhyprarch/machine/hyprland.lua"
+            ).read_bytes()
+            captured["override"] = (
+                stage / "vanhyprarch/overrides/hyprland.lua"
+            ).read_bytes()
+            captured["managed"] = (
+                stage / "hypr/vanhyprarch/core.lua"
+            ).read_bytes()
+            return monitor.CommandResult(0, "config ok\n", "")
+
+        _, _, journal = self.begin_success()
+        candidate = monitor.rewrite_existing_profile(
+            journal.machine_file.content, journal.candidate
+        )
+        verifier = monitor.SandboxedHyprlandVerifier(self.config, runner=runner)
+        verifier(journal, candidate)
+        self.assertEqual(captured["machine"], candidate)
+        self.assertEqual(captured["override"], journal.override_file.content)
+        self.assertEqual(captured["managed"], b"-- managed fixture\n")
+        argv = captured["argv"]
+        self.assertIn("--unshare-all", argv)
+        self.assertIn("--clearenv", argv)
+        self.assertEqual(argv[-4:], ["/usr/bin/Hyprland", "--verify-config", "--config", "/config/hypr/hyprland.lua"])
+
+    def test_prospective_verifier_nonzero_and_timeout_fail_closed(self) -> None:
+        hypr = self.config / "hypr"
+        managed = hypr / "vanhyprarch"
+        managed.mkdir(parents=True)
+        (hypr / "hyprland.lua").write_text("-- loader\n")
+        (managed / "core.lua").write_text("-- core\n")
+        _, _, journal = self.begin_success()
+        for result, message in (
+            (monitor.CommandResult(1, "", "syntax error"), "syntax error"),
+            (
+                monitor.CommandResult(
+                    monitor.COMMAND_TIMEOUT_RETURN_CODE, "", "timed out"
+                ),
+                "timed out after 5 seconds",
+            ),
+        ):
+            with self.subTest(result=result):
+                verifier = monitor.SandboxedHyprlandVerifier(
+                    self.config, runner=lambda argv, result=result: result
+                )
+                with self.assertRaisesRegex(monitor.PersistenceError, message):
+                    verifier(journal, journal.machine_file.content)
+
+    def test_reload_event_observed_avoids_explicit_reload(self) -> None:
+        runner = QueueRunner([monitor.CommandResult(0, "", "")])
+        coordinator = monitor.HyprlandReloadCoordinator(self.runtime, runner)
+        client = mock.Mock()
+        watch = FakeReloadWatch([True])
+        _, _, journal = self.begin_success()
+        coordinator.reconcile(journal, client, watch)
+        self.assertEqual(runner.calls, [monitor.configerrors_argv(self.instance.signature)])
+        self.assertGreaterEqual(client.check_instance.call_count, 2)
+
+    def test_reload_event_absent_uses_bounded_ordinary_reload(self) -> None:
+        runner = QueueRunner([OK, monitor.CommandResult(0, "", "")])
+        coordinator = monitor.HyprlandReloadCoordinator(self.runtime, runner)
+        client = mock.Mock()
+        watch = FakeReloadWatch([False, True])
+        _, _, journal = self.begin_success()
+        coordinator.reconcile(journal, client, watch)
+        self.assertEqual(runner.calls[0], monitor.reload_argv(self.instance.signature))
+        self.assertNotIn("full-reset", runner.calls[0])
+        self.assertEqual(runner.calls[1], monitor.configerrors_argv(self.instance.signature))
+
+    def test_reload_configerrors_and_missing_event_fail_closed(self) -> None:
+        _, _, journal = self.begin_success()
+        cases = (
+            (
+                QueueRunner([OK]),
+                FakeReloadWatch([False, False]),
+                "not observed",
+            ),
+            (
+                QueueRunner([monitor.CommandResult(0, "bad option\n", "")]),
+                FakeReloadWatch([True]),
+                "configuration errors",
+            ),
+        )
+        for runner, watch, message in cases:
+            with self.subTest(message=message):
+                coordinator = monitor.HyprlandReloadCoordinator(self.runtime, runner)
+                with self.assertRaisesRegex(monitor.PersistenceError, message):
+                    coordinator.reconcile(journal, mock.Mock(), watch)
+
+    def test_atomic_write_failure_leaves_original_authoritative(self) -> None:
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        _, _, journal = self.begin_success(persister=persister)
+        content, planned = persister.prepare(journal)
+        committing = replace(
+            journal,
+            state="committing",
+            deadline_monotonic=None,
+            planned_machine_sha256=planned,
+            persistence_phase="candidate-planned",
+        )
+        before = self.machine.read_bytes()
+        with mock.patch.object(
+            monitor,
+            "atomic_replace",
+            side_effect=monitor.PersistenceError("fixture write failure"),
+        ):
+            with self.assertRaisesRegex(monitor.PersistenceError, "write failure"):
+                persister.persist(committing, content)
+        self.assertEqual(self.machine.read_bytes(), before)
+        self.assertEqual(persister.machine_state(committing), "original")
+
+    def test_candidate_restoration_refuses_external_edit(self) -> None:
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        _, _, journal = self.begin_success(persister=persister)
+        content, planned = persister.prepare(journal)
+        committing = replace(
+            journal,
+            state="committing",
+            deadline_monotonic=None,
+            planned_machine_sha256=planned,
+            persistence_phase="candidate-planned",
+        )
+        persister.persist(committing, content)
+        self.assertEqual(persister.machine_state(committing), "candidate")
+        self.machine.write_bytes(self.machine.read_bytes() + b"-- external\n")
+        with self.assertRaisesRegex(monitor.PersistenceError, "external edit"):
+            persister.recover_original(committing)
+
+    def test_validation_failure_before_write_rolls_runtime_back(self) -> None:
+        before = self.machine.read_bytes()
+        persister = monitor.MachineConfigPersister(
+            RecordingVerifier(monitor.PersistenceError("invalid prospective config"))
+        )
+        authority, runner, journal = self.begin_success(persister=persister)
+        runner.responses.extend([[candidate_output()], [candidate_output()], OK, [output()]])
+        reverted = authority.confirm(journal.transaction_id)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("invalid prospective config", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), before)
+
+    def test_reload_failure_restores_persistent_and_runtime_state(self) -> None:
+        before = self.machine.read_bytes()
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        coordinator = SequenceReloadCoordinator(
+            [monitor.PersistenceError("reload failed"), None]
+        )
+        authority, runner = self.authority(
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
+        runner.responses.extend([[candidate_output()], [candidate_output()], OK, [output()]])
+        reverted = authority.confirm(journal.transaction_id)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), before)
+        self.assertEqual(reverted.persistence_phase, "original-reloaded")
+
+    def test_wrong_post_reload_state_restores_candidate_file(self) -> None:
+        before = self.machine.read_bytes()
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        coordinator = SequenceReloadCoordinator([None, None])
+        authority, runner = self.authority(
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
+        runner.responses.extend(
+            [
+                [candidate_output()],
+                [output()],
+                [output()],
+                [output()],
+                OK,
+                [output()],
+            ]
+        )
+        reverted = authority.confirm(journal.transaction_id)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertIn("did not converge", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), before)
+
+    def test_post_reload_physical_identity_change_never_receives_snapshot(self) -> None:
+        before = self.machine.read_bytes()
+        replacement = candidate_output()
+        replacement.update(
+            make="Other",
+            model="Replacement",
+            serial="DIFFERENT",
+            description="Other Replacement DIFFERENT",
+        )
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        coordinator = SequenceReloadCoordinator([None, None])
+        authority, runner = self.authority(
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
+        runner.responses.extend(
+            [[candidate_output()], [replacement], [replacement], [replacement]]
+        )
+        failed = authority.confirm(journal.transaction_id)
+        self.assertEqual(failed.state, "rollback-failed")
+        self.assertTrue(failed.recovery_required)
+        self.assertEqual(self.machine.read_bytes(), before)
+        eval_calls = [call for call in runner.calls if "eval" in call]
+        self.assertEqual(len(eval_calls), 1)
+
+    def test_compositor_replacement_during_persistence_restores_file_without_following(self) -> None:
+        before = self.machine.read_bytes()
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+
+        class ReplaceDuringReload(FakeReloadCoordinator):
+            def reconcile(inner_self, journal, client, watch):
+                inner_self.reconciliations.append(journal.persistence_phase)
+                if len(inner_self.reconciliations) == 1:
+                    self.provider.identity = replace(self.instance, pid=999)
+                    raise monitor.InstanceReplaced("fixture compositor replaced")
+                client.check_instance()
+
+        coordinator = ReplaceDuringReload()
+        authority, runner = self.authority(
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
+        runner.responses.append([candidate_output()])
+        vanished = authority.confirm(journal.transaction_id)
+        self.assertEqual(vanished.state, "instance-vanished")
+        self.assertFalse(vanished.recovery_required)
+        self.assertEqual(self.machine.read_bytes(), before)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 1)
+
+    def test_persistence_restoration_failure_remains_armed(self) -> None:
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        coordinator = SequenceReloadCoordinator(
+            [monitor.PersistenceError("candidate reload failed")]
+        )
+        authority, runner = self.authority(
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        journal = authority.begin(self.candidate, self.instance.signature)
+        runner.responses.append([candidate_output()])
+        original_atomic_replace = monitor.atomic_replace
+        machine_calls = 0
+
+        def replace_then_fail(*args, **kwargs):
+            nonlocal machine_calls
+            if Path(args[0]) == self.machine:
+                machine_calls += 1
+                if machine_calls > 1:
+                    raise monitor.PersistenceError("fixture restoration failed")
+            return original_atomic_replace(*args, **kwargs)
+
+        with mock.patch.object(monitor, "atomic_replace", side_effect=replace_then_fail):
+            failed = authority.confirm(journal.transaction_id)
+        self.assertEqual(failed.state, "rollback-failed")
+        self.assertTrue(failed.recovery_required)
+        self.assertIn("restoration failed", failed.failure)
+        self.assertEqual(persister.machine_state(failed), "candidate")
+
+    def test_external_edit_during_persistence_remains_recovery_armed(self) -> None:
+        persister = monitor.MachineConfigPersister(
+            lambda journal, content: None
+        )
+        authority, runner, journal = self.begin_success(persister=persister)
+        content, planned = persister.prepare(journal)
+        committing = authority._transition(
+            journal,
+            "committing",
+            planned_machine_sha256=planned,
+            persistence_phase="candidate-planned",
+            deadline_monotonic=None,
+        )
+        persister.persist(committing, content)
+        self.machine.write_bytes(self.machine.read_bytes() + b"-- external\n")
+        failed = authority.recover()
+        self.assertEqual(failed.state, "rollback-failed")
+        self.assertTrue(failed.recovery_required)
+        self.assertIn("external edit", failed.failure)
+
+    def test_commit_recovery_rolls_back_every_nonterminal_candidate_milestone(self) -> None:
+        _, _, active = self.begin_success()
+        phases = (
+            ("candidate-planned", False),
+            ("candidate-installed", False),
+            ("candidate-reloaded", False),
+            ("candidate-verified", True),
+        )
+        for phase, verified in phases:
+            with self.subTest(phase=phase):
+                journal = replace(
+                    active,
+                    state="committing",
+                    sequence=active.sequence + 1,
+                    deadline_monotonic=None,
+                    planned_machine_sha256="a" * 64,
+                    persistence_phase=phase,
+                    persistence_verified=verified,
+                    recovery_required=True,
+                )
+                self.store.write(journal)
+                coordinator = FakeReloadCoordinator()
+                runner = QueueRunner([[candidate_output()], OK, [output()]])
+                authority = monitor.TransactionAuthority(
+                    self.store,
+                    self.provider,
+                    self.paths,
+                    runner=runner,
+                    clock=self.clock,
+                    persister=StubCandidatePersister(),
+                    reload_coordinator=coordinator,
+                )
+                reverted = authority.recover()
+                self.assertEqual(reverted.state, "reverted")
+                self.assertEqual(reverted.persistence_phase, "original-reloaded")
+                self.assertFalse(reverted.recovery_required)
+                self.assertEqual(coordinator.reconciliations[-1], "original-restored")
+                call_count = len(runner.calls)
+                self.assertEqual(authority.recover(), reverted)
+                self.assertEqual(len(runner.calls), call_count)
+
+    def test_recovery_is_idempotent_across_restore_crash_milestones(self) -> None:
+        _, _, active = self.begin_success()
+        cases = (
+            ("candidate-planned", "original"),
+            ("restore-pending", "candidate"),
+            ("original-restored", "original"),
+            ("original-reloaded", "original"),
+        )
+        for phase, file_state in cases:
+            with self.subTest(phase=phase, file_state=file_state):
+                journal = replace(
+                    active,
+                    state="reverting",
+                    sequence=active.sequence + 1,
+                    deadline_monotonic=None,
+                    planned_machine_sha256="b" * 64,
+                    persistence_phase=phase,
+                    persistence_verified=False,
+                    recovery_required=True,
+                )
+                self.store.write(journal)
+                coordinator = FakeReloadCoordinator()
+                runner = QueueRunner([[candidate_output()], OK, [output()]])
+                authority = monitor.TransactionAuthority(
+                    self.store,
+                    self.provider,
+                    self.paths,
+                    runner=runner,
+                    clock=self.clock,
+                    persister=StubCandidatePersister(file_state),
+                    reload_coordinator=coordinator,
+                )
+                reverted = authority.recover()
+                self.assertEqual(reverted.state, "reverted")
+                self.assertFalse(reverted.recovery_required)
+                call_count = len(runner.calls)
+                self.assertEqual(authority.recover(), reverted)
+                self.assertEqual(len(runner.calls), call_count)
 
     def test_production_confirm_boundary_reverts_instead_of_persisting(self) -> None:
         authority, runner, journal = self.begin_success()
@@ -923,17 +1428,17 @@ class MonitorBackendTests(unittest.TestCase):
         reverted = authority.confirm(journal.transaction_id)
         self.assertEqual(reverted.state, "reverted")
         self.assertEqual(self.machine.read_bytes(), before)
-        self.assertIn("deferred to Phase B2", reverted.failure)
+        self.assertIn("awaits controlled live acceptance", reverted.failure)
 
     def test_persistence_detects_external_machine_hash_race(self) -> None:
-        persister = monitor.MachineConfigPersister(lambda content: None)
+        persister = monitor.MachineConfigPersister(lambda journal, content: None)
         _, _, journal = self.begin_success(persister=persister)
         self.machine.write_bytes(self.machine.read_bytes() + b"-- external edit\n")
         with self.assertRaisesRegex(monitor.PersistenceError, "changed"):
             persister.prepare(journal)
 
     def test_persistence_detects_external_override_hash_race(self) -> None:
-        persister = monitor.MachineConfigPersister(lambda content: None)
+        persister = monitor.MachineConfigPersister(lambda journal, content: None)
         _, _, journal = self.begin_success(persister=persister)
         self.override.write_bytes(b"-- externally changed override\n")
         with self.assertRaisesRegex(monitor.PersistenceError, "override changed"):
@@ -944,7 +1449,7 @@ class MonitorBackendTests(unittest.TestCase):
         snapshot = monitor.snapshot_file(self.machine)
         topology = monitor.parse_monitor_payload([output()])
         journal = monitor.TransactionJournal(
-            1,
+            monitor.SCHEMA_VERSION,
             "fixture",
             "temporary-active",
             1,
@@ -957,6 +1462,7 @@ class MonitorBackendTests(unittest.TestCase):
             False,
             True,
             None,
+            "original",
             self.instance,
             topology.target("DP-1").identity,
             self.candidate,
@@ -964,7 +1470,7 @@ class MonitorBackendTests(unittest.TestCase):
             snapshot,
             monitor.snapshot_file(self.override),
         )
-        persister = monitor.MachineConfigPersister(lambda content: None)
+        persister = monitor.MachineConfigPersister(lambda journal, content: None)
         changed, _ = persister.prepare(journal)
         self.assertIn(b'output = ""', changed)
         self.assertIn(b'mode = "preferred"', changed)

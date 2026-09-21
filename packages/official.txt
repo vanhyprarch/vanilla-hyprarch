@@ -1,5 +1,6 @@
 bluez
 bluez-utils
+bubblewrap
 cups
 cups-filters
 cups-pk-helper

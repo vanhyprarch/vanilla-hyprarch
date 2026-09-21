@@ -81,6 +81,7 @@ and unresolved choices are maintained in the canonical
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Appearance and wallpaper | `hyprpaper`, `file` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
 | System keyboard projection | `python`, `python-gobject`, `libxkbcommon`, `xkeyboard-config`, `systemd`, `hyprland` | `systemd-localed` owns the graphical XKB tuple; the static user service projects it into Hyprland without owning active groups or per-device rules. |
+| Monitor Safe Apply | `python`, `hyprland`, `bubblewrap`, `systemd` | The static transaction authority owns temporary mode/scale apply and rollback. Bubblewrap isolates prospective full-config verification from the live session; durable confirmation remains disabled pending controlled acceptance. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream

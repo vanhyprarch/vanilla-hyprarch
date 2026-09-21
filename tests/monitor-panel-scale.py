@@ -255,7 +255,7 @@ class MonitorPanelScaleWriterTests(unittest.TestCase):
         self.assertIn("subscribe", decisions)
         self.assertIn("localectl --no-convert", decisions)
         self.assertIn("Device-specific keyboard rules remain", decisions)
-        self.assertIn("Phase B1 backend foundation implemented", decisions)
+        self.assertIn("persistence/reconciliation foundation implemented", decisions)
 
         self.assertIn("10-second confirmation", decisions)
         self.assertIn("never persisted", decisions)

@@ -3,9 +3,9 @@
 
 """Safety-critical backend for temporary Hyprland monitor transactions.
 
-Phase B1 deliberately leaves production persistence disabled.  The transaction,
-readback, rollback, journal, and persistence primitives are independently
-testable so the UI can remain a client in a later phase.
+Production persistence remains deliberately disabled. The transaction,
+readback, rollback, journal, prospective verifier, and persistence/reconciliation
+primitives are independently testable so the UI can remain a later client.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from typing import Callable, Mapping, Protocol, Sequence
 import uuid
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PROTOCOL_VERSION = 1
 HYPRCTL = "/usr/bin/hyprctl"
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -42,6 +42,8 @@ APPLY_SETTLE_SECONDS = 2.0
 READBACK_INTERVAL_SECONDS = 0.05
 COMMAND_TIMEOUT_SECONDS = 5.0
 COMMAND_TIMEOUT_RETURN_CODE = 124
+VERIFY_CONFIG_TIMEOUT_SECONDS = 5.0
+RELOAD_EVENT_WAIT_SECONDS = 1.5
 REFRESH_TOLERANCE_MILLIHZ = 5
 SCALE_TOLERANCE = Decimal("0.000001")
 MIN_SCALE = Decimal("0.5")
@@ -54,6 +56,16 @@ MODE_RE = re.compile(
     r"(?P<refresh>[0-9]+(?:\.[0-9]+)?)Hz$"
 )
 TERMINAL_SAFE_STATES = {"committed", "reverted", "instance-vanished"}
+PERSISTENCE_PHASES = {
+    "original",
+    "candidate-planned",
+    "candidate-installed",
+    "candidate-reloaded",
+    "candidate-verified",
+    "restore-pending",
+    "original-restored",
+    "original-reloaded",
+}
 KNOWN_STATES = {
     "preparing",
     "applying",
@@ -151,7 +163,7 @@ class SystemClock:
         time.sleep(seconds)
 
 
-def run_command(argv: Sequence[str]) -> CommandResult:
+def run_bounded_command(argv: Sequence[str], timeout_seconds: float) -> CommandResult:
     try:
         completed = subprocess.run(
             list(argv),
@@ -161,17 +173,25 @@ def run_command(argv: Sequence[str]) -> CommandResult:
             text=True,
             check=False,
             shell=False,
-            timeout=COMMAND_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
         return CommandResult(
             COMMAND_TIMEOUT_RETURN_CODE,
             "",
-            f"command timed out after {COMMAND_TIMEOUT_SECONDS:g} seconds",
+            f"command timed out after {timeout_seconds:g} seconds",
         )
     except OSError as error:
         return CommandResult(127, "", str(error))
     return CommandResult(completed.returncode, completed.stdout, completed.stderr)
+
+
+def run_command(argv: Sequence[str]) -> CommandResult:
+    return run_bounded_command(argv, COMMAND_TIMEOUT_SECONDS)
+
+
+def run_verify_command(argv: Sequence[str]) -> CommandResult:
+    return run_bounded_command(argv, VERIFY_CONFIG_TIMEOUT_SECONDS)
 
 
 def _decimal(value: object, label: str) -> Decimal:
@@ -609,6 +629,14 @@ def monitors_argv(signature: str) -> list[str]:
     return [HYPRCTL, "--instance", signature, "-j", "monitors", "all"]
 
 
+def reload_argv(signature: str) -> list[str]:
+    return [HYPRCTL, "--instance", signature, "reload"]
+
+
+def configerrors_argv(signature: str) -> list[str]:
+    return [HYPRCTL, "--instance", signature, "configerrors"]
+
+
 class HyprlandClient:
     def __init__(
         self,
@@ -1027,7 +1055,201 @@ def atomic_replace(
 
 
 class ProspectiveVerifier(Protocol):
-    def __call__(self, machine_content: bytes) -> None: ...
+    def __call__(self, journal: "TransactionJournal", machine_content: bytes) -> None: ...
+
+
+def _copy_regular_tree(source: Path, destination: Path) -> None:
+    """Copy a managed config subtree without following special files or links."""
+    if source.is_symlink() or not source.is_dir():
+        raise PersistenceError(f"prospective configuration source is unsafe: {source}")
+    destination.mkdir(parents=True, mode=0o700)
+    for entry in source.iterdir():
+        target = destination / entry.name
+        if entry.is_symlink():
+            raise PersistenceError(f"prospective configuration source is a symlink: {entry}")
+        if entry.is_dir():
+            _copy_regular_tree(entry, target)
+        elif entry.is_file():
+            target.write_bytes(entry.read_bytes())
+            target.chmod(0o600)
+        else:
+            raise PersistenceError(f"prospective configuration source is not regular: {entry}")
+
+
+class SandboxedHyprlandVerifier:
+    """Verify the complete staged Lua import graph without live-session access."""
+
+    def __init__(
+        self,
+        config_home: Path,
+        runner: Runner = run_verify_command,
+        *,
+        hyprland: str = "/usr/bin/Hyprland",
+        bubblewrap: str = "/usr/bin/bwrap",
+    ) -> None:
+        self.config_home = config_home
+        self.runner = runner
+        self.hyprland = hyprland
+        self.bubblewrap = bubblewrap
+
+    def _stage(self, root: Path, journal: "TransactionJournal", machine_content: bytes) -> Path:
+        staged = root / "config"
+        hypr = staged / "hypr"
+        managed = hypr / "vanhyprarch"
+        machine = staged / "vanhyprarch/machine"
+        override = staged / "vanhyprarch/overrides"
+        hypr.mkdir(parents=True, mode=0o700)
+        machine.mkdir(parents=True, mode=0o700)
+        override.mkdir(parents=True, mode=0o700)
+        loader = self.config_home / "hypr/hyprland.lua"
+        if loader.is_symlink() or not loader.is_file():
+            raise PersistenceError("managed Hyprland entrypoint is missing or unsafe")
+        (hypr / "hyprland.lua").write_bytes(loader.read_bytes())
+        _copy_regular_tree(self.config_home / "hypr/vanhyprarch", managed)
+        (machine / "hyprland.lua").write_bytes(machine_content)
+        (override / "hyprland.lua").write_bytes(journal.override_file.content)
+        for path in (
+            hypr / "hyprland.lua",
+            machine / "hyprland.lua",
+            override / "hyprland.lua",
+        ):
+            path.chmod(0o600)
+        return staged
+
+    def __call__(self, journal: "TransactionJournal", machine_content: bytes) -> None:
+        with tempfile.TemporaryDirectory(prefix="vanhyprarch-monitor-verify-") as temporary:
+            staged = self._stage(Path(temporary), journal, machine_content)
+            argv = [
+                self.bubblewrap,
+                "--unshare-all",
+                "--die-with-parent",
+                "--new-session",
+                "--ro-bind", "/usr", "/usr",
+                "--ro-bind", "/etc", "/etc",
+                "--symlink", "usr/bin", "/bin",
+                "--symlink", "usr/bin", "/sbin",
+                "--symlink", "usr/lib", "/lib",
+                "--symlink", "usr/lib", "/lib64",
+                "--proc", "/proc",
+                "--dev", "/dev",
+                "--tmpfs", "/tmp",
+                "--dir", "/run",
+                "--dir", "/runtime",
+                "--dir", "/home",
+                "--dir", "/home/vanhyprarch-verify",
+                "--ro-bind", os.fspath(staged), "/config",
+                "--dir", "/data",
+                "--clearenv",
+                "--setenv", "HOME", "/home/vanhyprarch-verify",
+                "--setenv", "XDG_CONFIG_HOME", "/config",
+                "--setenv", "XDG_DATA_HOME", "/data",
+                "--setenv", "XDG_RUNTIME_DIR", "/runtime",
+                "--setenv", "PATH", "/usr/bin",
+                "--setenv", "LANG", "C.UTF-8",
+                "--",
+                self.hyprland,
+                "--verify-config",
+                "--config", "/config/hypr/hyprland.lua",
+            ]
+            result = self.runner(argv)
+        if result.returncode == COMMAND_TIMEOUT_RETURN_CODE:
+            raise PersistenceError(
+                f"prospective Hyprland verification timed out after {VERIFY_CONFIG_TIMEOUT_SECONDS:g} seconds"
+            )
+        if result.returncode != 0:
+            diagnostic = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
+            raise PersistenceError(f"prospective Hyprland verification failed: {diagnostic}")
+
+
+class ReloadWatch(Protocol):
+    def wait(self, timeout: float) -> bool: ...
+    def close(self) -> None: ...
+
+
+class ReloadCoordinator(Protocol):
+    def arm(self, journal: "TransactionJournal") -> ReloadWatch: ...
+    def reconcile(
+        self, journal: "TransactionJournal", client: HyprlandClient,
+        watch: ReloadWatch,
+    ) -> None: ...
+
+
+class SocketReloadWatch:
+    def __init__(self, path: Path) -> None:
+        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            self.socket.connect(os.fspath(path))
+        except BaseException:
+            self.socket.close()
+            raise
+        self.buffer = b""
+
+    def wait(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while True:
+            while b"\n" in self.buffer:
+                line, self.buffer = self.buffer.split(b"\n", 1)
+                if line == b"configreloaded>>":
+                    return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            self.socket.settimeout(remaining)
+            try:
+                chunk = self.socket.recv(65536)
+            except TimeoutError:
+                return False
+            if not chunk:
+                raise PersistenceError("Hyprland event socket closed during reconciliation")
+            self.buffer += chunk
+
+    def close(self) -> None:
+        self.socket.close()
+
+
+class HyprlandReloadCoordinator:
+    def __init__(self, runtime_root: Path, runner: Runner = run_command) -> None:
+        self.runtime_root = runtime_root
+        self.runner = runner
+
+    def arm(self, journal: "TransactionJournal") -> ReloadWatch:
+        path = self.runtime_root / "hypr" / journal.instance.signature / ".socket2.sock"
+        try:
+            return SocketReloadWatch(path)
+        except OSError as error:
+            raise PersistenceError(f"cannot arm Hyprland reload observation: {error}") from error
+
+    def reconcile(
+        self, journal: "TransactionJournal", client: HyprlandClient,
+        watch: ReloadWatch,
+    ) -> None:
+        client.check_instance()
+        observed = watch.wait(RELOAD_EVENT_WAIT_SECONDS)
+        if not observed:
+            result = self.runner(reload_argv(journal.instance.signature))
+            if result.returncode != 0:
+                diagnostic = result.stderr.strip() or result.stdout.strip() or "no diagnostic"
+                raise PersistenceError(f"ordinary Hyprland reload failed: {diagnostic}")
+            client.check_instance()
+            if not watch.wait(RELOAD_EVENT_WAIT_SECONDS):
+                raise PersistenceError("Hyprland configreloaded event was not observed")
+        client.check_instance()
+        result = self.runner(configerrors_argv(journal.instance.signature))
+        if result.returncode != 0 or result.stdout.strip():
+            diagnostic = result.stdout.strip() or result.stderr.strip() or "no diagnostic"
+            raise PersistenceError(f"Hyprland reported configuration errors: {diagnostic}")
+        client.check_instance()
+
+
+class DisabledReloadCoordinator:
+    def arm(self, journal: "TransactionJournal") -> ReloadWatch:
+        raise PersistenceDeferred("production monitor persistence reconciliation is disabled")
+
+    def reconcile(
+        self, journal: "TransactionJournal", client: HyprlandClient,
+        watch: ReloadWatch,
+    ) -> None:
+        raise PersistenceDeferred("production monitor persistence reconciliation is disabled")
 
 
 class Persister(Protocol):
@@ -1035,26 +1257,27 @@ class Persister(Protocol):
 
     def persist(self, journal: "TransactionJournal", content: bytes) -> None: ...
 
-    def recover_original(self, journal: "TransactionJournal") -> None: ...
+    def recover_original(self, journal: "TransactionJournal") -> bool: ...
+
+    def machine_state(self, journal: "TransactionJournal") -> str: ...
 
 
 class DisabledProductionPersister:
     def prepare(self, journal: "TransactionJournal") -> tuple[bytes, str]:
-        raise PersistenceDeferred("production monitor persistence is deferred to Phase B2")
+        raise PersistenceDeferred("production monitor persistence awaits controlled live acceptance")
 
     def persist(self, journal: "TransactionJournal", content: bytes) -> None:
-        raise PersistenceDeferred("production monitor persistence is deferred to Phase B2")
+        raise PersistenceDeferred("production monitor persistence awaits controlled live acceptance")
 
-    def recover_original(self, journal: "TransactionJournal") -> None:
-        return
+    def recover_original(self, journal: "TransactionJournal") -> bool:
+        return False
+
+    def machine_state(self, journal: "TransactionJournal") -> str:
+        return "original"
 
 
 class MachineConfigPersister:
-    """Fixture-testable byte-preserving persistence primitive.
-
-    A later phase will supply a verifier that stages the complete XDG config
-    tree and will add reload/reconciliation before production enables this.
-    """
+    """Byte-preserving, race-detecting machine-profile persistence primitive."""
 
     def __init__(self, verifier: ProspectiveVerifier) -> None:
         self.verifier = verifier
@@ -1066,7 +1289,7 @@ class MachineConfigPersister:
             raise PersistenceError("user override changed during transaction")
         content = rewrite_existing_profile(journal.machine_file.content, journal.candidate)
         try:
-            self.verifier(content)
+            self.verifier(journal, content)
         except MonitorError:
             raise
         except Exception as error:
@@ -1090,16 +1313,25 @@ class MachineConfigPersister:
         if current.sha256 != expected or current.mode != journal.machine_file.mode:
             raise PersistenceError("persisted machine configuration verification failed")
 
-    def recover_original(self, journal: "TransactionJournal") -> None:
+    def machine_state(self, journal: "TransactionJournal") -> str:
         path = Path(journal.machine_file.path)
         current = snapshot_file(path)
         if current.sha256 == journal.machine_file.sha256:
-            return
+            return "original"
         if (
-            journal.planned_machine_sha256 is None
-            or current.sha256 != journal.planned_machine_sha256
+            journal.planned_machine_sha256 is not None
+            and current.sha256 == journal.planned_machine_sha256
         ):
+            return "candidate"
+        return "external"
+
+    def recover_original(self, journal: "TransactionJournal") -> bool:
+        state = self.machine_state(journal)
+        if state == "original":
+            return False
+        if state == "external":
             raise PersistenceError("machine file has an unrelated external edit")
+        path = Path(journal.machine_file.path)
         atomic_replace(
             path,
             journal.machine_file.content,
@@ -1107,6 +1339,9 @@ class MachineConfigPersister:
             uid=journal.machine_file.uid,
             gid=journal.machine_file.gid,
         )
+        if snapshot_file(path).sha256 != journal.machine_file.sha256:
+            raise PersistenceError("original machine configuration restoration failed")
+        return True
 
 
 @dataclass(frozen=True)
@@ -1124,6 +1359,7 @@ class TransactionJournal:
     persistence_verified: bool
     recovery_required: bool
     planned_machine_sha256: str | None
+    persistence_phase: str
     instance: InstanceIdentity
     target_identity: PhysicalIdentity
     candidate: Candidate
@@ -1146,6 +1382,7 @@ JOURNAL_KEYS = {
     "persistence_verified",
     "recovery_required",
     "planned_machine_sha256",
+    "persistence_phase",
     "instance",
     "target_identity",
     "candidate",
@@ -1227,9 +1464,11 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("unknown journal schema version")
     if raw["state"] not in KNOWN_STATES:
         raise JournalError("unknown journal state")
-    for key in ("transaction_id", "state"):
+    for key in ("transaction_id", "state", "persistence_phase"):
         if not isinstance(raw[key], str):
             raise JournalError(f"journal.{key} has the wrong type")
+    if raw["persistence_phase"] not in PERSISTENCE_PHASES:
+        raise JournalError("unknown journal persistence phase")
     try:
         if str(uuid.UUID(raw["transaction_id"])) != raw["transaction_id"]:
             raise ValueError
@@ -1274,6 +1513,7 @@ def journal_from_dict(value: object) -> TransactionJournal:
         None if raw["deadline_monotonic"] is None else float(raw["deadline_monotonic"]),
         raw["failure"], raw["mutation_attempted"], raw["runtime_verified"],
         raw["persistence_verified"], raw["recovery_required"], raw["planned_machine_sha256"],
+        raw["persistence_phase"],
         InstanceIdentity(**instance_raw),
         _identity_from_dict(raw["target_identity"], "journal.target_identity"),
         Candidate(candidate_raw["connector"], _mode_from_dict(candidate_raw["mode"], "journal.candidate.mode"), candidate_raw["scale_millionths"]),
@@ -1338,18 +1578,52 @@ def journal_from_dict(value: object) -> TransactionJournal:
         not journal.runtime_verified
         or not journal.persistence_verified
         or journal.recovery_required
+        or journal.persistence_phase != "candidate-verified"
     ):
         raise JournalError("committed journal invariants are invalid")
     if journal.state == "reverted" and (
-        not journal.runtime_verified or journal.recovery_required
+        not journal.runtime_verified
+        or journal.recovery_required
+        or journal.persistence_phase not in {
+            "original", "original-restored", "original-reloaded"
+        }
     ):
         raise JournalError("reverted journal invariants are invalid")
-    if journal.state == "instance-vanished" and journal.recovery_required:
-        raise JournalError("instance-vanished journal remains recovery-armed")
+    if journal.state == "instance-vanished" and (
+        journal.recovery_required
+        or journal.persistence_phase not in {
+            "original", "original-restored", "original-reloaded"
+        }
+    ):
+        raise JournalError("instance-vanished journal invariants are invalid")
     if journal.state in {
         "preparing", "applying", "committing", "reverting", "rollback-failed"
     } and not journal.recovery_required:
         raise JournalError(f"{journal.state} journal is not recovery-armed")
+    if journal.planned_machine_sha256 is None and journal.persistence_phase != "original":
+        raise JournalError("journal persistence phase has no planned candidate")
+    if journal.planned_machine_sha256 is not None and re.fullmatch(
+        r"[0-9a-f]{64}", journal.planned_machine_sha256
+    ) is None:
+        raise JournalError("journal planned machine hash is invalid")
+    if journal.persistence_verified and journal.persistence_phase != "candidate-verified":
+        raise JournalError("journal persistence verification phase is invalid")
+    if journal.state == "committing" and (
+        journal.planned_machine_sha256 is None
+        or journal.persistence_phase
+        not in {
+            "candidate-planned",
+            "candidate-installed",
+            "candidate-reloaded",
+            "candidate-verified",
+        }
+    ):
+        raise JournalError("committing journal persistence phase is invalid")
+    if journal.state in {"preparing", "applying", "temporary-active"} and (
+        journal.planned_machine_sha256 is not None
+        or journal.persistence_phase != "original"
+    ):
+        raise JournalError("pre-commit journal persistence phase is invalid")
     return journal
 
 
@@ -1475,6 +1749,7 @@ class TransactionAuthority:
         runner: Runner = run_command,
         clock: Clock | None = None,
         persister: Persister | None = None,
+        reload_coordinator: ReloadCoordinator | None = None,
         confirmation_seconds: float = DEFAULT_CONFIRM_SECONDS,
         bound_signature: str | None = None,
     ) -> None:
@@ -1484,6 +1759,7 @@ class TransactionAuthority:
         self.runner = runner
         self.clock = clock or SystemClock()
         self.persister = persister or DisabledProductionPersister()
+        self.reload_coordinator = reload_coordinator or DisabledReloadCoordinator()
         self.confirmation_seconds = confirmation_seconds
         self.bound_signature = bound_signature
 
@@ -1507,6 +1783,17 @@ class TransactionAuthority:
             replace(
                 journal,
                 state=state,
+                sequence=journal.sequence + 1,
+                updated_monotonic=self.clock.monotonic(),
+                **changes,
+            )
+        )
+
+    def _checkpoint(self, journal: TransactionJournal, **changes: object) -> TransactionJournal:
+        """Durably publish a milestone without changing the top-level state."""
+        return self._write(
+            replace(
+                journal,
                 sequence=journal.sequence + 1,
                 updated_monotonic=self.clock.monotonic(),
                 **changes,
@@ -1544,6 +1831,7 @@ class TransactionAuthority:
                 False,
                 True,
                 None,
+                "original",
                 instance,
                 target.identity,
                 candidate,
@@ -1605,16 +1893,73 @@ class TransactionAuthority:
                 failure=reason,
                 recovery_required=True,
             )
-        if journal.planned_machine_sha256 is not None and not journal.persistence_verified:
+        if journal.planned_machine_sha256 is not None:
+            watch: ReloadWatch | None = None
             try:
-                self.persister.recover_original(journal)
+                machine_state = self.persister.machine_state(journal)
+                if machine_state == "external":
+                    raise PersistenceError("machine file has an unrelated external edit")
+                if machine_state == "candidate":
+                    journal = self._checkpoint(journal, persistence_phase="restore-pending")
+                    watch = self.reload_coordinator.arm(journal)
+                    restored = self.persister.recover_original(journal)
+                    if not restored:
+                        raise PersistenceError("candidate machine file was not restored")
+                    journal = self._checkpoint(
+                        journal,
+                        persistence_phase="original-restored",
+                        persistence_verified=False,
+                    )
+                    client = self._client(journal)
+                    self.reload_coordinator.reconcile(journal, client, watch)
+                    journal = self._checkpoint(
+                        journal, persistence_phase="original-reloaded"
+                    )
+                else:
+                    journal = self._checkpoint(
+                        journal,
+                        persistence_phase="original",
+                        persistence_verified=False,
+                    )
+            except InstanceReplaced as error:
+                try:
+                    restored_state = self.persister.machine_state(journal)
+                except MonitorError as state_error:
+                    return self._transition(
+                        journal,
+                        "rollback-failed",
+                        failure=(
+                            "persistence recovery lost bound instance and "
+                            f"cannot verify the durable file: {state_error}"
+                        ),
+                        persistence_verified=False,
+                        recovery_required=True,
+                    )
+                if restored_state == "original":
+                    return self._transition(
+                        journal,
+                        "instance-vanished",
+                        failure=str(error),
+                        recovery_required=False,
+                    )
+                return self._transition(
+                    journal,
+                    "rollback-failed",
+                    failure=f"persistence recovery lost bound instance: {error}",
+                    persistence_verified=False,
+                    recovery_required=True,
+                )
             except MonitorError as error:
                 return self._transition(
                     journal,
                     "rollback-failed",
                     failure=f"persistence recovery failed: {error}",
+                    persistence_verified=False,
                     recovery_required=True,
                 )
+            finally:
+                if watch is not None:
+                    watch.close()
         if not journal.mutation_attempted:
             return self._transition(
                 journal, "reverted", runtime_verified=True, recovery_required=False
@@ -1656,34 +2001,55 @@ class TransactionAuthority:
         if journal.state != "temporary-active":
             raise ValidationError(f"transaction cannot confirm from {journal.state}")
         client = self._client(journal)
+        watch: ReloadWatch | None = None
         try:
-            current = client.read_topology()
-            verify_candidate_readback(
-                journal.snapshot, journal.candidate, current, journal.target_identity
+            client.read_until(
+                lambda current: verify_candidate_readback(
+                    journal.snapshot,
+                    journal.candidate,
+                    current,
+                    journal.target_identity,
+                )
             )
             content, planned_hash = self.persister.prepare(journal)
             journal = self._transition(
                 journal,
                 "committing",
                 planned_machine_sha256=planned_hash,
+                persistence_phase="candidate-planned",
                 deadline_monotonic=None,
             )
+            watch = self.reload_coordinator.arm(journal)
             self.persister.persist(journal, content)
-            current = client.read_topology()
-            verify_candidate_readback(
-                journal.snapshot, journal.candidate, current, journal.target_identity
+            journal = self._checkpoint(
+                journal, persistence_phase="candidate-installed"
             )
-        except InstanceReplaced as error:
-            return self._transition(
-                journal, "instance-vanished", failure=str(error), recovery_required=False
+            self.reload_coordinator.reconcile(journal, client, watch)
+            journal = self._checkpoint(
+                journal, persistence_phase="candidate-reloaded"
+            )
+            client.read_until(
+                lambda current: verify_candidate_readback(
+                    journal.snapshot,
+                    journal.candidate,
+                    current,
+                    journal.target_identity,
+                )
+            )
+            journal = self._checkpoint(
+                journal,
+                persistence_phase="candidate-verified",
+                persistence_verified=True,
+                runtime_verified=True,
             )
         except MonitorError as error:
             if journal.state == "temporary-active":
                 journal = replace(journal, failure=f"confirmation failed: {error}")
                 self.store.write(journal)
             return self.rollback(journal.transaction_id, reason=f"confirmation failed: {error}")
-        journal = replace(journal, persistence_verified=True)
-        self.store.write(journal)
+        finally:
+            if watch is not None:
+                watch.close()
         return self._transition(
             journal,
             "committed",
@@ -1696,10 +2062,6 @@ class TransactionAuthority:
         journal = self.store.read()
         if journal is None or journal.state in TERMINAL_SAFE_STATES:
             return journal
-        if journal.state == "committing" and journal.persistence_verified:
-            return self._transition(
-                journal, "committed", recovery_required=False, failure=None
-            )
         return self.rollback(journal.transaction_id, reason="crash recovery")
 
 
@@ -1786,6 +2148,8 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
 def serve() -> int:
     authority = build_production_authority()
     store = authority.store
+    server: socket.socket | None = None
+    selector: selectors.BaseSelector | None = None
     try:
         stale = store.read()
         if stale is not None and stale.state not in TERMINAL_SAFE_STATES:
@@ -1854,6 +2218,10 @@ def serve() -> int:
                     ):
                         return 1
     finally:
+        if selector is not None:
+            selector.close()
+        if server is not None:
+            server.close()
         try:
             store.socket_path.unlink()
         except FileNotFoundError:

@@ -912,7 +912,7 @@ manual/on-demand screensaver shortcut, no Super+K Screensaver row, and no
 unbounded manual start operation; adding one is rejected unless a future
 explicit product decision reopens it.
 
-## Monitor Safe Apply backend — PHASE B1 REPOSITORY-ONLY FOUNDATION
+## Monitor Safe Apply backend — RUNTIME VALIDATED, PERSISTENCE FOUNDATION
 
 The project now contains the independently supervised, fixture-tested
 `vanhyprarch-monitor` transaction authority and its static user service. The
@@ -923,10 +923,21 @@ Normal rollback restores only the connector-specific v1-owned runtime fields
 through `hl.monitor()` and verifies fresh `monitors all` readback; a full config
 reload is not the normal rollback path.
 
+The runtime path is deployed and has passed no-op, timeout, explicit-revert,
+crash-recovery, and deliberately different scale validation. Scale 1.50 was
+authoritatively observed and the automatic deadline restored 1.25, with visual
+confirmation and no persistent change.
+
+Phase B3A adds repository-only prospective full-config verification, durable
+persistence milestones, watched reload plus bounded ordinary-reload fallback,
+post-reload `configerrors` and monitor readback, and transaction-owned durable
+rollback. Verification runs the installed Hyprland 0.56.2 in an isolated
+Bubblewrap tree because its Lua verifier executes configuration callbacks.
+
 This is not a completed user feature. The backend is not connected to the
-Monitor panel, production persistence is deliberately disabled, no live
-deployment or monitor mutation has occurred, and brightness remains outside
-Safe Apply. Only mode (resolution plus refresh) and per-output scale are v1
+Monitor panel, production persistence is deliberately disabled and has not
+been live-tested, and brightness remains outside Safe Apply. Only mode
+(resolution plus refresh) and per-output scale are v1
 editable fields. The backend requires one existing explicit machine-owned
 connector profile and never edits the portable catch-all. Fresh-install safe
 profile materialization remains required before Alpha release. See
@@ -941,8 +952,8 @@ profile materialization remains required before Alpha release. See
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Connect the Monitor Safe Apply backend to the Monitor UI, complete controlled
-  production persistence and deployment, and perform guarded live validation.
+- Complete controlled live persistence acceptance, then connect the Monitor
+  Safe Apply backend to the Monitor UI and confirmation overlay.
   Phase B1 intentionally limits Safe Apply to resolution/refresh and scale;
   color and brightness remain later product work. Text Size remains global.
 
