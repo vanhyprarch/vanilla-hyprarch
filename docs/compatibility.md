@@ -116,11 +116,22 @@ records that description-addressed runtime rules can report success without
 applying on this version.
 
 If no exact `rule.m_name == output` rule exists, 0.56.2 begins from monitor-rule
-defaults before applying supplied fields. B1 consequently rejects missing,
-catch-all-only, description-addressed, duplicate, or override-superseded
-machine profiles before it writes a journal state that permits `eval`. Sending
-every protected field is intentionally not used as a substitute for this
-invariant.
+defaults before applying supplied fields; it does not copy the matching
+fallback rule into a newly named runtime rule. Runtime mutation consequently
+rejects missing, fallback-only, description-addressed, duplicate, or
+override-superseded machine profiles before it writes a journal state that
+permits `eval`. Sending every protected field is intentionally not used as a
+substitute for this invariant.
+
+The optional materialization path establishes the exact rule without a runtime
+overlay. For one explicitly selected output it clones a supported fallback Lua
+block and changes only `output = ""` to the connector, then reloads and requires
+complete topology equality. The public fallback's `preferred` Mode, automatic
+position, automatic Scale, and omitted bitdepth/color intent therefore survive
+unchanged. Once that exact rule is loaded, the same 0.56.2 copy-and-overlay path
+safely preserves its other fields for later Mode-only, Scale-only, or
+bitdepth-only runtime calls. Retest both the no-copy fallback behavior and the
+exact-rule overlay behavior after a Hyprland Lua monitor-rule change.
 
 The eval command's `ok` response proves parser/command acceptance only. Mode
 selection may choose a nearby/fallback mode, scale is normalized by compositor
@@ -185,6 +196,11 @@ completed single-monitor live acceptance for Mode and bitdepth timeout,
 Revert/Keep persistence, immediate Scale persistence, dismissal semantics, and
 Quickshell reload during an armed transaction. The UI uses normalized read-only
 backend inspection instead of interpreting this version-specific JSON in QML.
+An undeployed schema-v4/protocol-v3 candidate adds the persistence-only
+materialization transaction and supports later replacement of `preferred`,
+replacement of Scale `auto`, and insertion of an omitted bitdepth field. It
+must pass controlled deployment and fresh-install acceptance before this
+candidate is considered live behavior.
 Physical multi-monitor acceptance remains deferred; deterministic multi-output
 coverage is not presented as a real two-output hardware result.
 After every Hyprland upgrade, retest Lua monitor eval,

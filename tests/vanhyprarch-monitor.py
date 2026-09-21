@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from contextlib import redirect_stdout
+import hashlib
 import importlib.machinery
 import importlib.util
 import io
@@ -18,6 +19,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from unittest import mock
 
 
@@ -201,6 +203,20 @@ hl.device({{
     sensitivity = -0.25,
 }})
 '''.encode()
+
+
+def fallback_configuration() -> bytes:
+    return b'''-- portable fallback stays byte-for-byte unchanged
+hl.monitor({
+    -- Preserve Hyprland's native automatic intent.
+    output = "",
+    mode = "preferred",
+    position = "auto",
+    scale = "auto",
+})
+
+-- unrelated machine content
+'''
 
 
 class FakeClock:
@@ -489,12 +505,14 @@ class MonitorBackendTests(unittest.TestCase):
             b"-- user override\n",
             self.instance.signature,
         )
-        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["version"], 2)
         self.assertEqual(payload["instance_signature"], self.instance.signature)
         inspected = payload["outputs"][0]
         self.assertEqual(inspected["connector"], "DP-1")
         self.assertEqual(inspected["identity"]["serial"], "301MALFM3V64")
         self.assertTrue(inspected["editable"])
+        self.assertEqual(inspected["profile_state"], "explicit-editable")
+        self.assertFalse(inspected["materializable"])
         self.assertEqual(
             inspected["current_mode"],
             {"width": 3840, "height": 2160, "refresh_millihz": 60000},
@@ -523,8 +541,12 @@ class MonitorBackendTests(unittest.TestCase):
         )
         states = {item["connector"]: item for item in payload["outputs"]}
         self.assertFalse(states["DP-1"]["editable"])
-        self.assertIn("exactly one", states["DP-1"]["unavailable_reason"])
+        self.assertEqual(states["DP-1"]["profile_state"], "fallback-only")
+        self.assertTrue(states["DP-1"]["materializable"])
+        self.assertIn("Enable advanced", states["DP-1"]["unavailable_reason"])
         self.assertFalse(states["HDMI-A-1"]["editable"])
+        self.assertEqual(states["HDMI-A-1"]["profile_state"], "inactive")
+        self.assertFalse(states["HDMI-A-1"]["materializable"])
         self.assertFalse(states["HDMI-A-1"]["active"])
         self.assertIsNone(states["HDMI-A-1"]["current_mode"])
         self.assertIn("inactive", states["HDMI-A-1"]["unavailable_reason"])
@@ -542,7 +564,22 @@ class MonitorBackendTests(unittest.TestCase):
             self.instance.signature,
         )
         self.assertFalse(payload["outputs"][0]["editable"])
+        self.assertEqual(payload["outputs"][0]["profile_state"], "override-conflict")
         self.assertIn("supersedes", payload["outputs"][0]["unavailable_reason"])
+
+        ambiguous = monitor.inspection_payload(
+            monitor.parse_monitor_payload([
+                output(name="DP-1", serial=""),
+                output(name="DP-2", serial="", x=2560),
+            ]),
+            catch_all_only,
+            b"-- override\n",
+            self.instance.signature,
+        )
+        for item in ambiguous["outputs"]:
+            self.assertEqual(item["profile_state"], "ambiguous-identity")
+            self.assertFalse(item["materializable"])
+            self.assertIn("ambiguous", item["materialization_reason"])
 
     def test_inspection_multi_output_order_is_connector_canonical(self) -> None:
         first = output(name="DP-2", serial="SECOND", x=2560)
@@ -831,6 +868,19 @@ class MonitorBackendTests(unittest.TestCase):
         with self.assertRaises(monitor.JournalError):
             monitor.handle_control(authority, request)
 
+    def test_materialization_protocol_is_strict_and_separate(self) -> None:
+        request = {
+            "version": monitor.PROTOCOL_VERSION,
+            "command": "materialize",
+            "connector": "DP-1",
+            "signature": self.instance.signature,
+        }
+        self.assertEqual(monitor.protocol_request(request), ("materialize", request))
+        with self.assertRaisesRegex(monitor.ValidationError, "unknown fields"):
+            monitor.protocol_request({**request, "candidate": None})
+        with self.assertRaisesRegex(monitor.ValidationError, "version"):
+            monitor.protocol_request({**request, "version": monitor.PROTOCOL_VERSION - 1})
+
     def test_journal_is_strict_versioned_atomic_and_private(self) -> None:
         _, _, journal = self.begin_success()
         metadata = self.store.journal_path.stat()
@@ -867,7 +917,7 @@ class MonitorBackendTests(unittest.TestCase):
                 with self.assertRaises(monitor.JournalError):
                     self.store.read()
 
-    def test_terminal_older_journal_is_not_reinterpreted_by_v3(self) -> None:
+    def test_terminal_older_journal_is_not_reinterpreted_by_v4(self) -> None:
         _, _, journal = self.begin_success()
         legacy = monitor.journal_to_dict(
             replace(
@@ -1820,6 +1870,34 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
         self.assertEqual(marker.read_text(), "host-original\n")
         self.assertFalse((self.config / "containment-write").exists())
 
+    def test_real_bubblewrap_verifier_accepts_minimal_materialized_profile(self) -> None:
+        self.assertTrue(Path("/usr/bin/bwrap").is_file())
+        self.assertTrue(Path("/usr/bin/Hyprland").is_file())
+        hypr = self.config / "hypr"
+        managed = hypr / "vanhyprarch"
+        managed.mkdir(parents=True)
+        (managed / "core.lua").write_text("-- managed fixture\n")
+        (hypr / "hyprland.lua").write_text(
+            'require(os.getenv("XDG_CONFIG_HOME") '
+            '.. "/vanhyprarch/machine/hyprland.lua")\n'
+            'require(os.getenv("XDG_CONFIG_HOME") '
+            '.. "/vanhyprarch/overrides/hyprland.lua")\n'
+        )
+        _, _, journal = self.begin_success()
+        candidate = monitor.clone_fallback_profile(
+            fallback_configuration(), "DP-1"
+        )
+        verifier = monitor.SandboxedHyprlandVerifier(self.config)
+        verifier(journal, candidate)
+        with self.assertRaisesRegex(
+            monitor.PersistenceError, "INTENTIONAL_INVALID_MATERIALIZATION_FIXTURE"
+        ):
+            verifier(
+                journal,
+                candidate
+                + b'\nerror("INTENTIONAL_INVALID_MATERIALIZATION_FIXTURE")\n',
+            )
+
     def test_prospective_verifier_nonzero_and_timeout_fail_closed(self) -> None:
         hypr = self.config / "hypr"
         managed = hypr / "vanhyprarch"
@@ -2302,6 +2380,471 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
 })
 ''',
         )
+
+    def test_minimal_profile_clones_fallback_and_changes_only_selector(self) -> None:
+        before = fallback_configuration()
+        after = monitor.clone_fallback_profile(before, "DP-1")
+        self.assertEqual(after.count(b'output = ""'), 1)
+        self.assertEqual(after.count(b'output = "DP-1"'), 1)
+        self.assertEqual(after.count(b'mode = "preferred"'), 2)
+        self.assertEqual(after.count(b'position = "auto"'), 2)
+        self.assertEqual(after.count(b'scale = "auto"'), 2)
+        for forbidden in (b"bitdepth", b"cm =", b"icc", b"vrr", b"transform"):
+            self.assertNotIn(forbidden, after)
+        explicit = monitor.require_explicit_profile(after, "DP-1")
+        fallback = monitor.require_supported_fallback(after)
+        self.assertEqual(explicit.body, fallback.body.replace('output = ""', 'output = "DP-1"'))
+        self.assertEqual(
+            before.decode()[
+                monitor.require_supported_fallback(before).call_start:
+                monitor.require_supported_fallback(before).call_end
+            ],
+            after.decode()[fallback.call_start:fallback.call_end],
+        )
+
+    def test_current_public_seed_materializes_without_specializing_intent(self) -> None:
+        seed = (
+            REPOSITORY
+            / "seeds/home/.config/vanhyprarch/machine/hyprland.lua"
+        ).read_bytes()
+        materialized = monitor.clone_fallback_profile(seed, "DP-1")
+        fallback = monitor.require_supported_fallback(materialized)
+        explicit = monitor.require_explicit_profile(materialized, "DP-1")
+        self.assertEqual(
+            fallback.body.replace('output = ""', 'output = "DP-1"'),
+            explicit.body,
+        )
+        self.assertEqual(explicit.mode_value, '"preferred"')
+        self.assertEqual(explicit.scale_value, '"auto"')
+        self.assertEqual(materialized.count(b'position = "auto"'), 2)
+        self.assertIsNone(explicit.bitdepth_value)
+        self.assertIsNone(explicit.cm_value)
+        self.assertIsNone(explicit.icc_value)
+
+    def test_minimal_profile_specializes_only_fields_the_user_changes(self) -> None:
+        materialized = monitor.clone_fallback_profile(
+            fallback_configuration(), "DP-1"
+        )
+        mode = monitor.rewrite_existing_profile(
+            materialized,
+            monitor.Candidate.safe(
+                "DP-1", width=2560, height=1440, refresh="59.95"
+            ),
+        )
+        self.assertIn(b'mode = "2560x1440@59.95"', mode)
+        self.assertEqual(mode.count(b'scale = "auto"'), 2)
+        self.assertNotIn(b"bitdepth", mode)
+
+        scaled = monitor.rewrite_existing_profile(
+            materialized, monitor.Candidate.scale("DP-1", "1.50")
+        )
+        self.assertEqual(scaled.count(b'scale = "auto"'), 1)
+        self.assertEqual(scaled.count(b"scale = 1.5"), 1)
+        self.assertNotIn(b"bitdepth", scaled)
+
+        depth = monitor.rewrite_existing_profile(
+            materialized, monitor.Candidate.safe("DP-1", bitdepth=10)
+        )
+        self.assertEqual(depth.count(b"bitdepth = 10,"), 1)
+        self.assertEqual(depth.count(b'mode = "preferred"'), 2)
+        self.assertEqual(depth.count(b'scale = "auto"'), 2)
+
+        combined = monitor.rewrite_existing_profile(
+            materialized,
+            monitor.Candidate.safe(
+                "DP-1", width=1920, height=1080, refresh="60", bitdepth=10
+            ),
+        )
+        self.assertEqual(combined.count(b'mode = "1920x1080@60"'), 1)
+        self.assertEqual(combined.count(b"bitdepth = 10,"), 1)
+        self.assertEqual(combined.count(b'scale = "auto"'), 2)
+
+    def test_minimal_profile_is_valid_base_for_owned_runtime_overlays(self) -> None:
+        materialized = monitor.clone_fallback_profile(
+            fallback_configuration(), "DP-1"
+        )
+        topology = monitor.parse_monitor_payload([output()])
+        target = topology.target("DP-1")
+        monitor.validate_explicit_profile_editability(materialized, target)
+        cases = (
+            (
+                monitor.Candidate.safe(
+                    "DP-1", width=1920, height=1080, refresh="60"
+                ),
+                {"output", "mode"},
+            ),
+            (monitor.Candidate.scale("DP-1", "1.50"), {"output", "scale"}),
+            (monitor.Candidate.safe("DP-1", bitdepth=10), {"output", "bitdepth"}),
+        )
+        for candidate, expected_fields in cases:
+            with self.subTest(candidate=candidate):
+                monitor.validate_candidate(candidate, topology)
+                monitor.rewrite_existing_profile(materialized, candidate)
+                fields = set(re.findall(
+                    r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=",
+                    monitor.monitor_eval_source(candidate),
+                ))
+                self.assertEqual(fields, expected_fields)
+
+    def test_omitted_bitdepth_is_known_default_but_unknown_syntax_rejects(self) -> None:
+        materialized = monitor.clone_fallback_profile(
+            fallback_configuration(), "DP-1"
+        )
+        profile = monitor.require_explicit_profile(materialized, "DP-1")
+        self.assertEqual(monitor.profile_bitdepth_intent(profile), 8)
+        prefix, separator, suffix = materialized.rpartition(b'    scale = "auto",\n')
+        self.assertTrue(separator)
+        unsupported = (
+            prefix
+            + separator
+            + b"    bitdepth = chooseDepth(),\n"
+            + suffix
+        )
+        with self.assertRaisesRegex(monitor.ValidationError, "unsupported"):
+            monitor.profile_bitdepth_intent(
+                monitor.require_explicit_profile(unsupported, "DP-1")
+            )
+
+    def test_materialization_commits_without_runtime_monitor_command(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        verifier = RecordingVerifier()
+        persister = monitor.MachineConfigPersister(verifier)
+        authority, runner = self.authority(
+            [[output()], [output()], [output()]],
+            persister=persister,
+        )
+        committed = authority.materialize("DP-1", self.instance.signature)
+        self.assertIsNotNone(committed)
+        self.assertEqual(committed.state, "committed")
+        self.assertEqual(committed.candidate.policy, monitor.MATERIALIZE_POLICY)
+        self.assertFalse(committed.mutation_attempted)
+        self.assertIsNone(committed.deadline_monotonic)
+        self.assertTrue(committed.runtime_verified)
+        self.assertTrue(committed.persistence_verified)
+        self.assertFalse(committed.recovery_required)
+        self.assertEqual(len(verifier.calls), 1)
+        after = self.machine.read_bytes()
+        original_fallback = monitor.require_supported_fallback(original)
+        materialized_fallback = monitor.require_supported_fallback(after)
+        self.assertEqual(
+            original.decode()[original_fallback.call_start : original_fallback.call_end],
+            after.decode()[materialized_fallback.call_start : materialized_fallback.call_end],
+        )
+        self.assertEqual(after.count(b'output = "DP-1"'), 1)
+        self.assertEqual(
+            [call for call in runner.calls if "eval" in call], [],
+            "materialization issued a runtime hl.monitor() command",
+        )
+
+    def test_materialization_readback_drift_restores_exact_original(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        authority, runner = self.authority(
+            [
+                [output()],
+                [output()],
+                [output(scale=1.5)],
+                [output(scale=1.5)],
+                [output()],
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        reverted = authority.materialize("DP-1", self.instance.signature)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), original)
+        self.assertFalse(reverted.recovery_required)
+        self.assertIn("authoritative readback", reverted.failure)
+        self.assertEqual([call for call in runner.calls if "eval" in call], [])
+
+    def test_materialization_existing_explicit_profile_is_idempotent_noop(self) -> None:
+        before = self.machine.read_bytes()
+        authority, runner = self.authority([[output()]])
+        self.assertIsNone(authority.materialize("DP-1", self.instance.signature))
+        self.assertEqual(self.machine.read_bytes(), before)
+        self.assertFalse(self.store.journal_path.exists())
+        self.assertEqual([call for call in runner.calls if "eval" in call], [])
+
+    def test_materialization_rejects_unsupported_fallback_and_override(self) -> None:
+        self.machine.write_bytes(
+            fallback_configuration().replace(
+                b'    scale = "auto",', b"    scale = chooseScale(),"
+            )
+        )
+        authority, _ = self.authority([[output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "unsupported"):
+            authority.materialize("DP-1", self.instance.signature)
+
+        self.machine.write_bytes(fallback_configuration())
+        self.override.write_bytes(
+            b'hl.monitor({\n    output = "DP-1",\n    mode = "preferred",\n})\n'
+        )
+        authority, _ = self.authority([[output()]])
+        with self.assertRaisesRegex(monitor.OverrideConflict, "supersedes"):
+            authority.materialize("DP-1", self.instance.signature)
+
+        self.override.write_bytes(b"-- user override\n")
+        self.machine.write_bytes(
+            fallback_configuration()
+            + b'hl.monitor({\n    output = "desc:LG",\n    mode = "preferred",\n})\n'
+        )
+        authority, _ = self.authority([[output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "description-addressed"):
+            authority.materialize("DP-1", self.instance.signature)
+
+        explicit = monitor.clone_fallback_profile(
+            fallback_configuration(), "DP-1"
+        )
+        self.machine.write_bytes(
+            explicit
+            + b'hl.monitor({\n    output = "DP-1",\n    mode = "preferred",\n})\n'
+        )
+        authority, _ = self.authority([[output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "ambiguous"):
+            authority.materialize("DP-1", self.instance.signature)
+
+    def test_materialization_identity_rules_cover_serialless_and_ambiguity(self) -> None:
+        serialless = output(serial="")
+        topology = monitor.parse_monitor_payload([serialless])
+        target = topology.target("DP-1")
+        monitor.validate_materialization_identity(
+            topology, target, allow_serialless=True
+        )
+        self.machine.write_bytes(fallback_configuration())
+        authority, _ = self.authority(
+            [[serialless], [serialless], [serialless]],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        committed = authority.materialize("DP-1", self.instance.signature)
+        self.assertEqual(committed.state, "committed")
+        with self.assertRaisesRegex(monitor.IdentityAmbiguous, "no serial"):
+            monitor.validate_materialization_identity(
+                topology, target, allow_serialless=False
+            )
+
+        duplicate = output(name="DP-2", serial="")
+        ambiguous = monitor.parse_monitor_payload([serialless, duplicate])
+        with self.assertRaisesRegex(monitor.IdentityAmbiguous, "ambiguous"):
+            monitor.validate_materialization_identity(
+                ambiguous,
+                ambiguous.target("DP-1"),
+                allow_serialless=True,
+            )
+
+    def test_materialization_multi_output_hotplug_rolls_back(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        second = output(name="DP-2", serial="SECOND", x=2560)
+        authority, _ = self.authority(
+            [
+                [output(), second],
+                [output(), second],
+                [output()],
+                [output()],
+                [output(), second],
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        reverted = authority.materialize("DP-1", self.instance.signature)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), original)
+
+    def test_materialization_identity_change_fails_closed_after_restoration(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        replacement = output(
+            make="Other", model="Replacement", serial="DIFFERENT"
+        )
+        authority, _ = self.authority(
+            [
+                [output()],
+                [output()],
+                [replacement],
+                [replacement],
+                [replacement],
+                [replacement],
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        failed = authority.materialize("DP-1", self.instance.signature)
+        self.assertEqual(failed.state, "rollback-failed")
+        self.assertTrue(failed.recovery_required)
+        self.assertEqual(self.machine.read_bytes(), original)
+        self.assertIn("protected monitor state", failed.failure)
+
+    def test_materialization_verifier_atomic_and_reload_failures_restore(self) -> None:
+        cases = ("prospective", "atomic", "reload")
+        for case in cases:
+            with self.subTest(case=case):
+                self.machine.write_bytes(fallback_configuration())
+                original = self.machine.read_bytes()
+                verifier = RecordingVerifier(
+                    monitor.PersistenceError("fixture prospective failure")
+                    if case == "prospective" else None
+                )
+                coordinator = (
+                    SequenceReloadCoordinator(
+                        [monitor.PersistenceError("fixture reload failure"), None]
+                    )
+                    if case == "reload" else FakeReloadCoordinator()
+                )
+                authority, _ = self.authority(
+                    [[output()], [output()], [output()]],
+                    persister=monitor.MachineConfigPersister(verifier),
+                    reload_coordinator=coordinator,
+                )
+                original_replace = monitor.atomic_replace
+
+                def replace_candidate(*args, **kwargs):
+                    if case == "atomic" and Path(args[0]) == self.machine:
+                        raise monitor.PersistenceError("fixture atomic failure")
+                    return original_replace(*args, **kwargs)
+
+                with mock.patch.object(
+                    monitor, "atomic_replace", side_effect=replace_candidate
+                ):
+                    reverted = authority.materialize(
+                        "DP-1", self.instance.signature
+                    )
+                self.assertEqual(reverted.state, "reverted", reverted.failure)
+                self.assertFalse(reverted.recovery_required)
+                self.assertEqual(self.machine.read_bytes(), original)
+
+    def test_materialization_external_edit_preserves_evidence(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        machine_snapshot = monitor.snapshot_file(self.machine)
+        topology = monitor.parse_monitor_payload([output()])
+        candidate = monitor.Candidate.materialize("DP-1")
+        content = monitor.clone_fallback_profile(original, "DP-1")
+        journal = monitor.TransactionJournal(
+            monitor.SCHEMA_VERSION,
+            str(uuid.uuid4()),
+            "committing",
+            2,
+            1.0,
+            1.0,
+            None,
+            None,
+            False,
+            False,
+            False,
+            True,
+            hashlib.sha256(content).hexdigest(),
+            "candidate-installed",
+            self.instance,
+            topology.target("DP-1").identity,
+            candidate,
+            8,
+            "srgb",
+            "",
+            topology,
+            machine_snapshot,
+            monitor.snapshot_file(self.override),
+        )
+        self.machine.write_bytes(content + b"-- unrelated external edit\n")
+        self.store.write(journal)
+        authority, _ = self.authority(
+            [], persister=monitor.MachineConfigPersister(RecordingVerifier())
+        )
+        failed = authority.recover()
+        self.assertEqual(failed.state, "rollback-failed")
+        self.assertTrue(failed.recovery_required)
+        self.assertIn("external edit", failed.failure)
+        self.assertNotEqual(self.machine.read_bytes(), original)
+
+    def test_materialization_recovery_restores_every_candidate_milestone(self) -> None:
+        original = fallback_configuration()
+        content = monitor.clone_fallback_profile(original, "DP-1")
+        planned = hashlib.sha256(content).hexdigest()
+        phases = (
+            ("candidate-planned", False),
+            ("candidate-installed", False),
+            ("candidate-reloaded", False),
+            ("candidate-verified", True),
+        )
+        for phase, verified in phases:
+            with self.subTest(phase=phase):
+                self.machine.write_bytes(original)
+                machine_snapshot = monitor.snapshot_file(self.machine)
+                topology = monitor.parse_monitor_payload([output()])
+                journal = monitor.TransactionJournal(
+                    monitor.SCHEMA_VERSION,
+                    str(uuid.uuid4()),
+                    "committing",
+                    3,
+                    1.0,
+                    1.0,
+                    None,
+                    None,
+                    False,
+                    verified,
+                    verified,
+                    True,
+                    planned,
+                    phase,
+                    self.instance,
+                    topology.target("DP-1").identity,
+                    monitor.Candidate.materialize("DP-1"),
+                    8,
+                    "srgb",
+                    "",
+                    topology,
+                    machine_snapshot,
+                    monitor.snapshot_file(self.override),
+                )
+                if phase != "candidate-planned":
+                    self.machine.write_bytes(content)
+                self.store.write(journal)
+                authority, runner = self.authority(
+                    [[output()]],
+                    persister=monitor.MachineConfigPersister(RecordingVerifier()),
+                )
+                reverted = authority.recover()
+                self.assertEqual(reverted.state, "reverted", reverted.failure)
+                self.assertEqual(self.machine.read_bytes(), original)
+                self.assertFalse(reverted.recovery_required)
+                calls = len(runner.calls)
+                self.assertEqual(authority.recover(), reverted)
+                self.assertEqual(len(runner.calls), calls)
+
+    def test_materialization_recovery_before_candidate_planning_is_noop(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        machine_snapshot = monitor.snapshot_file(self.machine)
+        topology = monitor.parse_monitor_payload([output()])
+        journal = monitor.TransactionJournal(
+            monitor.SCHEMA_VERSION,
+            str(uuid.uuid4()),
+            "preparing",
+            0,
+            1.0,
+            1.0,
+            None,
+            None,
+            False,
+            False,
+            False,
+            True,
+            None,
+            "original",
+            self.instance,
+            topology.target("DP-1").identity,
+            monitor.Candidate.materialize("DP-1"),
+            8,
+            "srgb",
+            "",
+            topology,
+            machine_snapshot,
+            monitor.snapshot_file(self.override),
+        )
+        self.store.write(journal)
+        authority, runner = self.authority([[output()]])
+        recovered = authority.recover()
+        self.assertEqual(recovered.state, "reverted", recovered.failure)
+        self.assertEqual(self.machine.read_bytes(), original)
+        self.assertFalse(recovered.recovery_required)
+        self.assertEqual([call for call in runner.calls if "eval" in call], [])
 
     def test_ambiguous_explicit_profile_is_rejected(self) -> None:
         duplicate = machine_configuration() + machine_configuration()

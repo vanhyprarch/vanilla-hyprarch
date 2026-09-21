@@ -93,11 +93,14 @@ deployment, startup ownership, defaults, dependencies, migration behavior, and
 validation must be recoverable from the canonical repository. Development-
 machine behavior alone is not complete integration.
 
-Before Monitor Safe Apply can be complete for a fresh Alpha installation, the
-bootstrap/product flow must safely materialize an explicit machine-owned
-profile for a selected physical output. Phase B1 intentionally rejects a
-catch-all-only machine file, does not infer or create a profile, and leaves the
-portable catch-all unchanged.
+The bootstrap installs only the create-once portable monitor fallback. A display
+working through that rule is already correctly configured; installation,
+session start, and hotplug must not convert it into a connector-specific
+profile. Advanced per-monitor editing is opt-in. After explicit consent, DF2
+may invoke the Monitor backend's dedicated **Enable advanced display settings**
+operation, which clones the supported fallback and changes only its selector.
+DF2 must not implement another monitor parser, persister, or automatic
+materialization policy.
 
 The bootstrap must create `$HOME/.local/bin` as a user-owned directory when
 needed, preserve rollback material before replacing a managed command, and

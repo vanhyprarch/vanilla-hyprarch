@@ -32,8 +32,8 @@ from typing import Callable, Mapping, Protocol, Sequence
 import uuid
 
 
-SCHEMA_VERSION = 3
-PROTOCOL_VERSION = 2
+SCHEMA_VERSION = 4
+PROTOCOL_VERSION = 3
 HYPRCTL = "/usr/bin/hyprctl"
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE_NAME = "vanhyprarch-monitor-safe-apply.service"
@@ -52,6 +52,7 @@ MAX_SCALE = Decimal("4.0")
 SCALE_DENOMINATOR = Decimal(120)
 SAFE_CONFIRMED_POLICY = "safe-confirmed"
 IMMEDIATE_SCALE_POLICY = "immediate-scale"
+MATERIALIZE_POLICY = "materialize-profile"
 BITDEPTH_FORMATS = {
     8: frozenset({"XRGB8888", "XBGR8888"}),
     10: frozenset({"XRGB2101010", "XBGR2101010"}),
@@ -85,7 +86,7 @@ KNOWN_STATES = {
     "instance-vanished",
 }
 LEGAL_TRANSITIONS = {
-    "preparing": {"applying", "reverting", "reverted", "instance-vanished"},
+    "preparing": {"applying", "committing", "reverting", "reverted", "instance-vanished"},
     "applying": {"temporary-active", "committing", "reverting", "instance-vanished"},
     "temporary-active": {"committing", "reverting", "instance-vanished"},
     "committing": {"committed", "reverting", "instance-vanished"},
@@ -146,6 +147,14 @@ class PersistenceDeferred(PersistenceError):
 
 
 class ConfigReloadInvalidated(MonitorError):
+    pass
+
+
+class OverrideConflict(ValidationError):
+    pass
+
+
+class IdentityAmbiguous(ValidationError):
     pass
 
 
@@ -551,6 +560,12 @@ class Candidate:
             scale_to_millionths(scale, preflight=True),
         )
 
+    @classmethod
+    def materialize(cls, connector: str) -> "Candidate":
+        if not isinstance(connector, str) or CONNECTOR_RE.fullmatch(connector) is None:
+            raise ValidationError("candidate connector is invalid")
+        return cls(MATERIALIZE_POLICY, connector, None, None, None)
+
     @property
     def requires_confirmation(self) -> bool:
         return self.policy == SAFE_CONFIRMED_POLICY
@@ -582,42 +597,67 @@ def inspection_payload(
     for state in sorted(topology.monitors, key=lambda item: item.connector):
         editable = False
         unavailable_reason: str | None = None
+        materializable = False
+        materialization_reason: str | None = None
+        profile_state = "unavailable"
         bitdepth_choices: list[int] = []
         if not state.usable:
+            profile_state = "inactive"
             unavailable_reason = "Output is inactive or unusable."
+            materialization_reason = unavailable_reason
         else:
             try:
-                profile = require_explicit_profile(machine_content, state.connector)
                 reject_superseding_override(override_content, state.connector)
-                rewrite_existing_profile(
-                    machine_content,
-                    Candidate.safe(
-                        state.connector,
-                        width=state.width,
-                        height=state.height,
-                        refresh=state.refresh_millihz / 1000,
-                    ),
-                )
-                rewrite_existing_profile(
-                    machine_content,
-                    Candidate.scale(
-                        state.connector, state.scale_millionths / 1_000_000
-                    ),
+                profile = validate_explicit_profile_editability(
+                    machine_content, state
                 )
                 bitdepth_intent = profile_bitdepth_intent(profile)
-                if bitdepth_intent in BITDEPTH_FORMATS:
-                    rewrite_existing_profile(
-                        machine_content,
-                        Candidate.safe(state.connector, bitdepth=bitdepth_intent),
-                    )
                 editable = True
+                profile_state = "explicit-editable"
                 if (
                     bitdepth_intent in BITDEPTH_FORMATS
                     and state.effective_bitdepth is not None
                 ):
                     bitdepth_choices = sorted(BITDEPTH_FORMATS)
-            except MonitorError as error:
-                unavailable_reason = str(error)
+            except MonitorError as explicit_error:
+                if isinstance(explicit_error, OverrideConflict):
+                    profile_state = "override-conflict"
+                    unavailable_reason = str(explicit_error)
+                    materialization_reason = str(explicit_error)
+                else:
+                    try:
+                        validate_materialization_eligibility(
+                            topology,
+                            state.connector,
+                            machine_content,
+                            override_content,
+                            allow_serialless=True,
+                        )
+                        profile_state = "fallback-only"
+                        materializable = True
+                        unavailable_reason = (
+                            "Enable advanced display settings to manage this output."
+                        )
+                    except OverrideConflict as error:
+                        profile_state = "override-conflict"
+                        unavailable_reason = str(error)
+                        materialization_reason = str(error)
+                    except IdentityAmbiguous as error:
+                        profile_state = "ambiguous-identity"
+                        unavailable_reason = str(error)
+                        materialization_reason = str(error)
+                    except MonitorError as error:
+                        profile_state = (
+                            "explicit-unavailable"
+                            if has_explicit_profile(machine_content, state.connector)
+                            else "fallback-unavailable"
+                        )
+                        unavailable_reason = (
+                            str(explicit_error)
+                            if profile_state == "explicit-unavailable"
+                            else str(error)
+                        )
+                        materialization_reason = str(error)
 
         modes = [
             {
@@ -639,6 +679,9 @@ def inspection_payload(
                 },
                 "active": not state.disabled,
                 "editable": editable,
+                "profile_state": profile_state,
+                "materializable": materializable,
+                "materialization_reason": materialization_reason,
                 "unavailable_reason": unavailable_reason,
                 "current_mode": None
                 if state.width <= 0 or state.height <= 0 or state.refresh_millihz <= 0
@@ -659,7 +702,7 @@ def inspection_payload(
                 },
             }
         )
-    return {"version": 1, "instance_signature": signature, "outputs": outputs}
+    return {"version": 2, "instance_signature": signature, "outputs": outputs}
 
 
 @dataclass(frozen=True)
@@ -1066,6 +1109,8 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 @dataclass(frozen=True)
 class MachineProfile:
     connector: str
+    call_start: int
+    call_end: int
     block_start: int
     block_end: int
     body: str
@@ -1074,6 +1119,16 @@ class MachineProfile:
     bitdepth_value: str | None
     cm_value: str | None
     icc_value: str | None
+
+
+SIMPLE_FALLBACK_LINE_RE = re.compile(
+    r"^[ \t]*(?:"
+    r"--.*|"
+    r"[A-Za-z_][A-Za-z0-9_]*[ \t]*=[ \t]*"
+    r"(?:\"[^\"\\]*\"|-?[0-9]+(?:\.[0-9]+)?|true|false|[A-Za-z_][A-Za-z0-9_]*)"
+    r"[ \t]*,?[ \t]*(?:--.*)?"
+    r")$"
+)
 
 
 def _field(body: str, name: str) -> tuple[str, re.Match[str]]:
@@ -1094,14 +1149,12 @@ def _optional_field(body: str, name: str) -> tuple[str | None, re.Match[str] | N
     return matches[0].group("value").strip(), matches[0]
 
 
-def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
+def _parsed_monitor_profiles(content: bytes) -> list[MachineProfile]:
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise ValidationError("machine configuration is not UTF-8") from error
-    profiles: list[MachineProfile] = []
-    catch_all_count = 0
-    seen: set[str] = set()
+    parsed: list[MachineProfile] = []
     for match in MONITOR_BLOCK_RE.finditer(text):
         body = match.group("body")
         output_value, _ = _field(body, "output")
@@ -1109,22 +1162,18 @@ def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
         if quoted is None:
             raise ValidationError("monitor output must be a simple quoted connector")
         connector = quoted.group(1)
-        if connector == "":
-            catch_all_count += 1
-            continue
-        if CONNECTOR_RE.fullmatch(connector) is None:
+        if connector and CONNECTOR_RE.fullmatch(connector) is None:
             raise ValidationError("machine profile has an unsafe connector")
-        if connector in seen:
-            raise ValidationError(f"ambiguous machine profiles for {connector}")
-        seen.add(connector)
         mode_value, _ = _optional_field(body, "mode")
         scale_value, _ = _optional_field(body, "scale")
         bitdepth_value, _ = _optional_field(body, "bitdepth")
         cm_value, _ = _optional_field(body, "cm")
         icc_value, _ = _optional_field(body, "icc")
-        profiles.append(
+        parsed.append(
             MachineProfile(
                 connector,
+                match.start(),
+                match.end(),
                 match.start("body"),
                 match.end("body"),
                 body,
@@ -1135,9 +1184,51 @@ def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
                 icc_value,
             )
         )
+    return parsed
+
+
+def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
+    parsed = _parsed_monitor_profiles(content)
+    profiles: list[MachineProfile] = []
+    seen: set[str] = set()
+    catch_all_count = 0
+    for profile in parsed:
+        if profile.connector == "":
+            catch_all_count += 1
+            continue
+        if profile.connector in seen:
+            raise ValidationError(f"ambiguous machine profiles for {profile.connector}")
+        seen.add(profile.connector)
+        profiles.append(profile)
     if catch_all_count > 1:
         raise ValidationError("machine configuration has ambiguous catch-all profiles")
     return profiles, catch_all_count
+
+
+def has_explicit_profile(content: bytes, connector: str) -> bool:
+    return any(
+        profile.connector == connector
+        for profile in _parsed_monitor_profiles(content)
+    )
+
+
+def require_supported_fallback(content: bytes) -> MachineProfile:
+    fallbacks = [
+        profile for profile in _parsed_monitor_profiles(content)
+        if profile.connector == ""
+    ]
+    if len(fallbacks) != 1:
+        raise ValidationError("machine configuration requires exactly one fallback profile")
+    fallback = fallbacks[0]
+    for line in fallback.body.splitlines():
+        if line.strip() and SIMPLE_FALLBACK_LINE_RE.fullmatch(line) is None:
+            raise ValidationError("fallback profile uses unsupported or ambiguous Lua syntax")
+    field_names = re.findall(
+        r"(?m)^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=", fallback.body
+    )
+    if len(field_names) != len(set(field_names)):
+        raise ValidationError("fallback profile contains duplicate fields")
+    return fallback
 
 
 def require_explicit_profile(content: bytes, connector: str) -> MachineProfile:
@@ -1155,11 +1246,112 @@ def require_explicit_profile(content: bytes, connector: str) -> MachineProfile:
 def reject_superseding_override(content: bytes, connector: str) -> None:
     profiles, _ = parse_machine_profiles(content)
     if any(profile.connector.startswith("desc:") for profile in profiles):
-        raise ValidationError("description-addressed override profiles are ambiguous")
+        raise OverrideConflict("description-addressed override profiles are ambiguous")
     if any(profile.connector == connector for profile in profiles):
-        raise ValidationError(
+        raise OverrideConflict(
             f"user override supersedes the machine profile for {connector!r}"
         )
+
+
+def _meaningful(value: str) -> bool:
+    return bool(value.strip())
+
+
+def validate_materialization_identity(
+    topology: Topology,
+    target: MonitorState,
+    *,
+    allow_serialless: bool,
+) -> None:
+    identity = target.identity
+    if not (_meaningful(identity.make) and _meaningful(identity.model)):
+        raise IdentityAmbiguous("output lacks meaningful make/model identity")
+    if _meaningful(identity.serial):
+        key = (identity.make.strip(), identity.model.strip(), identity.serial.strip())
+        matches = [
+            monitor for monitor in topology.monitors
+            if (
+                monitor.identity.make.strip(),
+                monitor.identity.model.strip(),
+                monitor.identity.serial.strip(),
+            ) == key
+        ]
+    else:
+        if not allow_serialless:
+            raise IdentityAmbiguous("output has no serial identity")
+        if not _meaningful(identity.description):
+            raise IdentityAmbiguous(
+                "serial-less output lacks a meaningful description identity"
+            )
+        key = (
+            identity.make.strip(),
+            identity.model.strip(),
+            identity.description.strip(),
+        )
+        matches = [
+            monitor for monitor in topology.monitors
+            if not _meaningful(monitor.identity.serial)
+            and (
+                monitor.identity.make.strip(),
+                monitor.identity.model.strip(),
+                monitor.identity.description.strip(),
+            ) == key
+        ]
+    if len(matches) != 1:
+        raise IdentityAmbiguous("output physical identity is ambiguous")
+
+
+def validate_materialization_eligibility(
+    topology: Topology,
+    connector: str,
+    machine_content: bytes,
+    override_content: bytes,
+    *,
+    allow_serialless: bool,
+) -> tuple[MonitorState, MachineProfile]:
+    target = topology.target(connector)
+    if not target.usable:
+        raise ValidationError("output is inactive or unusable")
+    profiles, _ = parse_machine_profiles(machine_content)
+    if any(profile.connector.startswith("desc:") for profile in profiles):
+        raise ValidationError("description-addressed machine profiles are ambiguous")
+    if any(profile.connector == connector for profile in profiles):
+        raise ValidationError("advanced display settings are already enabled")
+    reject_superseding_override(override_content, connector)
+    fallback = require_supported_fallback(machine_content)
+    validate_materialization_identity(
+        topology, target, allow_serialless=allow_serialless
+    )
+    validate_explicit_profile_editability(
+        clone_fallback_profile(machine_content, connector), target
+    )
+    return target, fallback
+
+
+def clone_fallback_profile(content: bytes, connector: str) -> bytes:
+    if CONNECTOR_RE.fullmatch(connector) is None:
+        raise ValidationError("materialization connector is invalid")
+    if has_explicit_profile(content, connector):
+        raise ValidationError("advanced display settings are already enabled")
+    fallback = require_supported_fallback(content)
+    text = content.decode("utf-8")
+    output_value, output_match = _field(fallback.body, "output")
+    if output_value != '""':
+        raise ValidationError("fallback output selector is not empty")
+    relative_start = fallback.block_start - fallback.call_start + output_match.start("value")
+    relative_end = fallback.block_start - fallback.call_start + output_match.end("value")
+    original_call = text[fallback.call_start : fallback.call_end]
+    cloned_call = (
+        original_call[:relative_start]
+        + lua_string(connector)
+        + original_call[relative_end:]
+    )
+    return (
+        text[: fallback.call_end]
+        + "\n\n"
+        + cloned_call
+        + text[fallback.call_end :]
+    ).encode("utf-8")
 
 
 def profile_color_intent(profile: MachineProfile) -> tuple[str, str]:
@@ -1178,10 +1370,29 @@ def profile_color_intent(profile: MachineProfile) -> tuple[str, str]:
     return cm, icc
 
 
-def profile_bitdepth_intent(profile: MachineProfile) -> int | None:
+def profile_bitdepth_intent(profile: MachineProfile) -> int:
+    if profile.bitdepth_value is None:
+        return 8
     if profile.bitdepth_value in {"8", "10"}:
         return int(profile.bitdepth_value)
-    return None
+    raise ValidationError("explicit profile bitdepth intent is unsupported")
+
+
+def _insert_bitdepth(body: str, value: int) -> str:
+    if value not in BITDEPTH_FORMATS:
+        raise PersistenceError("bitdepth insertion value is invalid")
+    _, anchor = _field(body, "scale")
+    if "," not in anchor.group("suffix"):
+        raise PersistenceError("profile scale field needs a trailing comma for insertion")
+    indentation = re.match(r"[ \t]*", anchor.group("prefix")).group(0)
+    newline = "\r\n" if "\r\n" in body else "\n"
+    return (
+        body[: anchor.end()]
+        + newline
+        + indentation
+        + f"bitdepth = {value},"
+        + body[anchor.end() :]
+    )
 
 
 def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
@@ -1198,14 +1409,20 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
         )
     if candidate.bitdepth is not None:
         bitdepth_value, bitdepth_match = _optional_field(body, "bitdepth")
-        if bitdepth_match is None or bitdepth_value not in {"8", "10"}:
+        if bitdepth_match is None:
+            if bitdepth_value is not None:
+                raise PersistenceError("explicit profile bitdepth is ambiguous")
+        elif bitdepth_value not in {"8", "10"}:
             raise PersistenceError("explicit profile bitdepth is not replaceable")
-        replacements.append(
-            (bitdepth_match.start("value"), bitdepth_match.end("value"), str(candidate.bitdepth))
-        )
+        else:
+            replacements.append(
+                (bitdepth_match.start("value"), bitdepth_match.end("value"), str(candidate.bitdepth))
+            )
     new_body = body
     for start, end, value in sorted(replacements, reverse=True):
         new_body = new_body[:start] + value + new_body[end:]
+    if candidate.bitdepth is not None and bitdepth_match is None:
+        new_body = _insert_bitdepth(new_body, candidate.bitdepth)
     if candidate.scale_millionths is None:
         return (
             text[: profile.block_start]
@@ -1216,7 +1433,7 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
     scale_text = format(
         (Decimal(candidate.scale_millionths) / 1_000_000).normalize(), "f"
     )
-    if NUMBER_RE.fullmatch(scale_value):
+    if NUMBER_RE.fullmatch(scale_value) or scale_value == '"auto"':
         new_body = (
             new_body[: scale_match.start("value")]
             + scale_text
@@ -1253,6 +1470,40 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
     else:
         raise PersistenceError("explicit profile scale is not replaceable")
     return (text[: profile.block_start] + new_body + text[profile.block_end :]).encode("utf-8")
+
+
+def rewrite_machine_configuration(content: bytes, candidate: Candidate) -> bytes:
+    if candidate.policy == MATERIALIZE_POLICY:
+        return clone_fallback_profile(content, candidate.connector)
+    return rewrite_existing_profile(content, candidate)
+
+
+def validate_explicit_profile_editability(
+    content: bytes, target: MonitorState
+) -> MachineProfile:
+    """Prove that every product-owned field can be specialized later."""
+    profile = require_explicit_profile(content, target.connector)
+    rewrite_existing_profile(
+        content,
+        Candidate.safe(
+            target.connector,
+            width=target.width,
+            height=target.height,
+            refresh=Decimal(target.refresh_millihz) / 1000,
+        ),
+    )
+    rewrite_existing_profile(
+        content,
+        Candidate.scale(
+            target.connector, Decimal(target.scale_millionths) / 1_000_000
+        ),
+    )
+    bitdepth_intent = profile_bitdepth_intent(profile)
+    rewrite_existing_profile(
+        content, Candidate.safe(target.connector, bitdepth=bitdepth_intent)
+    )
+    profile_color_intent(profile)
+    return profile
 
 
 def atomic_replace(
@@ -1564,7 +1815,9 @@ class MachineConfigPersister:
             raise PersistenceError("machine configuration changed during transaction")
         if not snapshot_matches(journal.override_file):
             raise PersistenceError("user override changed during transaction")
-        content = rewrite_existing_profile(journal.machine_file.content, journal.candidate)
+        content = rewrite_machine_configuration(
+            journal.machine_file.content, journal.candidate
+        )
         try:
             self.verifier(journal, content)
         except MonitorError:
@@ -1864,6 +2117,15 @@ def journal_from_dict(value: object) -> TransactionJournal:
             )
         except ValidationError as error:
             raise JournalError("journal candidate scale is invalid") from error
+    elif journal.candidate.policy == MATERIALIZE_POLICY:
+        if (
+            journal.candidate.mode is not None
+            or journal.candidate.bitdepth is not None
+            or journal.candidate.scale_millionths is not None
+        ):
+            raise JournalError("materialization journal candidate is invalid")
+        if journal.mutation_attempted or journal.deadline_monotonic is not None:
+            raise JournalError("materialization journal contains a runtime mutation")
     else:
         raise JournalError("journal candidate policy is invalid")
     if journal.candidate.mode is not None and (
@@ -1879,7 +2141,18 @@ def journal_from_dict(value: object) -> TransactionJournal:
     if snapshot_target.identity != journal.target_identity:
         raise JournalError("journal target identity does not match its snapshot")
     try:
-        profile = require_explicit_profile(journal.machine_file.content, journal.candidate.connector)
+        if journal.candidate.policy == MATERIALIZE_POLICY:
+            _, profile = validate_materialization_eligibility(
+                journal.snapshot,
+                journal.candidate.connector,
+                journal.machine_file.content,
+                journal.override_file.content,
+                allow_serialless=True,
+            )
+        else:
+            profile = require_explicit_profile(
+                journal.machine_file.content, journal.candidate.connector
+            )
         if profile_bitdepth_intent(profile) != journal.bitdepth_intent:
             raise JournalError("journal bitdepth intent does not match its machine snapshot")
         if profile_color_intent(profile) != (journal.cm_intent, journal.icc_intent):
@@ -1915,6 +2188,10 @@ def journal_from_dict(value: object) -> TransactionJournal:
         or not journal.recovery_required
     ):
         raise JournalError("temporary-active journal invariants are invalid")
+    if journal.candidate.policy == MATERIALIZE_POLICY and journal.state in {
+        "applying", "temporary-active"
+    }:
+        raise JournalError("materialization journal entered a runtime apply state")
     if journal.state == "committed" and (
         not journal.runtime_verified
         or not journal.persistence_verified
@@ -2153,14 +2430,20 @@ class TransactionAuthority:
         eligible = journal.state in {"applying", "temporary-active"} or (
             journal.state == "committing"
             and journal.persistence_phase == "candidate-planned"
+        ) or (
+            journal.candidate.policy == MATERIALIZE_POLICY
+            and journal.state == "preparing"
         )
         if eligible and self.transaction_watch is not None and self.transaction_watch.wait(0.0):
             raise ConfigReloadInvalidated(
-                "unexpected Hyprland config reload invalidated the temporary candidate"
+                "unexpected Hyprland config reload invalidated the monitor transaction"
             )
 
     @staticmethod
     def _verify_candidate(journal: TransactionJournal, readback: Topology) -> None:
+        if journal.candidate.policy == MATERIALIZE_POLICY:
+            verify_rollback_readback(journal.snapshot, readback)
+            return
         verify_candidate_readback(
             journal.snapshot,
             journal.candidate,
@@ -2263,6 +2546,72 @@ class TransactionAuthority:
                 failure=None,
             )
         journal = self._checkpoint(journal, runtime_verified=True, failure=None)
+        return self._commit(journal)
+
+    def materialize(
+        self, connector: str, signature: str
+    ) -> TransactionJournal | None:
+        if self.bound_signature is not None and signature != self.bound_signature:
+            raise ValidationError("requested Hyprland instance is not the service-bound instance")
+        previous = self.store.read()
+        if previous is not None and previous.state not in TERMINAL_SAFE_STATES:
+            raise StaleTransaction("non-terminal monitor transaction requires recovery")
+        instance = self.instance_provider.current(signature)
+        client = HyprlandClient(
+            signature, instance, self.instance_provider, self.runner, self.clock
+        )
+        topology = client.read_topology()
+        candidate = Candidate.materialize(connector)
+        target = validate_candidate(candidate, topology)
+        machine = snapshot_file(self.config_paths.machine)
+        override = snapshot_file(self.config_paths.override)
+        if has_explicit_profile(machine.content, connector):
+            reject_superseding_override(override.content, connector)
+            validate_explicit_profile_editability(machine.content, target)
+            return None
+        _, fallback = validate_materialization_eligibility(
+            topology,
+            connector,
+            machine.content,
+            override.content,
+            allow_serialless=True,
+        )
+        bitdepth_intent = profile_bitdepth_intent(fallback)
+        cm_intent, icc_intent = profile_color_intent(fallback)
+        now = self.clock.monotonic()
+        journal = self._write(
+            TransactionJournal(
+                SCHEMA_VERSION,
+                str(uuid.uuid4()),
+                "preparing",
+                0,
+                now,
+                now,
+                None,
+                None,
+                False,
+                False,
+                False,
+                True,
+                None,
+                "original",
+                instance,
+                target.identity,
+                candidate,
+                bitdepth_intent,
+                cm_intent,
+                icc_intent,
+                topology,
+                machine,
+                override,
+            )
+        )
+        try:
+            self.transaction_watch = self.reload_event_source.arm(journal)
+        except MonitorError as error:
+            journal = replace(journal, failure=f"reload observation failed: {error}")
+            self.store.write(journal)
+            return self.rollback(journal.transaction_id, reason=journal.failure)
         return self._commit(journal)
 
     def status(self) -> TransactionJournal | None:
@@ -2370,6 +2719,27 @@ class TransactionAuthority:
                 if watch is not None:
                     watch.close()
         if not journal.mutation_attempted:
+            if journal.candidate.policy == MATERIALIZE_POLICY:
+                try:
+                    self._client(journal).read_until(
+                        lambda readback: verify_rollback_readback(
+                            journal.snapshot, readback
+                        )
+                    )
+                except InstanceReplaced as error:
+                    return self._transition(
+                        journal,
+                        "instance-vanished",
+                        failure=str(error),
+                        recovery_required=False,
+                    )
+                except MonitorError as error:
+                    return self._transition(
+                        journal,
+                        "rollback-failed",
+                        failure=f"rollback verification failed: {error}",
+                        recovery_required=True,
+                    )
             return self._transition(
                 journal, "reverted", runtime_verified=True, recovery_required=False
             )
@@ -2451,7 +2821,7 @@ class TransactionAuthority:
                 runtime_verified=True,
             )
         except MonitorError as error:
-            if journal.state in {"applying", "temporary-active"}:
+            if journal.state in {"preparing", "applying", "temporary-active"}:
                 journal = replace(journal, failure=f"persistence failed: {error}")
                 self.store.write(journal)
             return self.rollback(journal.transaction_id, reason=f"persistence failed: {error}")
@@ -2512,6 +2882,8 @@ def protocol_request(value: object) -> tuple[str, dict[str, object]]:
         expected = {"version", "command", "transaction_id"}
     elif command in {"begin", "scale"}:
         expected = {"version", "command", "candidate", "signature"}
+    elif command == "materialize":
+        expected = {"version", "command", "connector", "signature"}
     else:
         raise ValidationError("unknown control command")
     if set(value) != expected:
@@ -2609,6 +2981,8 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
             Candidate.scale(candidate_raw["connector"], candidate_raw["scale"]),
             raw["signature"],
         )
+    elif command == "materialize":
+        journal = authority.materialize(raw["connector"], raw["signature"])
     elif command == "confirm":
         journal = authority.confirm(raw["transaction_id"])
     else:
@@ -2671,7 +3045,7 @@ def serve() -> int:
                         response = handle_control(authority, request)
                         if (
                             isinstance(request, dict)
-                            and request.get("command") in {"begin", "scale"}
+                            and request.get("command") in {"begin", "scale", "materialize"}
                             and response.get("ok") is True
                         ):
                             status = response.get("status")
@@ -2684,7 +3058,15 @@ def serve() -> int:
                     connection.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
                     if (
                         isinstance(request, dict)
-                        and request.get("command") in {"begin", "scale"}
+                        and request.get("command") == "materialize"
+                        and response.get("ok") is True
+                        and isinstance(response.get("status"), dict)
+                        and response["status"].get("state") == "idle"
+                    ):
+                        return 0
+                    if (
+                        isinstance(request, dict)
+                        and request.get("command") in {"begin", "scale", "materialize"}
                         and response.get("ok") is False
                     ):
                         return 1
@@ -2737,7 +3119,7 @@ def send_control(request: dict[str, object]) -> dict[str, object]:
 
 
 def client_command(arguments: argparse.Namespace) -> int:
-    if arguments.action in {"apply", "scale"}:
+    if arguments.action in {"apply", "scale", "materialize"}:
         result = run_command([SYSTEMCTL, "--user", "start", SERVICE_NAME])
         if result.returncode != 0:
             raise MonitorError(result.stderr.strip() or "could not start monitor authority")
@@ -2759,7 +3141,7 @@ def client_command(arguments: argparse.Namespace) -> int:
                     "bitdepth": arguments.bitdepth,
                 },
             }
-        else:
+        elif arguments.action == "scale":
             request = {
                 "version": PROTOCOL_VERSION,
                 "command": "scale",
@@ -2768,6 +3150,13 @@ def client_command(arguments: argparse.Namespace) -> int:
                     "connector": arguments.connector,
                     "scale": arguments.scale,
                 },
+            }
+        else:
+            request = {
+                "version": PROTOCOL_VERSION,
+                "command": "materialize",
+                "signature": os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", ""),
+                "connector": arguments.connector,
             }
         deadline = time.monotonic() + 3.0
         while True:
@@ -2816,6 +3205,11 @@ def argument_parser() -> argparse.ArgumentParser:
     scale_parser = subparsers.add_parser("scale", help="apply and persist validated scale immediately")
     scale_parser.add_argument("--connector", required=True)
     scale_parser.add_argument("--scale", required=True)
+    materialize_parser = subparsers.add_parser(
+        "materialize",
+        help="enable advanced display settings without changing effective state",
+    )
+    materialize_parser.add_argument("--connector", required=True)
     for action in ("confirm", "revert"):
         action_parser = subparsers.add_parser(action)
         action_parser.add_argument("transaction_id")

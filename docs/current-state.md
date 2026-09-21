@@ -974,10 +974,20 @@ Single-monitor acceptance is complete on the development machine's LG `DP-1`
 output. Physical multi-monitor acceptance remains deferred because two real
 outputs were not simultaneously available; this is an untested hardware
 boundary, not a known failure. Deterministic tests cover multi-output ordering,
-identity, protected-topology, and target-screen semantics. The backend still
-requires one existing explicit machine-owned connector profile and never edits
-the portable catch-all. Fresh-install safe profile materialization remains
-required before Alpha release. See [Monitor Safe Apply backend](monitor-safe-apply.md).
+identity, protected-topology, and target-screen semantics.
+
+An isolated, undeployed schema-4/protocol-3 follow-up implements optional
+minimal-intent profile materialization for a fallback-managed output. The
+fallback remains a valid working configuration and Vanilla does not materialize
+it during installation, session start, hotplug, inspection, or panel open. Only
+the explicit **Enable advanced display settings** action clones a supported
+fallback rule for one connector, preserving `preferred` Mode, automatic
+position, automatic Scale, and omitted optional fields. It uses the existing
+prospective verification, atomic persistence, reload reconciliation, complete
+topology equality, and recovery engine without `hl.monitor()`, a confirmation
+deadline, or runtime correction. Subsequent edits specialize only the field the
+user changes. Controlled deployment and fresh-install acceptance remain
+pending. See [Monitor Safe Apply backend](monitor-safe-apply.md).
 
 ## Known open work
 
@@ -988,8 +998,9 @@ required before Alpha release. See [Monitor Safe Apply backend](monitor-safe-app
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Materialize an explicit machine-owned monitor profile safely on fresh
-  installations before exposing Monitor editing.
+- Deploy and accept the explicit opt-in minimal monitor-profile materialization
+  path. DF2 must retain the create-once fallback seed and must not materialize
+  connected displays automatically.
 - Perform physical multi-monitor acceptance when two suitable outputs are
   simultaneously available; deterministic multi-output coverage already
   exists and no failure is currently known.

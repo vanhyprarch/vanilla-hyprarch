@@ -108,7 +108,7 @@ Scope {
 
     function parseInspection(output: string): var {
         const value = JSON.parse(String(output || ""))
-        if (value === null || typeof value !== "object" || value.version !== 1
+        if (value === null || typeof value !== "object" || value.version !== 2
                 || typeof value.instance_signature !== "string"
                 || !Array.isArray(value.outputs))
             throw new Error("invalid monitor inspection schema")
@@ -124,6 +124,10 @@ Scope {
                     || typeof item.identity.serial !== "string"
                     || typeof item.active !== "boolean"
                     || typeof item.editable !== "boolean"
+                    || typeof item.profile_state !== "string"
+                    || typeof item.materializable !== "boolean"
+                    || (item.materialization_reason !== null
+                        && typeof item.materialization_reason !== "string")
                     || (item.unavailable_reason !== null
                         && typeof item.unavailable_reason !== "string")
                     || !Array.isArray(item.available_modes)
@@ -162,6 +166,9 @@ Scope {
                 identity: item.identity,
                 active: item.active,
                 editable: item.editable,
+                profile_state: item.profile_state,
+                materializable: item.materializable,
+                materialization_reason: item.materialization_reason,
                 unavailable_reason: item.unavailable_reason,
                 current_mode: currentMode,
                 available_modes: modes,
@@ -409,6 +416,14 @@ Scope {
             connector, "--scale", scaleText], "scale")
     }
 
+    function requestMaterialize(connector: string): bool {
+        const output = root.outputFor(connector)
+        if (output === null || output.editable || !output.materializable)
+            return false
+        return root.startAction([root.backendCommand, "materialize", "--connector",
+            connector], "materialize")
+    }
+
     function requestConfirm(): bool {
         if (!root.confirmationActive || root.operationBusy)
             return false
@@ -440,7 +455,7 @@ Scope {
 
     function parseControlResponse(output: string): var {
         const value = JSON.parse(String(output || ""))
-        if (value === null || typeof value !== "object" || value.version !== 2
+        if (value === null || typeof value !== "object" || value.version !== 3
                 || typeof value.ok !== "boolean")
             throw new Error("invalid monitor control response")
         if (!value.ok)
@@ -465,9 +480,16 @@ Scope {
             if (value.scale_millionths !== null
                     || (mode === null && value.bitdepth === null))
                 throw new Error("invalid Safe Apply candidate")
-        } else if (mode !== null || value.bitdepth !== null
-                || value.scale_millionths === null) {
-            throw new Error("invalid immediate Scale candidate")
+        } else if (policy === "immediate-scale") {
+            if (mode !== null || value.bitdepth !== null
+                    || value.scale_millionths === null)
+                throw new Error("invalid immediate Scale candidate")
+        } else if (policy === "materialize-profile") {
+            if (mode !== null || value.bitdepth !== null
+                    || value.scale_millionths !== null)
+                throw new Error("invalid materialization candidate")
+        } else {
+            throw new Error("invalid transaction policy")
         }
         return {
             connector: value.connector,
@@ -499,7 +521,8 @@ Scope {
         if (typeof status.transaction_id !== "string"
                 || states.indexOf(status.state) < 0
                 || (status.policy !== "safe-confirmed"
-                    && status.policy !== "immediate-scale")
+                    && status.policy !== "immediate-scale"
+                    && status.policy !== "materialize-profile")
                 || !Number.isInteger(status.sequence)
                 || status.candidate === null || typeof status.candidate !== "object"
                 || typeof status.candidate.connector !== "string"
@@ -538,7 +561,8 @@ Scope {
         }
         if (["committed", "reverted", "instance-vanished"].indexOf(
                 status.state) >= 0) {
-            if (status.policy === "safe-confirmed")
+            if (status.policy === "safe-confirmed"
+                    || status.policy === "materialize-profile")
                 root.resetPendingOnNextInspect = true
             root.refreshInspect(true)
             Hyprland.refreshMonitors()
@@ -720,7 +744,9 @@ Scope {
             active = false
             if (lastExitCode !== 0 || !root.acceptStatusJson(outputText, true))
                 root.errorMessage = root.conciseError(errorText,
-                    "Display update failed.")
+                    kind === "materialize"
+                    ? "Could not enable advanced display settings."
+                    : "Display update failed.")
             root.actionFinished()
         }
         stdout: StdioCollector { waitForEnd: true; onStreamFinished: {

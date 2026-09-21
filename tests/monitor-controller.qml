@@ -27,9 +27,9 @@ ShellRoot {
         }
     }
 
-    function inspection(): string {
+    function inspection(fallbackEditable: bool): string {
         return JSON.stringify({
-            version: 1,
+            version: 2,
             instance_signature: "fixture_123",
             outputs: [{
                 connector: "DP-1",
@@ -37,6 +37,9 @@ ShellRoot {
                 identity: { make: "Example", model: "Panel", serial: "ABC" },
                 active: true,
                 editable: true,
+                profile_state: "explicit-editable",
+                materializable: false,
+                materialization_reason: null,
                 unavailable_reason: null,
                 current_mode: { width: 3840, height: 2160, refresh_millihz: 60000 },
                 available_modes: [
@@ -58,6 +61,9 @@ ShellRoot {
                 identity: { make: "Example", model: "Inactive", serial: "OFF" },
                 active: false,
                 editable: false,
+                profile_state: "inactive",
+                materializable: false,
+                materialization_reason: "Output is inactive or unusable.",
                 unavailable_reason: "Output is inactive or unusable.",
                 current_mode: null,
                 available_modes: [],
@@ -68,13 +74,36 @@ ShellRoot {
                     current_format: "XRGB8888",
                     color_management_preset: "srgb"
                 }
+            }, {
+                connector: "DP-2",
+                label: "Fallback Panel",
+                identity: { make: "Example", model: "Fallback", serial: "DEF" },
+                active: true,
+                editable: fallbackEditable || false,
+                profile_state: fallbackEditable
+                    ? "explicit-editable" : "fallback-only",
+                materializable: !(fallbackEditable || false),
+                materialization_reason: null,
+                unavailable_reason: fallbackEditable ? null
+                    : "Enable advanced display settings to manage this output.",
+                current_mode: { width: 1920, height: 1080, refresh_millihz: 60000 },
+                available_modes: [
+                    { width: 1920, height: 1080, refresh_millihz: 60000 }
+                ],
+                scale_millionths: 1000000,
+                effective_bitdepth: 8,
+                bitdepth_choices: fallbackEditable ? [8, 10] : [],
+                effective: {
+                    current_format: "XRGB8888",
+                    color_management_preset: "srgb"
+                }
             }]
         })
     }
 
     function response(state, sequence, transactionId, candidate, remaining): string {
         return JSON.stringify({
-            version: 2,
+            version: 3,
             ok: true,
             status: {
                 transaction_id: transactionId,
@@ -90,14 +119,78 @@ ShellRoot {
         })
     }
 
+    function materializationResponse(state: string, sequence: int,
+            failure: var): string {
+        return JSON.stringify({
+            version: 3,
+            ok: true,
+            status: {
+                transaction_id: "materialize-transaction",
+                policy: "materialize-profile",
+                candidate: {
+                    connector: "DP-2", mode: null, bitdepth: null,
+                    scale_millionths: null
+                },
+                state: state,
+                sequence: sequence,
+                deadline_monotonic: null,
+                remaining_seconds: null,
+                failure: failure,
+                recovery_required: state === "preparing"
+            }
+        })
+    }
+
     function run(): void {
-        check(controller.acceptInspectionJson(inspection(), false),
+        check(controller.acceptInspectionJson(inspection(false), false),
             "valid inspection was rejected")
         check(controller.ready && controller.outputFor("DP-1") !== null,
             "inspection did not publish the output")
         check(controller.outputFor("HDMI-A-1").current_mode === null
                 && controller.ensurePending("HDMI-A-1") === null,
             "inactive output invalidated the normalized inspection model")
+        check(controller.outputFor("DP-2").profile_state === "fallback-only"
+                && controller.outputFor("DP-2").materializable
+                && !controller.outputFor("DP-2").editable,
+            "fallback-only output did not retain materialization state")
+        check(controller.requestMaterialize("DP-2"),
+            "eligible materialization request was rejected")
+        check(controller.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor materialize --connector DP-2"
+                && controller.lastRequestedKind === "materialize",
+            "materialization did not use the dedicated backend operation")
+        check(!controller.confirmationActive,
+            "materialization opened Safe Apply confirmation")
+        check(!controller.requestSafeApply("DP-2")
+                && !controller.requestScale("DP-2", "1.50"),
+            "fallback-only output accepted an advanced mutation")
+        check(controller.acceptStatusJson(materializationResponse(
+                "preparing", 0, null), true)
+                && controller.transactionInFlight
+                && controller.mutationsBlocked
+                && !controller.confirmationActive,
+            "materialization did not hold a non-confirming busy state")
+        check(controller.acceptStatusJson(materializationResponse(
+                "reverted", 1, "fixture materialization failure"), true)
+                && !controller.confirmationActive
+                && !controller.outputFor("DP-2").editable,
+            "failed materialization enabled advanced controls")
+        check(controller.acceptInspectionJson(inspection(false), true)
+                && controller.outputFor("DP-2").materializable,
+            "failed materialization did not remain retryable")
+        check(controller.acceptStatusJson(JSON.stringify({
+                version: 3, ok: true, status: { state: "idle" }
+            }), true),
+            "controller did not clear failed materialization status")
+        check(controller.acceptStatusJson(materializationResponse(
+                "committed", 4, null), true)
+                && !controller.confirmationActive
+                && controller.resetPendingOnNextInspect,
+            "materialization terminal state did not request authoritative refresh")
+        check(controller.acceptInspectionJson(inspection(true), false)
+                && controller.outputFor("DP-2").editable
+                && !controller.outputFor("DP-2").materializable,
+            "successful materialization did not enable advanced controls")
         check(controller.resolutionOptions("DP-1").length === 3,
             "resolution catalogue was not deduplicated by resolution")
         check(controller.refreshOptions("DP-1", 1920, 1080).length === 2,
@@ -168,7 +261,7 @@ ShellRoot {
 
         const reloaded = controllerComponent.createObject(root)
         check(reloaded !== null, "reload controller could not be created")
-        check(reloaded.acceptInspectionJson(inspection(), false),
+        check(reloaded.acceptInspectionJson(inspection(false), false),
             "reload controller rejected inspection")
         check(reloaded.acceptStatusJson(response("temporary-active", 2,
             "transaction-new", candidate, 5.1), false),
@@ -180,7 +273,7 @@ ShellRoot {
 
         const bitdepthController = controllerComponent.createObject(root)
         check(bitdepthController !== null
-                && bitdepthController.acceptInspectionJson(inspection(), false),
+                && bitdepthController.acceptInspectionJson(inspection(false), false),
             "bitdepth controller setup failed")
         check(bitdepthController.acceptStatusJson(response("temporary-active", 2,
             "transaction-depth", {
@@ -194,7 +287,7 @@ ShellRoot {
 
         const combinedController = controllerComponent.createObject(root)
         check(combinedController !== null
-                && combinedController.acceptInspectionJson(inspection(), false),
+                && combinedController.acceptInspectionJson(inspection(false), false),
             "combined controller setup failed")
         check(combinedController.acceptStatusJson(response("temporary-active", 2,
             "transaction-combined", {
@@ -216,7 +309,7 @@ ShellRoot {
             "terminal rollback left confirmation visible")
         check(controller.resetPendingOnNextInspect,
             "terminal Safe Apply did not defer reset to authoritative inspection")
-        check(controller.acceptInspectionJson(inspection(), false)
+        check(controller.acceptInspectionJson(inspection(false), false)
                 && !controller.resetPendingOnNextInspect
                 && controller.ensurePending("DP-1").width === 3840,
             "terminal reconciliation retained stale pending state")

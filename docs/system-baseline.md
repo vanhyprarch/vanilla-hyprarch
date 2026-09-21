@@ -130,8 +130,9 @@ configuration for the main shell. It will install `vanhyprarch-idle`,
 `vanhyprarch-appearance`, `vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
 available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`;
 it will also install `vanhyprarch-monitor` and its static, non-enabled user
-service. The deployed schema-v2 generation remains active until the
-policy-aligned schema-v3 backend passes its separate controlled deployment.
+service. The deployed schema-v3 generation is the accepted single-monitor
+runtime; newer journal schemas require their own controlled deployment boundary
+and must never replace a backend that owns nonterminal recovery material.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
 Zig Screensaver manager resources under the corresponding
@@ -360,9 +361,13 @@ Monitor panel write target. The live ownership migration uses
 profile. Each Monitor panel maps its own `ShellScreen` through
 `Hyprland.monitorFor(screen)` and consumes the backend's normalized read-only
 inspection. The backend fails closed unless one unambiguous explicit connector
-profile exists in the machine-owned file; it cannot edit the catch-all rule or
-managed Hyprland files. No general multi-monitor schema is promised during
-Alpha.
+profile exists in the machine-owned file; it cannot edit the fallback rule or
+managed Hyprland files. An undeployed repository follow-up allows the user to
+opt in to advanced display management by cloning the supported fallback for one
+connector while preserving `preferred`/`auto`/`auto` intent and verifying a
+complete observational no-op. Neither bootstrap nor session startup performs
+that operation automatically. No general multi-monitor schema is promised
+during Alpha.
 
 The managed `vanhyprarch-monitor` Python command and static, non-enabled
 `vanhyprarch-monitor-safe-apply.service` use baseline Python, systemd,

@@ -75,13 +75,14 @@ hyprctl --instance <signature> eval 'hl.monitor({...})'
 ```
 
 Hyprland 0.56.2 overlays these fields on an existing rule only when its output
-name exactly equals the requested connector. Before any journaled mutation, the
-backend therefore requires one unambiguous exact connector profile in the
-machine file, rejects every description-addressed machine profile, rejects a
-same-connector override, and proves that every candidate-owned field is
-replaceable in that profile. A catch-all-only, `desc:`-only, missing, or
-duplicate profile cannot reach `eval`; the backend never relies on Hyprland's
-new-rule defaults.
+name exactly equals the requested connector. It does not copy a catch-all rule
+when a runtime call creates a new connector rule. Before any journaled runtime
+mutation, the backend therefore requires one unambiguous exact connector
+profile in the machine file, rejects every description-addressed machine
+profile, rejects a same-connector override, and proves that every
+candidate-owned field is replaceable in that profile. A fallback-only,
+`desc:`-only, missing, or duplicate profile cannot reach `eval`; the backend
+never relies on Hyprland's new-rule defaults.
 
 An `ok` response is only command acceptance. Resolution and refresh must match
 the selected advertised tuple, with refresh normalized to integer millihertz
@@ -145,11 +146,15 @@ mistake an effective 8-bit fallback for the previous requested rule intent.
 
 ## Journal, lock, and supervision
 
-The private `${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/` directory holds
-one version-3 atomic `transaction.json`, one advisory `transaction.lock`, and
-one version-2 `control.sock`. Directory and file ownership and permissions are
-validated; the journal and lock are mode `0600`, the directory is mode `0700`,
-and malformed or unknown journal schemas fail closed. Every journal publication
+The accepted deployed generation uses journal schema 3 and control protocol 2.
+The undeployed minimal-profile materialization candidate uses schema 4 and
+protocol 3 because it adds a persistence-only transaction class and new
+persistent-intent representations. The private
+`${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/` directory holds one atomic
+`transaction.json`, one advisory `transaction.lock`, and one `control.sock`.
+Directory and file ownership and permissions are validated; the journal and
+lock are mode `0600`, the directory is mode `0700`, and malformed or unknown
+journal schemas fail closed. Every journal publication
 writes and `fsync`s a same-directory temporary file, atomically replaces the
 journal, then `fsync`s its parent directory. A crash therefore leaves the prior
 complete state or the next complete state; a truncated or semantically
@@ -165,11 +170,13 @@ idempotent: verified `committed`, `reverted`, or proven `instance-vanished`
 transactions need no action; every other readable state takes one bounded
 rollback path. The service is independent of Quickshell lifetime.
 
-The small newline-delimited JSON socket protocol supports version-2 `begin`,
-`scale`, `status`, `confirm`, and `revert` requests. `begin` carries an optional
-mode tuple and optional bitdepth, with at least one required. `scale` carries
-only connector and scale and completes its persistence transaction in one
-request. Quickshell is only a short-lived client of this protocol. Its
+The small newline-delimited JSON socket protocol supports `begin`, `scale`,
+`materialize`, `status`, `confirm`, and `revert` requests in the version-3
+candidate. `begin` carries an optional mode tuple and optional bitdepth, with at
+least one required. `scale` carries only connector and scale and completes its
+persistence transaction in one request. `materialize` carries only a connector
+and exact instance signature; it has no confirmation deadline or runtime
+monitor call. Quickshell is only a short-lived client of this protocol. Its
 processes do not own or cancel the independently supervised transaction.
 
 The separate `inspect` command is a versioned, read-only UI projection. It
@@ -177,8 +184,46 @@ uses the same Hyprland parser, canonical Mode catalogue, effective-bitdepth
 rules, and explicit-profile/override checks as transaction preflight. It does
 not start the service, create a journal, acquire mutation authority, invoke
 `hl.monitor()`, or write configuration. It exposes normalized current state,
-available Modes, Scale, effective bitdepth choices, physical identity, and an
-editable/unavailable decision; QML does not parse raw `monitors all` JSON.
+available Modes, Scale, effective bitdepth choices, physical identity, and
+normalized explicit/fallback/materializable/conflict state; QML does not parse
+raw `monitors all` JSON or decide materialization eligibility.
+
+## Optional minimal-profile materialization
+
+A fallback-managed display is already a valid Hyprland configuration. Vanilla
+does not create a connector profile during installation, session start,
+hotplug, inspection, or panel open. Advanced per-monitor controls remain
+unavailable until the user explicitly chooses **Enable advanced display
+settings**; Brightness and Text Size remain available through their independent
+owners.
+
+Materialization is a dedicated persistence-only transaction. It binds the
+exact compositor, connector and meaningful physical identity, snapshots the
+complete topology and both configuration files, validates one supported
+fallback and the absence of exact/description/override conflicts, clones the
+fallback block, and changes only `output = ""` to the connector. For the public
+seed the result is therefore `preferred` Mode, automatic position, automatic
+Scale, and no bitdepth or color field. The fallback remains byte-for-byte
+unchanged.
+
+The candidate passes the same Bubblewrap prospective verification, atomic
+replacement, reload observation, `configerrors`, exact-instance and crash
+recovery machinery as other persistence operations. It never calls
+`hl.monitor()`, enters `temporary-active`, or owns a deadline. Complete
+pre/post topology equality is mandatory, including every connected output,
+identity, active Mode, Scale, position, transform, DPMS, mirror, VRR, DRM/color
+state, reserved area, and advertised catalogue. A mismatch restores the exact
+original machine bytes, reconciles the reload, and verifies the original
+topology; no runtime correction hides a mismatch.
+
+Normal eligibility requires meaningful make/model and a unique non-empty
+serial. Because materialization is always an explicit user request, a
+serial-less output is also eligible only when meaningful make/model/description
+form a unique identity in the current topology. Weak or ambiguous identity,
+inactive output, unsupported fallback syntax, a description-addressed rule, an
+override conflict, hotplug, compositor replacement, or an external file edit
+fails closed. One output is materialized per transaction while the complete
+topology remains protected.
 
 ## Persistence and machine-profile boundary
 
@@ -186,7 +231,12 @@ The persistence foundation locates exactly one existing explicit connector
 profile, preserves unrelated bytes and comments, replaces only the fields
 owned by that candidate (mode, bitdepth, or scale), rejects machine/override
 hash races, and atomically replaces the machine file with preserved mode and
-ownership.
+ownership. A materialized `mode = "preferred"` and `scale = "auto"` are valid
+replaceable sources: the first actual user edit specializes only its owned
+value. Omitted bitdepth is the known Hyprland default requested intent of 8;
+the first bitdepth edit inserts exactly one simple field after Scale. A combined
+Mode-plus-bitdepth edit replaces Mode and inserts bitdepth in one atomic
+candidate. Materialization itself does none of those specializations.
 Recovery restores exact original bytes only when the current hash is either
 the original or the transaction's recorded candidate hash. A different hash
 is an external edit and is never overwritten.
@@ -266,24 +316,23 @@ exact restoration round trips. Immediate Scale persistence has also been
 live-accepted. Fixture and isolated verifier coverage remain prerequisites for
 future changes to these paths.
 
-The policy-aligned journal is strict schema version 3. It intentionally does
-not interpret schema-v2 recovery material because the old candidate encoded
-mode plus scale with different semantics. A backend upgrade must never cross a
-nonterminal or recovery-required transaction from an older schema. The old
-deployed helper must first prove that its journal is terminal and
-recovery-disarmed, its lock is
-unheld, and no control listener exists. Only then may controlled deployment
+Journal schemas are strict and never reinterpret older recovery material. The
+schema-4 materialization candidate intentionally rejects schema 3, just as the
+deployed schema 3 generation rejects schema 2. A backend upgrade must never
+cross a nonterminal or recovery-required transaction from an older schema. The
+old deployed helper must first prove that its journal is terminal and
+recovery-disarmed, its lock is unheld, and no control listener exists. Only then
+may controlled deployment
 remove that old terminal runtime journal and install the new helper into clean
 runtime state. Future schema changes require the same explicit upgrade protocol
 or a separately reviewed migration; they must not guess compatibility.
 
-The public machine seed still contains only a catch-all rule. Safe Apply
-requires an existing, unambiguous, explicit machine-owned output profile; it
-does not edit the catch-all and never creates or infers a profile. Safe initial
-materialization of explicit profiles is an unresolved fresh-install product
-requirement that must be completed before Alpha release. The backend parser
-permits multiple unique explicit connector profiles so that later
-materialization does not require replacing the transaction architecture.
+The public machine seed remains exactly one portable fallback with
+`preferred`/`auto`/`auto`. It is valid indefinitely and is never a settings
+write target. The optional materialization transaction clones that supported
+block only after explicit consent, and subsequent edits target only the cloned
+connector rule. Existing explicit profiles are an idempotent no-op and are
+never normalized or rewritten by materialization.
 
 ## Deployed UI integration and acceptance boundary
 
@@ -315,5 +364,6 @@ Physical multi-monitor acceptance is deferred until appropriate hardware is
 available. The architecture and deterministic suite cover multiple outputs,
 per-screen connector mapping, output-order independence, identity changes, and
 protected-topology failures; no physical multi-monitor success is claimed.
-Safe fresh-install profile materialization also remains later work. DDC/CI
-Brightness and global Text Size remain deliberately separate.
+Optional materialization is repository-implemented and deterministically
+covered, but controlled deployment and fresh-install acceptance remain later
+work. DDC/CI Brightness and global Text Size remain deliberately separate.

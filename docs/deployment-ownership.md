@@ -43,18 +43,21 @@ are private user configuration with mode `0600`.
 The Hyprland machine seed contains one portable catch-all monitor rule. Any
 output without a more specific machine rule uses its preferred mode, automatic
 position, and automatic scale. This fallback is machine-owned and is not a
-Monitor panel write target; it exposes no project-owned scale token.
+Monitor panel write target. It is a valid configuration indefinitely and is
+never materialized by installation, session start, hotplug, inspection, or
+panel open.
 
-The current pre-integration Monitor panel may edit only the explicitly
-documented `vanhyprarchMonitorScale` field associated with the focused
-monitor's specific explicit output profile. It fails closed when that profile,
-field, or expected file shape is absent or ambiguous and never edits the
-catch-all rule. Final integration moves this write behind the Monitor backend's
-immediate validated Scale transaction; QML will not remain a file writer. The
-public seed contains no connector, fixed mode or scale, keyboard layout, bit
-depth, color profile, device rule, or UI-owned scale field. No general
-multi-monitor schema is promised during Alpha. The override seed contains only
-its administrative header.
+The integrated Monitor panel writes no configuration itself. Its backend may,
+only after the explicit **Enable advanced display settings** action, clone one
+supported fallback block into a connector-specific rule while changing only
+the empty output selector. That persistence-only transaction preserves the
+fallback and its `preferred`/`auto`/`auto` intent, proves complete topology
+equality, and rolls back exact bytes on failure. Later Mode, Scale, or bitdepth
+edits specialize only their owned field in that explicit rule. The public seed
+contains no connector, fixed mode or scale, keyboard layout, bit depth, color
+profile, device rule, or UI-owned scale field. No general multi-monitor schema
+is promised during Alpha. The override seed contains only its administrative
+header.
 
 Monitor transaction journals are versioned same-boot recovery material, not
 managed deployment payloads. Never replace `vanhyprarch-monitor` while an
@@ -144,8 +147,9 @@ exact-byte replacement, prospective verification, reload reconciliation, and
 recovery machinery. Mode and bitdepth durable Confirm plus immediate Scale
 persistence have completed controlled single-monitor live acceptance through
 the deployed UI. The helper never changes the create-once seed, portable
-catch-all, managed Hyprland files, or user override. Fresh-install
-explicit-profile materialization and physical multi-monitor acceptance remain
+fallback block, managed Hyprland files, or user override. The optional
+materialization candidate is repository-implemented but not deployed or
+fresh-install accepted; physical multi-monitor acceptance also remains
 deferred.
 
 ## PolicyKit session lifecycle ownership

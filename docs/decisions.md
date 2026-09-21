@@ -693,7 +693,9 @@ seed; neither contains a global XKB fallback. See
 **Status:** Accepted
 **Date:** 2026-09-18
 **Implementation:** Schema-v3 backend and UI deployed; single-monitor runtime,
-persistence, confirmation, dismissal, and Quickshell-reload paths live-accepted
+persistence, confirmation, dismissal, and Quickshell-reload paths live-accepted.
+Optional minimal-profile materialization is repository-implemented in an
+undeployed schema-v4/protocol-v3 candidate.
 
 Future monitor control is per explicit output profile. Resolution/refresh is one
 Mode tuple, bitdepth is 8 or 10 bpc, and Scale is per output. Text Size remains
@@ -733,11 +735,25 @@ Escape and outside dismissal both request backend Revert. A Quickshell reload
 reconstructs the overlay from backend status with the same transaction ID and
 remaining deadline; it neither cancels nor extends the transaction.
 
-Monitor transactions require an existing unambiguous explicit connector profile
-in machine configuration. They neither edit the portable catch-all nor
-materialize a new profile. Safe fresh-install profile materialization is a
-separate product requirement before Alpha release. Brightness and Text Size are
-not routed through this backend.
+Monitor runtime transactions require an existing unambiguous explicit connector
+profile in machine configuration. The portable fallback remains a valid
+Hyprland configuration and Vanilla leaves it untouched unless the user
+explicitly chooses **Enable advanced display settings**. That action is a
+dedicated persistence-only transaction: it clones one supported fallback block,
+changes only its empty output selector to the connector, verifies complete
+pre/post topology equality, and uses the existing prospective-validation,
+atomic-persistence, reload and recovery engine. It does not call
+`hl.monitor()`, create a confirmation deadline, infer current effective values,
+or normalize an existing explicit profile.
+
+For the public fallback, the explicit clone retains `preferred` Mode,
+automatic position, automatic Scale, and omitted bitdepth/color fields.
+Subsequent Mode or Scale edits replace only their automatic value; the first
+bitdepth preference inserts only that field. Installation, session start,
+hotplug, inspection, and panel open never materialize automatically. DF2 may
+offer the same backend operation only after explicit consent and must not grow
+a second monitor parser or persister. Brightness and Text Size are not routed
+through this backend.
 
 Single-monitor acceptance is complete. Physical multi-monitor behavior remains
 architecturally covered and fixture-tested but has not been accepted with two

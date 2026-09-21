@@ -307,9 +307,11 @@ io.write(table.concat(loaded, "\n"))
         ownership_prose = " ".join(
             OWNERSHIP_DOC.read_text(encoding="utf-8").split()
         )
-        self.assertIn("specific explicit output profile", ownership_prose)
+        self.assertIn("Enable advanced display settings", ownership_prose)
         self.assertIn("This fallback is machine-owned", ownership_prose)
         self.assertIn("not a Monitor panel write target", ownership_prose)
+        self.assertIn("never materialized by installation", ownership_prose)
+        self.assertIn("preferred`/`auto`/`auto` intent", ownership_prose)
         self.assertIn("No general multi-monitor schema is", ownership_prose)
 
     def test_public_commands_keep_regular_user_local_targets(self) -> None:

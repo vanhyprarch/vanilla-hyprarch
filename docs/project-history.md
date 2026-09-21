@@ -637,8 +637,29 @@ Idle remained healthy through real Hyprland configuration reloads.
 Single-monitor acceptance is complete. Physical multi-monitor acceptance is
 deferred until two suitable outputs can be tested simultaneously; deterministic
 multi-output tests remain coverage, not a claim of physical validation. The
-catch-all-only public seed still needs safe explicit-profile materialization
-before Monitor editing is complete for a fresh Alpha installation.
+fallback-only public seed remains a valid configuration; advanced per-output
+editing still needs an explicit opt-in materialization path before Monitor
+editing is complete for a fresh Alpha installation.
+
+## 2026-09-21: Minimal-intent monitor profile materialization
+
+An isolated repository follow-up adds that opt-in path without turning it into
+normal provisioning. **Enable advanced display settings** starts one dedicated
+persistence-only backend transaction for one output. It clones the supported
+fallback Lua block, changes only its empty output selector, keeps the original
+fallback intact, and requires exact effective topology equality after the
+configuration reload. It sends no runtime `hl.monitor()` call and owns no
+confirmation deadline.
+
+The schema-v4/protocol-v3 candidate reuses Bubblewrap prospective verification,
+atomic file replacement, reload reconciliation, exact-instance and physical
+identity binding, and crash recovery. The persister can later specialize
+`mode = "preferred"`, specialize `scale = "auto"`, or insert one previously
+omitted bitdepth field, so materialization need not infer current effective
+values. Inspection and QML expose normalized eligibility plus one explicit
+action while leaving Brightness and Text Size available. No live profile,
+deployed helper, or display state was changed; controlled deployment and a real
+fresh-install acceptance remain pending.
 
 ## Project maintenance contract
 

@@ -29,6 +29,12 @@ grep -Fq '[root.backendCommand, "inspect"]' "$controller" \
     || fail 'controller has no read-only inspection client'
 grep -Fq '[root.backendCommand, "scale", "--connector"' "$controller" \
     || fail 'Scale does not use the immediate backend path'
+grep -Fq '[root.backendCommand, "materialize", "--connector"' "$controller" \
+    || fail 'advanced display enablement lacks a dedicated backend operation'
+grep -Fq 'Enable advanced display settings' "$panel" \
+    || fail 'fallback-managed output lacks explicit advanced-settings action'
+grep -Fq 'Your current display settings should not change.' "$panel" \
+    || fail 'materialization copy implies the working display needs initialization'
 grep -Fq 'interval: 1000' "$controller" \
     || fail 'active transaction reconciliation lacks bounded polling'
 grep -Fq 'running: root.transactionInFlight && root.checksEnabled' "$controller" \
