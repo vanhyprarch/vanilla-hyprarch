@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from contextlib import redirect_stdout
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -476,6 +478,112 @@ class MonitorBackendTests(unittest.TestCase):
             "DP-1", width=3840, height=2160, refresh="60.00"
         )
         self.assertEqual(monitor.validate_candidate(candidate, topology), target)
+        self.assertEqual(runner.calls, [monitor.monitors_argv(self.instance.signature)])
+        self.assertNotIn("eval", runner.calls[0])
+
+    def test_inspection_uses_canonical_transaction_domain(self) -> None:
+        topology = monitor.parse_monitor_payload([captured_hyprland_0562_output()])
+        payload = monitor.inspection_payload(
+            topology,
+            machine_configuration(),
+            b"-- user override\n",
+            self.instance.signature,
+        )
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["instance_signature"], self.instance.signature)
+        inspected = payload["outputs"][0]
+        self.assertEqual(inspected["connector"], "DP-1")
+        self.assertEqual(inspected["identity"]["serial"], "301MALFM3V64")
+        self.assertTrue(inspected["editable"])
+        self.assertEqual(
+            inspected["current_mode"],
+            {"width": 3840, "height": 2160, "refresh_millihz": 60000},
+        )
+        self.assertEqual(inspected["scale_millionths"], 1_250_000)
+        self.assertEqual(inspected["effective_bitdepth"], 10)
+        self.assertEqual(inspected["bitdepth_choices"], [8, 10])
+        modes = inspected["available_modes"]
+        self.assertEqual(len(modes), 13)
+        self.assertIn(
+            {"width": 2560, "height": 1440, "refresh_millihz": 59950},
+            modes,
+        )
+
+    def test_inspection_editability_fails_closed(self) -> None:
+        topology = monitor.parse_monitor_payload([output(), inactive_output()])
+        catch_all_only = b'''hl.monitor({
+    output = "",
+    mode = "preferred",
+    position = "auto",
+    scale = "auto",
+})
+'''
+        payload = monitor.inspection_payload(
+            topology, catch_all_only, b"-- override\n", self.instance.signature
+        )
+        states = {item["connector"]: item for item in payload["outputs"]}
+        self.assertFalse(states["DP-1"]["editable"])
+        self.assertIn("exactly one", states["DP-1"]["unavailable_reason"])
+        self.assertFalse(states["HDMI-A-1"]["editable"])
+        self.assertFalse(states["HDMI-A-1"]["active"])
+        self.assertIsNone(states["HDMI-A-1"]["current_mode"])
+        self.assertIn("inactive", states["HDMI-A-1"]["unavailable_reason"])
+
+        superseding = b'''hl.monitor({
+    output = "DP-1",
+    mode = "2560x1440@59.95",
+    scale = 1.25,
+})
+'''
+        payload = monitor.inspection_payload(
+            monitor.parse_monitor_payload([output()]),
+            machine_configuration(),
+            superseding,
+            self.instance.signature,
+        )
+        self.assertFalse(payload["outputs"][0]["editable"])
+        self.assertIn("supersedes", payload["outputs"][0]["unavailable_reason"])
+
+    def test_inspection_multi_output_order_is_connector_canonical(self) -> None:
+        first = output(name="DP-2", serial="SECOND", x=2560)
+        second = output(name="DP-1", serial="FIRST")
+        forward = monitor.inspection_payload(
+            monitor.parse_monitor_payload([first, second]),
+            machine_configuration(), b"-- override\n", self.instance.signature,
+        )
+        reverse = monitor.inspection_payload(
+            monitor.parse_monitor_payload([second, first]),
+            machine_configuration(), b"-- override\n", self.instance.signature,
+        )
+        self.assertEqual(forward, reverse)
+        self.assertEqual(
+            [item["connector"] for item in forward["outputs"]], ["DP-1", "DP-2"]
+        )
+
+    def test_inspect_command_is_read_only_and_does_not_create_journal(self) -> None:
+        topology = [captured_hyprland_0562_output()]
+        runner = QueueRunner([topology])
+        environment = {
+            "HOME": str(self.root / "home"),
+            "XDG_CONFIG_HOME": str(self.config),
+            "XDG_RUNTIME_DIR": str(self.runtime),
+            "HYPRLAND_INSTANCE_SIGNATURE": self.instance.signature,
+        }
+        before = sorted(path.name for path in self.store.directory.iterdir())
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            result = monitor.inspect_command(
+                environment,
+                runner,
+                self.provider,
+                self.paths,
+            )
+        after = sorted(path.name for path in self.store.directory.iterdir())
+        self.assertEqual(result, 0)
+        self.assertEqual(before, after)
+        self.assertFalse(self.store.journal_path.exists())
+        value = json.loads(stream.getvalue())
+        self.assertEqual(value["outputs"][0]["connector"], "DP-1")
         self.assertEqual(runner.calls, [monitor.monitors_argv(self.instance.signature)])
         self.assertNotIn("eval", runner.calls[0])
 

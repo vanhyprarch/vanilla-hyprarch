@@ -2,11 +2,12 @@
 
 ## Status and invariant
 
-The deployed schema-v2 backend was validated through a temporary scale change
-from 1.25 to 1.50 and verified automatic rollback. That deliberately low-risk
-exercise validated the runtime transaction engine; it does not define the
-final Scale UX. This repository-only policy realignment introduces schema v3
-and is not deployed or connected to the Monitor panel.
+The deployed schema-v3 backend has passed controlled live acceptance for
+Mode-only and bitdepth-only temporary changes with automatic rollback, plus an
+immediate Scale 1.25→1.50→1.25 durable persistence round trip. The earlier
+temporary Scale exercise validated the rollback engine at lower risk; it does
+not define the final Scale UX. Repository-side Monitor UI integration now
+exists but has not been deployed or live-accepted.
 
 The final policy has two transaction classes:
 
@@ -165,7 +166,16 @@ The small newline-delimited JSON socket protocol supports version-2 `begin`,
 `scale`, `status`, `confirm`, and `revert` requests. `begin` carries an optional
 mode tuple and optional bitdepth, with at least one required. `scale` carries
 only connector and scale and completes its persistence transaction in one
-request. Quickshell will eventually be only a client of this protocol.
+request. Quickshell is only a short-lived client of this protocol. Its
+processes do not own or cancel the independently supervised transaction.
+
+The separate `inspect` command is a versioned, read-only UI projection. It
+uses the same Hyprland parser, canonical Mode catalogue, effective-bitdepth
+rules, and explicit-profile/override checks as transaction preflight. It does
+not start the service, create a journal, acquire mutation authority, invoke
+`hl.monitor()`, or write configuration. It exposes normalized current state,
+available Modes, Scale, effective bitdepth choices, physical identity, and an
+editable/unavailable decision; QML does not parse raw `monitors all` JSON.
 
 ## Persistence and machine-profile boundary
 
@@ -272,15 +282,27 @@ requirement that must be completed before Alpha release. The backend parser
 permits multiple unique explicit connector profiles so that later
 materialization does not require replacing the transaction architecture.
 
-## Deferred live and UI work
+## Repository UI integration and deferred live work
 
-A controlled phase must first deploy schema v3 only after schema v2 is proven
-idle with no recovery-required journal. Later phases separately exercise live
-safe-confirmed Mode, live safe-confirmed bitdepth, immediate Scale, and durable
-persistence, including watcher reload, post-reload readback, and protected
-subsystem checks.
-Quickshell controller and confirmation-overlay integration remain unimplemented.
-Safe fresh-install profile materialization also remains later work. The
-existing Monitor panel is unchanged. Its current direct Scale writer is not the
-final backend integration, while its DDC/CI Brightness and global Text Size
-ownership remain deliberately separate.
+One global `MonitorController` coalesces read-only inspection, sends Safe Apply
+or immediate Scale requests, reconciles status, and refreshes Quickshell's
+monitor projection after terminal operations. Mode/refresh and bitdepth are
+pending input state until one Apply action; they never masquerade as confirmed
+state. Scale invokes the immediate backend path and opens no confirmation.
+
+The confirmation surface is instantiated per screen within the existing
+`Variants { model: Quickshell.screens }` structure and uses `CenteredOverlay`
+plus `OverlayFocusCoordinator`. Only the preferred target-screen instance is
+visible, with fallback to another registered screen if necessary. Keep and
+Revert carry the exact transaction ID; Escape and outside dismissal mean
+Revert. A one-second status poll exists only while a backend transaction is
+nonterminal. The displayed countdown is interpolated locally between status
+samples, but only backend `remaining_seconds` and its monotonic deadline have
+authority. A restarted Quickshell queries status and reconstructs the overlay
+without changing or extending that deadline.
+
+Controlled deployment and live UI acceptance remain later work. They must
+validate output mapping, pending combined Mode/bitdepth Apply, immediate Scale,
+Keep/Revert/timeout, and shell reload during confirmation. Safe fresh-install
+profile materialization also remains later work. DDC/CI Brightness and global
+Text Size remain deliberately separate.

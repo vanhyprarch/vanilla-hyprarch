@@ -571,6 +571,97 @@ def validate_candidate(candidate: Candidate, topology: Topology) -> MonitorState
     return target
 
 
+def inspection_payload(
+    topology: Topology,
+    machine_content: bytes,
+    override_content: bytes,
+    signature: str,
+) -> dict[str, object]:
+    """Project the transaction domain into the small read-only UI contract."""
+    outputs: list[dict[str, object]] = []
+    for state in sorted(topology.monitors, key=lambda item: item.connector):
+        editable = False
+        unavailable_reason: str | None = None
+        bitdepth_choices: list[int] = []
+        if not state.usable:
+            unavailable_reason = "Output is inactive or unusable."
+        else:
+            try:
+                profile = require_explicit_profile(machine_content, state.connector)
+                reject_superseding_override(override_content, state.connector)
+                rewrite_existing_profile(
+                    machine_content,
+                    Candidate.safe(
+                        state.connector,
+                        width=state.width,
+                        height=state.height,
+                        refresh=state.refresh_millihz / 1000,
+                    ),
+                )
+                rewrite_existing_profile(
+                    machine_content,
+                    Candidate.scale(
+                        state.connector, state.scale_millionths / 1_000_000
+                    ),
+                )
+                bitdepth_intent = profile_bitdepth_intent(profile)
+                if bitdepth_intent in BITDEPTH_FORMATS:
+                    rewrite_existing_profile(
+                        machine_content,
+                        Candidate.safe(state.connector, bitdepth=bitdepth_intent),
+                    )
+                editable = True
+                if (
+                    bitdepth_intent in BITDEPTH_FORMATS
+                    and state.effective_bitdepth is not None
+                ):
+                    bitdepth_choices = sorted(BITDEPTH_FORMATS)
+            except MonitorError as error:
+                unavailable_reason = str(error)
+
+        modes = [
+            {
+                "width": mode.width,
+                "height": mode.height,
+                "refresh_millihz": mode.refresh_millihz,
+            }
+            for mode in state.canonical_advertised_modes()
+        ]
+        label = state.identity.model.strip() or state.identity.description.strip()
+        outputs.append(
+            {
+                "connector": state.connector,
+                "label": label or state.connector,
+                "identity": {
+                    "make": state.identity.make,
+                    "model": state.identity.model,
+                    "serial": state.identity.serial,
+                },
+                "active": not state.disabled,
+                "editable": editable,
+                "unavailable_reason": unavailable_reason,
+                "current_mode": None
+                if state.width <= 0 or state.height <= 0 or state.refresh_millihz <= 0
+                else {
+                    "width": state.width,
+                    "height": state.height,
+                    "refresh_millihz": state.refresh_millihz,
+                },
+                "available_modes": modes,
+                "scale_millionths": state.scale_millionths,
+                "effective_bitdepth": state.effective_bitdepth,
+                "bitdepth_choices": bitdepth_choices,
+                "effective": {
+                    "current_format": state.current_format,
+                    "color_management_preset": state.color_state[
+                        "colorManagementPreset"
+                    ],
+                },
+            }
+        )
+    return {"version": 1, "instance_signature": signature, "outputs": outputs}
+
+
 @dataclass(frozen=True)
 class InstanceIdentity:
     signature: str
@@ -2434,9 +2525,22 @@ def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
     remaining = None
     if journal.deadline_monotonic is not None:
         remaining = max(0.0, journal.deadline_monotonic - clock.monotonic())
+    candidate = journal.candidate
     return {
         "transaction_id": journal.transaction_id,
         "policy": journal.candidate.policy,
+        "candidate": {
+            "connector": candidate.connector,
+            "mode": None
+            if candidate.mode is None
+            else {
+                "width": candidate.mode.width,
+                "height": candidate.mode.height,
+                "refresh_millihz": candidate.mode.refresh_millihz,
+            },
+            "bitdepth": candidate.bitdepth,
+            "scale_millionths": candidate.scale_millionths,
+        },
         "state": journal.state,
         "sequence": journal.sequence,
         "deadline_monotonic": journal.deadline_monotonic,
@@ -2444,6 +2548,30 @@ def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
         "failure": journal.failure,
         "recovery_required": journal.recovery_required,
     }
+
+
+def inspect_command(
+    environment: Mapping[str, str] = os.environ,
+    runner: Runner = run_command,
+    instance_provider: InstanceProvider | None = None,
+    config_paths: ConfigPaths | None = None,
+) -> int:
+    signature = environment.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    if SIGNATURE_RE.fullmatch(signature) is None:
+        raise ValidationError("HYPRLAND_INSTANCE_SIGNATURE is missing or invalid")
+    root = runtime_root(environment)
+    provider = instance_provider or ProcInstanceProvider(root)
+    instance = provider.current(signature)
+    client = HyprlandClient(signature, instance, provider, runner=runner)
+    topology = client.read_topology()
+    paths = config_paths or default_config_paths(environment)
+    machine = snapshot_file(paths.machine)
+    override = snapshot_file(paths.override)
+    payload = inspection_payload(
+        topology, machine.content, override.content, signature
+    )
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return 0
 
 
 def handle_control(authority: TransactionAuthority, request: object) -> dict[str, object]:
@@ -2676,6 +2804,9 @@ def argument_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("serve", help="run the systemd-supervised authority")
     subparsers.add_parser("recover", help="run one idempotent recovery pass")
     subparsers.add_parser("status", help="read authoritative transaction status")
+    subparsers.add_parser(
+        "inspect", help="read normalized monitor capabilities without mutation"
+    )
     apply_parser = subparsers.add_parser("apply", help="request a confirmed mode/bitdepth candidate")
     apply_parser.add_argument("--connector", required=True)
     apply_parser.add_argument("--width", type=int)
@@ -2698,6 +2829,8 @@ def main() -> int:
             return serve()
         if arguments.action == "recover":
             return recover_command()
+        if arguments.action == "inspect":
+            return inspect_command()
         return client_command(arguments)
     except (MonitorError, OSError, json.JSONDecodeError) as error:
         print(f"vanhyprarch-monitor: {error}", file=sys.stderr)

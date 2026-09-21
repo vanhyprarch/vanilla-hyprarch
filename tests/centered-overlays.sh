@@ -39,6 +39,8 @@ grep -Fq 'model: Quickshell.screens' "$shell_file" \
     || fail 'SuperSpace must have exactly one declaration per screen delegate'
 [ "$(grep -F -c '    BackgroundPickerPanel {' "$shell_file")" -eq 1 ] \
     || fail 'Background Picker must have exactly one declaration per screen delegate'
+[ "$(grep -F -c '    MonitorConfirmationPanel {' "$shell_file")" -eq 1 ] \
+    || fail 'Monitor confirmation must have exactly one declaration per screen delegate'
 
 if grep -Fq 'shortcutsAnchor' "$shell_file"
 then
@@ -56,7 +58,8 @@ grep -Fq 'margins.left: OverlayGeometry.usableMargin(root.screenWidth,' \
 [ "$(grep -F 'persistentLeftInset: dockWidth' \
     "$components_dir/SuperSpacePanel.qml" \
     "$components_dir/ShortcutsPanel.qml" \
-    "$components_dir/BackgroundPickerPanel.qml" | wc -l)" -eq 3 ] \
+    "$components_dir/BackgroundPickerPanel.qml" \
+    "$components_dir/MonitorConfirmationPanel.qml" | wc -l)" -eq 4 ] \
     || fail 'central surfaces do not share the persistent dock inset'
 grep -Fq 'focusable: true' "$components_dir/CenteredOverlay.qml" \
     || fail 'centered surfaces cannot receive keyboard focus'

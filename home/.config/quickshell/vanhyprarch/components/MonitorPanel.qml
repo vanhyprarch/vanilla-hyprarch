@@ -10,6 +10,7 @@ DockPopup {
 
     required property var theme
     required property var textSizeController
+    required property var monitorController
     property color textColor: root.theme.text
     property int textSizePreviewIndex: -1
     property bool brightnessAvailable: false
@@ -25,105 +26,20 @@ DockPopup {
     property bool startupWarmupPending: true
     property int brightnessWriteRetriesRemaining: 0
     readonly property var scalePresets: ["1.00", "1.25", "1.50", "2.00"]
-    readonly property string scaleEditScript: [
-        "set -eu",
-        "connector=\"$1\"",
-        "value=\"$2\"",
-        "case \"$value\" in",
-        "    1.00|1.25|1.50|2.00) ;;",
-        "    *) exit 64 ;;",
-        "esac",
-        "case \"$connector\" in",
-        "    ''|*[!A-Za-z0-9_.:-]*) exit 64 ;;",
-        "esac",
-        "[ -n \"${HOME:-}\" ] || exit 68",
-        "case \"$HOME\" in /*) ;; *) exit 68 ;; esac",
-        "configHome=${XDG_CONFIG_HOME:-$HOME/.config}",
-        "case \"$configHome\" in /*) ;; *) exit 68 ;; esac",
-        "target=\"$configHome/vanhyprarch/machine/hyprland.lua\"",
-        "[ -f \"$target\" ] && [ ! -L \"$target\" ] || exit 66",
-        "[ \"$(stat -c %u -- \"$target\")\" = \"$(id -u)\" ] || exit 66",
-        "pattern='^[[:space:]]*local[[:space:]]+vanhyprarchMonitorScale[[:space:]]*=[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*$'",
-        "grepStatus=0",
-        "count=$(grep -Ec \"$pattern\" \"$target\") || grepStatus=$?",
-        "[ \"$grepStatus\" -le 1 ] || exit \"$grepStatus\"",
-        "[ \"$count\" -eq 1 ] || exit 65",
-        "awk -v connector=\"$connector\" '",
-        "    function resetBlock() { output = \"unset\"; scale = \"unset\"; outputCount = 0; scaleCount = 0 }",
-        "    BEGIN { inMonitor = 0; monitorCount = 0; explicitCount = 0; fallbackCount = 0; tokenPending = 0; resetBlock() }",
-        "    /^[[:space:]]*local[[:space:]]+vanhyprarchMonitorScale[[:space:]]*=/ {",
-        "        tokenPending = 1",
-        "        next",
-        "    }",
-        "    tokenPending && /^[[:space:]]*(--.*)?$/ { next }",
-        "    /^[[:space:]]*hl[.]monitor[[:space:]]*[(][[:space:]]*[{][[:space:]]*$/ {",
-        "        if (inMonitor) exit 65",
-        "        inMonitor = 1",
-        "        monitorCount++",
-        "        blockOwnsToken = tokenPending",
-        "        tokenPending = 0",
-        "        resetBlock()",
-        "        next",
-        "    }",
-        "    tokenPending { exit 65 }",
-        "    inMonitor && /^[[:space:]]*output[[:space:]]*=/ {",
-        "        line = $0",
-        "        sub(/^[[:space:]]*output[[:space:]]*=[[:space:]]*\"/, \"\", line)",
-        "        sub(/\"[[:space:]]*,?[[:space:]]*$/, \"\", line)",
-        "        output = line",
-        "        outputCount++",
-        "        next",
-        "    }",
-        "    inMonitor && /^[[:space:]]*scale[[:space:]]*=/ {",
-        "        line = $0",
-        "        sub(/^[[:space:]]*scale[[:space:]]*=[[:space:]]*/, \"\", line)",
-        "        sub(/[[:space:]]*,?[[:space:]]*$/, \"\", line)",
-        "        scale = line",
-        "        scaleCount++",
-        "        next",
-        "    }",
-        "    inMonitor && /^[[:space:]]*[}][[:space:]]*[)][[:space:]]*$/ {",
-        "        if (outputCount != 1 || scaleCount != 1) exit 65",
-        "        if (output == \"\" && scale == \"\\\"auto\\\"\" && !blockOwnsToken) fallbackCount++",
-        "        if (output == connector && scale == \"vanhyprarchMonitorScale\" && blockOwnsToken) explicitCount++",
-        "        inMonitor = 0",
-        "        next",
-        "    }",
-        "    END {",
-        "        if (inMonitor || tokenPending || monitorCount != 2 || fallbackCount != 1 || explicitCount != 1) exit 65",
-        "    }",
-        "' \"$target\" || exit 65",
-        "referenceCount=$(grep -Ec '^[[:space:]]*scale[[:space:]]*=[[:space:]]*vanhyprarchMonitorScale[[:space:]]*,?[[:space:]]*$' \"$target\")",
-        "[ \"$referenceCount\" -eq 1 ] || exit 65",
-        "tmp=$(mktemp \"${target}.tmp.XXXXXX\")",
-        "trap 'rm -f -- \"$tmp\"' EXIT HUP INT TERM",
-        "sed -E \"s|$pattern|local vanhyprarchMonitorScale = $value|\" \"$target\" > \"$tmp\"",
-        "verifyStatus=0",
-        "count=$(grep -Fxc \"local vanhyprarchMonitorScale = $value\" \"$tmp\") || verifyStatus=$?",
-        "[ \"$verifyStatus\" -le 1 ] || exit \"$verifyStatus\"",
-        "[ \"$count\" -eq 1 ] || exit 67",
-        "chmod --reference=\"$target\" \"$tmp\"",
-        "mv -- \"$tmp\" \"$target\"",
-        "trap - EXIT HUP INT TERM"
-    ].join("\n")
-
-    readonly property var monitor: Hyprland.focusedMonitor
-    readonly property var monitorData: monitor ? monitor.lastIpcObject : null
+    readonly property var monitor: Hyprland.monitorFor(root.targetScreen)
     readonly property string connectorName: monitor ? String(monitor.name || "") : ""
+    readonly property var inspectedOutput:
+        root.monitorController.outputFor(root.connectorName)
+    readonly property var pendingState:
+        root.monitorController.ensurePending(root.connectorName)
     readonly property string monitorDescription: {
-        if (!monitor)
-            return "No focused monitor"
-
-        const model = monitorData ? String(monitorData["model"] || "").trim() : ""
-        if (model !== "")
-            return model
-
-        const description = String(monitor.description || "").trim()
-        return description !== "" ? description : "Unknown display"
+        if (root.inspectedOutput !== null)
+            return root.inspectedOutput.label
+        return root.monitor ? String(root.monitor.description || "").trim()
+            : "No display"
     }
-    readonly property real refreshRate: monitorData ? Number(monitorData["refreshRate"]) : NaN
-    readonly property string currentFormat: monitorData ? String(monitorData["currentFormat"] || "") : ""
-    readonly property bool isTenBit: currentFormat.indexOf("2101010") !== -1
+    readonly property bool displayEditable: root.inspectedOutput !== null
+        && root.inspectedOutput.editable && !root.monitorController.mutationsBlocked
 
     Component.onCompleted: {
         root.componentReady = true
@@ -152,6 +68,8 @@ DockPopup {
     onVisibleChanged: {
         if (visible) {
             root.refreshBrightness(false)
+            root.monitorController.refreshInspect(false)
+            root.monitorController.refreshStatus()
         } else {
             brightnessDebounce.stop()
             root.brightnessWritePending = false
@@ -442,36 +360,32 @@ DockPopup {
     }
 
     function resolutionText(): string {
-        if (!root.monitor)
+        if (root.inspectedOutput === null
+                || root.inspectedOutput.current_mode === null)
             return "—"
-
-        const width = Number(root.monitor.width)
-        const height = Number(root.monitor.height)
-        return width > 0 && height > 0
-            ? width + " × " + height
-            : "Unknown resolution"
+        return root.inspectedOutput.current_mode.width + " × "
+            + root.inspectedOutput.current_mode.height
     }
 
     function refreshText(): string {
-        if (!root.monitor)
+        if (root.inspectedOutput === null
+                || root.inspectedOutput.current_mode === null)
             return "—"
-        const refresh = root.formatNumber(root.refreshRate, 2)
-        return refresh !== "—" ? refresh + " Hz" : "—"
+        return root.formatNumber(
+            root.inspectedOutput.current_mode.refresh_millihz / 1000, 2) + " Hz"
     }
 
     function scaleText(): string {
-        if (!root.monitor)
+        if (root.inspectedOutput === null)
             return "—"
-
-        const scale = Number(root.monitor.scale)
+        const scale = root.inspectedOutput.scale_millionths / 1000000
         return isFinite(scale) && scale > 0 ? root.formatNumber(scale, 2) + "×" : "—"
     }
 
     function scaleMatches(preset: real): bool {
-        if (!root.monitor)
+        if (root.inspectedOutput === null)
             return false
-
-        const currentScale = Number(root.monitor.scale)
+        const currentScale = root.inspectedOutput.scale_millionths / 1000000
         return isFinite(currentScale) && Math.abs(currentScale - preset) < 0.01
     }
 
@@ -481,16 +395,30 @@ DockPopup {
             return
         }
         if (root.connectorName === "") {
-            console.warn("Monitor scale update requires a focused output profile")
+            console.warn("Monitor scale update requires a screen-mapped output profile")
             return
         }
-        if (scaleWriteProcess.running || root.scaleMatches(Number(preset)))
+        if (!root.displayEditable || root.scaleMatches(Number(preset)))
             return
+        root.monitorController.requestScale(root.connectorName, preset)
+    }
 
-        scaleWriteProcess.requestedScale = preset
-        scaleWriteProcess.command = ["sh", "-c", root.scaleEditScript,
-            "quickshell-scale-edit", root.connectorName, preset]
-        scaleWriteProcess.running = true
+    function pendingResolutionText(): string {
+        root.monitorController.pendingRevision
+        return root.pendingState === null ? "—"
+            : root.pendingState.width + " × " + root.pendingState.height
+    }
+
+    function pendingRefreshText(): string {
+        root.monitorController.pendingRevision
+        return root.pendingState === null ? "—"
+            : root.formatNumber(root.pendingState.refresh_millihz / 1000, 2) + " Hz"
+    }
+
+    function pendingBitdepthText(): string {
+        root.monitorController.pendingRevision
+        return root.pendingState === null || root.pendingState.bitdepth === null
+            ? "Unavailable" : root.pendingState.bitdepth + "-bit"
     }
 
     function nearestTextSizeIndex(size: int): int {
@@ -566,6 +494,92 @@ DockPopup {
         }
     }
 
+    component ChoiceRow: Item {
+        required property string label
+        required property string value
+        property bool interactive: true
+        property bool changed: false
+        signal previousRequested()
+        signal nextRequested()
+
+        width: content.width
+        height: root.metrics.compactControlHeight
+        opacity: interactive ? 1 : root.metrics.disabledInteractiveOpacity
+
+        Text {
+            anchors {
+                left: parent.left
+                verticalCenter: parent.verticalCenter
+            }
+            width: parent.width * 0.34
+            text: parent.label
+            color: root.textColor
+            font.pixelSize: root.metrics.informationLabelFontSize
+            font.weight: root.metrics.informationLabelFontWeight
+        }
+
+        Rectangle {
+            id: previousButton
+            anchors {
+                right: choiceValue.left
+                rightMargin: root.metrics.rowSpacing
+                verticalCenter: parent.verticalCenter
+            }
+            width: height
+            height: parent.height
+            radius: root.metrics.rowRadius
+            color: previousMouse.containsMouse ? root.theme.hoverFill
+                : root.theme.normalFill
+            Text { anchors.centerIn: parent; text: "‹"; color: root.text }
+            MouseArea {
+                id: previousMouse
+                anchors.fill: parent
+                enabled: parent.parent.interactive
+                hoverEnabled: true
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: parent.parent.previousRequested()
+            }
+        }
+
+        Text {
+            id: choiceValue
+            anchors {
+                right: nextButton.left
+                rightMargin: root.metrics.rowSpacing
+                verticalCenter: parent.verticalCenter
+            }
+            width: parent.width * 0.34
+            text: parent.value
+            color: parent.changed ? root.theme.control : root.theme.textMuted
+            font.pixelSize: root.metrics.informationValueFontSize
+            font.weight: parent.changed ? Font.DemiBold
+                : root.metrics.informationValueFontWeight
+            horizontalAlignment: Text.AlignHCenter
+        }
+
+        Rectangle {
+            id: nextButton
+            anchors {
+                right: parent.right
+                verticalCenter: parent.verticalCenter
+            }
+            width: height
+            height: parent.height
+            radius: root.metrics.rowRadius
+            color: nextMouse.containsMouse ? root.theme.hoverFill
+                : root.theme.normalFill
+            Text { anchors.centerIn: parent; text: "›"; color: root.text }
+            MouseArea {
+                id: nextMouse
+                anchors.fill: parent
+                enabled: parent.parent.interactive
+                hoverEnabled: true
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: parent.parent.nextRequested()
+            }
+        }
+    }
+
     Timer {
         id: brightnessDebounce
 
@@ -632,19 +646,6 @@ DockPopup {
         }
     }
 
-    Process {
-        id: scaleWriteProcess
-
-        property string requestedScale: ""
-
-        onExited: function(exitCode, exitStatus) {
-            if (exitCode !== 0) {
-                console.warn("Monitor scale update failed for "
-                    + scaleWriteProcess.requestedScale + "× (exit " + exitCode + ")")
-            }
-        }
-    }
-
     Connections {
         target: root.textSizeController
 
@@ -708,6 +709,107 @@ DockPopup {
             }
 
             InfoRow {
+                label: "Color depth"
+                value: root.inspectedOutput !== null
+                    && root.inspectedOutput.effective_bitdepth !== null
+                    ? root.inspectedOutput.effective_bitdepth + "-bit" : "Unavailable"
+            }
+
+            ChoiceRow {
+                label: "Resolution"
+                value: root.pendingResolutionText()
+                interactive: root.displayEditable
+                    && root.monitorController.resolutionOptions(
+                        root.connectorName).length > 1
+                changed: root.pendingState !== null
+                    && root.inspectedOutput !== null
+                    && (root.pendingState.width
+                        !== root.inspectedOutput.current_mode.width
+                        || root.pendingState.height
+                        !== root.inspectedOutput.current_mode.height)
+                onPreviousRequested:
+                    root.monitorController.cycleResolution(root.connectorName, -1)
+                onNextRequested:
+                    root.monitorController.cycleResolution(root.connectorName, 1)
+            }
+
+            ChoiceRow {
+                label: "Refresh rate"
+                value: root.pendingRefreshText()
+                interactive: root.displayEditable && root.pendingState !== null
+                    && root.monitorController.refreshOptions(root.connectorName,
+                        root.pendingState.width, root.pendingState.height).length > 1
+                changed: root.pendingState !== null
+                    && root.inspectedOutput !== null
+                    && root.pendingState.refresh_millihz
+                        !== root.inspectedOutput.current_mode.refresh_millihz
+                onPreviousRequested:
+                    root.monitorController.cycleRefresh(root.connectorName, -1)
+                onNextRequested:
+                    root.monitorController.cycleRefresh(root.connectorName, 1)
+            }
+
+            ChoiceRow {
+                label: "Color depth"
+                value: root.pendingBitdepthText()
+                interactive: root.displayEditable
+                    && root.inspectedOutput !== null
+                    && root.inspectedOutput.bitdepth_choices.length > 1
+                changed: root.pendingState !== null
+                    && root.inspectedOutput !== null
+                    && root.pendingState.bitdepth
+                        !== root.inspectedOutput.effective_bitdepth
+                onPreviousRequested:
+                    root.monitorController.cycleBitdepth(root.connectorName, -1)
+                onNextRequested:
+                    root.monitorController.cycleBitdepth(root.connectorName, 1)
+            }
+
+            Rectangle {
+                width: parent.width
+                height: root.metrics.compactControlHeight
+                radius: root.metrics.rowRadius
+                color: applyMouse.pressed ? root.theme.pressedFill
+                    : applyMouse.containsMouse ? root.theme.hoverFill
+                        : root.theme.activeFill
+                opacity: applyMouse.enabled ? 1
+                    : root.metrics.disabledInteractiveOpacity
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root.monitorController.operationBusy
+                        ? "Applying…" : "Apply display changes"
+                    color: root.textColor
+                    font.pixelSize: root.metrics.bodyFontSize
+                    font.weight: Font.DemiBold
+                }
+
+                MouseArea {
+                    id: applyMouse
+                    anchors.fill: parent
+                    enabled: root.displayEditable
+                        && root.monitorController.hasSafeChanges(root.connectorName)
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.monitorController.requestSafeApply(
+                        root.connectorName)
+                }
+            }
+
+            Text {
+                visible: root.monitorController.errorMessage !== ""
+                    || (root.inspectedOutput !== null
+                        && !root.inspectedOutput.editable)
+                width: parent.width
+                text: root.monitorController.errorMessage !== ""
+                    ? root.monitorController.errorMessage
+                    : root.inspectedOutput.unavailable_reason
+                color: root.theme.danger
+                font.pixelSize: root.metrics.captionFontSize
+                wrapMode: Text.WordWrap
+            }
+
+            InfoRow {
                 label: "Scale"
                 value: root.scaleText()
             }
@@ -737,8 +839,8 @@ DockPopup {
                         color: selected ? root.theme.activeFill
                             : (presetMouse.containsMouse
                                 ? root.theme.hoverFill : root.theme.normalFill)
-                        opacity: scaleWriteProcess.running
-                            ? root.metrics.disabledInteractiveOpacity : 1.0
+                        opacity: root.displayEditable ? 1.0
+                            : root.metrics.disabledInteractiveOpacity
 
                         Text {
                             anchors.fill: parent
@@ -756,7 +858,7 @@ DockPopup {
                             id: presetMouse
 
                             anchors.fill: parent
-                            enabled: !scaleWriteProcess.running
+                            enabled: root.displayEditable
                             hoverEnabled: true
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.requestScalePreset(scalePresetButton.preset)
@@ -870,13 +972,6 @@ DockPopup {
                     ? root.theme.danger : root.theme.textMuted
                 font.pixelSize: root.metrics.captionFontSize
                 wrapMode: Text.WordWrap
-            }
-
-            InfoRow {
-                visible: root.isTenBit
-                height: visible ? root.metrics.compactRowHeight : 0
-                label: "Color depth"
-                value: "10-bit"
             }
 
             Item {

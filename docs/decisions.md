@@ -640,12 +640,13 @@ device-specific rules do not belong in the managed core. The machine seed has
 a portable catch-all rule with preferred mode, automatic position, and
 automatic scale. That fallback exposes no Monitor panel write field. The
 controlled live migration established one narrowly documented Scale field in a
-specific explicit output profile. The current pre-integration panel writer can
-edit only that field and fails closed instead of creating or guessing a
-profile. Final Monitor UI integration must submit Scale to the transaction
-backend so runtime readback, prospective validation, persistence, reload, and
-technical rollback remain one operation. Neither path edits the catch-all rule
-or exposes a general multi-monitor schema during Alpha.
+specific explicit output profile. The repository Monitor UI now submits Scale
+to the transaction backend so runtime readback, prospective validation,
+persistence, reload, and technical rollback remain one operation. It contains
+no fallback machine-file writer. The backend fails closed instead of creating
+or guessing a profile; neither policy edits the catch-all rule or exposes a
+general multi-monitor schema during Alpha. UI deployment remains separately
+controlled.
 
 Create-once seeds are never normal managed-update payloads. Machine files and
 override files are preserved, but preservation of an override file does not
@@ -690,9 +691,9 @@ seed; neither contains a global XKB fallback. See
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Schema-v2 runtime engine deployed and validated;
-policy-aligned schema-v3 repository candidate implemented; schema-v3 deployment,
-live persistence acceptance, and UI remain pending
+**Implementation:** Schema-v3 backend deployed and live-accepted for Mode,
+bitdepth, and immediate Scale; repository UI integration implemented but not
+yet deployed
 
 Future monitor control is per explicit output profile. Resolution/refresh is one
 Mode tuple, bitdepth is 8 or 10 bpc, and Scale is per output. Text Size remains
@@ -717,7 +718,17 @@ Normal rollback uses connector-specific runtime `hl.monitor()` restoration of
 only the fields owned by that operation followed by authoritative full-topology
 readback; full Hyprland configuration reload is not the primary runtime
 rollback path. Both policy classes use the same supervised persistence,
-reconciliation, and crash-recovery quality. Quickshell remains a future client.
+reconciliation, and crash-recovery quality.
+
+Quickshell is a non-authoritative client. One global Monitor controller reads a
+small normalized backend inspection contract, while each panel selects its
+connector with `Hyprland.monitorFor(screen)`. Mode and bitdepth are locally
+pending input until one combined Apply request; Scale invokes its separate
+immediate operation. The controller reconstructs an active confirmation from
+backend status after shell reload. Its countdown never owns expiry. The
+per-screen confirmation surface uses the shared centered-overlay/focus
+architecture, prefers the transaction target screen, and falls back to another
+registered screen without affecting backend transaction survival.
 
 Monitor transactions require an existing unambiguous explicit connector profile
 in machine configuration. They neither edit the portable catch-all nor

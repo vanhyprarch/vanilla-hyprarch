@@ -122,6 +122,10 @@ ShellRoot {
         id: overlayFocusCoordinator
     }
 
+    MonitorController {
+        id: monitorController
+    }
+
     Variants {
         model: Quickshell.screens
 
@@ -273,6 +277,7 @@ ShellRoot {
             theme: shellTheme
             metrics: visualMetrics
             textSizeController: root.globalTextSizeController
+            monitorController: monitorController
             targetScreen: screenScope.modelData
             focusCoordinator: overlayFocusCoordinator
 
@@ -374,6 +379,18 @@ ShellRoot {
     BackgroundPickerPanel {
         metrics: visualMetrics
         controller: backgroundPicker
+        theme: shellTheme
+        focusCoordinator: overlayFocusCoordinator
+        targetScreen: screenScope.modelData
+        screenName: screenScope.modelData.name
+        screenWidth: screenScope.modelData.width
+        screenHeight: screenScope.modelData.height
+        dockWidth: root.dockWidth
+    }
+
+    MonitorConfirmationPanel {
+        controller: monitorController
+        metrics: visualMetrics
         theme: shellTheme
         focusCoordinator: overlayFocusCoordinator
         targetScreen: screenScope.modelData

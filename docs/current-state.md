@@ -87,13 +87,11 @@ override remains the exact header-only seed. The old root
 `~/.config/hypr/bindings.lua` was removed only after validation and remains in
 the migration recovery material.
 
-The Monitor panel now resolves `XDG_CONFIG_HOME`, targets only the regular
-user-owned machine file, matches the focused connector to its explicit output
-profile, and edits only that profile's documented
-`vanhyprarchMonitorScale` declaration. It fails closed on missing, ambiguous,
-symlinked, non-user-owned, or unexpected file structure and never edits the
-portable catch-all monitor rule or managed configuration. This is the narrow
-single-explicit-profile Alpha boundary, not a general multi-monitor schema.
+The repository Monitor UI candidate no longer edits machine configuration.
+Each per-screen panel maps its own `ShellScreen` through
+`Hyprland.monitorFor(screen)` and sends display operations to the global
+Monitor controller. The deployed shell still predates this repository-only UI
+candidate; controlled QML deployment and live acceptance remain pending.
 
 A deliberately authored portable managed `hyprlock.conf` baseline now exists
 in the repository. It was not copied from the live development configuration
@@ -912,7 +910,7 @@ manual/on-demand screensaver shortcut, no Super+K Screensaver row, and no
 unbounded manual start operation; adding one is rejected unless a future
 explicit product decision reopens it.
 
-## Monitor backend — POLICY-ALIGNED REPOSITORY CANDIDATE
+## Monitor backend and UI — BACKEND LIVE-ACCEPTED, UI REPOSITORY CANDIDATE
 
 The project now contains the independently supervised, fixture-tested
 `vanhyprarch-monitor` transaction authority and its static user service. The
@@ -924,7 +922,7 @@ bitdepth. Normal rollback restores only the connector-specific owned runtime
 fields through `hl.monitor()` and verifies fresh `monitors all` readback; a
 full config reload is not the normal rollback path.
 
-The deployed schema-v2 runtime path has passed no-op, timeout, explicit-revert,
+The earlier schema-v2 runtime path passed no-op, timeout, explicit-revert,
 crash-recovery, and deliberately different scale validation. Scale 1.50 was
 authoritatively observed and the automatic deadline restored 1.25, with visual
 confirmation and no persistent change. That was a low-risk validation of the
@@ -942,22 +940,31 @@ prove transaction ownership. The completed schema-v2 deployment required the
 old helper to prove its schema-v1 journal terminal and recovery-disarmed before
 controlled removal and replacement; no legacy journal was guessed or migrated.
 
-The repository schema-v3 candidate now implements the final policy: Mode
+The deployed schema-v3 backend implements the final policy: Mode
 (resolution plus refresh) and bitdepth (8 or 10 bpc) are safe-confirmed; Scale
 is immediate-validated and automatically persists only after runtime readback.
 Both policies share prospective verification, atomic persistence, reload
 reconciliation, and crash recovery. Bitdepth verification uses the effective
 DRM format rather than a requested-state flag and permits only the documented
-`cm="auto"` dependent effective color transition. Schema v3 has not been
-deployed or live-tested.
+`cm="auto"` dependent effective color transition. Controlled live acceptance
+has passed for Mode-only and bitdepth-only temporary apply plus timeout
+rollback, and for an immediate Scale 1.25→1.50→1.25 durable round trip.
 
-This is not a completed user feature. The backend is not connected to the
-Monitor panel. Durable persistence has not been live-tested. Brightness remains
+The repository UI candidate adds a read-only `inspect` projection, one global
+`MonitorController`, pending Mode/bitdepth controls, immediate Scale routing,
+and a per-screen confirmation surface using the shared centered-overlay focus
+architecture. Backend status reconstructs an active confirmation after a
+Quickshell reload; the displayed countdown is presentation-only and the
+backend deadline remains authoritative. The panel's output authority is its
+own `ShellScreen`, not the focused monitor. QML does not parse raw Hyprland
+monitor JSON or machine configuration.
+
+This is not yet a completed user feature: the new QML and inspection-capable
+helper have not been deployed or live-accepted together. Brightness remains
 the existing DDC/CI path and global Text Size remains separate. The backend
 requires one existing explicit machine-owned connector profile and never edits
-the portable catch-all. Fresh-install safe
-profile materialization remains required before Alpha release. See
-[Monitor Safe Apply backend](monitor-safe-apply.md).
+the portable catch-all. Fresh-install safe profile materialization remains
+required before Alpha release. See [Monitor Safe Apply backend](monitor-safe-apply.md).
 
 ## Known open work
 
@@ -968,11 +975,11 @@ profile materialization remains required before Alpha release. See
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Deploy schema v3 across a proven idle schema-v2 boundary, then separately
-  live-accept safe-confirmed Mode, safe-confirmed bitdepth, immediate Scale,
-  and persistence before connecting the Monitor UI. The confirmation overlay
-  is only for Mode/bitdepth. Brightness remains DDC/CI and Text Size remains
-  global.
+- Deploy and live-accept the repository Monitor UI candidate without changing
+  the backend policy. Exercise panel-to-output mapping, Mode/bitdepth pending
+  Apply, immediate Scale, Keep/Revert, timeout, and Quickshell-reload
+  reconstruction under controlled checkpoints. Brightness remains DDC/CI and
+  Text Size remains global.
 
 ### PROVISIONAL
 

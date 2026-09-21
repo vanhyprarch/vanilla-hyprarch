@@ -1,0 +1,238 @@
+import QtQuick
+import Quickshell
+import "components"
+
+ShellRoot {
+    id: root
+
+    MonitorController {
+        id: controller
+        checksEnabled: false
+        executionEnabled: false
+    }
+
+    Component {
+        id: controllerComponent
+        MonitorController {
+            checksEnabled: false
+            executionEnabled: false
+        }
+    }
+
+    function check(condition, message): void {
+        if (!condition) {
+            console.error("MONITOR_CONTROLLER_TEST_FAILURE: " + message)
+            Qt.quit()
+            throw new Error(message)
+        }
+    }
+
+    function inspection(): string {
+        return JSON.stringify({
+            version: 1,
+            instance_signature: "fixture_123",
+            outputs: [{
+                connector: "DP-1",
+                label: "Example Panel",
+                identity: { make: "Example", model: "Panel", serial: "ABC" },
+                active: true,
+                editable: true,
+                unavailable_reason: null,
+                current_mode: { width: 3840, height: 2160, refresh_millihz: 60000 },
+                available_modes: [
+                    { width: 1920, height: 1080, refresh_millihz: 59940 },
+                    { width: 1920, height: 1080, refresh_millihz: 60000 },
+                    { width: 2560, height: 1440, refresh_millihz: 59950 },
+                    { width: 3840, height: 2160, refresh_millihz: 60000 }
+                ],
+                scale_millionths: 1250000,
+                effective_bitdepth: 10,
+                bitdepth_choices: [8, 10],
+                effective: {
+                    current_format: "XRGB2101010",
+                    color_management_preset: "wide"
+                }
+            }, {
+                connector: "HDMI-A-1",
+                label: "Inactive Panel",
+                identity: { make: "Example", model: "Inactive", serial: "OFF" },
+                active: false,
+                editable: false,
+                unavailable_reason: "Output is inactive or unusable.",
+                current_mode: null,
+                available_modes: [],
+                scale_millionths: 1000000,
+                effective_bitdepth: 8,
+                bitdepth_choices: [],
+                effective: {
+                    current_format: "XRGB8888",
+                    color_management_preset: "srgb"
+                }
+            }]
+        })
+    }
+
+    function response(state, sequence, transactionId, candidate, remaining): string {
+        return JSON.stringify({
+            version: 2,
+            ok: true,
+            status: {
+                transaction_id: transactionId,
+                policy: "safe-confirmed",
+                candidate: candidate,
+                state: state,
+                sequence: sequence,
+                deadline_monotonic: remaining === null ? null : 500,
+                remaining_seconds: remaining,
+                failure: null,
+                recovery_required: state !== "reverted" && state !== "committed"
+            }
+        })
+    }
+
+    function run(): void {
+        check(controller.acceptInspectionJson(inspection(), false),
+            "valid inspection was rejected")
+        check(controller.ready && controller.outputFor("DP-1") !== null,
+            "inspection did not publish the output")
+        check(controller.outputFor("HDMI-A-1").current_mode === null
+                && controller.ensurePending("HDMI-A-1") === null,
+            "inactive output invalidated the normalized inspection model")
+        check(controller.resolutionOptions("DP-1").length === 3,
+            "resolution catalogue was not deduplicated by resolution")
+        check(controller.refreshOptions("DP-1", 1920, 1080).length === 2,
+            "refreshes were not filtered by resolution")
+
+        check(controller.setPendingResolution("DP-1", 1920, 1080),
+            "pending resolution was rejected")
+        check(controller.ensurePending("DP-1").refresh_millihz === 60000,
+            "current refresh was not preserved when available")
+        check(controller.setPendingBitdepth("DP-1", 8),
+            "pending bitdepth was rejected")
+        check(controller.requestSafeApply("DP-1"),
+            "combined Safe Apply request was rejected")
+        check(controller.lastRequestedKind === "safe-apply",
+            "combined request used the wrong policy")
+        check(controller.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor apply --connector DP-1 --width 1920 --height 1080 --refresh 60 --bitdepth 8",
+            "combined request did not contain exactly changed Mode and bitdepth")
+        check(controller.lastRequestedCommand.indexOf("--scale") < 0,
+            "Safe Apply request included Scale")
+        check(controller.outputFor("DP-1").current_mode.width === 3840
+                && controller.outputFor("DP-1").effective_bitdepth === 10,
+            "pending request optimistically replaced authoritative current state")
+
+        controller.resetPending("DP-1")
+        check(controller.requestScale("DP-1", "1.50"),
+            "immediate Scale request was rejected")
+        check(controller.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor scale --connector DP-1 --scale 1.50",
+            "Scale did not use the immediate backend path")
+        check(!controller.confirmationActive,
+            "Scale opened Safe Apply confirmation")
+
+        const candidate = {
+            connector: "DP-1",
+            mode: { width: 1920, height: 1080, refresh_millihz: 60000 },
+            bitdepth: null,
+            scale_millionths: null
+        }
+        check(controller.acceptStatusJson(response("temporary-active", 2,
+            "transaction-new", candidate, 8.4), true),
+            "temporary status was rejected")
+        check(controller.confirmationActive
+                && controller.transactionConnector === "DP-1",
+            "Mode did not reconstruct confirmation")
+        controller.registerSurface("target-screen", "DP-1")
+        controller.registerSurface("fallback-screen", "HDMI-A-1")
+        check(controller.confirmationScreenName === "target-screen",
+            "confirmation did not prefer its target connector screen")
+        controller.unregisterSurface("target-screen")
+        check(controller.confirmationScreenName === "fallback-screen",
+            "confirmation did not fall back when the target screen disappeared")
+        check(controller.requestConfirm(), "Keep request was rejected")
+        check(controller.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor confirm transaction-new",
+            "Keep used the wrong transaction ID")
+        check(controller.requestRevert(), "Revert request was rejected")
+        check(controller.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor revert transaction-new",
+            "Revert used the wrong transaction ID")
+
+        check(controller.acceptStatusJson(response("applying", 1,
+            "stale-transaction", candidate, null), false),
+            "stale response parser failed")
+        check(controller.transactionId === "transaction-new"
+                && controller.transactionState === "temporary-active",
+            "stale transaction response replaced the active authority")
+
+        const reloaded = controllerComponent.createObject(root)
+        check(reloaded !== null, "reload controller could not be created")
+        check(reloaded.acceptInspectionJson(inspection(), false),
+            "reload controller rejected inspection")
+        check(reloaded.acceptStatusJson(response("temporary-active", 2,
+            "transaction-new", candidate, 5.1), false),
+            "reload controller rejected active status")
+        check(reloaded.confirmationActive
+                && reloaded.presentationRemainingSeconds > 5,
+            "reload did not reconstruct the backend countdown")
+        reloaded.destroy()
+
+        const bitdepthController = controllerComponent.createObject(root)
+        check(bitdepthController !== null
+                && bitdepthController.acceptInspectionJson(inspection(), false),
+            "bitdepth controller setup failed")
+        check(bitdepthController.acceptStatusJson(response("temporary-active", 2,
+            "transaction-depth", {
+                connector: "DP-1", mode: null, bitdepth: 8,
+                scale_millionths: null
+            }, 7.2), false) && bitdepthController.confirmationActive,
+            "bitdepth-only transaction did not open confirmation")
+        check(bitdepthController.confirmationDescription() === "8-bit color",
+            "bitdepth confirmation description is not normalized")
+        bitdepthController.destroy()
+
+        const combinedController = controllerComponent.createObject(root)
+        check(combinedController !== null
+                && combinedController.acceptInspectionJson(inspection(), false),
+            "combined controller setup failed")
+        check(combinedController.acceptStatusJson(response("temporary-active", 2,
+            "transaction-combined", {
+                connector: "DP-1",
+                mode: { width: 1920, height: 1080, refresh_millihz: 60000 },
+                bitdepth: 8,
+                scale_millionths: null
+            }, 6.8), false) && combinedController.confirmationActive,
+            "combined transaction did not open one confirmation")
+        check(combinedController.confirmationDescription()
+                === "1920×1080 · 60 Hz · 8-bit color",
+            "combined confirmation description is not normalized")
+        combinedController.destroy()
+
+        check(controller.acceptStatusJson(response("reverted", 4,
+            "transaction-new", candidate, null), false),
+            "reverted status was rejected")
+        check(!controller.confirmationActive,
+            "terminal rollback left confirmation visible")
+        check(controller.resetPendingOnNextInspect,
+            "terminal Safe Apply did not defer reset to authoritative inspection")
+        check(controller.acceptInspectionJson(inspection(), false)
+                && !controller.resetPendingOnNextInspect
+                && controller.ensurePending("DP-1").width === 3840,
+            "terminal reconciliation retained stale pending state")
+
+        controller.transactionState = "applying"
+        check(!controller.requestScale("DP-1", "1.50"),
+            "Scale started during a Safe Apply operation")
+        controller.transactionState = "reverted"
+        check(!controller.acceptInspectionJson("{}", false) && !controller.ready,
+            "backend inspection failure did not fail closed")
+        check(!controller.acceptStatusJson("{}", false) && !controller.statusReady,
+            "backend status failure did not fail closed")
+
+        console.log("MONITOR_CONTROLLER_TEST_PASS")
+        Qt.quit()
+    }
+
+    Component.onCompleted: Qt.callLater(run)
+}
