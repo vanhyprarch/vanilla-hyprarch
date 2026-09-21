@@ -5,8 +5,9 @@
 The runtime backend has been deployed and validated through a temporary scale
 change from 1.25 to 1.50 and verified automatic rollback. Phase B3A adds the
 repository-only persistence and reconciliation foundation. It is not connected
-to the Monitor panel, and production persistence remains deliberately disabled
-until a separate controlled live acceptance.
+to the Monitor panel. The production persistence components are now wired for
+controlled live acceptance, but durable Confirm has not yet been exercised on
+the live machine.
 
 The invariant is: **an unconfirmed display configuration is never persisted**.
 The v1 editable fields are one advertised resolution/refresh mode tuple and
@@ -207,11 +208,12 @@ replacement or reload step. Every nonterminal commit milestone, including
 only the terminal `committed` publication is retained. Unrelated bytes remain
 untouched and recovery-armed.
 
-The production authority still intentionally substitutes a disabled persister
-and disabled reload coordinator. A production `confirm` therefore cannot write
-the live machine file and takes the normal rollback path. The B3A machinery is
-exercised only with fixture paths and isolated verifier trees; enabling it is a
-separate live acceptance decision.
+The production authority now wires the tested machine-file persister,
+Bubblewrap prospective verifier, and exact-instance reload coordinator. This
+makes the durable Confirm path available for the next controlled live
+acceptance; it does not itself begin a transaction or write configuration.
+Fixture and isolated verifier coverage remains the prerequisite, and durable
+Confirm is not considered accepted until that separate live test passes.
 
 The B3A journal is strict schema version 2. It intentionally does not interpret
 schema-v1 recovery material. A backend upgrade must never cross a nonterminal
@@ -232,10 +234,8 @@ materialization does not require replacing the transaction architecture.
 
 ## Deferred live and UI work
 
-A controlled phase must perform the schema-v1 cleanup boundary, deploy the new
-helper, then enable and exercise durable confirmation on the live
-machine, including watcher reload, post-reload readback, and protected
-subsystem checks. Quickshell controller and confirmation-overlay integration
-remain unimplemented. Safe fresh-install profile materialization also remains
-later work. The existing Monitor panel is unchanged, and brightness remains
-out of scope.
+A controlled phase must exercise durable confirmation on the live machine,
+including watcher reload, post-reload readback, and protected subsystem checks.
+Quickshell controller and confirmation-overlay integration remain unimplemented.
+Safe fresh-install profile materialization also remains later work. The
+existing Monitor panel is unchanged, and brightness remains out of scope.

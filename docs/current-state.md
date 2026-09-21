@@ -941,8 +941,9 @@ helper to prove any schema-v1 journal terminal and recovery-disarmed before
 controlled removal and replacement; no legacy journal is guessed or migrated.
 
 This is not a completed user feature. The backend is not connected to the
-Monitor panel, production persistence is deliberately disabled and has not
-been live-tested, and brightness remains outside Safe Apply. Only mode
+Monitor panel. Production persistence is wired for controlled acceptance but
+durable Confirm has not been live-tested, and brightness remains outside Safe
+Apply. Only mode
 (resolution plus refresh) and per-output scale are v1
 editable fields. The backend requires one existing explicit machine-owned
 connector profile and never edits the portable catch-all. Fresh-install safe

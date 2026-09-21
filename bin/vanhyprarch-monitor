@@ -3,9 +3,9 @@
 
 """Safety-critical backend for temporary Hyprland monitor transactions.
 
-Production persistence remains deliberately disabled. The transaction,
+Production persistence is wired for controlled live acceptance. The transaction,
 readback, rollback, journal, prospective verifier, and persistence/reconciliation
-primitives are independently testable so the UI can remain a later client.
+primitives remain independently testable so the UI can remain a later client.
 """
 
 from __future__ import annotations
@@ -2169,10 +2169,14 @@ def build_production_authority(*, require_environment_signature: bool = True) ->
     if require_environment_signature and SIGNATURE_RE.fullmatch(signature) is None:
         store.release()
         raise ValidationError("HYPRLAND_INSTANCE_SIGNATURE is missing or invalid")
+    paths = default_config_paths()
+    config_home = paths.machine.parents[2]
     return TransactionAuthority(
         store,
         ProcInstanceProvider(root),
-        default_config_paths(),
+        paths,
+        persister=MachineConfigPersister(SandboxedHyprlandVerifier(config_home)),
+        reload_coordinator=HyprlandReloadCoordinator(root),
         reload_event_source=SocketReloadEventSource(root),
         bound_signature=signature if require_environment_signature else None,
     )

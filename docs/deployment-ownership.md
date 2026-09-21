@@ -137,11 +137,12 @@ socket are private `RUNTIME` recovery material under `XDG_RUNTIME_DIR`, not a
 persistent preference.
 
 Confirmed monitor preference belongs only in the existing
-`MACHINE_CONFIGURATION` file. Phase B1 production persistence is disabled;
-fixture tests prove exact-byte preservation around the selected explicit
-profile, hash-race rejection, and atomic replacement. The helper never changes
-the create-once seed, portable catch-all, managed Hyprland files, or user
-override. Fresh-install explicit-profile materialization remains deferred.
+`MACHINE_CONFIGURATION` file. The production Confirm path uses the tested
+exact-byte replacement, prospective verification, reload reconciliation, and
+recovery machinery, but its live acceptance remains a separate controlled
+step. The helper never changes the create-once seed, portable catch-all,
+managed Hyprland files, or user override. Fresh-install explicit-profile
+materialization remains deferred.
 
 ## PolicyKit session lifecycle ownership
 

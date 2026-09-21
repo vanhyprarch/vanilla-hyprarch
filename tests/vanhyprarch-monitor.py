@@ -1704,16 +1704,36 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
                 self.assertEqual(authority.recover(), reverted)
                 self.assertEqual(len(runner.calls), call_count)
 
-    def test_production_confirm_boundary_reverts_instead_of_persisting(self) -> None:
-        authority, runner, journal = self.begin_success()
-        runner.responses.extend(
-            [[candidate_output()], [candidate_output()], OK, [output()]]
-        )
-        before = self.machine.read_bytes()
-        reverted = authority.confirm(journal.transaction_id)
-        self.assertEqual(reverted.state, "reverted")
-        self.assertEqual(self.machine.read_bytes(), before)
-        self.assertIn("awaits controlled live acceptance", reverted.failure)
+    def test_production_authority_wires_validated_persistence_components(self) -> None:
+        production_runtime = self.root / "production-runtime"
+        production_runtime.mkdir(mode=0o700)
+        with (
+            mock.patch.object(monitor, "runtime_root", return_value=production_runtime),
+            mock.patch.object(monitor, "default_config_paths", return_value=self.paths),
+            mock.patch.dict(
+                monitor.os.environ,
+                {"HYPRLAND_INSTANCE_SIGNATURE": self.instance.signature},
+                clear=False,
+            ),
+        ):
+            authority = monitor.build_production_authority()
+        try:
+            self.assertIsInstance(authority.persister, monitor.MachineConfigPersister)
+            self.assertIsInstance(
+                authority.persister.verifier, monitor.SandboxedHyprlandVerifier
+            )
+            self.assertEqual(authority.persister.verifier.config_home, self.config)
+            self.assertIsInstance(
+                authority.reload_coordinator, monitor.HyprlandReloadCoordinator
+            )
+            self.assertEqual(authority.reload_coordinator.runtime_root, production_runtime)
+            self.assertIsInstance(
+                authority.reload_event_source, monitor.SocketReloadEventSource
+            )
+            self.assertEqual(authority.config_paths, self.paths)
+            self.assertEqual(authority.bound_signature, self.instance.signature)
+        finally:
+            authority.store.release()
 
     def test_persistence_detects_external_machine_hash_race(self) -> None:
         persister = monitor.MachineConfigPersister(lambda journal, content: None)
