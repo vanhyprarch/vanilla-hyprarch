@@ -651,15 +651,31 @@ fallback intact, and requires exact effective topology equality after the
 configuration reload. It sends no runtime `hl.monitor()` call and owns no
 confirmation deadline.
 
-The schema-v4/protocol-v3 candidate reuses Bubblewrap prospective verification,
+The schema-v4/protocol-v3 implementation reuses Bubblewrap prospective verification,
 atomic file replacement, reload reconciliation, exact-instance and physical
 identity binding, and crash recovery. The persister can later specialize
 `mode = "preferred"`, specialize `scale = "auto"`, or insert one previously
 omitted bitdepth field, so materialization need not infer current effective
 values. Inspection and QML expose normalized eligibility plus one explicit
-action while leaving Brightness and Text Size available. No live profile,
-deployed helper, or display state was changed; controlled deployment and a real
-fresh-install acceptance remain pending.
+action while leaving Brightness and Text Size available. It was published and
+deployed without changing the development machine's existing explicit profile.
+Real materialization remains deferred to a genuinely fallback-managed output.
+
+## 2026-09-21: Monitor HDR policy extension
+
+An uncommitted schema-v5/protocol-v4/inspect-v3 candidate adds two distinct
+Safe Apply policies without claiming live HDR signal state. Per-output **HDR:
+Off / Always On** restores exact base CM intent or forces `cm = "hdr"`; global
+**Automatic HDR · All displays: Off / HDR / HDR (EDID)** maps to
+`render:cm_auto_hdr` 0/1/2. Any valid Mode, bitdepth, forced-HDR, and global
+policy changes form one confirmed transaction, while Scale remains immediate.
+
+The backend requires identity-bound, checksum-valid EDID evidence for BT.2020
+and PQ plus an available 10-bit path. It preserves base CM absence/value in one
+adjacent versioned marker while forced HDR is durable and uses one strict
+machine-owned block for the global renderer policy. External HDR/ICC intent and
+uncertain capability fail closed. Deterministic backend/UI acceptance precedes
+the controlled schema upgrade and live visual checks.
 
 ## Project maintenance contract
 

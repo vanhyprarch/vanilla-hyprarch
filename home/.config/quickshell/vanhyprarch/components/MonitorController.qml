@@ -6,6 +6,8 @@ import Quickshell.Io
 Scope {
     id: root
 
+    // Backend inspection and transaction status remain the display authorities.
+
     property bool checksEnabled: true
     property bool executionEnabled: true
     property var outputs: []
@@ -17,6 +19,11 @@ Scope {
     property bool resetPendingOnNextInspect: false
     property var pendingByConnector: ({})
     property int pendingRevision: 0
+    property int automaticHdrValue: 1
+    property int pendingAutomaticHdr: -1
+    property bool automaticHdrExplicit: false
+    property bool automaticHdrAvailable: false
+    property string automaticHdrUnavailableReason: ""
     property string transactionId: ""
     property string transactionState: "idle"
     property int transactionSequence: -1
@@ -109,8 +116,17 @@ Scope {
 
     function parseInspection(output: string): var {
         const value = JSON.parse(String(output || ""))
-        if (value === null || typeof value !== "object" || value.version !== 2
+        if (value === null || typeof value !== "object" || value.version !== 3
                 || typeof value.instance_signature !== "string"
+                || value.automatic_hdr === null
+                || typeof value.automatic_hdr !== "object"
+                || [0, 1, 2].indexOf(value.automatic_hdr.value) < 0
+                || typeof value.automatic_hdr.label !== "string"
+                || typeof value.automatic_hdr.explicit !== "boolean"
+                || value.automatic_hdr.scope !== "global"
+                || typeof value.automatic_hdr.available !== "boolean"
+                || (value.automatic_hdr.unavailable_reason !== null
+                    && typeof value.automatic_hdr.unavailable_reason !== "string")
                 || !Array.isArray(value.outputs))
             throw new Error("invalid monitor inspection schema")
         const seen = ({})
@@ -140,6 +156,17 @@ Scope {
                     || item.effective === null || typeof item.effective !== "object"
                     || typeof item.effective.current_format !== "string"
                     || typeof item.effective.color_management_preset !== "string"
+                    || item.hdr === null || typeof item.hdr !== "object"
+                    || typeof item.hdr.capability !== "string"
+                    || typeof item.hdr.available !== "boolean"
+                    || (item.hdr.unavailable_reason !== null
+                        && typeof item.hdr.unavailable_reason !== "string")
+                    || ["off", "always-on"].indexOf(item.hdr.mode) < 0
+                    || item.hdr.effective_live !== "unknown"
+                    || item.hdr.base_cm === null
+                    || typeof item.hdr.base_cm !== "object"
+                    || typeof item.hdr.base_cm.present !== "boolean"
+                    || typeof item.hdr.base_cm.value !== "string"
                     || seen[item.connector])
                 throw new Error("invalid monitor inspection output")
             const currentMode = item.current_mode === null ? null
@@ -176,15 +203,17 @@ Scope {
                 scale_millionths: item.scale_millionths,
                 effective_bitdepth: item.effective_bitdepth,
                 bitdepth_choices: choices,
-                effective: item.effective
+                effective: item.effective,
+                hdr: item.hdr
             })
         }
-        return normalized
+        return { outputs: normalized, automatic_hdr: value.automatic_hdr }
     }
 
     function acceptInspectionJson(output: string, preserveError: bool): bool {
         try {
-            const parsed = root.parseInspection(output)
+            const parsedModel = root.parseInspection(output)
+            const parsed = parsedModel.outputs
             const previous = root.resetPendingOnNextInspect
                 ? ({}) : root.pendingByConnector
             const preserved = ({})
@@ -199,9 +228,20 @@ Scope {
                     && mode.refresh_millihz === pending.refresh_millihz)
                 const bitdepthValid = pending.bitdepth === item.effective_bitdepth
                     || item.bitdepth_choices.indexOf(pending.bitdepth) >= 0
-                if (modeValid && bitdepthValid)
+                const hdrValid = ["off", "always-on"].indexOf(
+                    pending.hdr_mode) >= 0
+                if (modeValid && bitdepthValid && hdrValid)
                     preserved[item.connector] = Object.assign({}, pending)
             }
+            const preserveAutomatic = !root.resetPendingOnNextInspect
+                && [0, 1, 2].indexOf(root.pendingAutomaticHdr) >= 0
+            root.automaticHdrValue = parsedModel.automatic_hdr.value
+            root.automaticHdrExplicit = parsedModel.automatic_hdr.explicit
+            root.automaticHdrAvailable = parsedModel.automatic_hdr.available
+            root.automaticHdrUnavailableReason =
+                parsedModel.automatic_hdr.unavailable_reason || ""
+            if (!preserveAutomatic)
+                root.pendingAutomaticHdr = root.automaticHdrValue
             root.outputs = parsed
             root.pendingByConnector = preserved
             root.pendingRevision++
@@ -233,7 +273,8 @@ Scope {
             width: current.current_mode.width,
             height: current.current_mode.height,
             refresh_millihz: current.current_mode.refresh_millihz,
-            bitdepth: current.effective_bitdepth
+            bitdepth: current.effective_bitdepth,
+            hdr_mode: current.hdr.mode
         }
         const copy = Object.assign({}, root.pendingByConnector)
         copy[connector] = pending
@@ -258,6 +299,7 @@ Scope {
 
     function resetAllPending(): void {
         root.pendingByConnector = ({})
+        root.pendingAutomaticHdr = root.automaticHdrValue
         root.pendingRevision++
         for (const item of root.outputs)
             root.ensurePending(item.connector)
@@ -333,6 +375,27 @@ Scope {
         return true
     }
 
+    function setPendingHdr(connector: string, mode: string): bool {
+        const pending = root.ensurePending(connector)
+        const output = root.outputFor(connector)
+        if (pending === null || output === null || !output.hdr.available
+                || ["off", "always-on"].indexOf(mode) < 0)
+            return false
+        const copy = Object.assign({}, root.pendingByConnector)
+        copy[connector] = Object.assign({}, pending, { hdr_mode: mode })
+        root.pendingByConnector = copy
+        root.pendingRevision++
+        return true
+    }
+
+    function setPendingAutomaticHdr(value: int): bool {
+        if (!root.automaticHdrAvailable || [0, 1, 2].indexOf(value) < 0)
+            return false
+        root.pendingAutomaticHdr = value
+        root.pendingRevision++
+        return true
+    }
+
     function cycleResolution(connector: string, delta: int): void {
         const options = root.resolutionOptions(connector)
         const pending = root.ensurePending(connector)
@@ -367,6 +430,31 @@ Scope {
         root.setPendingBitdepth(connector, output.bitdepth_choices[index])
     }
 
+    function cycleHdr(connector: string, delta: int): void {
+        const pending = root.ensurePending(connector)
+        if (pending === null)
+            return
+        const options = ["off", "always-on"]
+        let index = options.indexOf(pending.hdr_mode)
+        index = (Math.max(0, index) + delta + options.length) % options.length
+        root.setPendingHdr(connector, options[index])
+    }
+
+    function cycleAutomaticHdr(delta: int): void {
+        const options = [0, 1, 2]
+        let index = options.indexOf(root.pendingAutomaticHdr)
+        index = (Math.max(0, index) + delta + options.length) % options.length
+        root.setPendingAutomaticHdr(options[index])
+    }
+
+    function validationMessage(connector: string): string {
+        const pending = root.pendingFor(connector)
+        if (pending !== null && pending.hdr_mode === "always-on"
+                && pending.bitdepth !== 10)
+            return "Forced HDR On requires selecting 10-bit Color Depth in the same Apply."
+        return ""
+    }
+
     function hasSafeChanges(connector: string): bool {
         root.pendingRevision
         const output = root.outputFor(connector)
@@ -375,7 +463,9 @@ Scope {
             pending.width !== output.current_mode.width
             || pending.height !== output.current_mode.height
             || pending.refresh_millihz !== output.current_mode.refresh_millihz
-            || pending.bitdepth !== output.effective_bitdepth)
+            || pending.bitdepth !== output.effective_bitdepth
+            || pending.hdr_mode !== output.hdr.mode
+            || root.pendingAutomaticHdr !== root.automaticHdrValue)
     }
 
     function startAction(command: var, kind: string): bool {
@@ -396,6 +486,8 @@ Scope {
         if (output === null || pending === null || !output.editable
                 || !root.hasSafeChanges(connector))
             return false
+        if (root.validationMessage(connector) !== "")
+            return false
         const command = [root.backendCommand, "apply", "--connector", connector]
         if (pending.width !== output.current_mode.width
                 || pending.height !== output.current_mode.height
@@ -406,6 +498,10 @@ Scope {
         }
         if (pending.bitdepth !== output.effective_bitdepth)
             command.push("--bitdepth", String(pending.bitdepth))
+        if (pending.hdr_mode !== output.hdr.mode)
+            command.push("--hdr", pending.hdr_mode)
+        if (root.pendingAutomaticHdr !== root.automaticHdrValue)
+            command.push("--automatic-hdr", String(root.pendingAutomaticHdr))
         return root.startAction(command, "safe-apply")
     }
 
@@ -456,7 +552,7 @@ Scope {
 
     function parseControlResponse(output: string): var {
         const value = JSON.parse(String(output || ""))
-        if (value === null || typeof value !== "object" || value.version !== 3
+        if (value === null || typeof value !== "object" || value.version !== 4
                 || typeof value.ok !== "boolean")
             throw new Error("invalid monitor control response")
         if (!value.ok)
@@ -474,20 +570,28 @@ Scope {
                     && [8, 10].indexOf(value.bitdepth) < 0)
                 || (value.scale_millionths !== null
                     && (!Number.isInteger(value.scale_millionths)
-                        || value.scale_millionths <= 0)))
+                        || value.scale_millionths <= 0))
+                || (value.hdr_mode !== null
+                    && ["off", "always-on"].indexOf(value.hdr_mode) < 0)
+                || (value.automatic_hdr !== null
+                    && [0, 1, 2].indexOf(value.automatic_hdr) < 0))
             throw new Error("invalid transaction candidate")
         const mode = value.mode === null ? null : root.validateMode(value.mode)
         if (policy === "safe-confirmed") {
             if (value.scale_millionths !== null
-                    || (mode === null && value.bitdepth === null))
+                    || (mode === null && value.bitdepth === null
+                        && value.hdr_mode === null
+                        && value.automatic_hdr === null))
                 throw new Error("invalid Safe Apply candidate")
         } else if (policy === "immediate-scale") {
             if (mode !== null || value.bitdepth !== null
-                    || value.scale_millionths === null)
+                    || value.scale_millionths === null
+                    || value.hdr_mode !== null || value.automatic_hdr !== null)
                 throw new Error("invalid immediate Scale candidate")
         } else if (policy === "materialize-profile") {
             if (mode !== null || value.bitdepth !== null
-                    || value.scale_millionths !== null)
+                    || value.scale_millionths !== null
+                    || value.hdr_mode !== null || value.automatic_hdr !== null)
                 throw new Error("invalid materialization candidate")
         } else {
             throw new Error("invalid transaction policy")
@@ -496,7 +600,9 @@ Scope {
             connector: value.connector,
             mode: mode,
             bitdepth: value.bitdepth,
-            scale_millionths: value.scale_millionths
+            scale_millionths: value.scale_millionths,
+            hdr_mode: value.hdr_mode,
+            automatic_hdr: value.automatic_hdr
         }
     }
 
@@ -602,7 +708,15 @@ Scope {
                 + " · " + root.refreshArgument(candidate.mode.refresh_millihz) + " Hz")
         }
         if (candidate.bitdepth !== null)
-            parts.push(candidate.bitdepth + "-bit color")
+            parts.push("Color Depth: " + candidate.bitdepth + "-bit")
+        if (candidate.hdr_mode !== null)
+            parts.push("Forced HDR: " + (candidate.hdr_mode === "always-on"
+                ? "On" : "Off"))
+        if (candidate.automatic_hdr !== null) {
+            const labels = ["Off", "On", "On (EDID)"]
+            parts.push("Automatic HDR (all displays): "
+                + labels[candidate.automatic_hdr])
+        }
         return parts.join(" · ")
     }
 

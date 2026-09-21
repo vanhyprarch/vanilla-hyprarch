@@ -435,6 +435,23 @@ DockPopup {
             ? "Unavailable" : root.pendingState.bitdepth + "-bit"
     }
 
+    function pendingHdrText(): string {
+        if (root.monitorControllerReady)
+            root.monitorController.pendingRevision
+        if (root.pendingState === null)
+            return "Unavailable"
+        return root.pendingState.hdr_mode === "always-on" ? "On" : "Off"
+    }
+
+    function pendingAutomaticHdrText(): string {
+        if (!root.monitorControllerReady)
+            return "Unavailable"
+        root.monitorController.pendingRevision
+        const labels = ["Off", "On", "On (EDID)"]
+        const value = root.monitorController.pendingAutomaticHdr
+        return labels[value] === undefined ? "Unavailable" : labels[value]
+    }
+
     function nearestTextSizeIndex(size: int): int {
         let bestIndex = 0
         let bestDistance = Number.MAX_VALUE
@@ -511,6 +528,7 @@ DockPopup {
     component ChoiceRow: Item {
         required property string label
         required property string value
+        property string detailLabel: ""
         property bool interactive: true
         property bool changed: false
         signal previousRequested()
@@ -520,16 +538,26 @@ DockPopup {
         height: root.metrics.compactControlHeight
         opacity: interactive ? 1 : root.metrics.disabledInteractiveOpacity
 
-        Text {
+        Column {
             anchors {
                 left: parent.left
                 verticalCenter: parent.verticalCenter
             }
             width: parent.width * 0.34
-            text: parent.label
-            color: root.textColor
-            font.pixelSize: root.metrics.informationLabelFontSize
-            font.weight: root.metrics.informationLabelFontWeight
+
+            Text {
+                text: parent.parent.label
+                color: root.textColor
+                font.pixelSize: root.metrics.informationLabelFontSize
+                font.weight: root.metrics.informationLabelFontWeight
+            }
+
+            Text {
+                visible: text !== ""
+                text: parent.parent.detailLabel
+                color: root.theme.textMuted
+                font.pixelSize: root.metrics.captionFontSize
+            }
         }
 
         Rectangle {
@@ -789,6 +817,37 @@ DockPopup {
                     root.monitorController.cycleBitdepth(root.connectorName, 1)
             }
 
+            ChoiceRow {
+                label: "Forced HDR"
+                value: root.pendingHdrText()
+                interactive: root.displayEditable
+                    && root.inspectedOutput !== null
+                    && root.inspectedOutput.hdr.available
+                changed: root.pendingState !== null
+                    && root.inspectedOutput !== null
+                    && root.pendingState.hdr_mode !== root.inspectedOutput.hdr.mode
+                onPreviousRequested:
+                    root.monitorController.cycleHdr(root.connectorName, -1)
+                onNextRequested:
+                    root.monitorController.cycleHdr(root.connectorName, 1)
+            }
+
+            ChoiceRow {
+                label: "Automatic HDR"
+                detailLabel: "All displays"
+                value: root.pendingAutomaticHdrText()
+                interactive: root.displayEditable
+                    && root.monitorControllerReady
+                    && root.monitorController.automaticHdrAvailable
+                changed: root.monitorControllerReady
+                    && root.monitorController.pendingAutomaticHdr
+                        !== root.monitorController.automaticHdrValue
+                onPreviousRequested:
+                    root.monitorController.cycleAutomaticHdr(-1)
+                onNextRequested:
+                    root.monitorController.cycleAutomaticHdr(1)
+            }
+
             Rectangle {
                 width: parent.width
                 height: root.metrics.compactControlHeight
@@ -815,6 +874,8 @@ DockPopup {
                     enabled: root.displayEditable
                         && root.monitorControllerReady
                         && root.monitorController.hasSafeChanges(root.connectorName)
+                        && root.monitorController.validationMessage(
+                            root.connectorName) === ""
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: root.monitorController.requestSafeApply(
@@ -870,6 +931,15 @@ DockPopup {
             Text {
                 visible: (root.monitorControllerReady
                         && root.monitorController.errorMessage !== "")
+                    || (root.monitorControllerReady
+                        && root.monitorController.validationMessage(
+                            root.connectorName) !== "")
+                    || (root.displayEditable
+                        && root.inspectedOutput !== null
+                        && !root.inspectedOutput.hdr.available)
+                    || (root.displayEditable
+                        && root.monitorControllerReady
+                        && !root.monitorController.automaticHdrAvailable)
                     || (root.inspectedOutput !== null
                         && !root.inspectedOutput.editable
                         && !root.inspectedOutput.materializable)
@@ -877,6 +947,17 @@ DockPopup {
                 text: root.monitorControllerReady
                     && root.monitorController.errorMessage !== ""
                     ? root.monitorController.errorMessage
+                    : root.monitorControllerReady
+                        && root.monitorController.validationMessage(
+                            root.connectorName) !== ""
+                        ? root.monitorController.validationMessage(
+                            root.connectorName)
+                    : root.displayEditable && root.inspectedOutput !== null
+                        && !root.inspectedOutput.hdr.available
+                        ? root.inspectedOutput.hdr.unavailable_reason
+                    : root.displayEditable && root.monitorControllerReady
+                        && !root.monitorController.automaticHdrAvailable
+                        ? root.monitorController.automaticHdrUnavailableReason
                     : root.inspectedOutput !== null
                         ? root.inspectedOutput.unavailable_reason : ""
                 color: root.theme.danger

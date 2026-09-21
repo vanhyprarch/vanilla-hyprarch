@@ -35,6 +35,23 @@ grep -Fq 'Enable advanced display settings' "$panel" \
     || fail 'fallback-managed output lacks explicit advanced-settings action'
 grep -Fq 'Your current display settings should not change.' "$panel" \
     || fail 'materialization copy implies the working display needs initialization'
+grep -Fq 'label: "Forced HDR"' "$panel" \
+    || fail 'per-monitor HDR policy row is missing'
+grep -Fq 'label: "Automatic HDR"' "$panel" \
+    || fail 'Automatic HDR label is missing from the panel'
+grep -Fq 'detailLabel: "All displays"' "$panel" \
+    || fail 'global Automatic HDR scope is not visible beneath its label'
+grep -Fq 'font.pixelSize: root.metrics.captionFontSize' "$panel" \
+    || fail 'global Automatic HDR scope does not use the smaller caption size'
+grep -Fq 'const labels = ["Off", "On", "On (EDID)"]' "$panel" \
+    || fail 'Automatic HDR labels do not match the approved product language'
+grep -Fq 'command.push("--hdr", pending.hdr_mode)' "$controller" \
+    || fail 'pending forced HDR is absent from combined Safe Apply'
+grep -Fq 'command.push("--automatic-hdr", String(root.pendingAutomaticHdr))' \
+    "$controller" \
+    || fail 'pending global Automatic HDR is absent from combined Safe Apply'
+grep -Fq 'Forced HDR On requires selecting 10-bit Color Depth' "$controller" \
+    || fail 'controller does not block illegal 8-bit forced HDR'
 grep -Fq 'interval: 1000' "$controller" \
     || fail 'active transaction reconciliation lacks bounded polling'
 grep -Fq 'running: root.transactionInFlight && root.checksEnabled' "$controller" \
@@ -56,6 +73,33 @@ grep -Fq 'root.controller.requestConfirm()' "$confirmation" \
     || fail 'Keep does not Confirm'
 grep -Fq 'Math.ceil(root.controller.presentationRemainingSeconds)' "$confirmation" \
     || fail 'countdown is not backend-sampled presentation state'
+if grep -Fq 'implicitHeight: 248' "$confirmation"; then
+    fail 'confirmation still reserves an unexplained fixed height'
+fi
+grep -Fq 'implicitHeight: contentColumn.implicitHeight + contentPadding * 2' \
+    "$confirmation" \
+    || fail 'confirmation height does not follow content with symmetric padding'
+grep -Fq 'wrapMode: Text.WordWrap' "$confirmation" \
+    || fail 'realistic long confirmation descriptions cannot grow the overlay'
+grep -Fq 'anchors.horizontalCenter: parent.horizontalCenter' "$confirmation" \
+    || fail 'confirmation actions are not centered'
+grep -Fq 'width: root.actionButtonWidth * 2 + spacing' "$confirmation" \
+    || fail 'confirmation action row does not follow the two compact buttons'
+[ "$(grep -Ec '^[[:space:]]+width: root\.actionButtonWidth$' \
+    "$confirmation")" -eq 2 ] \
+    || fail 'confirmation actions do not share one label-derived width'
+if grep -Fq 'width: (parent.width - parent.spacing) / 2' "$confirmation"; then
+    fail 'confirmation actions still stretch across the content width'
+fi
+if grep -Fq 'Math.max(360, Math.min(520' "$confirmation"; then
+    fail 'confirmation still forces the former broad screen-based width'
+fi
+grep -Fq 'Math.min(maximumPanelWidth, idealPanelWidth)' "$confirmation" \
+    || fail 'confirmation width is not content-driven within readable bounds'
+grep -Fq 'root.metrics.compactActionSurfaceWidth' "$confirmation" \
+    || fail 'confirmation lacks the shared minimum sensible width'
+grep -Fq 'root.metrics.standardPanelWidth' "$confirmation" \
+    || fail 'confirmation lacks the shared maximum readable width'
 
 [ "$(grep -F -c '    MonitorController {' "$shell")" -eq 1 ] \
     || fail 'shell does not own exactly one global MonitorController'

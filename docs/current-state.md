@@ -941,7 +941,7 @@ prove transaction ownership. The completed schema-v2 deployment required the
 old helper to prove its schema-v1 journal terminal and recovery-disarmed before
 controlled removal and replacement; no legacy journal was guessed or migrated.
 
-The deployed schema-v3 backend implements the final policy: Mode
+The published schema-v4 backend implements the accepted policy: Mode
 (resolution plus refresh) and bitdepth (8 or 10 bpc) are safe-confirmed; Scale
 is immediate-validated and automatically persists only after runtime readback.
 Both policies share prospective verification, atomic persistence, reload
@@ -976,7 +976,7 @@ outputs were not simultaneously available; this is an untested hardware
 boundary, not a known failure. Deterministic tests cover multi-output ordering,
 identity, protected-topology, and target-screen semantics.
 
-An isolated, undeployed schema-4/protocol-3 follow-up implements optional
+The published schema-4/protocol-3 generation also implements optional
 minimal-intent profile materialization for a fallback-managed output. The
 fallback remains a valid working configuration and Vanilla does not materialize
 it during installation, session start, hotplug, inspection, or panel open. Only
@@ -986,8 +986,20 @@ position, automatic Scale, and omitted optional fields. It uses the existing
 prospective verification, atomic persistence, reload reconciliation, complete
 topology equality, and recovery engine without `hl.monitor()`, a confirmation
 deadline, or runtime correction. Subsequent edits specialize only the field the
-user changes. Controlled deployment and fresh-install acceptance remain
-pending. See [Monitor Safe Apply backend](monitor-safe-apply.md).
+user changes. Existing explicit-profile behavior passed controlled deployment;
+physical materialization on a genuinely fallback-managed display remains
+deferred. See [Monitor Safe Apply backend](monitor-safe-apply.md).
+
+The current uncommitted HDR candidate extends Safe Apply with per-monitor
+**HDR: Off / Always On** and global **Automatic HDR · All displays:
+Off / HDR / HDR (EDID)**. Forced HDR owns only `cm = "hdr"`, requires 10-bit,
+and stores the exact former non-HDR CM presence/value in an adjacent strict
+machine-profile marker. The global values map to `render:cm_auto_hdr` 0/1/2 and
+are one shared controller state across all panels. Inspection derives HDR
+eligibility from identity-bound EDID BT.2020/PQ capability and exposes policy,
+not a fabricated live HDR indicator; Hyprland 0.56.2 does not publish generic
+`inHDR()` through monitor JSON. Controlled deployment and live HDR acceptance
+remain pending.
 
 ## Known open work
 
@@ -998,9 +1010,9 @@ pending. See [Monitor Safe Apply backend](monitor-safe-apply.md).
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Deploy and accept the explicit opt-in minimal monitor-profile materialization
-  path. DF2 must retain the create-once fallback seed and must not materialize
-  connected displays automatically.
+- Physically accept explicit opt-in monitor-profile materialization on a
+  genuinely fallback-managed display. DF2 must retain the create-once fallback
+  seed and must not materialize connected displays automatically.
 - Perform physical multi-monitor acceptance when two suitable outputs are
   simultaneously available; deterministic multi-output coverage already
   exists and no failure is currently known.

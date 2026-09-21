@@ -29,8 +29,12 @@ ShellRoot {
 
     function inspection(fallbackEditable: bool): string {
         return JSON.stringify({
-            version: 2,
+            version: 3,
             instance_signature: "fixture_123",
+            automatic_hdr: {
+                value: 1, label: "hdr", explicit: false, scope: "global",
+                available: true, unavailable_reason: null
+            },
             outputs: [{
                 connector: "DP-1",
                 label: "Example Panel",
@@ -54,6 +58,12 @@ ShellRoot {
                 effective: {
                     current_format: "XRGB2101010",
                     color_management_preset: "wide"
+                },
+                hdr: {
+                    capability: "supported", available: true,
+                    unavailable_reason: null, mode: "off",
+                    base_cm: { present: true, value: "auto" },
+                    effective_live: "unknown"
                 }
             }, {
                 connector: "HDMI-A-1",
@@ -73,6 +83,12 @@ ShellRoot {
                 effective: {
                     current_format: "XRGB8888",
                     color_management_preset: "srgb"
+                },
+                hdr: {
+                    capability: "unknown", available: false,
+                    unavailable_reason: "Output is inactive or unusable.", mode: "off",
+                    base_cm: { present: false, value: "srgb" },
+                    effective_live: "unknown"
                 }
             }, {
                 connector: "DP-2",
@@ -96,6 +112,12 @@ ShellRoot {
                 effective: {
                     current_format: "XRGB8888",
                     color_management_preset: "srgb"
+                },
+                hdr: {
+                    capability: "unknown", available: false,
+                    unavailable_reason: "Advanced display settings are unavailable.",
+                    mode: "off", base_cm: { present: false, value: "srgb" },
+                    effective_live: "unknown"
                 }
             }]
         })
@@ -103,7 +125,7 @@ ShellRoot {
 
     function response(state, sequence, transactionId, candidate, remaining): string {
         return JSON.stringify({
-            version: 3,
+            version: 4,
             ok: true,
             status: {
                 transaction_id: transactionId,
@@ -122,14 +144,15 @@ ShellRoot {
     function materializationResponse(state: string, sequence: int,
             failure: var): string {
         return JSON.stringify({
-            version: 3,
+            version: 4,
             ok: true,
             status: {
                 transaction_id: "materialize-transaction",
                 policy: "materialize-profile",
                 candidate: {
                     connector: "DP-2", mode: null, bitdepth: null,
-                    scale_millionths: null
+                    scale_millionths: null, hdr_mode: null,
+                    automatic_hdr: null
                 },
                 state: state,
                 sequence: sequence,
@@ -144,7 +167,7 @@ ShellRoot {
     function failedResponse(state: string, sequence: int, transactionId: string,
             candidate: var, failure: string, recoveryRequired: bool): string {
         return JSON.stringify({
-            version: 3,
+            version: 4,
             ok: true,
             status: {
                 transaction_id: transactionId,
@@ -165,6 +188,13 @@ ShellRoot {
             "valid inspection was rejected")
         check(controller.ready && controller.outputFor("DP-1") !== null,
             "inspection did not publish the output")
+        check(controller.outputFor("DP-1").hdr.mode === "off"
+                && controller.outputFor("DP-1").hdr.available,
+            "per-monitor HDR policy did not map to Off")
+        check(controller.automaticHdrValue === 1
+                && controller.pendingAutomaticHdr === 1
+                && !controller.automaticHdrExplicit,
+            "global Automatic HDR default did not map to HDR")
         check(controller.outputFor("HDMI-A-1").current_mode === null
                 && controller.ensurePending("HDMI-A-1") === null,
             "inactive output invalidated the normalized inspection model")
@@ -198,7 +228,7 @@ ShellRoot {
                 && controller.outputFor("DP-2").materializable,
             "failed materialization did not remain retryable")
         check(controller.acceptStatusJson(JSON.stringify({
-                version: 3, ok: true, status: { state: "idle" }
+                version: 4, ok: true, status: { state: "idle" }
             }), true),
             "controller did not clear failed materialization status")
         check(controller.acceptStatusJson(materializationResponse(
@@ -235,6 +265,28 @@ ShellRoot {
             "pending request optimistically replaced authoritative current state")
 
         controller.resetPending("DP-1")
+        check(controller.setPendingBitdepth("DP-1", 8)
+                && controller.setPendingHdr("DP-1", "always-on"),
+            "illegal HDR fixture could not be constructed")
+        check(controller.validationMessage("DP-1")
+                === "Forced HDR On requires selecting 10-bit Color Depth in the same Apply."
+                && !controller.requestSafeApply("DP-1"),
+            "8-bit plus forced HDR was not blocked with a clear validation")
+
+        controller.resetPending("DP-1")
+        check(controller.setPendingHdr("DP-1", "always-on")
+                && controller.setPendingAutomaticHdr(2)
+                && controller.requestSafeApply("DP-1"),
+            "combined HDR/global request was rejected")
+        check(controller.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor apply --connector DP-1 --hdr always-on --automatic-hdr 2",
+            "combined HDR/global request did not remain one exact Safe Apply")
+        check(controller.outputFor("DP-1").hdr.mode === "off"
+                && controller.automaticHdrValue === 1,
+            "pending HDR request optimistically changed authoritative state")
+
+        controller.resetPending("DP-1")
+        controller.pendingAutomaticHdr = controller.automaticHdrValue
         check(controller.requestScale("DP-1", "1.50"),
             "immediate Scale request was rejected")
         check(controller.lastRequestedCommand.join(" ")
@@ -247,7 +299,7 @@ ShellRoot {
             connector: "DP-1",
             mode: { width: 1920, height: 1080, refresh_millihz: 60000 },
             bitdepth: null,
-            scale_millionths: null
+            scale_millionths: null, hdr_mode: null, automatic_hdr: null
         }
         check(controller.acceptStatusJson(response("temporary-active", 2,
             "transaction-new", candidate, 8.4), true),
@@ -297,10 +349,10 @@ ShellRoot {
         check(bitdepthController.acceptStatusJson(response("temporary-active", 2,
             "transaction-depth", {
                 connector: "DP-1", mode: null, bitdepth: 8,
-                scale_millionths: null
+                scale_millionths: null, hdr_mode: null, automatic_hdr: null
             }, 7.2), false) && bitdepthController.confirmationActive,
             "bitdepth-only transaction did not open confirmation")
-        check(bitdepthController.confirmationDescription() === "8-bit color",
+        check(bitdepthController.confirmationDescription() === "Color Depth: 8-bit",
             "bitdepth confirmation description is not normalized")
         bitdepthController.destroy()
 
@@ -313,13 +365,28 @@ ShellRoot {
                 connector: "DP-1",
                 mode: { width: 1920, height: 1080, refresh_millihz: 60000 },
                 bitdepth: 8,
-                scale_millionths: null
+                scale_millionths: null, hdr_mode: null, automatic_hdr: null
             }, 6.8), false) && combinedController.confirmationActive,
             "combined transaction did not open one confirmation")
         check(combinedController.confirmationDescription()
-                === "1920×1080 · 60 Hz · 8-bit color",
+                === "1920×1080 · 60 Hz · Color Depth: 8-bit",
             "combined confirmation description is not normalized")
         combinedController.destroy()
+
+        const hdrController = controllerComponent.createObject(root)
+        check(hdrController !== null
+                && hdrController.acceptInspectionJson(inspection(false), false),
+            "HDR controller setup failed")
+        check(hdrController.acceptStatusJson(response("temporary-active", 2,
+            "transaction-hdr", {
+                connector: "DP-1", mode: null, bitdepth: 10,
+                scale_millionths: null, hdr_mode: "always-on", automatic_hdr: 0
+            }, 6.4), false) && hdrController.confirmationActive,
+            "combined HDR transaction did not open one confirmation")
+        check(hdrController.confirmationDescription()
+                === "Color Depth: 10-bit · Forced HDR: On · Automatic HDR (all displays): Off",
+            "HDR confirmation description exposed backend names or lost fields")
+        hdrController.destroy()
 
         controller.statusTransportError = true
         controller.errorMessage = "vanhyprarch-monitor: [Errno 104] Connection reset by peer"

@@ -3,6 +3,7 @@
 //@ pragma Env QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000
 
 import QtQuick
+import QtQuick.VectorImage
 import Quickshell
 import Quickshell.Io
 import "components"
@@ -161,7 +162,10 @@ ShellRoot {
             onPressed: overlayFocusCoordinator.dockBackgroundInteracted()
         }
 
-        Image {
+        // Keep the exact SVG curves in the Qt Quick scene. CurveRenderer avoids
+        // Image's SVG-to-pixmap rasterization and its cost is negligible for
+        // one static 40-pixel mark.
+        VectorImage {
             id: dockLogo
 
             anchors {
@@ -172,8 +176,8 @@ ShellRoot {
             source: logoSource
             width: logoSize
             height: logoSize
-            fillMode: Image.PreserveAspectFit
-            smooth: true
+            fillMode: VectorImage.PreserveAspectFit
+            preferredRendererType: VectorImage.CurveRenderer
 
             MouseArea {
                 anchors.fill: parent

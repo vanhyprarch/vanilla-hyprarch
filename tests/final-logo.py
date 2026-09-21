@@ -52,8 +52,26 @@ class FinalLogoTests(unittest.TestCase):
     def test_shell_uses_one_canonical_aspect_preserving_asset(self) -> None:
         shell = SHELL.read_text(encoding="utf-8")
         self.assertEqual(shell.count('Qt.resolvedUrl("assets/logo.svg")'), 1)
+        self.assertIn("import QtQuick.VectorImage", shell)
+        self.assertIn("VectorImage {\n            id: dockLogo", shell)
+        self.assertNotRegex(
+            shell, r"(?m)^\s*Image \{\n\s*id: dockLogo$"
+        )
         self.assertIn("source: logoSource", shell)
-        self.assertIn("fillMode: Image.PreserveAspectFit", shell)
+        self.assertIn("width: logoSize", shell)
+        self.assertIn("height: logoSize", shell)
+        self.assertIn("property int logoSize: 40", shell)
+        self.assertIn("fillMode: VectorImage.PreserveAspectFit", shell)
+        self.assertIn(
+            "preferredRendererType: VectorImage.CurveRenderer", shell
+        )
+        logo_block = shell.split("VectorImage {\n            id: dockLogo", 1)[1]
+        logo_block = logo_block.split("\n        Workspaces {", 1)[0]
+        self.assertNotIn("sourceSize", logo_block)
+        self.assertNotIn("mipmap", logo_block)
+        self.assertNotIn("smooth", logo_block)
+        self.assertIn("anchors.fill: parent", logo_block)
+        self.assertIn("onClicked: superSpace.toggle()", logo_block)
         assets = list(LOGO.parent.glob("*logo*.svg"))
         self.assertEqual(assets, [LOGO])
 

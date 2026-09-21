@@ -219,6 +219,29 @@ hl.monitor({
 '''
 
 
+def hdr_edid(
+    *, model: str = "Panel", serial: str = "ABC123",
+    bt2020: bool = True, pq: bool = True,
+) -> bytes:
+    base = bytearray(128)
+    base[:8] = b"\x00\xff\xff\xff\xff\xff\xff\x00"
+    base[18] = 1
+    base[19] = 4
+    for offset, tag, value in ((54, 0xFC, model), (72, 0xFF, serial)):
+        descriptor = bytearray(18)
+        descriptor[:5] = bytes((0, 0, 0, tag, 0))
+        descriptor[5:18] = value.encode("ascii")[:13].ljust(13, b" ")
+        base[offset : offset + 18] = descriptor
+    base[126] = 1
+    base[127] = (-sum(base[:-1])) & 0xFF
+    extension = bytearray(128)
+    extension[0:4] = bytes((0x02, 0x03, 0x0C, 0))
+    extension[4:8] = bytes((0xE3, 0x05, 0xC0 if bt2020 else 0, 0))
+    extension[8:12] = bytes((0xE3, 0x06, 0x04 if pq else 0, 0x01))
+    extension[127] = (-sum(extension[:-1])) & 0xFF
+    return bytes(base + extension)
+
+
 class FakeClock:
     def __init__(self, value: float = 100.0) -> None:
         self.value = value
@@ -262,6 +285,15 @@ class QueueRunner:
 
 
 OK = monitor.CommandResult(0, "ok\n", "")
+
+
+def option_result(name: str, *, integer=None, boolean=None, explicit=False):
+    payload = {"option": name, "set": explicit}
+    if integer is not None:
+        payload["int"] = integer
+    if boolean is not None:
+        payload["bool"] = boolean
+    return monitor.CommandResult(0, json.dumps(payload), "")
 
 
 class RecordingVerifier:
@@ -410,6 +442,7 @@ class MonitorBackendTests(unittest.TestCase):
         persister: object | None = None,
         reload_coordinator: object | None = None,
         reload_event_source: object | None = None,
+        edid_reader=None,
     ) -> tuple[object, QueueRunner]:
         runner = QueueRunner(responses)
         authority = monitor.TransactionAuthority(
@@ -422,6 +455,7 @@ class MonitorBackendTests(unittest.TestCase):
             reload_coordinator=reload_coordinator
             or (FakeReloadCoordinator() if persister is not None else None),
             reload_event_source=reload_event_source,
+            edid_reader=edid_reader or monitor.read_connector_edid,
         )
         return authority, runner
 
@@ -505,7 +539,7 @@ class MonitorBackendTests(unittest.TestCase):
             b"-- user override\n",
             self.instance.signature,
         )
-        self.assertEqual(payload["version"], 2)
+        self.assertEqual(payload["version"], monitor.INSPECT_VERSION)
         self.assertEqual(payload["instance_signature"], self.instance.signature)
         inspected = payload["outputs"][0]
         self.assertEqual(inspected["connector"], "DP-1")
@@ -599,7 +633,11 @@ class MonitorBackendTests(unittest.TestCase):
 
     def test_inspect_command_is_read_only_and_does_not_create_journal(self) -> None:
         topology = [captured_hyprland_0562_output()]
-        runner = QueueRunner([topology])
+        runner = QueueRunner([
+            topology,
+            option_result("render:cm_auto_hdr", integer=1),
+            option_result("render:cm_enabled", boolean=True),
+        ])
         environment = {
             "HOME": str(self.root / "home"),
             "XDG_CONFIG_HOME": str(self.config),
@@ -614,15 +652,46 @@ class MonitorBackendTests(unittest.TestCase):
                 runner,
                 self.provider,
                 self.paths,
+                lambda state: hdr_edid(
+                    model=state.identity.model,
+                    serial=state.identity.serial,
+                ),
             )
         after = sorted(path.name for path in self.store.directory.iterdir())
         self.assertEqual(result, 0)
         self.assertEqual(before, after)
         self.assertFalse(self.store.journal_path.exists())
         value = json.loads(stream.getvalue())
+        self.assertEqual(value["version"], 3)
+        self.assertEqual(
+            value["automatic_hdr"],
+            {
+                "value": 1,
+                "label": "hdr",
+                "explicit": False,
+                "scope": "global",
+                "available": True,
+                "unavailable_reason": None,
+            },
+        )
         self.assertEqual(value["outputs"][0]["connector"], "DP-1")
-        self.assertEqual(runner.calls, [monitor.monitors_argv(self.instance.signature)])
-        self.assertNotIn("eval", runner.calls[0])
+        self.assertEqual(value["outputs"][0]["hdr"]["capability"], "supported")
+        self.assertTrue(value["outputs"][0]["hdr"]["available"])
+        self.assertEqual(value["outputs"][0]["hdr"]["mode"], "off")
+        self.assertEqual(
+            value["outputs"][0]["hdr"]["base_cm"],
+            {"present": True, "value": "auto"},
+        )
+        self.assertEqual(value["outputs"][0]["hdr"]["effective_live"], "unknown")
+        self.assertEqual(
+            runner.calls,
+            [
+                monitor.monitors_argv(self.instance.signature),
+                monitor.getoption_argv(self.instance.signature, "render:cm_auto_hdr"),
+                monitor.getoption_argv(self.instance.signature, "render:cm_enabled"),
+            ],
+        )
+        self.assertTrue(all("eval" not in call for call in runner.calls))
 
     def test_v0562_serial_contract_is_strict(self) -> None:
         missing = output()
@@ -1023,7 +1092,7 @@ class MonitorBackendTests(unittest.TestCase):
                 with self.assertRaises(monitor.JournalError):
                     self.store.read()
 
-    def test_terminal_older_journal_is_not_reinterpreted_by_v4(self) -> None:
+    def test_terminal_older_journal_is_not_reinterpreted_by_v5(self) -> None:
         _, _, journal = self.begin_success()
         legacy = monitor.journal_to_dict(
             replace(
@@ -1034,14 +1103,13 @@ class MonitorBackendTests(unittest.TestCase):
                 recovery_required=False,
             )
         )
-        legacy["schema_version"] = 2
-        del legacy["persistence_phase"]
+        legacy["schema_version"] = 4
         self.store.journal_path.write_text(json.dumps(legacy))
         self.store.journal_path.chmod(0o600)
         authority, runner = self.authority([])
         for operation in (authority.status, authority.recover):
             with self.subTest(operation=operation.__name__):
-                with self.assertRaisesRegex(monitor.JournalError, "schema mismatch"):
+                with self.assertRaisesRegex(monitor.JournalError, "unknown journal schema"):
                     operation()
         self.assertEqual(runner.calls, [])
 
@@ -1995,6 +2063,15 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
         )
         verifier = monitor.SandboxedHyprlandVerifier(self.config)
         verifier(journal, candidate)
+        hdr_candidate = monitor.rewrite_machine_configuration(
+            machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10"),
+            monitor.Candidate.safe(
+                "DP-1", hdr_mode="always-on", automatic_hdr=2
+            ),
+        )
+        verifier(journal, hdr_candidate)
+        self.assertIn(b'cm = "hdr"', hdr_candidate)
+        self.assertIn(b"cm_auto_hdr = 2", hdr_candidate)
         with self.assertRaisesRegex(
             monitor.PersistenceError, "INTENTIONAL_INVALID_MATERIALIZATION_FIXTURE"
         ):
@@ -2847,6 +2924,8 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
             topology,
             machine_snapshot,
             monitor.snapshot_file(self.override),
+            False,
+            False,
         )
         self.machine.write_bytes(content + b"-- unrelated external edit\n")
         self.store.write(journal)
@@ -2898,6 +2977,8 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
                     topology,
                     machine_snapshot,
                     monitor.snapshot_file(self.override),
+                    False,
+                    False,
                 )
                 if phase != "candidate-planned":
                     self.machine.write_bytes(content)
@@ -2943,6 +3024,8 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
             topology,
             machine_snapshot,
             monitor.snapshot_file(self.override),
+            False,
+            False,
         )
         self.store.write(journal)
         authority, runner = self.authority([[output()]])
@@ -2978,6 +3061,414 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
         self.assertEqual(journal.override_file.content, b"-- user override\n")
         self.assertEqual(journal.machine_file.mode, 0o600)
         self.assertGreater(journal.machine_file.inode, 0)
+
+    def test_hdr_edid_capability_is_strict_and_identity_bound(self) -> None:
+        state = monitor.parse_monitor_payload([output()]).target("DP-1")
+        supported = monitor.parse_hdr_edid(hdr_edid(), state.identity)
+        self.assertTrue(supported.available)
+        self.assertTrue(supported.supports_bt2020)
+        self.assertTrue(supported.supports_pq)
+        for data, message in (
+            (hdr_edid(bt2020=False), "supported"),
+            (hdr_edid(pq=False), "supported"),
+        ):
+            with self.subTest(message=message, digest=hashlib.sha256(data).hexdigest()):
+                self.assertFalse(
+                    monitor.parse_hdr_edid(data, state.identity).available
+                )
+        with self.assertRaisesRegex(monitor.ValidationError, "model"):
+            monitor.parse_hdr_edid(hdr_edid(model="Other"), state.identity)
+        malformed = bytearray(hdr_edid())
+        malformed[-1] ^= 1
+        with self.assertRaisesRegex(monitor.ValidationError, "checksum"):
+            monitor.parse_hdr_edid(bytes(malformed), state.identity)
+
+    def test_hdr_capability_overrides_and_icc_fail_closed(self) -> None:
+        state = monitor.parse_monitor_payload([output()]).target("DP-1")
+        disabled = machine_configuration().replace(
+            b'    cm = "auto",\n',
+            b'    cm = "auto",\n    supports_hdr = -1,\n',
+        )
+        profile = monitor.require_explicit_profile(disabled, "DP-1")
+        capability = monitor.evaluate_hdr_capability(
+            state, profile, hdr_edid()
+        )
+        self.assertFalse(capability.available)
+        self.assertEqual(capability.state, "disabled")
+        wide_disabled = machine_configuration().replace(
+            b'    cm = "auto",\n',
+            b'    cm = "auto",\n    supports_wide_color = -1,\n',
+        )
+        capability = monitor.evaluate_hdr_capability(
+            state,
+            monitor.require_explicit_profile(wide_disabled, "DP-1"),
+            hdr_edid(),
+        )
+        self.assertFalse(capability.available)
+        self.assertEqual(capability.state, "disabled")
+        icc = machine_configuration().replace(
+            b'    cm = "auto",\n', b'    cm = "auto",\n    icc = "owned.icc",\n'
+        )
+        payload = monitor.inspection_payload(
+            monitor.parse_monitor_payload([output()]),
+            icc,
+            b"-- override\n",
+            self.instance.signature,
+            monitor.AutomaticHdrRuntime(1, False),
+            True,
+            lambda state: hdr_edid(),
+        )
+        self.assertFalse(payload["outputs"][0]["hdr"]["available"])
+        self.assertIn("ICC", payload["outputs"][0]["hdr"]["unavailable_reason"])
+
+    def test_forced_hdr_marker_round_trips_exact_base_intent(self) -> None:
+        for base in (None, "auto", "srgb", "wide", "dcip3"):
+            with self.subTest(base=base):
+                original = machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10")
+                if base is None:
+                    original = original.replace(b'    cm = "auto",\n', b"")
+                else:
+                    original = original.replace(b'cm = "auto"', f'cm = "{base}"'.encode())
+                forced = monitor.rewrite_existing_profile(
+                    original, monitor.Candidate.safe("DP-1", hdr_mode="always-on")
+                )
+                self.assertIn(b'cm = "hdr"', forced)
+                marker = b"absent" if base is None else f"present:{base}".encode()
+                self.assertIn(marker, forced)
+                restored = monitor.rewrite_existing_profile(
+                    forced, monitor.Candidate.safe("DP-1", hdr_mode="off")
+                )
+                self.assertEqual(restored, original)
+                self.assertNotIn(
+                    monitor.FORCED_HDR_MARKER_PREFIX.encode(), restored
+                )
+        commented = machine_configuration().replace(
+            b"bitdepth = 8", b"bitdepth = 10"
+        ).replace(b'cm = "auto",', b'cm = "auto", -- keep this machine note')
+        forced = monitor.rewrite_existing_profile(
+            commented, monitor.Candidate.safe("DP-1", hdr_mode="always-on")
+        )
+        restored = monitor.rewrite_existing_profile(
+            forced, monitor.Candidate.safe("DP-1", hdr_mode="off")
+        )
+        self.assertEqual(restored, commented)
+
+    def test_external_hdr_and_malformed_marker_are_unmanaged(self) -> None:
+        for content in (
+            machine_configuration().replace(b'cm = "auto"', b'cm = "hdr"'),
+            machine_configuration().replace(b'cm = "auto"', b'cm = "hdredid"'),
+            machine_configuration().replace(
+                b'    cm = "auto",\n',
+                b'    -- vanhyprarch-monitor-forced-hdr-base-v1: nonsense\n'
+                b'    cm = "hdr",\n',
+            ),
+        ):
+            with self.subTest(content=content):
+                with self.assertRaises(monitor.ValidationError):
+                    monitor.validate_explicit_profile_editability(
+                        content,
+                        monitor.parse_monitor_payload([output()]).target("DP-1"),
+                    )
+
+    def test_automatic_hdr_machine_policy_preserves_omission_and_is_owned(self) -> None:
+        original = machine_configuration()
+        absent = monitor.automatic_hdr_config_intent(
+            original, b"-- override\n", monitor.AutomaticHdrRuntime(1, False)
+        )
+        self.assertEqual(absent, monitor.AutomaticHdrRuntime(1, False))
+        rolled_back_runtime = monitor.automatic_hdr_config_intent(
+            original, b"-- override\n", monitor.AutomaticHdrRuntime(1, True)
+        )
+        self.assertEqual(
+            rolled_back_runtime, monitor.AutomaticHdrRuntime(1, False)
+        )
+        explicit = monitor.rewrite_automatic_hdr(original, 2)
+        self.assertEqual(explicit.count(b"cm_auto_hdr"), 1)
+        for value in (0, 1, 2):
+            with self.subTest(value=value):
+                explicit = monitor.rewrite_automatic_hdr(explicit, value)
+                self.assertEqual(explicit.count(b"cm_auto_hdr"), 1)
+                self.assertEqual(
+                    monitor.automatic_hdr_config_intent(
+                        explicit,
+                        b"-- override\n",
+                        monitor.AutomaticHdrRuntime(value, True),
+                    ),
+                    monitor.AutomaticHdrRuntime(value, True),
+                )
+        with self.assertRaises(monitor.OverrideConflict):
+            monitor.automatic_hdr_config_intent(
+                original,
+                b"hl.config({ render = { cm_auto_hdr = 0 } })\n",
+                monitor.AutomaticHdrRuntime(0, True),
+            )
+
+    def test_hdr_runtime_overlay_owns_only_cm(self) -> None:
+        candidate = monitor.Candidate.safe("DP-1", hdr_mode="always-on")
+        self.assertEqual(
+            monitor.monitor_eval_source(candidate, cm_value="hdr"),
+            'hl.monitor({ output = "DP-1", cm = "hdr" })',
+        )
+        combined = monitor.Candidate.safe(
+            "DP-1", width=3840, height=2160, refresh="60",
+            bitdepth=10, hdr_mode="always-on", automatic_hdr=2,
+        )
+        source = monitor.monitor_eval_source(combined, cm_value="hdr")
+        self.assertIn('mode = "3840x2160@60"', source)
+        self.assertIn("bitdepth = 10", source)
+        self.assertIn('cm = "hdr"', source)
+        self.assertNotIn("scale", source)
+        self.assertNotIn("position", source)
+        self.assertEqual(
+            monitor.automatic_hdr_eval_source(2),
+            "hl.config({ render = { cm_auto_hdr = 2 } })",
+        )
+
+    def test_forced_hdr_requires_10bit_without_hidden_coupling(self) -> None:
+        candidate = monitor.Candidate.safe("DP-1", hdr_mode="always-on")
+        authority, runner = self.authority(
+            [
+                [output()],
+                option_result("render:cm_enabled", boolean=True),
+            ],
+            edid_reader=lambda state: hdr_edid(),
+        )
+        with self.assertRaisesRegex(monitor.ValidationError, "10-bit"):
+            authority.begin(candidate, self.instance.signature)
+        self.assertFalse(any("eval" in call for call in runner.calls))
+
+    def test_hdr_bitdepth_coupling_accepts_only_explicit_valid_combinations(self) -> None:
+        before8 = effective_output(8)
+        hdr10 = effective_output(10)
+        hdr10["colorManagementPreset"] = "hdr"
+        authority, runner = self.authority(
+            [
+                [before8], option_result("render:cm_enabled", boolean=True),
+                OK, [hdr10],
+            ],
+            edid_reader=lambda state: hdr_edid(),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe(
+                "DP-1", bitdepth=10, hdr_mode="always-on"
+            ),
+            self.instance.signature,
+        )
+        self.assertEqual(temporary.state, "temporary-active")
+        self.assertIn(
+            'bitdepth = 10, cm = "hdr"',
+            next(call[-1] for call in runner.calls if "eval" in call),
+        )
+
+        forced = monitor.rewrite_existing_profile(
+            machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10"),
+            monitor.Candidate.safe("DP-1", hdr_mode="always-on"),
+        )
+        self.machine.write_bytes(forced)
+        self.store.journal_path.unlink()
+        authority, runner = self.authority([[hdr10]])
+        with self.assertRaisesRegex(monitor.ValidationError, "10-bit"):
+            authority.begin(
+                monitor.Candidate.safe("DP-1", bitdepth=8),
+                self.instance.signature,
+            )
+        self.assertFalse(any("eval" in call for call in runner.calls))
+
+        restored8 = effective_output(8)
+        authority, _ = self.authority(
+            [
+                [hdr10], option_result("render:cm_enabled", boolean=True),
+                OK, [restored8],
+            ],
+            edid_reader=lambda state: hdr_edid(),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe("DP-1", bitdepth=8, hdr_mode="off"),
+            self.instance.signature,
+        )
+        self.assertEqual(temporary.state, "temporary-active")
+
+    def test_forced_hdr_keep_and_base_restoration_are_byte_exact(self) -> None:
+        original = machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10")
+        self.machine.write_bytes(original)
+        before = effective_output(10)
+        hdr = effective_output(10)
+        hdr["colorManagementPreset"] = "hdr"
+        verifier = RecordingVerifier()
+        persister = monitor.MachineConfigPersister(verifier)
+        authority, _ = self.authority(
+            [
+                [before], option_result("render:cm_enabled", boolean=True),
+                OK, [hdr], [hdr], [hdr],
+            ],
+            persister=persister,
+            edid_reader=lambda state: hdr_edid(),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe("DP-1", hdr_mode="always-on"),
+            self.instance.signature,
+        )
+        committed = authority.confirm(temporary.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        forced = self.machine.read_bytes()
+        self.assertIn(b'cm = "hdr"', forced)
+        self.assertIn(b"present:auto", forced)
+
+        authority, _ = self.authority(
+            [
+                [hdr], option_result("render:cm_enabled", boolean=True),
+                OK, [before], [before], [before],
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+            edid_reader=lambda state: hdr_edid(),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe("DP-1", hdr_mode="off"),
+            self.instance.signature,
+        )
+        committed = authority.confirm(temporary.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        self.assertEqual(self.machine.read_bytes(), original)
+
+    def test_forced_hdr_explicit_revert_and_crash_recovery_restore_base(self) -> None:
+        self.machine.write_bytes(
+            machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10")
+        )
+        before = effective_output(10)
+        hdr = effective_output(10)
+        hdr["colorManagementPreset"] = "hdr"
+        authority, _ = self.authority(
+            [
+                [before], option_result("render:cm_enabled", boolean=True),
+                OK, [hdr],
+                [hdr], OK, [before],
+            ],
+            edid_reader=lambda state: hdr_edid(),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe("DP-1", hdr_mode="always-on"),
+            self.instance.signature,
+        )
+        reverted = authority.rollback(temporary.transaction_id)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertFalse(reverted.recovery_required)
+
+        self.store.journal_path.unlink()
+        authority, _ = self.authority(
+            [
+                [before], option_result("render:cm_enabled", boolean=True),
+                OK, [hdr],
+            ],
+            edid_reader=lambda state: hdr_edid(),
+        )
+        authority.begin(
+            monitor.Candidate.safe("DP-1", hdr_mode="always-on"),
+            self.instance.signature,
+        )
+        recovery, _ = self.authority([[hdr], OK, [before]])
+        recovered = recovery.recover()
+        self.assertEqual(recovered.state, "reverted")
+        self.assertFalse(recovered.recovery_required)
+
+    def test_global_automatic_hdr_timeout_restores_default_and_no_file_write(self) -> None:
+        original = self.machine.read_bytes()
+        before = output()
+        authority, runner = self.authority([
+            [before],
+            option_result("render:cm_auto_hdr", integer=1),
+            OK,
+            [before],
+            option_result("render:cm_auto_hdr", integer=0, explicit=True),
+            [before],
+            OK,
+            option_result("render:cm_auto_hdr", integer=1),
+            [before],
+        ])
+        temporary = authority.begin(
+            monitor.Candidate.safe("DP-1", automatic_hdr=0),
+            self.instance.signature,
+        )
+        self.clock.advance(11)
+        reverted = authority.status()
+        self.assertEqual(reverted.state, "reverted")
+        self.assertEqual(self.machine.read_bytes(), original)
+        evals = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertEqual(
+            evals,
+            [
+                "hl.config({ render = { cm_auto_hdr = 0 } })",
+                "hl.config({ render = { cm_auto_hdr = 1 } })",
+            ],
+        )
+
+    def test_global_automatic_hdr_keep_persists_one_owned_block(self) -> None:
+        before = output()
+        authority, _ = self.authority(
+            [
+                [before],
+                option_result("render:cm_auto_hdr", integer=1),
+                OK,
+                [before],
+                option_result("render:cm_auto_hdr", integer=2, explicit=True),
+                [before],
+                option_result("render:cm_auto_hdr", integer=2, explicit=True),
+                [before],
+                option_result("render:cm_auto_hdr", integer=2, explicit=True),
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe("DP-1", automatic_hdr=2),
+            self.instance.signature,
+        )
+        committed = authority.confirm(temporary.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        self.assertEqual(self.machine.read_bytes().count(b"cm_auto_hdr"), 1)
+        self.assertIn(b"cm_auto_hdr = 2", self.machine.read_bytes())
+
+    def test_combined_forced_and_global_hdr_is_one_topology_safe_commit(self) -> None:
+        original = machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10")
+        self.machine.write_bytes(original)
+        before = effective_output(10)
+        other = output(name="DP-2", serial="OTHER", x=3072)
+        hdr = effective_output(10)
+        hdr["colorManagementPreset"] = "hdr"
+        authority, runner = self.authority(
+            [
+                [before, other],
+                option_result("render:cm_enabled", boolean=True),
+                option_result("render:cm_auto_hdr", integer=1),
+                OK, OK,
+                [hdr, other],
+                option_result("render:cm_auto_hdr", integer=2, explicit=True),
+                [hdr, other],
+                option_result("render:cm_auto_hdr", integer=2, explicit=True),
+                [hdr, other],
+                option_result("render:cm_auto_hdr", integer=2, explicit=True),
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+            edid_reader=lambda state: hdr_edid(),
+        )
+        temporary = authority.begin(
+            monitor.Candidate.safe(
+                "DP-1", hdr_mode="always-on", automatic_hdr=2
+            ),
+            self.instance.signature,
+        )
+        committed = authority.confirm(temporary.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        evals = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertEqual(
+            evals,
+            [
+                'hl.monitor({ output = "DP-1", cm = "hdr" })',
+                "hl.config({ render = { cm_auto_hdr = 2 } })",
+            ],
+        )
+        content = self.machine.read_bytes()
+        self.assertIn(b'cm = "hdr"', content)
+        self.assertIn(b"present:auto", content)
+        self.assertEqual(content.count(b"cm_auto_hdr"), 1)
 
     def test_service_is_static_bounded_and_has_recovery_hook(self) -> None:
         unit = UNIT.read_text()

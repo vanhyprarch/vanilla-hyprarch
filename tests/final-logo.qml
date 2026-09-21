@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.VectorImage
 import Quickshell
 
 ShellRoot {
@@ -10,36 +11,31 @@ ShellRoot {
         throw new Error(message)
     }
 
-    Image {
+    VectorImage {
         id: logo
 
         source: Qt.resolvedUrl("assets/logo.svg")
         width: 40
         height: 40
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-
+        fillMode: VectorImage.PreserveAspectFit
+        preferredRendererType: VectorImage.CurveRenderer
     }
 
     Timer {
-        property int attempts: 0
-
-        interval: 20
+        interval: 50
         running: true
-        repeat: true
+        repeat: false
         onTriggered: {
-            attempts++
-            if (logo.status === Image.Error)
-                root.fail("SVG resource failed to load")
-            if (logo.status === Image.Ready) {
-                if (Math.abs(logo.paintedWidth - 40) > 0.01
-                        || Math.abs(logo.paintedHeight - 40) > 0.01)
-                    root.fail("square viewBox was distorted at dock size")
-                console.log("FINAL_LOGO_TEST_PASS")
-                Qt.quit()
-            } else if (attempts >= 150) {
-                root.fail("SVG resource did not become ready")
-            }
+            if (logo.width !== 40 || logo.height !== 40)
+                root.fail("logical dock bounds changed")
+            if (logo.fillMode !== VectorImage.PreserveAspectFit)
+                root.fail("square viewBox is not aspect-fit")
+            if (logo.preferredRendererType !== VectorImage.CurveRenderer)
+                root.fail("CurveRenderer is not selected")
+            if (!logo.source.toString().endsWith("/assets/logo.svg"))
+                root.fail("canonical SVG source is not loaded")
+            console.log("FINAL_LOGO_TEST_PASS")
+            Qt.quit()
         }
     }
 }

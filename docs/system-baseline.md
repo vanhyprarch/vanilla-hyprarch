@@ -130,7 +130,7 @@ configuration for the main shell. It will install `vanhyprarch-idle`,
 `vanhyprarch-appearance`, `vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
 available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`;
 it will also install `vanhyprarch-monitor` and its static, non-enabled user
-service. The deployed schema-v3 generation is the accepted single-monitor
+service. The published schema-v4 generation is the accepted single-monitor
 runtime; newer journal schemas require their own controlled deployment boundary
 and must never replace a backend that owns nonterminal recovery material.
 It will deploy immutable dictation metadata under
@@ -374,10 +374,14 @@ The managed `vanhyprarch-monitor` Python command and static, non-enabled
 Hyprland, and Bubblewrap. The service starts only for a transaction, is bounded
 by `RuntimeMaxSec=90s`, and invokes an idempotent recovery entry point through
 `ExecStopPost`; journal, lock, and socket material is private XDG runtime
-state. The deployed schema-v3 engine gives Mode/bitdepth an
-explicit-confirmation window and makes Scale an immediate validated persistence
-operation. Its real UI and single-monitor runtime/persistence paths are
-live-accepted. Physical multi-monitor acceptance remains deferred.
+state. The published schema-v4 engine gives Mode/bitdepth an
+explicit-confirmation window, makes Scale an immediate validated persistence
+operation, and includes explicit opt-in profile materialization. Its real UI
+and single-monitor runtime/persistence paths are live-accepted; real fallback
+materialization and physical multi-monitor acceptance remain deferred. The
+local schema-v5 HDR candidate adds forced per-monitor HDR plus global Automatic
+HDR to that same confirmation authority and requires a controlled schema-upgrade
+deployment.
 
 ## Screenshots
 

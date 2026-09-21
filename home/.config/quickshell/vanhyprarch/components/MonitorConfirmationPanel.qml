@@ -14,10 +14,28 @@ CenteredOverlay {
     readonly property string mappedConnector: mappedMonitor
         ? String(mappedMonitor.name || "") : ""
     readonly property bool activeForScreen: controller.confirmationScreenName === screenName
+    readonly property int contentPadding: root.metrics.overlayPadding
+    readonly property int actionButtonWidth: Math.ceil(Math.max(
+        revertLabel.implicitWidth, keepLabel.implicitWidth))
+        + root.metrics.rowSidePadding * 2
+    readonly property string titleText: "Keep these display settings?"
+    readonly property string descriptionText: root.controller.confirmationDescription()
+    readonly property string countdownText: "Reverting in " + Math.max(0,
+        Math.ceil(root.controller.presentationRemainingSeconds)) + " seconds"
+    readonly property real naturalContentWidth: Math.max(
+        titleMeasure.implicitWidth, descriptionMeasure.implicitWidth,
+        countdownMeasure.implicitWidth, actionRow.width)
+    readonly property int maximumPanelWidth: Math.max(0, Math.min(
+        root.metrics.standardPanelWidth, screenWidth - dockWidth - 48))
+    readonly property int minimumPanelWidth: Math.min(
+        root.metrics.compactActionSurfaceWidth, maximumPanelWidth)
+    readonly property int idealPanelWidth: Math.ceil(naturalContentWidth)
+        + contentPadding * 2
 
     persistentLeftInset: dockWidth
-    implicitWidth: Math.max(360, Math.min(520, screenWidth - dockWidth - 48))
-    implicitHeight: 248
+    implicitWidth: Math.max(minimumPanelWidth,
+        Math.min(maximumPanelWidth, idealPanelWidth))
+    implicitHeight: contentColumn.implicitHeight + contentPadding * 2
     color: "transparent"
     visible: controller.confirmationActive && activeForScreen
 
@@ -33,6 +51,29 @@ CenteredOverlay {
     function syncFocus(): void {
         if (visible)
             Qt.callLater(function() { keyboardScope.forceActiveFocus() })
+    }
+
+    Text {
+        id: titleMeasure
+        visible: false
+        text: root.titleText
+        font.pixelSize: root.metrics.panelTitleFontSize
+        font.weight: root.metrics.panelTitleFontWeight
+    }
+
+    Text {
+        id: descriptionMeasure
+        visible: false
+        text: root.descriptionText
+        font.pixelSize: root.metrics.bodyFontSize
+    }
+
+    Text {
+        id: countdownMeasure
+        visible: false
+        text: root.countdownText
+        font.pixelSize: root.metrics.informationLabelFontSize
+        font.weight: Font.DemiBold
     }
 
     Rectangle {
@@ -59,15 +100,22 @@ CenteredOverlay {
             }
 
             Column {
+                id: contentColumn
+                objectName: "confirmationContent"
+
                 anchors {
-                    fill: parent
-                    margins: 24
+                    top: parent.top
+                    left: parent.left
+                    right: parent.right
+                    topMargin: root.contentPadding
+                    leftMargin: root.contentPadding
+                    rightMargin: root.contentPadding
                 }
                 spacing: 16
 
                 Text {
                     width: parent.width
-                    text: "Keep these display settings?"
+                    text: root.titleText
                     color: root.theme.text
                     font.pixelSize: root.metrics.panelTitleFontSize
                     font.weight: root.metrics.panelTitleFontWeight
@@ -75,18 +123,18 @@ CenteredOverlay {
                 }
 
                 Text {
+                    objectName: "confirmationDescription"
                     width: parent.width
-                    text: root.controller.confirmationDescription()
+                    text: root.descriptionText
                     color: root.theme.textMuted
                     font.pixelSize: root.metrics.bodyFontSize
                     horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
                 }
 
                 Text {
                     width: parent.width
-                    text: "Reverting in " + Math.max(0,
-                        Math.ceil(root.controller.presentationRemainingSeconds))
-                        + " seconds"
+                    text: root.countdownText
                     color: root.theme.text
                     font.pixelSize: root.metrics.informationLabelFontSize
                     font.weight: Font.DemiBold
@@ -94,12 +142,19 @@ CenteredOverlay {
                 }
 
                 Row {
-                    width: parent.width
+                    id: actionRow
+                    objectName: "confirmationActions"
+
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: root.actionButtonWidth * 2 + spacing
                     height: root.metrics.compactControlHeight
                     spacing: root.metrics.rowSpacing
 
                     Rectangle {
-                        width: (parent.width - parent.spacing) / 2
+                        id: revertButton
+                        objectName: "confirmationRevertButton"
+
+                        width: root.actionButtonWidth
                         height: parent.height
                         radius: root.metrics.rowRadius
                         color: revertMouse.pressed ? root.theme.pressedFill
@@ -109,6 +164,9 @@ CenteredOverlay {
                             ? root.metrics.disabledInteractiveOpacity : 1
 
                         Text {
+                            id: revertLabel
+                            objectName: "confirmationRevertLabel"
+
                             anchors.centerIn: parent
                             text: "Revert · Esc"
                             color: root.theme.text
@@ -126,7 +184,10 @@ CenteredOverlay {
                     }
 
                     Rectangle {
-                        width: (parent.width - parent.spacing) / 2
+                        id: keepButton
+                        objectName: "confirmationKeepButton"
+
+                        width: root.actionButtonWidth
                         height: parent.height
                         radius: root.metrics.rowRadius
                         color: keepMouse.pressed ? root.theme.pressedFill
@@ -136,6 +197,9 @@ CenteredOverlay {
                             ? root.metrics.disabledInteractiveOpacity : 1
 
                         Text {
+                            id: keepLabel
+                            objectName: "confirmationKeepLabel"
+
                             anchors.centerIn: parent
                             text: "Keep · Enter"
                             color: root.theme.text

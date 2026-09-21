@@ -27,5 +27,10 @@ if grep -Eq 'FINAL_LOGO_TEST_FAILURE|Cannot open:|SVG resource failed' "$output"
     cat "$output" >&2
     exit 1
 fi
+if git -C "$repository" grep -Eq \
+    '/home/[^/]+/Downloads|vanhyprarch_logo\.svg'; then
+    printf '%s\n' 'Final logo source-machine reference remains' >&2
+    exit 1
+fi
 
 printf '%s\n' 'Final logo offscreen render: PASS'

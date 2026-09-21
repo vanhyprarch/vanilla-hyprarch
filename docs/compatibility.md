@@ -178,6 +178,26 @@ format and color preservation for mode-only and Scale operations. Retest the
 format set, fallback order, and auto-preset resolution after a Hyprland output
 or color-management change.
 
+For HDR, installed Hyprland 0.56.2's Lua monitor binding accepts `cm` presets
+`auto`, `srgb`, `wide`, `hdr`, and `hdredid`; `hdr` and `hdredid` select the two
+HDR paths. The installed renderer option `render:cm_auto_hdr` is an integer
+global policy: 0 disables fullscreen switching, 1 selects `hdr`, and 2 selects
+`hdredid`. Runtime monitor CM changes use connector-bound `hl.monitor()`, while
+runtime global policy uses `hl.config({ render = { cm_auto_hdr = value } })`.
+`hyprctl -j getoption` authoritatively exposes the renderer value and whether it
+was explicitly set. Monitor JSON exposes the configured/effective CM preset but
+does not serialize the compositor's generic internal `inHDR()` result, so the
+UI deliberately reports policy rather than claimed live HDR activity.
+
+Hyprland/Aquamarine capability selection consults EDID BT.2020 colorimetry and
+PQ/ST2084 metadata plus `supports_hdr` and `supports_wide_color` overrides. The
+local backend reads the identity-bound sysfs EDID, validates its complete block
+inventory/checksums and model/serial association, and requires both capabilities
+before exposing forced HDR. This is version-specific and must be retested after
+Hyprland 0.56.2 or Aquamarine 0.15.1 changes its EDID/capability path. Vanilla
+also imposes the stricter product invariant that forced HDR requires verified
+10-bit; current Hyprland acceptance of another combination is not sufficient.
+
 A full configuration reload discards runtime monitor-rule projection and
 reapplies parsed persistent configuration. It is intentionally not normal B1
 rollback. Primary rollback issues one connector-specific `hl.monitor()` for
@@ -191,16 +211,18 @@ connector that now has different available physical identity data.
 
 The schema-v2 engine was live-validated with a deliberately temporary Scale
 change solely as a lower-risk proof of apply, readback, timeout, and recovery.
-The policy-aligned schema-v3 backend and Monitor UI are deployed and have
+The policy-aligned schema-v3 backend and Monitor UI were deployed and completed
 completed single-monitor live acceptance for Mode and bitdepth timeout,
 Revert/Keep persistence, immediate Scale persistence, dismissal semantics, and
 Quickshell reload during an armed transaction. The UI uses normalized read-only
 backend inspection instead of interpreting this version-specific JSON in QML.
-An undeployed schema-v4/protocol-v3 candidate adds the persistence-only
+The published schema-v4/protocol-v3 generation adds the persistence-only
 materialization transaction and supports later replacement of `preferred`,
-replacement of Scale `auto`, and insertion of an omitted bitdepth field. It
-must pass controlled deployment and fresh-install acceptance before this
-candidate is considered live behavior.
+replacement of Scale `auto`, and insertion of an omitted bitdepth field.
+Existing explicit-profile behavior passed controlled deployment; physical
+materialization remains deferred to a real fallback-managed environment. The
+schema-v5/protocol-v4 HDR extension must pass its own controlled upgrade and
+live acceptance boundary before it is published.
 Physical multi-monitor acceptance remains deferred; deterministic multi-output
 coverage is not presented as a real two-output hardware result.
 After every Hyprland upgrade, retest Lua monitor eval,

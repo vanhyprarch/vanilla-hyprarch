@@ -2,7 +2,7 @@
 
 ## Status and invariant
 
-The deployed schema-v3 backend and Monitor UI have completed single-monitor
+The published schema-v4 backend and Monitor UI have completed single-monitor
 live acceptance. Mode-only and bitdepth-only changes passed automatic timeout
 rollback and durable Keep, Mode passed explicit Revert, and immediate Scale
 passed a 1.25→1.50→1.25 durable persistence round trip. Escape and outside
@@ -12,10 +12,12 @@ reconstructed the overlay, and still rolled back at that deadline. The earlier
 temporary Scale exercise validated the rollback engine at lower risk; it does
 not define the final Scale UX.
 
-The final policy has two transaction classes:
+The HDR extension candidate advances the journal to schema 5, control protocol
+4, and inspection schema 3. The final policy has two transaction classes:
 
 - **safe-confirmed:** resolution/refresh as one mode tuple, bit depth (8 or 10
-  bpc), or both. These changes are temporary until explicit confirmation and
+  bpc), forced per-monitor HDR, global Automatic HDR policy, or any valid
+  combination. These changes are temporary until explicit confirmation and
   automatically roll back after approximately ten seconds.
 - **immediate-validated:** per-output scale. It is applied, authoritatively
   read back, prospectively verified, and persisted immediately. Any technical
@@ -23,10 +25,19 @@ The final policy has two transaction classes:
   human confirmation window.
 
 The invariant remains: **an unconfirmed safety-critical display configuration
-is never persisted**. Position, output enablement, transform, mirroring, HDR,
-wide-color intent, ICC, VRR, and reserved area are not editable. Brightness
+is never persisted**. Position, output enablement, transform, mirroring,
+wide-color capability overrides, ICC, VRR, and reserved area are not editable. Brightness
 remains the Monitor panel's separate DDC/CI path. Text Size remains the existing
 global TextSizeController/preference architecture.
+
+The per-monitor **HDR** policy has two states: **Off** restores the exact durable
+non-HDR CM intent, while **Always On** forces `cm = "hdr"`. It does not report
+whether an HDR signal is active: Hyprland 0.56.2 does not expose its internal
+generic `inHDR()` result through monitor JSON. **Automatic HDR · All displays**
+is a separate global policy whose Off/HDR/HDR (EDID) values map to
+`render:cm_auto_hdr` 0/1/2. Every panel presents the same shared pending and
+confirmed value. Forced HDR requires an effective 10-bit path; the backend
+rejects 8-bit plus Always On instead of changing bit depth implicitly.
 
 ## Authority and lifecycle
 
@@ -53,7 +64,7 @@ preparing -> applying -> committing -> committed
 
 The confirmation deadline is backend monotonic time and begins only after
 fresh full-topology readback verifies the candidate. The default presentation
-window is ten seconds and exists only for mode/bitdepth candidates. The UI
+window is ten seconds and exists only for safe-confirmed candidates. The UI
 displays the backend's remaining time but does not own it. Scale has no deadline
 or Confirm operation.
 
@@ -104,10 +115,12 @@ Full-topology validation indexes outputs by connector and
 physical identity rather than JSON order or numeric monitor ID. It rejects
 physical-identity changes, added or removed outputs, protected-field drift,
 changes to another output's owned fields, or a result with no usable output.
-Generated calls contain only their owned fields: `output` plus `mode`,
-`bitdepth`, both, or `scale`. They do not intentionally write position,
-transform, mirror, color-management intent, ICC, VRR, enablement, reserved
-area, or another monitor-rule field. Mode-only and Scale operations require
+Generated monitor calls contain only their owned fields: `output` plus `mode`,
+`bitdepth`, `cm`, a valid combination, or `scale`. Global Automatic HDR uses a
+separate `hl.config({ render = { cm_auto_hdr = ... } })` runtime mutation in
+the same transaction authority. Neither path writes position, transform,
+mirror, ICC, VRR, enablement, reserved area, or another monitor-rule field.
+Mode-only and Scale operations require
 DRM format and effective color state to remain unchanged. For bitdepth changes,
 all persisted color intent and numeric effective color properties remain
 protected; only the dependent DRM format and, with `cm="auto"` and no ICC,
@@ -143,13 +156,18 @@ now identifies a different display, no snapshot is applied to it. Bitdepth
 rollback restores the exact prior requested 8/10 rule from the machine-profile
 snapshot, then requires the prior effective format and color state. It does not
 mistake an effective 8-bit fallback for the previous requested rule intent.
+Forced-HDR rollback restores the prior base CM runtime semantics and the exact
+prior Mode/bitdepth values owned by a combined request. Global rollback restores
+the exact previous effective renderer value; an omitted default remains omitted
+in durable configuration unless the user confirms a deliberate global change.
 
 ## Journal, lock, and supervision
 
-The accepted deployed generation uses journal schema 3 and control protocol 2.
-The undeployed minimal-profile materialization candidate uses schema 4 and
-protocol 3 because it adds a persistence-only transaction class and new
-persistent-intent representations. The private
+The published materialization generation uses journal schema 4, control
+protocol 3, and inspection schema 2. The HDR candidate deliberately advances
+these to schema 5, protocol 4, and inspection schema 3 because it adds CM base
+intent, global renderer intent, new runtime mutations, and recovery data. Old
+journals are never reinterpreted. The private
 `${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/` directory holds one atomic
 `transaction.json`, one advisory `transaction.lock`, and one `control.sock`.
 Directory and file ownership and permissions are validated; the journal and
@@ -171,9 +189,9 @@ transactions need no action; every other readable state takes one bounded
 rollback path. The service is independent of Quickshell lifetime.
 
 The small newline-delimited JSON socket protocol supports `begin`, `scale`,
-`materialize`, `status`, `confirm`, and `revert` requests in the version-3
-candidate. `begin` carries an optional mode tuple and optional bitdepth, with at
-least one required. `scale` carries only connector and scale and completes its
+`materialize`, `status`, `confirm`, and `revert` requests. `begin` carries an
+optional mode tuple, bitdepth, forced-HDR policy, and global Automatic HDR
+value, with at least one required. `scale` carries only connector and scale and completes its
 persistence transaction in one request. `materialize` carries only a connector
 and exact instance signature; it has no confirmation deadline or runtime
 monitor call. Quickshell is only a short-lived client of this protocol. Its
@@ -185,8 +203,43 @@ rules, and explicit-profile/override checks as transaction preflight. It does
 not start the service, create a journal, acquire mutation authority, invoke
 `hl.monitor()`, or write configuration. It exposes normalized current state,
 available Modes, Scale, effective bitdepth choices, physical identity, and
-normalized explicit/fallback/materializable/conflict state; QML does not parse
-raw `monitors all` JSON or decide materialization eligibility.
+normalized explicit/fallback/materializable/conflict state, strict EDID-derived
+HDR eligibility, exact base CM intent, and the global Automatic HDR policy;
+QML does not parse raw `monitors all` JSON or decide materialization eligibility.
+
+## HDR capability and durable intent
+
+The backend enables forced HDR only when the bound connector's sysfs EDID is
+unambiguous, structurally and checksum valid, matches the monitor's model and
+serial, and advertises both BT.2020 colorimetry and PQ/ST2084. Explicit
+`supports_hdr = -1` or `supports_wide_color = -1`, an ICC-owned output,
+disabled color management, a malformed/unknown monitor rule, or an unavailable
+10-bit path fails closed. Current wide color, current bit depth, or connector
+name alone is never treated as HDR capability evidence.
+
+When Vanilla confirms **Always On**, the machine profile contains `cm = "hdr"`
+and one adjacent strict marker:
+
+```lua
+-- vanhyprarch-monitor-forced-hdr-base-v1: present:auto
+cm = "hdr",
+```
+
+The marker records either `absent` or one recognized exact non-HDR literal. It
+is config-local, human-readable, and the only durable restoration metadata.
+Returning to Off restores that exact literal or removes the CM field when it
+was originally absent, then removes the marker. External `hdr`/`hdredid`, a
+malformed marker, dynamic CM expressions, and ICC ownership are left unmanaged.
+No preference database duplicates this intent.
+
+A confirmed Automatic HDR selection is stored in one narrowly owned machine
+configuration block. If the setting was initially Hyprland's implicit default,
+temporary rollback restores both runtime value 1 and durable omission exactly.
+Because runtime `hl.config()` permanently marks that live option as set until a
+reload, inspection derives durable explicitness from the owned block rather
+than misclassifying its own targeted rollback as external persistence.
+The user override is never used as Vanilla-owned storage; an external machine
+or override owner for `cm_auto_hdr` makes mutation unavailable.
 
 ## Optional minimal-profile materialization
 
@@ -317,8 +370,8 @@ live-accepted. Fixture and isolated verifier coverage remain prerequisites for
 future changes to these paths.
 
 Journal schemas are strict and never reinterpret older recovery material. The
-schema-4 materialization candidate intentionally rejects schema 3, just as the
-deployed schema 3 generation rejects schema 2. A backend upgrade must never
+schema-5 HDR candidate intentionally rejects schema 4, just as each prior
+generation rejected its predecessor. A backend upgrade must never
 cross a nonterminal or recovery-required transaction from an older schema. The
 old deployed helper must first prove that its journal is terminal and
 recovery-disarmed, its lock is unheld, and no control listener exists. Only then

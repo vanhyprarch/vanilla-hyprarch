@@ -692,23 +692,37 @@ seed; neither contains a global XKB fallback. See
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Schema-v3 backend and UI deployed; single-monitor runtime,
+**Implementation:** Schema-v4 backend and UI published; single-monitor runtime,
 persistence, confirmation, dismissal, and Quickshell-reload paths live-accepted.
-Optional minimal-profile materialization is repository-implemented in an
-undeployed schema-v4/protocol-v3 candidate.
+Optional minimal-profile materialization is published; physical acceptance on
+a genuinely fallback-managed output remains deferred. A schema-v5/protocol-v4
+HDR extension is implemented locally and awaiting controlled acceptance.
 
-Future monitor control is per explicit output profile. Resolution/refresh is one
-Mode tuple, bitdepth is 8 or 10 bpc, and Scale is per output. Text Size remains
-one global preference. Brightness remains an independent DDC/CI control.
+Monitor control is per explicit output profile. Resolution/refresh is one Mode
+tuple, bitdepth is 8 or 10 bpc, forced HDR is per output, and Scale is per
+output. Automatic HDR is explicitly global because `render:cm_auto_hdr` applies
+to every display. Text Size remains one global preference. Brightness remains
+an independent DDC/CI control.
 
-Safety-critical Mode and bitdepth changes follow one invariant:
+Safety-critical Mode, bitdepth, forced-HDR, and Automatic-HDR changes follow one invariant:
 
 `known-good configuration -> temporary runtime apply -> 10-second confirmation
 -> persist only on confirmation`
 
 Application failure or confirmation timeout automatically restores the
-known-good runtime configuration. An unconfirmed Mode/bitdepth configuration is
-never persisted. Mode and bitdepth may be changed independently or together.
+known-good runtime configuration. An unconfirmed safe candidate is never
+persisted. Any valid combination of Mode, bitdepth, per-monitor HDR, and global
+Automatic HDR is one transaction and one confirmation overlay.
+
+**HDR Off** means restore the exact base non-HDR CM intent, not force sRGB or
+disable global Automatic HDR. **Always On** forces `cm = "hdr"` and requires
+10-bit; the backend refuses illegal 8-bit combinations rather than silently
+coupling another change. The config-local forced-HDR marker retains exact base
+CM presence/value across Keep and reboot. External HDR/EDID-HDR intent,
+unsupported syntax, ICC ownership, and uncertain EDID capability remain
+unmanaged. The separate global Off/HDR/HDR (EDID) choice maps to
+`render:cm_auto_hdr` 0/1/2. UI state represents policy only: Hyprland 0.56.2
+does not expose authoritative generic live `inHDR()` state.
 
 Scale instead follows immediate validation: validate, apply runtime Scale,
 authoritatively read it back, prospectively verify and atomically persist only
@@ -724,8 +738,9 @@ reconciliation, and crash-recovery quality.
 
 Quickshell is a non-authoritative client. One global Monitor controller reads a
 small normalized backend inspection contract, while each panel selects its
-connector with `Hyprland.monitorFor(screen)`. Mode and bitdepth are locally
-pending input until one combined Apply request; Scale invokes its separate
+connector with `Hyprland.monitorFor(screen)`. Mode, bitdepth, forced HDR, and
+the one controller-global Automatic HDR value are pending input until one
+combined Apply request; Scale invokes its separate
 immediate operation. The controller reconstructs an active confirmation from
 backend status after shell reload. Its countdown never owns expiry. The
 per-screen confirmation surface uses the shared centered-overlay/focus

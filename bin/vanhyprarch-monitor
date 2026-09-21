@@ -3,8 +3,9 @@
 
 """Backend authority for validated Hyprland monitor transactions.
 
-Mode and bitdepth use explicit-confirmation Safe Apply; Scale persists
-immediately after validation. Transaction, readback, rollback, journal,
+Mode, bitdepth, forced HDR, and global Automatic HDR use explicit-confirmation
+Safe Apply; Scale persists immediately after validation. Transaction,
+readback, rollback, journal,
 prospective-verifier, and persistence primitives remain independently testable
 so the UI can remain a later client.
 """
@@ -32,8 +33,9 @@ from typing import Callable, Mapping, Protocol, Sequence
 import uuid
 
 
-SCHEMA_VERSION = 4
-PROTOCOL_VERSION = 3
+SCHEMA_VERSION = 5
+PROTOCOL_VERSION = 4
+INSPECT_VERSION = 3
 HYPRCTL = "/usr/bin/hyprctl"
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE_NAME = "vanhyprarch-monitor-safe-apply.service"
@@ -53,6 +55,14 @@ SCALE_DENOMINATOR = Decimal(120)
 SAFE_CONFIRMED_POLICY = "safe-confirmed"
 IMMEDIATE_SCALE_POLICY = "immediate-scale"
 MATERIALIZE_POLICY = "materialize-profile"
+HDR_MODES = frozenset({"off", "always-on"})
+NON_HDR_CM_PRESETS = frozenset(
+    {"auto", "srgb", "wide", "edid", "dcip3", "dp3", "adobe"}
+)
+AUTO_HDR_VALUES = frozenset({0, 1, 2})
+AUTO_HDR_LABELS = {0: "off", 1: "hdr", 2: "hdr-edid"}
+FORCED_HDR_MARKER_PREFIX = "vanhyprarch-monitor-forced-hdr-base-v1:"
+AUTO_HDR_BLOCK_MARKER = "-- Vanilla HyprArch Monitor automatic HDR policy v1"
 BITDEPTH_FORMATS = {
     8: frozenset({"XRGB8888", "XBGR8888"}),
     10: frozenset({"XRGB2101010", "XBGR2101010"}),
@@ -308,6 +318,97 @@ class PhysicalIdentity:
 
 
 @dataclass(frozen=True)
+class AutomaticHdrRuntime:
+    value: int
+    explicitly_set: bool
+
+
+@dataclass(frozen=True)
+class HdrCapability:
+    state: str
+    available: bool
+    reason: str | None
+    supports_bt2020: bool
+    supports_pq: bool
+
+
+@dataclass(frozen=True)
+class HdrProfileIntent:
+    mode: str
+    base_present: bool
+    base_value: str
+
+
+def _normalize_edid_text(value: str) -> str:
+    return " ".join(value.replace("\x00", "").strip().split()).casefold()
+
+
+def _edid_descriptor_text(block: bytes, tag: int) -> str:
+    values: list[str] = []
+    for offset in range(54, 126, 18):
+        descriptor = block[offset : offset + 18]
+        if len(descriptor) == 18 and descriptor[:3] == b"\x00\x00\x00" and descriptor[3] == tag:
+            values.append(descriptor[5:18].decode("ascii", errors="ignore").replace("\n", ""))
+    return " ".join(value for value in values if value.strip())
+
+
+def parse_hdr_edid(data: bytes, identity: PhysicalIdentity) -> HdrCapability:
+    if len(data) < 128 or len(data) % 128 != 0 or data[:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00":
+        raise ValidationError("display EDID is malformed")
+    blocks = [data[index : index + 128] for index in range(0, len(data), 128)]
+    if blocks[0][126] + 1 != len(blocks) or any(sum(block) % 256 for block in blocks):
+        raise ValidationError("display EDID block inventory or checksum is invalid")
+    model = _normalize_edid_text(_edid_descriptor_text(blocks[0], 0xFC))
+    serial = _normalize_edid_text(_edid_descriptor_text(blocks[0], 0xFF))
+    if not model or model != _normalize_edid_text(identity.model):
+        raise ValidationError("display EDID model does not match the bound monitor")
+    if not identity.serial.strip() or not serial or serial != _normalize_edid_text(identity.serial):
+        raise ValidationError("display EDID serial does not match the bound monitor")
+    supports_bt2020 = False
+    supports_pq = False
+    for block in blocks[1:]:
+        if block[0] != 0x02:
+            continue
+        end = block[2] or 127
+        offset = 4
+        while offset < end:
+            header = block[offset]
+            length = header & 0x1F
+            payload = block[offset + 1 : offset + 1 + length]
+            if offset + 1 + length > end:
+                raise ValidationError("display EDID data block is malformed")
+            if header >> 5 == 0x07 and payload:
+                if payload[0] == 0x05 and len(payload) >= 2:
+                    supports_bt2020 = bool(payload[1] & 0xC0)
+                elif payload[0] == 0x06 and len(payload) >= 2:
+                    supports_pq = bool(payload[1] & 0x04)
+            offset += length + 1
+    return HdrCapability(
+        "supported" if supports_bt2020 and supports_pq else "unsupported",
+        supports_bt2020 and supports_pq,
+        None if supports_bt2020 and supports_pq
+        else "The display EDID does not advertise both BT.2020 and PQ HDR.",
+        supports_bt2020,
+        supports_pq,
+    )
+
+
+def read_connector_edid(
+    state: "MonitorState", sysfs_root: Path = Path("/sys/class/drm")
+) -> bytes:
+    matches = sorted(sysfs_root.glob(f"card*-{state.connector}/edid"))
+    if len(matches) != 1:
+        raise ValidationError("display EDID association is missing or ambiguous")
+    try:
+        data = matches[0].read_bytes()
+    except OSError as error:
+        raise ValidationError(f"display EDID cannot be read: {error}") from error
+    if not data:
+        raise ValidationError("display EDID is empty")
+    return data
+
+
+@dataclass(frozen=True)
 class MonitorState:
     connector: str
     monitor_id: int
@@ -518,6 +619,8 @@ class Candidate:
     mode: Mode | None
     bitdepth: int | None
     scale_millionths: int | None
+    hdr_mode: str | None = None
+    automatic_hdr: int | None = None
 
     @classmethod
     def safe(
@@ -528,6 +631,8 @@ class Candidate:
         height: int | None = None,
         refresh: object | None = None,
         bitdepth: int | None = None,
+        hdr_mode: str | None = None,
+        automatic_hdr: int | None = None,
     ) -> "Candidate":
         if not isinstance(connector, str) or CONNECTOR_RE.fullmatch(connector) is None:
             raise ValidationError("candidate connector is invalid")
@@ -544,9 +649,25 @@ class Candidate:
             mode = None
         if bitdepth is not None and (type(bitdepth) is not int or bitdepth not in BITDEPTH_FORMATS):
             raise ValidationError("candidate bitdepth must be 8 or 10")
-        if mode is None and bitdepth is None:
-            raise ValidationError("safe-confirmed candidate must own mode or bitdepth")
-        return cls(SAFE_CONFIRMED_POLICY, connector, mode, bitdepth, None)
+        if hdr_mode is not None and hdr_mode not in HDR_MODES:
+            raise ValidationError("candidate HDR mode must be off or always-on")
+        if automatic_hdr is not None and (
+            type(automatic_hdr) is not int or automatic_hdr not in AUTO_HDR_VALUES
+        ):
+            raise ValidationError("candidate Automatic HDR value must be 0, 1, or 2")
+        if mode is None and bitdepth is None and hdr_mode is None and automatic_hdr is None:
+            raise ValidationError(
+                "safe-confirmed candidate must own Mode, bitdepth, HDR, or Automatic HDR"
+            )
+        return cls(
+            SAFE_CONFIRMED_POLICY,
+            connector,
+            mode,
+            bitdepth,
+            None,
+            hdr_mode,
+            automatic_hdr,
+        )
 
     @classmethod
     def scale(cls, connector: str, scale: object) -> "Candidate":
@@ -558,13 +679,15 @@ class Candidate:
             None,
             None,
             scale_to_millionths(scale, preflight=True),
+            None,
+            None,
         )
 
     @classmethod
     def materialize(cls, connector: str) -> "Candidate":
         if not isinstance(connector, str) or CONNECTOR_RE.fullmatch(connector) is None:
             raise ValidationError("candidate connector is invalid")
-        return cls(MATERIALIZE_POLICY, connector, None, None, None)
+        return cls(MATERIALIZE_POLICY, connector, None, None, None, None, None)
 
     @property
     def requires_confirmation(self) -> bool:
@@ -591,8 +714,22 @@ def inspection_payload(
     machine_content: bytes,
     override_content: bytes,
     signature: str,
+    automatic_hdr_runtime: AutomaticHdrRuntime | None = None,
+    cm_enabled: bool = True,
+    edid_reader: Callable[[MonitorState], bytes] | None = None,
 ) -> dict[str, object]:
     """Project the transaction domain into the small read-only UI contract."""
+    runtime_policy = automatic_hdr_runtime or AutomaticHdrRuntime(1, False)
+    try:
+        automatic_intent = automatic_hdr_config_intent(
+            machine_content, override_content, runtime_policy
+        )
+        automatic_available = cm_enabled
+        automatic_reason = None if cm_enabled else "Hyprland color management is disabled."
+    except MonitorError as error:
+        automatic_intent = runtime_policy
+        automatic_available = False
+        automatic_reason = str(error)
     outputs: list[dict[str, object]] = []
     for state in sorted(topology.monitors, key=lambda item: item.connector):
         editable = False
@@ -601,6 +738,14 @@ def inspection_payload(
         materialization_reason: str | None = None
         profile_state = "unavailable"
         bitdepth_choices: list[int] = []
+        hdr_projection: dict[str, object] = {
+            "capability": "unknown",
+            "available": False,
+            "unavailable_reason": "Advanced display settings are unavailable.",
+            "mode": "off",
+            "base_cm": {"present": False, "value": "srgb"},
+            "effective_live": "unknown",
+        }
         if not state.usable:
             profile_state = "inactive"
             unavailable_reason = "Output is inactive or unusable."
@@ -612,6 +757,7 @@ def inspection_payload(
                     machine_content, state
                 )
                 bitdepth_intent = profile_bitdepth_intent(profile)
+                hdr_intent = profile_hdr_intent(profile)
                 editable = True
                 profile_state = "explicit-editable"
                 if (
@@ -619,6 +765,38 @@ def inspection_payload(
                     and state.effective_bitdepth is not None
                 ):
                     bitdepth_choices = sorted(BITDEPTH_FORMATS)
+                hdr_reason: str | None = None
+                capability = HdrCapability(
+                    "unknown", False, "HDR capability could not be established.", False, False
+                )
+                try:
+                    if not cm_enabled:
+                        raise ValidationError("Hyprland color management is disabled.")
+                    _, icc_intent = profile_color_intent(profile)
+                    if icc_intent:
+                        raise ValidationError("An ICC profile owns this output's color state.")
+                    if edid_reader is None:
+                        raise ValidationError("HDR capability could not be established.")
+                    capability = evaluate_hdr_capability(
+                        state, profile, edid_reader(state)
+                    )
+                    if not capability.available:
+                        raise ValidationError(capability.reason or "HDR is unsupported.")
+                    if 10 not in bitdepth_choices:
+                        raise ValidationError("A validated 10-bit path is unavailable.")
+                except MonitorError as error:
+                    hdr_reason = str(error)
+                hdr_projection = {
+                    "capability": capability.state,
+                    "available": hdr_reason is None,
+                    "unavailable_reason": hdr_reason,
+                    "mode": hdr_intent.mode,
+                    "base_cm": {
+                        "present": hdr_intent.base_present,
+                        "value": hdr_intent.base_value,
+                    },
+                    "effective_live": "unknown",
+                }
             except MonitorError as explicit_error:
                 if isinstance(explicit_error, OverrideConflict):
                     profile_state = "override-conflict"
@@ -700,9 +878,22 @@ def inspection_payload(
                         "colorManagementPreset"
                     ],
                 },
+                "hdr": hdr_projection,
             }
         )
-    return {"version": 2, "instance_signature": signature, "outputs": outputs}
+    return {
+        "version": INSPECT_VERSION,
+        "instance_signature": signature,
+        "automatic_hdr": {
+            "value": automatic_intent.value,
+            "label": AUTO_HDR_LABELS[automatic_intent.value],
+            "explicit": automatic_intent.explicitly_set,
+            "scope": "global",
+            "available": automatic_available,
+            "unavailable_reason": automatic_reason,
+        },
+        "outputs": outputs,
+    }
 
 
 @dataclass(frozen=True)
@@ -786,7 +977,7 @@ def lua_string(value: str) -> str:
     return "".join(parts)
 
 
-def monitor_eval_source(candidate: Candidate) -> str:
+def monitor_eval_source(candidate: Candidate, *, cm_value: str | None = None) -> str:
     fields = [f"output = {lua_string(candidate.connector)}"]
     if candidate.mode is not None:
         fields.append(f"mode = {lua_string(candidate.mode.as_lua_string())}")
@@ -795,17 +986,39 @@ def monitor_eval_source(candidate: Candidate) -> str:
     if candidate.scale_millionths is not None:
         scale = Decimal(candidate.scale_millionths) / 1_000_000
         fields.append(f"scale = {format(scale.normalize(), 'f')}")
+    if cm_value is not None:
+        if cm_value not in NON_HDR_CM_PRESETS and cm_value != "hdr":
+            raise ValidationError("runtime CM value is unsupported")
+        fields.append(f"cm = {lua_string(cm_value)}")
     return "hl.monitor({ " + ", ".join(fields) + " })"
 
 
-def monitor_eval_argv(signature: str, candidate: Candidate) -> list[str]:
+def monitor_eval_argv(
+    signature: str, candidate: Candidate, *, cm_value: str | None = None
+) -> list[str]:
     return [
         HYPRCTL,
         "--instance",
         signature,
         "eval",
-        monitor_eval_source(candidate),
+        monitor_eval_source(candidate, cm_value=cm_value),
     ]
+
+
+def automatic_hdr_eval_source(value: int) -> str:
+    if type(value) is not int or value not in AUTO_HDR_VALUES:
+        raise ValidationError("Automatic HDR value must be 0, 1, or 2")
+    return f"hl.config({{ render = {{ cm_auto_hdr = {value} }} }})"
+
+
+def automatic_hdr_eval_argv(signature: str, value: int) -> list[str]:
+    return [HYPRCTL, "--instance", signature, "eval", automatic_hdr_eval_source(value)]
+
+
+def getoption_argv(signature: str, option: str) -> list[str]:
+    if option not in {"render:cm_auto_hdr", "render:cm_enabled"}:
+        raise ValidationError("unsupported Hyprland option readback")
+    return [HYPRCTL, "--instance", signature, "-j", "getoption", option]
 
 
 def monitors_argv(signature: str) -> list[str]:
@@ -866,10 +1079,10 @@ class HyprlandClient:
         self.check_instance()
         return topology
 
-    def apply(self, candidate: Candidate) -> None:
+    def apply(self, candidate: Candidate, *, cm_value: str | None = None) -> None:
         self.check_instance()
         result = self.runner(
-            monitor_eval_argv(self.signature, candidate)
+            monitor_eval_argv(self.signature, candidate, cm_value=cm_value)
         )
         if result.returncode != 0 or result.stdout.strip() != "ok":
             raise ApplyError(
@@ -877,6 +1090,52 @@ class HyprlandClient:
                 + (result.stderr.strip() or result.stdout.strip() or "no diagnostic")
             )
         self.check_instance()
+
+    def _read_option(self, option: str) -> dict[str, object]:
+        self.check_instance()
+        result = self.runner(getoption_argv(self.signature, option))
+        if result.returncode != 0:
+            raise HyprlandUnavailable(
+                f"{option} readback failed: "
+                + (result.stderr.strip() or result.stdout.strip() or "no diagnostic")
+            )
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise ReadbackError(f"{option} readback is not valid JSON") from error
+        if not isinstance(payload, dict) or payload.get("option") != option:
+            raise ReadbackError(f"{option} readback has an invalid schema")
+        if type(payload.get("set")) is not bool:
+            raise ReadbackError(f"{option} readback omitted explicit-state metadata")
+        self.check_instance()
+        return payload
+
+    def read_automatic_hdr(self) -> "AutomaticHdrRuntime":
+        payload = self._read_option("render:cm_auto_hdr")
+        value = payload.get("int")
+        if type(value) is not int or value not in AUTO_HDR_VALUES:
+            raise ReadbackError("render:cm_auto_hdr readback is outside 0/1/2")
+        return AutomaticHdrRuntime(value, payload["set"])
+
+    def read_cm_enabled(self) -> bool:
+        payload = self._read_option("render:cm_enabled")
+        if type(payload.get("bool")) is not bool:
+            raise ReadbackError("render:cm_enabled readback is not boolean")
+        return payload["bool"]
+
+    def apply_automatic_hdr(self, value: int) -> None:
+        self.check_instance()
+        result = self.runner(automatic_hdr_eval_argv(self.signature, value))
+        if result.returncode != 0 or result.stdout.strip() != "ok":
+            raise ApplyError(
+                "Hyprland rejected Automatic HDR eval: "
+                + (result.stderr.strip() or result.stdout.strip() or "no diagnostic")
+            )
+        self.check_instance()
+
+    def verify_automatic_hdr(self, value: int) -> None:
+        if self.read_automatic_hdr().value != value:
+            raise ReadbackError("Automatic HDR policy did not reach the requested value")
 
     def read_until(self, verifier: Callable[[Topology], None]) -> Topology:
         deadline = self.clock.monotonic() + APPLY_SETTLE_SECONDS
@@ -930,13 +1189,28 @@ def _verify_color_transition(
         raise ValidationError("effective color parameters changed unexpectedly")
     old_preset = before.color_state["colorManagementPreset"]
     new_preset = after.color_state["colorManagementPreset"]
+    target_bitdepth = candidate.bitdepth or before.effective_bitdepth
     if candidate.bitdepth is None or candidate.bitdepth == before.effective_bitdepth:
-        if before.current_format != after.current_format or old_preset != new_preset:
-            raise ValidationError("effective DRM/color state changed unexpectedly")
-        return
-    if after.current_format not in BITDEPTH_FORMATS[candidate.bitdepth]:
+        if before.current_format != after.current_format:
+            raise ValidationError("effective DRM format changed unexpectedly")
+    elif after.current_format not in BITDEPTH_FORMATS[candidate.bitdepth]:
         raise ValidationError("requested bitdepth is not effective")
-    if cm_intent == "auto" and not icc_intent:
+    if candidate.hdr_mode == "always-on":
+        if target_bitdepth != 10 or new_preset != "hdr":
+            raise ValidationError("forced HDR did not reach 10-bit cm=hdr state")
+        return
+    if candidate.hdr_mode == "off":
+        if cm_intent == "auto" and not icc_intent:
+            allowed = {"srgb"} if target_bitdepth == 8 else {"srgb", "wide"}
+            if new_preset not in allowed:
+                raise ValidationError("restored automatic base CM is inconsistent")
+        elif new_preset != cm_intent:
+            raise ValidationError("exact base CM intent was not restored")
+        return
+    if candidate.bitdepth is None or candidate.bitdepth == before.effective_bitdepth:
+        if old_preset != new_preset:
+            raise ValidationError("effective DRM/color state changed unexpectedly")
+    elif cm_intent == "auto" and not icc_intent:
         allowed = {"srgb"} if candidate.bitdepth == 8 else {"srgb", "wide"}
         if new_preset not in allowed:
             raise ValidationError("effective auto color preset is inconsistent with bitdepth")
@@ -1100,7 +1374,10 @@ def snapshot_matches(snapshot: FileSnapshot) -> bool:
 
 
 MONITOR_BLOCK_RE = re.compile(r"hl\.monitor\s*\(\s*\{(?P<body>.*?)\}\s*\)", re.DOTALL)
-FIELD_RE_TEMPLATE = r"(?m)^(?P<prefix>[ \t]*{name}[ \t]*=[ \t]*)(?P<value>[^,\n]+)(?P<suffix>[ \t]*,?[ \t]*)$"
+FIELD_RE_TEMPLATE = (
+    r"(?m)^(?P<prefix>[ \t]*{name}[ \t]*=[ \t]*)"
+    r"(?P<value>[^,\n]+)(?P<suffix>[ \t]*,?[ \t]*(?:--[^\n]*)?)$"
+)
 LUA_QUOTED_RE = re.compile(r'^"([^"\\]*)"$')
 NUMBER_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -1119,6 +1396,9 @@ class MachineProfile:
     bitdepth_value: str | None
     cm_value: str | None
     icc_value: str | None
+    supports_hdr_value: str | None
+    supports_wide_color_value: str | None
+    forced_hdr_marker: str | None
 
 
 SIMPLE_FALLBACK_LINE_RE = re.compile(
@@ -1169,6 +1449,22 @@ def _parsed_monitor_profiles(content: bytes) -> list[MachineProfile]:
         bitdepth_value, _ = _optional_field(body, "bitdepth")
         cm_value, _ = _optional_field(body, "cm")
         icc_value, _ = _optional_field(body, "icc")
+        supports_hdr_value, _ = _optional_field(body, "supports_hdr")
+        supports_wide_color_value, _ = _optional_field(body, "supports_wide_color")
+        marker_lines = [
+            line.strip()[3:].strip()
+            for line in body.splitlines()
+            if FORCED_HDR_MARKER_PREFIX in line
+            and line.strip().startswith("-- ")
+            and line.strip()[3:].strip().startswith(FORCED_HDR_MARKER_PREFIX)
+        ]
+        if body.count(FORCED_HDR_MARKER_PREFIX) != len(marker_lines):
+            raise ValidationError("forced-HDR base marker syntax is malformed")
+        if len(marker_lines) > 1:
+            raise ValidationError("monitor profile has duplicate forced-HDR base markers")
+        marker = None
+        if marker_lines:
+            marker = marker_lines[0][len(FORCED_HDR_MARKER_PREFIX) :].strip()
         parsed.append(
             MachineProfile(
                 connector,
@@ -1182,6 +1478,9 @@ def _parsed_monitor_profiles(content: bytes) -> list[MachineProfile]:
                 bitdepth_value,
                 cm_value,
                 icc_value,
+                supports_hdr_value,
+                supports_wide_color_value,
+                marker,
             )
         )
     return parsed
@@ -1354,20 +1653,97 @@ def clone_fallback_profile(content: bytes, connector: str) -> bytes:
     ).encode("utf-8")
 
 
-def profile_color_intent(profile: MachineProfile) -> tuple[str, str]:
+def profile_hdr_intent(profile: MachineProfile) -> HdrProfileIntent:
+    cm_present = profile.cm_value is not None
     cm = "srgb"
-    if profile.cm_value is not None:
-        quoted = LUA_QUOTED_RE.fullmatch(profile.cm_value)
+    if cm_present:
+        quoted = LUA_QUOTED_RE.fullmatch(profile.cm_value or "")
         if quoted is None:
             raise ValidationError("explicit profile cm intent is not a simple string")
         cm = quoted.group(1)
+    marker = profile.forced_hdr_marker
+    if marker is None:
+        if cm in {"hdr", "hdredid"}:
+            raise ValidationError(
+                "external HDR monitor intent is not owned by Vanilla"
+            )
+        if cm not in NON_HDR_CM_PRESETS:
+            raise ValidationError("explicit profile CM intent is unsupported")
+        return HdrProfileIntent("off", cm_present, cm)
+    if cm != "hdr":
+        raise ValidationError("forced-HDR marker requires cm=hdr")
+    cm_line = re.compile(
+        r'(?m)^[ \t]*cm[ \t]*=[ \t]*"hdr"[ \t]*,?[ \t]*(?:--[^\n]*)?$'
+    )
+    marker_line = re.compile(
+        rf'(?m)^(?P<indent>[ \t]*)-- {re.escape(FORCED_HDR_MARKER_PREFIX)}[ \t]*'
+        rf'{re.escape(marker)}[ \t]*\r?\n(?P=indent)cm[ \t]*=[ \t]*"hdr"'
+        rf'[ \t]*,?[ \t]*(?:--[^\n]*)?$'
+    )
+    if cm_line.search(profile.body) is None or marker_line.search(profile.body) is None:
+        raise ValidationError("forced-HDR marker is not adjacent to its cm field")
+    if marker == "absent":
+        return HdrProfileIntent("always-on", False, "srgb")
+    if marker.startswith("present:"):
+        base = marker.split(":", 1)[1]
+        if base in NON_HDR_CM_PRESETS:
+            return HdrProfileIntent("always-on", True, base)
+    raise ValidationError("forced-HDR base marker value is invalid")
+
+
+def profile_color_intent(profile: MachineProfile) -> tuple[str, str]:
+    hdr = profile_hdr_intent(profile)
     icc = ""
     if profile.icc_value is not None:
         quoted = LUA_QUOTED_RE.fullmatch(profile.icc_value)
         if quoted is None:
             raise ValidationError("explicit profile ICC intent is not a simple string")
         icc = quoted.group(1)
-    return cm, icc
+    return hdr.base_value, icc
+
+
+def _capability_override(value: str | None, label: str) -> int:
+    if value is None:
+        return 0
+    if value not in {"-1", "0", "1"}:
+        raise ValidationError(f"{label} override is unsupported")
+    return int(value)
+
+
+def profile_capability_overrides(profile: MachineProfile) -> tuple[int, int]:
+    return (
+        _capability_override(profile.supports_hdr_value, "supports_hdr"),
+        _capability_override(
+            profile.supports_wide_color_value, "supports_wide_color"
+        ),
+    )
+
+
+def evaluate_hdr_capability(
+    state: MonitorState, profile: MachineProfile, edid: bytes
+) -> HdrCapability:
+    parsed = parse_hdr_edid(edid, state.identity)
+    hdr_override, wide_override = profile_capability_overrides(profile)
+    if wide_override == -1:
+        return HdrCapability(
+            "disabled", False, "Wide-color capability is explicitly disabled.",
+            False, parsed.supports_pq,
+        )
+    wide = True if wide_override == 1 else parsed.supports_bt2020
+    if hdr_override == -1:
+        return HdrCapability(
+            "disabled", False, "HDR capability is explicitly disabled.",
+            wide, False,
+        )
+    hdr = True if hdr_override == 1 else parsed.supports_pq
+    available = wide and hdr
+    return HdrCapability(
+        "supported" if available else "unsupported",
+        available,
+        None if available else "The display is missing required BT.2020 or PQ capability.",
+        wide,
+        hdr,
+    )
 
 
 def profile_bitdepth_intent(profile: MachineProfile) -> int:
@@ -1393,6 +1769,152 @@ def _insert_bitdepth(body: str, value: int) -> str:
         + f"bitdepth = {value},"
         + body[anchor.end() :]
     )
+
+
+def _rewrite_hdr_intent(body: str, hdr_mode: str) -> str:
+    temporary = MachineProfile(
+        "", 0, 0, 0, len(body), body, None, None, None,
+        _optional_field(body, "cm")[0], _optional_field(body, "icc")[0],
+        _optional_field(body, "supports_hdr")[0],
+        _optional_field(body, "supports_wide_color")[0],
+        None,
+    )
+    marker_matches = re.findall(
+        rf"(?m)^[ \t]*-- {re.escape(FORCED_HDR_MARKER_PREFIX)}.*$", body
+    )
+    if FORCED_HDR_MARKER_PREFIX in body and len(marker_matches) != 1:
+        raise PersistenceError("forced-HDR marker syntax is malformed")
+    if marker_matches:
+        marker_text = marker_matches[0].strip()[3:].strip()
+        temporary = replace(
+            temporary,
+            forced_hdr_marker=marker_text[len(FORCED_HDR_MARKER_PREFIX) :].strip(),
+        )
+    try:
+        current = profile_hdr_intent(temporary)
+    except ValidationError as error:
+        raise PersistenceError(str(error)) from error
+    if hdr_mode == current.mode:
+        return body
+    newline = "\r\n" if "\r\n" in body else "\n"
+    if hdr_mode == "always-on":
+        cm_value, cm_match = _optional_field(body, "cm")
+        marker = (
+            f"present:{current.base_value}" if current.base_present else "absent"
+        )
+        if cm_match is not None:
+            indentation = re.match(r"[ \t]*", cm_match.group("prefix")).group(0)
+            line_start = body.rfind("\n", 0, cm_match.start()) + 1
+            replacement = (
+                f"{indentation}-- {FORCED_HDR_MARKER_PREFIX} {marker}{newline}"
+                + body[line_start : cm_match.start("value")]
+                + '"hdr"'
+                + body[cm_match.end("value") : cm_match.end()]
+            )
+            return body[:line_start] + replacement + body[cm_match.end() :]
+        _, anchor = _field(body, "scale")
+        if "," not in anchor.group("suffix"):
+            raise PersistenceError("profile scale field needs a trailing comma for HDR insertion")
+        indentation = re.match(r"[ \t]*", anchor.group("prefix")).group(0)
+        addition = (
+            newline
+            + indentation
+            + f"-- {FORCED_HDR_MARKER_PREFIX} {marker}"
+            + newline
+            + indentation
+            + 'cm = "hdr",'
+        )
+        return body[: anchor.end()] + addition + body[anchor.end() :]
+    if hdr_mode != "off":
+        raise PersistenceError("unsupported HDR persistence mode")
+    # The strict parser already proved adjacency; remove or restore the pair as one unit.
+    pair = re.compile(
+        rf'(?m)^(?P<indent>[ \t]*)-- {re.escape(FORCED_HDR_MARKER_PREFIX)}[ \t]*'
+        r'(?P<marker>absent|present:[A-Za-z0-9_-]+)[ \t]*\r?\n'
+        r'(?P=indent)cm[ \t]*=[ \t]*"hdr"'
+        r'(?P<suffix>[ \t]*,?[ \t]*(?:--[^\n]*)?)$'
+    )
+    match = pair.search(body)
+    if match is None:
+        raise PersistenceError("forced-HDR marker pair cannot be restored")
+    if not current.base_present:
+        start = match.start()
+        end = match.end()
+        if end < len(body) and body[end : end + 2] == "\r\n":
+            end += 2
+        elif end < len(body) and body[end] == "\n":
+            end += 1
+        return body[:start] + body[end:]
+    replacement = (
+        match.group("indent")
+        + "cm = "
+        + lua_string(current.base_value)
+        + match.group("suffix")
+    )
+    return body[: match.start()] + replacement + body[match.end() :]
+
+
+AUTO_HDR_BLOCK_RE = re.compile(
+    re.escape(AUTO_HDR_BLOCK_MARKER)
+    + r"\r?\nhl\.config\(\{\r?\n"
+    + r"    render = \{\r?\n"
+    + r"        cm_auto_hdr = (?P<value>[012]),\r?\n"
+    + r"    \},\r?\n"
+    + r"\}\)"
+)
+
+
+def automatic_hdr_config_intent(
+    machine_content: bytes, override_content: bytes, runtime: AutomaticHdrRuntime
+) -> AutomaticHdrRuntime:
+    try:
+        machine = machine_content.decode("utf-8")
+        override = override_content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValidationError("HDR policy configuration is not UTF-8") from error
+    if "cm_auto_hdr" in override:
+        raise OverrideConflict("user override owns render:cm_auto_hdr")
+    matches = list(AUTO_HDR_BLOCK_RE.finditer(machine))
+    covered = "".join(match.group(0) for match in matches)
+    if machine.count("cm_auto_hdr") != covered.count("cm_auto_hdr"):
+        raise ValidationError("external machine Automatic HDR policy is not Vanilla-owned")
+    if len(matches) > 1:
+        raise ValidationError("machine Automatic HDR policy is ambiguous")
+    if not matches:
+        # `hl.config()` necessarily marks the live value as set-by-user. That
+        # flag therefore remains true after a targeted timeout rollback even
+        # when the durable machine intent is still omission. Persistent
+        # explicitness is owned by the strict machine block, while the runtime
+        # value remains authoritative for the current policy.
+        return AutomaticHdrRuntime(runtime.value, False)
+    value = int(matches[0].group("value"))
+    if runtime.value != value or not runtime.explicitly_set:
+        raise ValidationError("persistent and effective Automatic HDR policy disagree")
+    return AutomaticHdrRuntime(value, True)
+
+
+def rewrite_automatic_hdr(content: bytes, value: int) -> bytes:
+    if type(value) is not int or value not in AUTO_HDR_VALUES:
+        raise PersistenceError("Automatic HDR persistence value is invalid")
+    text = content.decode("utf-8")
+    matches = list(AUTO_HDR_BLOCK_RE.finditer(text))
+    covered = "".join(match.group(0) for match in matches)
+    if text.count("cm_auto_hdr") != covered.count("cm_auto_hdr") or len(matches) > 1:
+        raise PersistenceError("Automatic HDR machine ownership is ambiguous")
+    if matches:
+        match = matches[0]
+        start, end = match.span("value")
+        return (text[:start] + str(value) + text[end:]).encode("utf-8")
+    separator = "" if not text or text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+    block = (
+        AUTO_HDR_BLOCK_MARKER
+        + "\nhl.config({\n"
+        + "    render = {\n"
+        + f"        cm_auto_hdr = {value},\n"
+        + "    },\n"
+        + "})\n"
+    )
+    return (text + separator + block).encode("utf-8")
 
 
 def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
@@ -1423,6 +1945,8 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
         new_body = new_body[:start] + value + new_body[end:]
     if candidate.bitdepth is not None and bitdepth_match is None:
         new_body = _insert_bitdepth(new_body, candidate.bitdepth)
+    if candidate.hdr_mode is not None:
+        new_body = _rewrite_hdr_intent(new_body, candidate.hdr_mode)
     if candidate.scale_millionths is None:
         return (
             text[: profile.block_start]
@@ -1475,7 +1999,10 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
 def rewrite_machine_configuration(content: bytes, candidate: Candidate) -> bytes:
     if candidate.policy == MATERIALIZE_POLICY:
         return clone_fallback_profile(content, candidate.connector)
-    return rewrite_existing_profile(content, candidate)
+    rewritten = rewrite_existing_profile(content, candidate)
+    if candidate.automatic_hdr is not None:
+        rewritten = rewrite_automatic_hdr(rewritten, candidate.automatic_hdr)
+    return rewritten
 
 
 def validate_explicit_profile_editability(
@@ -1503,6 +2030,7 @@ def validate_explicit_profile_editability(
         content, Candidate.safe(target.connector, bitdepth=bitdepth_intent)
     )
     profile_color_intent(profile)
+    profile_capability_overrides(profile)
     return profile
 
 
@@ -1904,6 +2432,10 @@ class TransactionJournal:
     snapshot: Topology
     machine_file: FileSnapshot
     override_file: FileSnapshot
+    cm_present: bool = True
+    forced_hdr: bool = False
+    automatic_hdr_intent: int | None = None
+    automatic_hdr_explicit: bool | None = None
 
 
 JOURNAL_KEYS = {
@@ -1930,6 +2462,10 @@ JOURNAL_KEYS = {
     "snapshot",
     "machine_file",
     "override_file",
+    "cm_present",
+    "forced_hdr",
+    "automatic_hdr_intent",
+    "automatic_hdr_explicit",
 }
 
 
@@ -2044,7 +2580,10 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal.instance identity is invalid")
     candidate_raw = _strict_object(
         raw["candidate"],
-        {"policy", "connector", "mode", "bitdepth", "scale_millionths"},
+        {
+            "policy", "connector", "mode", "bitdepth", "scale_millionths",
+            "hdr_mode", "automatic_hdr",
+        },
         "journal.candidate",
     )
     if not all(isinstance(candidate_raw[key], str) for key in ("policy", "connector")):
@@ -2055,6 +2594,13 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal.candidate.bitdepth has the wrong type")
     if candidate_raw["scale_millionths"] is not None and type(candidate_raw["scale_millionths"]) is not int:
         raise JournalError("journal.candidate.scale_millionths has the wrong type")
+    if candidate_raw["hdr_mode"] is not None and candidate_raw["hdr_mode"] not in HDR_MODES:
+        raise JournalError("journal.candidate HDR mode is invalid")
+    if candidate_raw["automatic_hdr"] is not None and (
+        type(candidate_raw["automatic_hdr"]) is not int
+        or candidate_raw["automatic_hdr"] not in AUTO_HDR_VALUES
+    ):
+        raise JournalError("journal.candidate Automatic HDR value is invalid")
     if raw["bitdepth_intent"] is not None and (
         type(raw["bitdepth_intent"]) is not int
         or raw["bitdepth_intent"] not in BITDEPTH_FORMATS
@@ -2062,6 +2608,15 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal bitdepth intent is invalid")
     if not isinstance(raw["cm_intent"], str) or not isinstance(raw["icc_intent"], str):
         raise JournalError("journal monitor intent has invalid fields")
+    if type(raw["cm_present"]) is not bool or type(raw["forced_hdr"]) is not bool:
+        raise JournalError("journal HDR base intent has invalid fields")
+    if raw["automatic_hdr_intent"] is not None and (
+        type(raw["automatic_hdr_intent"]) is not int
+        or raw["automatic_hdr_intent"] not in AUTO_HDR_VALUES
+    ):
+        raise JournalError("journal Automatic HDR intent is invalid")
+    if raw["automatic_hdr_explicit"] is not None and type(raw["automatic_hdr_explicit"]) is not bool:
+        raise JournalError("journal Automatic HDR explicit state is invalid")
     snapshot_raw = _strict_object(raw["snapshot"], {"monitors"}, "journal.snapshot")
     if not isinstance(snapshot_raw["monitors"], list):
         raise JournalError("journal.snapshot.monitors is not an array")
@@ -2080,6 +2635,8 @@ def journal_from_dict(value: object) -> TransactionJournal:
             None if candidate_raw["mode"] is None else _mode_from_dict(candidate_raw["mode"], "journal.candidate.mode"),
             candidate_raw["bitdepth"],
             candidate_raw["scale_millionths"],
+            candidate_raw["hdr_mode"],
+            candidate_raw["automatic_hdr"],
         ),
         raw["bitdepth_intent"],
         raw["cm_intent"],
@@ -2087,6 +2644,10 @@ def journal_from_dict(value: object) -> TransactionJournal:
         Topology(tuple(_monitor_from_dict(item, "journal.snapshot.monitor") for item in snapshot_raw["monitors"])),
         _file_from_dict(raw["machine_file"], "journal.machine_file"),
         _file_from_dict(raw["override_file"], "journal.override_file"),
+        raw["cm_present"],
+        raw["forced_hdr"],
+        raw["automatic_hdr_intent"],
+        raw["automatic_hdr_explicit"],
     )
     if journal.sequence < 0 or journal.created_monotonic < 0 or journal.updated_monotonic < 0:
         raise JournalError("journal counters or timestamps are invalid")
@@ -2096,18 +2657,28 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal candidate connector is invalid")
     if journal.candidate.policy == SAFE_CONFIRMED_POLICY:
         if journal.candidate.scale_millionths is not None or (
-            journal.candidate.mode is None and journal.candidate.bitdepth is None
+            journal.candidate.mode is None
+            and journal.candidate.bitdepth is None
+            and journal.candidate.hdr_mode is None
+            and journal.candidate.automatic_hdr is None
         ):
             raise JournalError("safe-confirmed journal candidate is invalid")
         if journal.candidate.bitdepth is not None and journal.candidate.bitdepth not in BITDEPTH_FORMATS:
             raise JournalError("journal candidate bitdepth is invalid")
         if journal.candidate.bitdepth is not None and journal.bitdepth_intent is None:
             raise JournalError("bitdepth candidate lacks previous requested intent")
+        if journal.candidate.automatic_hdr is not None and (
+            journal.automatic_hdr_intent is None
+            or journal.automatic_hdr_explicit is None
+        ):
+            raise JournalError("Automatic HDR candidate lacks previous intent")
     elif journal.candidate.policy == IMMEDIATE_SCALE_POLICY:
         if (
             journal.candidate.mode is not None
             or journal.candidate.bitdepth is not None
             or journal.candidate.scale_millionths is None
+            or journal.candidate.hdr_mode is not None
+            or journal.candidate.automatic_hdr is not None
         ):
             raise JournalError("immediate-scale journal candidate is invalid")
         try:
@@ -2122,6 +2693,8 @@ def journal_from_dict(value: object) -> TransactionJournal:
             journal.candidate.mode is not None
             or journal.candidate.bitdepth is not None
             or journal.candidate.scale_millionths is not None
+            or journal.candidate.hdr_mode is not None
+            or journal.candidate.automatic_hdr is not None
         ):
             raise JournalError("materialization journal candidate is invalid")
         if journal.mutation_attempted or journal.deadline_monotonic is not None:
@@ -2140,6 +2713,16 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal snapshot does not contain its target") from error
     if snapshot_target.identity != journal.target_identity:
         raise JournalError("journal target identity does not match its snapshot")
+    final_hdr_mode = journal.candidate.hdr_mode or (
+        "always-on" if journal.forced_hdr else "off"
+    )
+    final_bitdepth = (
+        journal.candidate.bitdepth
+        if journal.candidate.bitdepth is not None
+        else snapshot_target.effective_bitdepth
+    )
+    if final_hdr_mode == "always-on" and final_bitdepth != 10:
+        raise JournalError("forced-HDR journal candidate does not preserve 10-bit")
     try:
         if journal.candidate.policy == MATERIALIZE_POLICY:
             _, profile = validate_materialization_eligibility(
@@ -2155,8 +2738,29 @@ def journal_from_dict(value: object) -> TransactionJournal:
             )
         if profile_bitdepth_intent(profile) != journal.bitdepth_intent:
             raise JournalError("journal bitdepth intent does not match its machine snapshot")
+        hdr_intent = profile_hdr_intent(profile)
         if profile_color_intent(profile) != (journal.cm_intent, journal.icc_intent):
             raise JournalError("journal monitor intent does not match its machine snapshot")
+        if (
+            hdr_intent.base_present != journal.cm_present
+            or (hdr_intent.mode == "always-on") != journal.forced_hdr
+        ):
+            raise JournalError("journal forced-HDR intent does not match its machine snapshot")
+        if journal.candidate.automatic_hdr is not None:
+            previous_automatic = automatic_hdr_config_intent(
+                journal.machine_file.content,
+                journal.override_file.content,
+                AutomaticHdrRuntime(
+                    journal.automatic_hdr_intent,
+                    journal.automatic_hdr_explicit,
+                ),
+            )
+            if (
+                previous_automatic.value != journal.automatic_hdr_intent
+                or previous_automatic.explicitly_set
+                    != journal.automatic_hdr_explicit
+            ):
+                raise JournalError("journal Automatic HDR intent is inconsistent")
     except ValidationError as error:
         raise JournalError("journal machine profile is invalid") from error
     if not Path(journal.machine_file.path).is_absolute() or not Path(journal.override_file.path).is_absolute():
@@ -2371,6 +2975,7 @@ class TransactionAuthority:
         reload_event_source: ReloadEventSource | None = None,
         confirmation_seconds: float = DEFAULT_CONFIRM_SECONDS,
         bound_signature: str | None = None,
+        edid_reader: Callable[[MonitorState], bytes] = read_connector_edid,
     ) -> None:
         self.store = store
         self.instance_provider = instance_provider
@@ -2383,6 +2988,7 @@ class TransactionAuthority:
         self.transaction_watch: ReloadWatch | None = None
         self.confirmation_seconds = confirmation_seconds
         self.bound_signature = bound_signature
+        self.edid_reader = edid_reader
 
     def _client(self, journal: TransactionJournal) -> HyprlandClient:
         return HyprlandClient(
@@ -2454,6 +3060,31 @@ class TransactionAuthority:
         )
 
     @staticmethod
+    def _candidate_has_monitor_mutation(candidate: Candidate) -> bool:
+        return any(
+            value is not None
+            for value in (
+                candidate.mode,
+                candidate.bitdepth,
+                candidate.scale_millionths,
+                candidate.hdr_mode,
+            )
+        )
+
+    @staticmethod
+    def _candidate_cm_value(journal: TransactionJournal) -> str | None:
+        if journal.candidate.hdr_mode == "always-on":
+            return "hdr"
+        if journal.candidate.hdr_mode == "off":
+            return journal.cm_intent
+        return None
+
+    @staticmethod
+    def _verify_global(journal: TransactionJournal, client: HyprlandClient) -> None:
+        if journal.candidate.automatic_hdr is not None:
+            client.verify_automatic_hdr(journal.candidate.automatic_hdr)
+
+    @staticmethod
     def _rollback_candidate(journal: TransactionJournal) -> Candidate:
         original = journal.snapshot.target(journal.candidate.connector)
         if journal.candidate.policy == IMMEDIATE_SCALE_POLICY:
@@ -2469,6 +3100,12 @@ class TransactionAuthority:
             original.mode if journal.candidate.mode is not None else None,
             bitdepth,
             None,
+            (
+                ("always-on" if journal.forced_hdr else "off")
+                if journal.candidate.hdr_mode is not None else None
+            ),
+            journal.automatic_hdr_intent
+            if journal.candidate.automatic_hdr is not None else None,
         )
 
     def begin(self, candidate: Candidate, signature: str) -> TransactionJournal:
@@ -2488,6 +3125,37 @@ class TransactionAuthority:
         rewrite_existing_profile(machine.content, candidate)
         bitdepth_intent = profile_bitdepth_intent(profile)
         cm_intent, icc_intent = profile_color_intent(profile)
+        hdr_intent = profile_hdr_intent(profile)
+        automatic_hdr_intent: int | None = None
+        automatic_hdr_explicit: bool | None = None
+        if candidate.hdr_mode is not None:
+            if icc_intent:
+                raise ValidationError("An ICC profile owns this output's color state.")
+            if not client.read_cm_enabled():
+                raise ValidationError("Hyprland color management is disabled.")
+            capability = evaluate_hdr_capability(
+                target, profile, self.edid_reader(target)
+            )
+            if not capability.available:
+                raise ValidationError(capability.reason or "HDR is unavailable.")
+            if candidate.hdr_mode == hdr_intent.mode:
+                raise ValidationError("candidate HDR mode is already active")
+        final_hdr_mode = candidate.hdr_mode or hdr_intent.mode
+        final_bitdepth = candidate.bitdepth or target.effective_bitdepth
+        if final_hdr_mode == "always-on" and final_bitdepth != 10:
+            raise ValidationError(
+                "Always On HDR requires selecting 10-bit Color Depth in the same Apply."
+            )
+        if candidate.automatic_hdr is not None:
+            runtime_automatic = client.read_automatic_hdr()
+            persistent_automatic = automatic_hdr_config_intent(
+                machine.content, override.content, runtime_automatic
+            )
+            if candidate.automatic_hdr == persistent_automatic.value:
+                raise ValidationError("candidate Automatic HDR policy is already active")
+            automatic_hdr_intent = persistent_automatic.value
+            automatic_hdr_explicit = persistent_automatic.explicitly_set
+        rewrite_machine_configuration(machine.content, candidate)
         now = self.clock.monotonic()
         journal = self._write(
             TransactionJournal(
@@ -2514,6 +3182,10 @@ class TransactionAuthority:
                 topology,
                 machine,
                 override,
+                hdr_intent.base_present,
+                hdr_intent.mode == "always-on",
+                automatic_hdr_intent,
+                automatic_hdr_explicit,
             )
         )
         try:
@@ -2524,9 +3196,13 @@ class TransactionAuthority:
             return self.rollback(journal.transaction_id, reason=journal.failure)
         journal = self._transition(journal, "applying", mutation_attempted=True)
         try:
-            client.apply(candidate)
+            if self._candidate_has_monitor_mutation(candidate):
+                client.apply(candidate, cm_value=self._candidate_cm_value(journal))
+            if candidate.automatic_hdr is not None:
+                client.apply_automatic_hdr(candidate.automatic_hdr)
             self._require_no_unexpected_reload(journal)
             client.read_until(lambda readback: self._verify_candidate(journal, readback))
+            self._verify_global(journal, client)
             self._require_no_unexpected_reload(journal)
         except InstanceReplaced as error:
             self._close_transaction_watch()
@@ -2578,6 +3254,7 @@ class TransactionAuthority:
         )
         bitdepth_intent = profile_bitdepth_intent(fallback)
         cm_intent, icc_intent = profile_color_intent(fallback)
+        hdr_intent = profile_hdr_intent(fallback)
         now = self.clock.monotonic()
         journal = self._write(
             TransactionJournal(
@@ -2604,6 +3281,10 @@ class TransactionAuthority:
                 topology,
                 machine,
                 override,
+                hdr_intent.base_present,
+                hdr_intent.mode == "always-on",
+                None,
+                None,
             )
         )
         try:
@@ -2749,7 +3430,19 @@ class TransactionAuthority:
             current_target = current.target(journal.candidate.connector)
             if current_target.identity != journal.target_identity:
                 raise RollbackError("connector now belongs to a different physical display")
-            client.apply(self._rollback_candidate(journal))
+            rollback_candidate = self._rollback_candidate(journal)
+            if self._candidate_has_monitor_mutation(journal.candidate):
+                client.apply(
+                    rollback_candidate,
+                    cm_value=(
+                        "hdr" if journal.forced_hdr else journal.cm_intent
+                    ) if journal.candidate.hdr_mode is not None else None,
+                )
+            if journal.candidate.automatic_hdr is not None:
+                if journal.automatic_hdr_intent is None:
+                    raise RollbackError("previous Automatic HDR value is unavailable")
+                client.apply_automatic_hdr(journal.automatic_hdr_intent)
+                client.verify_automatic_hdr(journal.automatic_hdr_intent)
             client.read_until(lambda readback: verify_rollback_readback(journal.snapshot, readback))
         except InstanceReplaced as error:
             return self._transition(
@@ -2785,6 +3478,7 @@ class TransactionAuthority:
         watch: ReloadWatch | None = None
         try:
             client.read_until(lambda current: self._verify_candidate(journal, current))
+            self._verify_global(journal, client)
             self._require_no_unexpected_reload(journal)
             content, planned_hash = self.persister.prepare(journal)
             self._require_no_unexpected_reload(journal)
@@ -2814,6 +3508,7 @@ class TransactionAuthority:
                 journal, persistence_phase="candidate-reloaded"
             )
             client.read_until(lambda current: self._verify_candidate(journal, current))
+            self._verify_global(journal, client)
             journal = self._checkpoint(
                 journal,
                 persistence_phase="candidate-verified",
@@ -2912,6 +3607,8 @@ def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
             },
             "bitdepth": candidate.bitdepth,
             "scale_millionths": candidate.scale_millionths,
+            "hdr_mode": candidate.hdr_mode,
+            "automatic_hdr": candidate.automatic_hdr,
         },
         "state": journal.state,
         "sequence": journal.sequence,
@@ -2927,6 +3624,7 @@ def inspect_command(
     runner: Runner = run_command,
     instance_provider: InstanceProvider | None = None,
     config_paths: ConfigPaths | None = None,
+    edid_reader: Callable[[MonitorState], bytes] = read_connector_edid,
 ) -> int:
     signature = environment.get("HYPRLAND_INSTANCE_SIGNATURE", "")
     if SIGNATURE_RE.fullmatch(signature) is None:
@@ -2936,11 +3634,19 @@ def inspect_command(
     instance = provider.current(signature)
     client = HyprlandClient(signature, instance, provider, runner=runner)
     topology = client.read_topology()
+    automatic_hdr = client.read_automatic_hdr()
+    cm_enabled = client.read_cm_enabled()
     paths = config_paths or default_config_paths(environment)
     machine = snapshot_file(paths.machine)
     override = snapshot_file(paths.override)
     payload = inspection_payload(
-        topology, machine.content, override.content, signature
+        topology,
+        machine.content,
+        override.content,
+        signature,
+        automatic_hdr,
+        cm_enabled,
+        edid_reader,
     )
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return 0
@@ -2952,7 +3658,9 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
         journal = authority.status()
     elif command == "begin":
         candidate_raw = _strict_object(
-            raw["candidate"], {"connector", "mode", "bitdepth"}, "candidate"
+            raw["candidate"],
+            {"connector", "mode", "bitdepth", "hdr_mode", "automatic_hdr"},
+            "candidate",
         )
         mode_raw = candidate_raw["mode"]
         if mode_raw is None:
@@ -2970,6 +3678,8 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
                 height=mode_fields["height"],
                 refresh=mode_fields["refresh"],
                 bitdepth=candidate_raw["bitdepth"],
+                hdr_mode=candidate_raw["hdr_mode"],
+                automatic_hdr=candidate_raw["automatic_hdr"],
             ),
             raw["signature"],
         )
@@ -3157,6 +3867,8 @@ def client_command(arguments: argparse.Namespace) -> int:
                     "connector": arguments.connector,
                     "mode": mode,
                     "bitdepth": arguments.bitdepth,
+                    "hdr_mode": arguments.hdr,
+                    "automatic_hdr": arguments.automatic_hdr,
                 },
             }
         elif arguments.action == "scale":
@@ -3212,12 +3924,16 @@ def argument_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "inspect", help="read normalized monitor capabilities without mutation"
     )
-    apply_parser = subparsers.add_parser("apply", help="request a confirmed mode/bitdepth candidate")
+    apply_parser = subparsers.add_parser(
+        "apply", help="request one confirmed Mode/bitdepth/HDR candidate"
+    )
     apply_parser.add_argument("--connector", required=True)
     apply_parser.add_argument("--width", type=int)
     apply_parser.add_argument("--height", type=int)
     apply_parser.add_argument("--refresh")
     apply_parser.add_argument("--bitdepth", type=int, choices=(8, 10))
+    apply_parser.add_argument("--hdr", choices=tuple(sorted(HDR_MODES)))
+    apply_parser.add_argument("--automatic-hdr", type=int, choices=(0, 1, 2))
     scale_parser = subparsers.add_parser("scale", help="apply and persist validated scale immediately")
     scale_parser.add_argument("--connector", required=True)
     scale_parser.add_argument("--scale", required=True)

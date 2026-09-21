@@ -146,11 +146,14 @@ Confirmed monitor preference belongs only in the existing
 exact-byte replacement, prospective verification, reload reconciliation, and
 recovery machinery. Mode and bitdepth durable Confirm plus immediate Scale
 persistence have completed controlled single-monitor live acceptance through
-the deployed UI. The helper never changes the create-once seed, portable
+the deployed UI. Forced HDR retains its base CM intent in one adjacent,
+strictly owned machine-profile marker; global Automatic HDR uses one narrowly
+owned machine block. Neither uses the user override or a second preference
+database. The helper never changes the create-once seed, portable
 fallback block, managed Hyprland files, or user override. The optional
-materialization candidate is repository-implemented but not deployed or
-fresh-install accepted; physical multi-monitor acceptance also remains
-deferred.
+materialization capability is published and explicit-profile deployment is
+accepted, but real fallback materialization is not yet physically accepted;
+physical multi-monitor acceptance also remains deferred.
 
 ## PolicyKit session lifecycle ownership
 
