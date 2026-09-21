@@ -933,6 +933,12 @@ persistence milestones, watched reload plus bounded ordinary-reload fallback,
 post-reload `configerrors` and monitor readback, and transaction-owned durable
 rollback. Verification runs the installed Hyprland 0.56.2 in an isolated
 Bubblewrap tree because its Lua verifier executes configuration callbacks.
+The B3A.1 hardening boundary adds real containment probes, invalidates an armed
+temporary candidate on an unexpected external config reload, and accepts a
+persistence reload only after the candidate file and durable journal milestone
+prove transaction ownership. Strict schema-v2 deployment requires the old
+helper to prove any schema-v1 journal terminal and recovery-disarmed before
+controlled removal and replacement; no legacy journal is guessed or migrated.
 
 This is not a completed user feature. The backend is not connected to the
 Monitor panel, production persistence is deliberately disabled and has not

@@ -251,13 +251,47 @@ class FakeReloadWatch:
         self.closed = True
 
 
+class ControlledReloadWatch:
+    def __init__(self) -> None:
+        self.pending = 0
+        self.closed = False
+
+    def emit(self) -> None:
+        self.pending += 1
+
+    def wait(self, timeout: float) -> bool:
+        if self.pending == 0:
+            return False
+        self.pending -= 1
+        return True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class ControlledReloadEventSource:
+    def __init__(self) -> None:
+        self.watches: list[ControlledReloadWatch] = []
+
+    def arm(self, journal: object) -> ControlledReloadWatch:
+        watch = ControlledReloadWatch()
+        self.watches.append(watch)
+        return watch
+
+    @property
+    def current(self) -> ControlledReloadWatch:
+        return self.watches[-1]
+
+
 class FakeReloadCoordinator:
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.watches: list[FakeReloadWatch] = []
+        self.arm_phases: list[str] = []
         self.reconciliations: list[str] = []
 
     def arm(self, journal: object) -> FakeReloadWatch:
+        self.arm_phases.append(journal.persistence_phase)
         watch = FakeReloadWatch()
         self.watches.append(watch)
         return watch
@@ -291,7 +325,7 @@ class StubCandidatePersister:
     def prepare(self, journal: object) -> tuple[bytes, str]:
         raise AssertionError("recovery must not prepare a new candidate")
 
-    def persist(self, journal: object, content: bytes) -> None:
+    def persist(self, journal: object, content: bytes, guard=None) -> None:
         raise AssertionError("recovery must not rewrite the candidate")
 
     def machine_state(self, journal: object) -> str:
@@ -335,6 +369,7 @@ class MonitorBackendTests(unittest.TestCase):
         *,
         persister: object | None = None,
         reload_coordinator: object | None = None,
+        reload_event_source: object | None = None,
     ) -> tuple[object, QueueRunner]:
         runner = QueueRunner(responses)
         authority = monitor.TransactionAuthority(
@@ -346,14 +381,18 @@ class MonitorBackendTests(unittest.TestCase):
             persister=persister,
             reload_coordinator=reload_coordinator
             or (FakeReloadCoordinator() if persister is not None else None),
+            reload_event_source=reload_event_source,
         )
         return authority, runner
 
     def begin_success(
-        self, *, persister: object | None = None
+        self, *, persister: object | None = None,
+        reload_event_source: object | None = None,
     ) -> tuple[object, QueueRunner, object]:
         authority, runner = self.authority(
-            [[output()], OK, [candidate_output()]], persister=persister
+            [[output()], OK, [candidate_output()]],
+            persister=persister,
+            reload_event_source=reload_event_source,
         )
         journal = authority.begin(self.candidate, self.instance.signature)
         self.assertEqual(journal.state, "temporary-active")
@@ -599,6 +638,22 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(result, [0])
         self.assertFalse(store.socket_path.exists())
 
+    def test_socket_reload_watch_supports_nonblocking_event_poll(self) -> None:
+        path = self.root / "reload-events.sock"
+        server = monitor.socket.socket(monitor.socket.AF_UNIX, monitor.socket.SOCK_STREAM)
+        server.bind(os.fspath(path))
+        server.listen(1)
+        watch = monitor.SocketReloadWatch(path)
+        connection, _ = server.accept()
+        try:
+            self.assertFalse(watch.wait(0.0))
+            connection.sendall(b"configreloaded>>\n")
+            self.assertTrue(watch.wait(0.0))
+        finally:
+            connection.close()
+            watch.close()
+            server.close()
+
     def test_candidate_protocol_rejects_out_of_scope_fields(self) -> None:
         request = {
             "version": 1,
@@ -652,6 +707,28 @@ class MonitorBackendTests(unittest.TestCase):
                 self.store.journal_path.chmod(0o600)
                 with self.assertRaises(monitor.JournalError):
                     self.store.read()
+
+    def test_terminal_schema_v1_journal_is_not_reinterpreted_by_v2(self) -> None:
+        _, _, journal = self.begin_success()
+        legacy = monitor.journal_to_dict(
+            replace(
+                journal,
+                state="reverted",
+                deadline_monotonic=None,
+                runtime_verified=True,
+                recovery_required=False,
+            )
+        )
+        legacy["schema_version"] = 1
+        del legacy["persistence_phase"]
+        self.store.journal_path.write_text(json.dumps(legacy))
+        self.store.journal_path.chmod(0o600)
+        authority, runner = self.authority([])
+        for operation in (authority.status, authority.recover):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(monitor.JournalError, "schema mismatch"):
+                    operation()
+        self.assertEqual(runner.calls, [])
 
     def test_truncated_journal_fails_closed(self) -> None:
         self.begin_success()
@@ -902,6 +979,114 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(reverted.state, "reverted")
         self.assertIn("deadline expired", reverted.failure)
 
+    def test_external_reload_while_applying_invalidates_and_rolls_back(self) -> None:
+        events = ControlledReloadEventSource()
+        queued = QueueRunner(
+            [[output()], OK, [candidate_output()], OK, [output()]]
+        )
+
+        def emitting_runner(argv: object) -> object:
+            result = queued(argv)
+            if "eval" in argv and len([call for call in queued.calls if "eval" in call]) == 1:
+                events.current.emit()
+            return result
+
+        authority = monitor.TransactionAuthority(
+            self.store,
+            self.provider,
+            self.paths,
+            runner=emitting_runner,
+            clock=self.clock,
+            reload_event_source=events,
+        )
+        reverted = authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("config reload invalidated", reverted.failure)
+        self.assertEqual(len([call for call in queued.calls if "eval" in call]), 2)
+        self.assertTrue(events.current.closed)
+
+    def test_reload_observer_failure_prevents_runtime_apply(self) -> None:
+        class FailingReloadEventSource:
+            def arm(inner_self, journal):
+                raise monitor.PersistenceError("fixture socket unavailable")
+
+        authority, runner = self.authority(
+            [[output()]], reload_event_source=FailingReloadEventSource()
+        )
+        reverted = authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertFalse(reverted.mutation_attempted)
+        self.assertIn("reload observation failed", reverted.failure)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 0)
+
+    def test_external_reload_while_temporary_active_invalidates_even_if_readback_matches(self) -> None:
+        events = ControlledReloadEventSource()
+        current_candidate = monitor.Candidate.create(
+            "DP-1", 2560, 1440, "59.95", "1.25"
+        )
+        authority, runner = self.authority(
+            [[output()], OK, [output()]], reload_event_source=events
+        )
+        active = authority.begin(current_candidate, self.instance.signature)
+        self.assertEqual(active.state, "temporary-active")
+        events.current.emit()
+        runner.responses.extend([[output()], OK, [output()]])
+        reverted = authority.status()
+        self.assertIsNotNone(reverted)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("config reload invalidated", reverted.failure)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 2)
+
+    def test_reload_immediately_before_confirm_cannot_persist(self) -> None:
+        events = ControlledReloadEventSource()
+        verifier = RecordingVerifier()
+        persister = monitor.MachineConfigPersister(verifier)
+        authority, runner, active = self.begin_success(
+            persister=persister, reload_event_source=events
+        )
+        events.current.emit()
+        runner.responses.extend([[candidate_output()], OK, [output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "cannot confirm from reverted"):
+            authority.confirm(active.transaction_id)
+        reverted = self.store.read()
+        self.assertIsNotNone(reverted)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("config reload invalidated", reverted.failure)
+        self.assertEqual(verifier.calls, [])
+        self.assertEqual(self.machine.read_bytes(), active.machine_file.content)
+
+    def test_confirm_revalidates_transaction_id_and_deadline_before_persistence(self) -> None:
+        verifier = RecordingVerifier()
+        persister = monitor.MachineConfigPersister(verifier)
+        authority, runner, active = self.begin_success(persister=persister)
+        with self.assertRaisesRegex(monitor.ValidationError, "transaction ID"):
+            authority.confirm("00000000-0000-0000-0000-000000000000")
+        self.clock.advance(11.0)
+        runner.responses.extend([[candidate_output()], OK, [output()]])
+        with self.assertRaisesRegex(monitor.ValidationError, "cannot confirm from reverted"):
+            authority.confirm(active.transaction_id)
+        self.assertEqual(verifier.calls, [])
+        self.assertEqual(self.store.read().state, "reverted")
+
+    def test_reload_after_confirm_request_before_replace_aborts_write(self) -> None:
+        events = ControlledReloadEventSource()
+        before = self.machine.read_bytes()
+
+        class EmitBeforeReplace(monitor.MachineConfigPersister):
+            def persist(inner_self, journal, content, guard=None):
+                events.current.emit()
+                return super().persist(journal, content, guard)
+
+        persister = EmitBeforeReplace(lambda journal, content: None)
+        authority, runner, active = self.begin_success(
+            persister=persister, reload_event_source=events
+        )
+        runner.responses.extend([[candidate_output()], [candidate_output()], OK, [output()]])
+        reverted = authority.confirm(active.transaction_id)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("config reload invalidated", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), before)
+
     def test_rollback_verification_failure_remains_recoverable(self) -> None:
         authority, runner, journal = self.begin_success()
         runner.responses.extend(
@@ -1014,6 +1199,10 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertFalse(committed.recovery_required)
         self.assertEqual(len(verifier.calls), 1)
         self.assertEqual(
+            coordinator.arm_phases,
+            ["candidate-installed"],
+        )
+        self.assertEqual(
             coordinator.reconciliations,
             ["candidate-installed"],
         )
@@ -1061,8 +1250,80 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(captured["managed"], b"-- managed fixture\n")
         argv = captured["argv"]
         self.assertIn("--unshare-all", argv)
+        self.assertIn("--die-with-parent", argv)
+        self.assertIn("--new-session", argv)
         self.assertIn("--clearenv", argv)
+        self.assertEqual(
+            [argv[index + 1] for index, value in enumerate(argv) if value == "--setenv"],
+            [
+                "HOME",
+                "XDG_CONFIG_HOME",
+                "XDG_DATA_HOME",
+                "XDG_RUNTIME_DIR",
+                "PATH",
+                "LANG",
+            ],
+        )
+        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", argv)
+        self.assertNotIn("HYPRLAND_INSTANCE_SIGNATURE", argv)
+        self.assertNotIn("WAYLAND_DISPLAY", argv)
+        self.assertNotIn("DISPLAY", argv)
         self.assertEqual(argv[-4:], ["/usr/bin/Hyprland", "--verify-config", "--config", "/config/hypr/hyprland.lua"])
+
+    def test_real_bubblewrap_verifier_blocks_live_session_channels(self) -> None:
+        self.assertTrue(Path("/usr/bin/bwrap").is_file())
+        self.assertTrue(Path("/usr/bin/Hyprland").is_file())
+        hypr = self.config / "hypr"
+        managed = hypr / "vanhyprarch"
+        managed.mkdir(parents=True)
+        (hypr / "hyprland.lua").write_text(
+            'require(os.getenv("XDG_CONFIG_HOME") .. "/hypr/vanhyprarch/core.lua")\n'
+        )
+        marker = Path(
+            f"/tmp/vanhyprarch-monitor-containment-{os.getpid()}-{time.time_ns()}"
+        )
+        marker.write_text("host-original\n")
+        self.addCleanup(marker.unlink, missing_ok=True)
+        signature = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "fixture_123")
+        self.assertIsNotNone(re.fullmatch(r"[A-Za-z0-9_.-]+", signature))
+        probe = f'''
+for _, name in ipairs({{
+    "DBUS_SESSION_BUS_ADDRESS",
+    "HYPRLAND_INSTANCE_SIGNATURE",
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+}}) do
+    if os.getenv(name) ~= nil then
+        error("LIVE_ENV_EXPOSED_" .. name)
+    end
+end
+local marker = assert(io.open("{marker}", "w"))
+marker:write("sandbox-only\\n")
+marker:close()
+local configWrite = io.open("/config/containment-write", "w")
+if configWrite ~= nil then
+    configWrite:close()
+    error("STAGED_CONFIG_WRITABLE")
+end
+local busOk = os.execute("/usr/bin/systemctl --user show-environment >/tmp/bus-probe 2>&1")
+if busOk == true or busOk == 0 then
+    error("USER_BUS_REACHABLE")
+end
+local ipcOk = os.execute("/usr/bin/hyprctl --instance {signature} -j monitors all >/tmp/ipc-probe 2>&1")
+if ipcOk == true or ipcOk == 0 then
+    error("HYPRLAND_IPC_REACHABLE")
+end
+error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
+'''
+        (managed / "core.lua").write_text(probe)
+        _, _, journal = self.begin_success()
+        verifier = monitor.SandboxedHyprlandVerifier(self.config)
+        with self.assertRaisesRegex(
+            monitor.PersistenceError, "VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE"
+        ):
+            verifier(journal, journal.machine_file.content)
+        self.assertEqual(marker.read_text(), "host-original\n")
+        self.assertFalse((self.config / "containment-write").exists())
 
     def test_prospective_verifier_nonzero_and_timeout_fail_closed(self) -> None:
         hypr = self.config / "hypr"
@@ -1096,6 +1357,29 @@ class MonitorBackendTests(unittest.TestCase):
         coordinator.reconcile(journal, client, watch)
         self.assertEqual(runner.calls, [monitor.configerrors_argv(self.instance.signature)])
         self.assertGreaterEqual(client.check_instance.call_count, 2)
+
+    def test_extra_reload_event_during_owned_reconciliation_is_harmless(self) -> None:
+        class ExtraReloadCoordinator(FakeReloadCoordinator):
+            def arm(inner_self, journal):
+                inner_self.arm_phases.append(journal.persistence_phase)
+                watch = FakeReloadWatch([True, True])
+                inner_self.watches.append(watch)
+                return watch
+
+            def reconcile(inner_self, journal, client, watch):
+                inner_self.reconciliations.append(journal.persistence_phase)
+                self.assertTrue(watch.wait(monitor.RELOAD_EVENT_WAIT_SECONDS))
+                self.assertTrue(watch.wait(0.0))
+
+        coordinator = ExtraReloadCoordinator()
+        persister = monitor.MachineConfigPersister(lambda journal, content: None)
+        authority, runner, active = self.begin_success(persister=persister)
+        authority.reload_coordinator = coordinator
+        runner.responses.extend([[candidate_output()], [candidate_output()]])
+        committed = authority.confirm(active.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        self.assertEqual(coordinator.arm_phases, ["candidate-installed"])
+        self.assertEqual(coordinator.reconciliations, ["candidate-installed"])
 
     def test_reload_event_absent_uses_bounded_ordinary_reload(self) -> None:
         runner = QueueRunner([OK, monitor.CommandResult(0, "", "")])
@@ -1269,8 +1553,9 @@ class MonitorBackendTests(unittest.TestCase):
             def reconcile(inner_self, journal, client, watch):
                 inner_self.reconciliations.append(journal.persistence_phase)
                 if len(inner_self.reconciliations) == 1:
+                    if not watch.wait(monitor.RELOAD_EVENT_WAIT_SECONDS):
+                        raise AssertionError("fixture expected configreloaded")
                     self.provider.identity = replace(self.instance, pid=999)
-                    raise monitor.InstanceReplaced("fixture compositor replaced")
                 client.check_instance()
 
         coordinator = ReplaceDuringReload()

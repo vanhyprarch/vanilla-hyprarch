@@ -90,9 +90,14 @@ keyboard-sync service reload, even though it did not mutate configuration or
 monitor state. Monitor Safe Apply prospective verification consequently stages
 the complete import tree and runs the installed verifier inside an unshared
 Bubblewrap environment with no live user bus and no writable live config. Exit
-status is authoritative and the subprocess is bounded to five seconds. Retest
-both successful validation and callback containment after a Hyprland verifier
-or Bubblewrap upgrade.
+status is authoritative and the subprocess is bounded to five seconds. The
+sandbox clears the inherited environment; uses private mount, PID, IPC,
+network, runtime, home, data, and temporary namespaces/paths; exposes the
+staged config plus `/usr` and `/etc` read-only; and does not mount
+`/run/user/<uid>`. A real Lua-side probe must continue to demonstrate that the
+user bus, Hyprland IPC, host files, and staged-tree writes are unreachable.
+Retest both successful validation and callback containment after a Hyprland
+verifier or Bubblewrap upgrade.
 
 ## Hyprland monitor runtime transaction boundary
 

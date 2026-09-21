@@ -54,6 +54,15 @@ keyboard layout, bit depth, color profile, device rule, or UI-owned scale
 field. No general multi-monitor schema is promised during Alpha. The override
 seed contains only its administrative header.
 
+Monitor transaction journals are versioned same-boot recovery material, not
+managed deployment payloads. Never replace `vanhyprarch-monitor` while an
+older-schema transaction is nonterminal or recovery-required. A schema upgrade
+must use the old deployed helper to establish a terminal, recovery-disarmed
+journal, an unheld lock, and no active control listener. Controlled deployment
+may then remove that old terminal runtime journal before installing the new
+helper into clean runtime state. Unknown journal schemas otherwise fail closed;
+normal deployment must not infer compatibility or delete active recovery data.
+
 ## Hyprland configuration order
 
 The managed entrypoint resolves `HOME`, then resolves `XDG_CONFIG_HOME` with

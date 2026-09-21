@@ -138,6 +138,10 @@ class PersistenceDeferred(PersistenceError):
     pass
 
 
+class ConfigReloadInvalidated(MonitorError):
+    pass
+
+
 @dataclass(frozen=True)
 class CommandResult:
     returncode: int
@@ -1166,6 +1170,10 @@ class ReloadWatch(Protocol):
     def close(self) -> None: ...
 
 
+class ReloadEventSource(Protocol):
+    def arm(self, journal: "TransactionJournal") -> ReloadWatch: ...
+
+
 class ReloadCoordinator(Protocol):
     def arm(self, journal: "TransactionJournal") -> ReloadWatch: ...
     def reconcile(
@@ -1191,13 +1199,11 @@ class SocketReloadWatch:
                 line, self.buffer = self.buffer.split(b"\n", 1)
                 if line == b"configreloaded>>":
                     return True
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return False
+            remaining = max(0.0, deadline - time.monotonic())
             self.socket.settimeout(remaining)
             try:
                 chunk = self.socket.recv(65536)
-            except TimeoutError:
+            except (BlockingIOError, TimeoutError):
                 return False
             if not chunk:
                 raise PersistenceError("Hyprland event socket closed during reconciliation")
@@ -1241,6 +1247,31 @@ class HyprlandReloadCoordinator:
         client.check_instance()
 
 
+class SocketReloadEventSource:
+    def __init__(self, runtime_root: Path) -> None:
+        self.runtime_root = runtime_root
+
+    def arm(self, journal: "TransactionJournal") -> ReloadWatch:
+        path = self.runtime_root / "hypr" / journal.instance.signature / ".socket2.sock"
+        try:
+            return SocketReloadWatch(path)
+        except OSError as error:
+            raise PersistenceError(f"cannot arm Hyprland reload observation: {error}") from error
+
+
+class NullReloadWatch:
+    def wait(self, timeout: float) -> bool:
+        return False
+
+    def close(self) -> None:
+        pass
+
+
+class NullReloadEventSource:
+    def arm(self, journal: "TransactionJournal") -> ReloadWatch:
+        return NullReloadWatch()
+
+
 class DisabledReloadCoordinator:
     def arm(self, journal: "TransactionJournal") -> ReloadWatch:
         raise PersistenceDeferred("production monitor persistence reconciliation is disabled")
@@ -1255,7 +1286,10 @@ class DisabledReloadCoordinator:
 class Persister(Protocol):
     def prepare(self, journal: "TransactionJournal") -> tuple[bytes, str]: ...
 
-    def persist(self, journal: "TransactionJournal", content: bytes) -> None: ...
+    def persist(
+        self, journal: "TransactionJournal", content: bytes,
+        guard: Callable[[], None] | None = None,
+    ) -> None: ...
 
     def recover_original(self, journal: "TransactionJournal") -> bool: ...
 
@@ -1266,7 +1300,10 @@ class DisabledProductionPersister:
     def prepare(self, journal: "TransactionJournal") -> tuple[bytes, str]:
         raise PersistenceDeferred("production monitor persistence awaits controlled live acceptance")
 
-    def persist(self, journal: "TransactionJournal", content: bytes) -> None:
+    def persist(
+        self, journal: "TransactionJournal", content: bytes,
+        guard: Callable[[], None] | None = None,
+    ) -> None:
         raise PersistenceDeferred("production monitor persistence awaits controlled live acceptance")
 
     def recover_original(self, journal: "TransactionJournal") -> bool:
@@ -1296,11 +1333,16 @@ class MachineConfigPersister:
             raise PersistenceError(f"prospective configuration verification failed: {error}") from error
         return content, hashlib.sha256(content).hexdigest()
 
-    def persist(self, journal: "TransactionJournal", content: bytes) -> None:
+    def persist(
+        self, journal: "TransactionJournal", content: bytes,
+        guard: Callable[[], None] | None = None,
+    ) -> None:
         if not snapshot_matches(journal.machine_file):
             raise PersistenceError("machine configuration changed before atomic write")
         if not snapshot_matches(journal.override_file):
             raise PersistenceError("user override changed before atomic write")
+        if guard is not None:
+            guard()
         atomic_replace(
             Path(journal.machine_file.path),
             content,
@@ -1750,6 +1792,7 @@ class TransactionAuthority:
         clock: Clock | None = None,
         persister: Persister | None = None,
         reload_coordinator: ReloadCoordinator | None = None,
+        reload_event_source: ReloadEventSource | None = None,
         confirmation_seconds: float = DEFAULT_CONFIRM_SECONDS,
         bound_signature: str | None = None,
     ) -> None:
@@ -1760,6 +1803,8 @@ class TransactionAuthority:
         self.clock = clock or SystemClock()
         self.persister = persister or DisabledProductionPersister()
         self.reload_coordinator = reload_coordinator or DisabledReloadCoordinator()
+        self.reload_event_source = reload_event_source or NullReloadEventSource()
+        self.transaction_watch: ReloadWatch | None = None
         self.confirmation_seconds = confirmation_seconds
         self.bound_signature = bound_signature
 
@@ -1799,6 +1844,21 @@ class TransactionAuthority:
                 **changes,
             )
         )
+
+    def _close_transaction_watch(self) -> None:
+        if self.transaction_watch is not None:
+            self.transaction_watch.close()
+            self.transaction_watch = None
+
+    def _require_no_unexpected_reload(self, journal: TransactionJournal) -> None:
+        eligible = journal.state in {"applying", "temporary-active"} or (
+            journal.state == "committing"
+            and journal.persistence_phase == "candidate-planned"
+        )
+        if eligible and self.transaction_watch is not None and self.transaction_watch.wait(0.0):
+            raise ConfigReloadInvalidated(
+                "unexpected Hyprland config reload invalidated the temporary candidate"
+            )
 
     def begin(self, candidate: Candidate, signature: str) -> TransactionJournal:
         if self.bound_signature is not None and signature != self.bound_signature:
@@ -1840,15 +1900,24 @@ class TransactionAuthority:
                 override,
             )
         )
+        try:
+            self.transaction_watch = self.reload_event_source.arm(journal)
+        except MonitorError as error:
+            journal = replace(journal, failure=f"reload observation failed: {error}")
+            self.store.write(journal)
+            return self.rollback(journal.transaction_id, reason=journal.failure)
         journal = self._transition(journal, "applying", mutation_attempted=True)
         try:
             client.apply(candidate.connector, candidate.mode, candidate.scale_millionths)
+            self._require_no_unexpected_reload(journal)
             client.read_until(
                 lambda readback: verify_candidate_readback(
                     topology, candidate, readback, target.identity
                 )
             )
+            self._require_no_unexpected_reload(journal)
         except InstanceReplaced as error:
+            self._close_transaction_watch()
             return self._transition(
                 journal, "instance-vanished", failure=str(error), recovery_required=False
             )
@@ -1866,6 +1935,13 @@ class TransactionAuthority:
 
     def status(self) -> TransactionJournal | None:
         journal = self.store.read()
+        if journal is not None and journal.state in TERMINAL_SAFE_STATES:
+            self._close_transaction_watch()
+        if journal is not None:
+            try:
+                self._require_no_unexpected_reload(journal)
+            except MonitorError as error:
+                return self.rollback(journal.transaction_id, reason=str(error))
         if (
             journal is not None
             and journal.state == "temporary-active"
@@ -1879,6 +1955,7 @@ class TransactionAuthority:
         journal = self.store.read()
         if journal is None or journal.transaction_id != transaction_id:
             raise ValidationError("transaction ID does not match active journal")
+        self._close_transaction_watch()
         if journal.state == "reverted":
             return journal
         if journal.state == "instance-vanished":
@@ -2011,7 +2088,9 @@ class TransactionAuthority:
                     journal.target_identity,
                 )
             )
+            self._require_no_unexpected_reload(journal)
             content, planned_hash = self.persister.prepare(journal)
+            self._require_no_unexpected_reload(journal)
             journal = self._transition(
                 journal,
                 "committing",
@@ -2019,11 +2098,20 @@ class TransactionAuthority:
                 persistence_phase="candidate-planned",
                 deadline_monotonic=None,
             )
-            watch = self.reload_coordinator.arm(journal)
-            self.persister.persist(journal, content)
+            self.persister.persist(
+                journal,
+                content,
+                guard=lambda: self._require_no_unexpected_reload(journal),
+            )
             journal = self._checkpoint(
                 journal, persistence_phase="candidate-installed"
             )
+            if self.persister.machine_state(journal) != "candidate":
+                raise PersistenceError(
+                    "candidate machine file ownership was lost before reload reconciliation"
+                )
+            self._close_transaction_watch()
+            watch = self.reload_coordinator.arm(journal)
             self.reload_coordinator.reconcile(journal, client, watch)
             journal = self._checkpoint(
                 journal, persistence_phase="candidate-reloaded"
@@ -2085,6 +2173,7 @@ def build_production_authority(*, require_environment_signature: bool = True) ->
         store,
         ProcInstanceProvider(root),
         default_config_paths(),
+        reload_event_source=SocketReloadEventSource(root),
         bound_signature=signature if require_environment_signature else None,
     )
 

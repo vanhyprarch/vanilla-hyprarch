@@ -140,7 +140,7 @@ be only a client of this protocol.
 The persistence foundation locates exactly one existing explicit connector
 profile, preserves unrelated bytes and comments, replaces only its mode and
 scale representation, rejects machine/override hash races,
-and atomically replace a fixture file with preserved mode and ownership.
+and atomically replaces a fixture file with preserved mode and ownership.
 Recovery restores exact original bytes only when the current hash is either
 the original or the transaction's recorded candidate hash. A different hash
 is an external edit and is never overwritten.
@@ -150,10 +150,17 @@ managed Lua subtree with the transaction's exact override bytes and candidate
 machine bytes. The installed `Hyprland --verify-config` runs with a five-second
 bound inside Bubblewrap with a private mount, PID, IPC, network, and runtime
 namespace. The staged tree is read-only to the verifier and the live user bus
-is absent. Exit status zero is the authority; human-oriented stdout is retained
-only as a diagnostic. This containment is required because Hyprland 0.56.2
-executes Lua callbacks while verifying, including the project's
-`config.reloaded` keyboard reconciliation hook.
+is absent. Bubblewrap clears the inherited environment and supplies only a
+synthetic home, staged XDG config/data paths, a private runtime path, `/usr/bin`
+PATH, and a fixed locale. It exposes `/usr` and `/etc` read-only, creates
+private `/run`, `/runtime`, `/home`, `/data`, and `/tmp`, and does not expose
+`/run/user/<uid>`, the live Hyprland sockets, or the user D-Bus socket. Exit
+status zero is the authority; human-oriented stdout is retained only as a
+diagnostic. This containment is required because Hyprland 0.56.2 executes Lua
+callbacks while verifying, including the project's `config.reloaded` keyboard
+reconciliation hook. A real containment regression proves that staged Lua
+cannot reach the user bus or Hyprland IPC, alter a host marker, or write the
+read-only staged tree.
 
 After an explicit confirmation, the durable sequence is:
 
@@ -166,16 +173,29 @@ temporary-active
 -> committed
 ```
 
-The watcher event socket is armed before replacement. Atomic replacement uses
-a same-directory temporary file, restrictive permissions, complete write,
-file `fsync`, `os.replace`, and parent-directory `fsync`. A watched
-`configreloaded` event is accepted; if it does not arrive within 1.5 seconds,
-the backend issues one ordinary, instance-bound `hyprctl reload` and requires
-the event. It never uses `reload full-reset`. Clean `configerrors` and fresh
-full-topology readback must then prove the persisted candidate effective. The
-previous temporary runtime rule is not reapplied to make reconciliation pass.
-Recovery remains armed through `candidate-verified` and is disarmed only by the
-atomic terminal `committed` publication.
+Atomic replacement uses a same-directory temporary file, restrictive
+permissions, complete write, file `fsync`, `os.replace`, and parent-directory
+`fsync`. The persistence reload watcher is armed only after the candidate file
+is installed, the `candidate-installed` milestone is durable, and the current
+file hash proves transaction ownership. A watched `configreloaded` event is
+then accepted; if it does not arrive within 1.5 seconds, the backend issues one
+ordinary, instance-bound `hyprctl reload` and requires the event. It never uses
+`reload full-reset`. Clean `configerrors` and fresh full-topology readback must
+then prove the persisted candidate effective. The previous temporary runtime
+rule is not reapplied to make reconciliation pass. Recovery remains armed
+through `candidate-verified` and is disarmed only by the atomic terminal
+`committed` publication.
+
+An exact-instance socket2 watcher is also armed before the temporary runtime
+apply. Any `configreloaded` observed while applying, while temporary-active, or
+after Confirm begins but before candidate replacement invalidates the
+transaction. The backend stops the confirmation path and performs the normal
+verified rollback even when current-state mode/scale readback happens to look
+identical. It never silently reapplies the temporary candidate. Reloads can be
+treated as persistence-owned only after the durable `candidate-installed`
+phase and candidate-file hash agree; timing alone is not evidence of ownership.
+After every accepted reload, `configerrors` and authoritative monitor readback
+remain mandatory. `monitor.layout_changed` is not required.
 
 If verification, replacement, reload, configuration-error, or post-reload
 readback fails, the backend restores original machine bytes only while it can
@@ -193,6 +213,15 @@ the live machine file and takes the normal rollback path. The B3A machinery is
 exercised only with fixture paths and isolated verifier trees; enabling it is a
 separate live acceptance decision.
 
+The B3A journal is strict schema version 2. It intentionally does not interpret
+schema-v1 recovery material. A backend upgrade must never cross a nonterminal
+or recovery-required transaction from an older schema. The old deployed helper
+must first prove that its journal is terminal and recovery-disarmed, its lock is
+unheld, and no control listener exists. Only then may controlled deployment
+remove that old terminal runtime journal and install the new helper into clean
+runtime state. Future schema changes require the same explicit upgrade protocol
+or a separately reviewed migration; they must not guess compatibility.
+
 The public machine seed still contains only a catch-all rule. Safe Apply
 requires an existing, unambiguous, explicit machine-owned output profile; it
 does not edit the catch-all and never creates or infers a profile. Safe initial
@@ -203,9 +232,10 @@ materialization does not require replacing the transaction architecture.
 
 ## Deferred live and UI work
 
-A controlled phase must enable and exercise durable confirmation on the live
+A controlled phase must perform the schema-v1 cleanup boundary, deploy the new
+helper, then enable and exercise durable confirmation on the live
 machine, including watcher reload, post-reload readback, and protected
 subsystem checks. Quickshell controller and confirmation-overlay integration
-remain unimplemented. External reload invalidation during the temporary window
-and safe fresh-install profile materialization also remain later work. The
-existing Monitor panel is unchanged, and brightness remains out of scope.
+remain unimplemented. Safe fresh-install profile materialization also remains
+later work. The existing Monitor panel is unchanged, and brightness remains
+out of scope.
