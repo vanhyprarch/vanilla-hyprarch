@@ -638,13 +638,14 @@ Hyprland 0.56.2's intentional absolute-path `require()` support. Monitor,
 connector, mode, scale, bit depth, color management, keyboard layout, and
 device-specific rules do not belong in the managed core. The machine seed has
 a portable catch-all rule with preferred mode, automatic position, and
-automatic scale. That fallback exposes no Monitor panel write field. A future
-Monitor panel may edit only a narrowly documented scale field belonging to a
-specific explicit output profile in the machine-owned file. The controlled
-live migration established that narrow field and moved the scale writer to the
-machine layer. It fails closed instead of creating or guessing a profile, does
-not edit the catch-all rule, and exposes no general multi-monitor schema during
-Alpha.
+automatic scale. That fallback exposes no Monitor panel write field. The
+controlled live migration established one narrowly documented Scale field in a
+specific explicit output profile. The current pre-integration panel writer can
+edit only that field and fails closed instead of creating or guessing a
+profile. Final Monitor UI integration must submit Scale to the transaction
+backend so runtime readback, prospective validation, persistence, reload, and
+technical rollback remain one operation. Neither path edits the catch-all rule
+or exposes a general multi-monitor schema during Alpha.
 
 Create-once seeds are never normal managed-update payloads. Machine files and
 override files are preserved, but preservation of an override file does not
@@ -685,43 +686,44 @@ layout is not duplicated in the validated development-machine file or public
 seed; neither contains a global XKB fallback. See
 [System keyboard synchronization](system-keyboard-synchronization.md).
 
-## ADR-032: Require confirmation before persisting risky monitor changes
+## ADR-032: Match monitor persistence policy to setting risk
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Runtime backend deployed and live validated; repository
-persistence/reconciliation foundation implemented; production persistence and
-UI remain pending controlled acceptance
+**Implementation:** Schema-v2 runtime engine deployed and validated;
+policy-aligned schema-v3 repository candidate implemented; schema-v3 deployment,
+live persistence acceptance, and UI remain pending
 
-Future monitor control is per explicit output profile and may cover resolution,
-refresh rate, scale, color depth, and brightness where the output and available
-capabilities support it. Text Size remains one global preference, even if the
-Monitor panel exposes that existing control for convenience.
+Future monitor control is per explicit output profile. Resolution/refresh is one
+Mode tuple, bitdepth is 8 or 10 bpc, and Scale is per output. Text Size remains
+one global preference. Brightness remains an independent DDC/CI control.
 
-Risky display changes follow one invariant:
+Safety-critical Mode and bitdepth changes follow one invariant:
 
 `known-good configuration -> temporary runtime apply -> 10-second confirmation
 -> persist only on confirmation`
 
 Application failure or confirmation timeout automatically restores the
-known-good runtime configuration. An unconfirmed display configuration is
-never persisted. The backend and persistence foundation do not complete Safe
-Apply, define a general multi-monitor schema, or connect UI; those remain
-within the separate Monitor Control & Safe Apply milestone.
+known-good runtime configuration. An unconfirmed Mode/bitdepth configuration is
+never persisted. Mode and bitdepth may be changed independently or together.
 
-The first implementation scope is resolution/refresh as one advertised mode
-tuple plus per-output scale. Normal rollback uses connector-specific runtime
-`hl.monitor()` restoration of those two owned fields followed by authoritative
-full-topology readback; full Hyprland configuration reload is not the primary
-rollback path. The authority is independent of Quickshell and runs only for a
-bounded transaction under a static systemd user service. Quickshell remains a
-future client.
+Scale instead follows immediate validation: validate, apply runtime Scale,
+authoritatively read it back, prospectively verify and atomically persist only
+Scale, reconcile reload, then verify again. Any technical failure restores the
+previous durable bytes and runtime Scale. Scale has no human confirmation
+dialog or confirmation deadline.
 
-Safe Apply currently requires an existing unambiguous explicit connector
-profile in machine configuration. It neither edits the portable catch-all nor
-materializes a new profile. Safe fresh-install profile materialization is a
-separate product requirement before Alpha release. Brightness remains outside
-the Safe Apply transaction, and Text Size remains global.
+Normal rollback uses connector-specific runtime `hl.monitor()` restoration of
+only the fields owned by that operation followed by authoritative full-topology
+readback; full Hyprland configuration reload is not the primary runtime
+rollback path. Both policy classes use the same supervised persistence,
+reconciliation, and crash-recovery quality. Quickshell remains a future client.
+
+Monitor transactions require an existing unambiguous explicit connector profile
+in machine configuration. They neither edit the portable catch-all nor
+materialize a new profile. Safe fresh-install profile materialization is a
+separate product requirement before Alpha release. Brightness and Text Size are
+not routed through this backend.
 
 ## ADR-033: Make Zig Screensaver an explicit capability
 

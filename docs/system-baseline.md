@@ -81,7 +81,7 @@ and unresolved choices are maintained in the canonical
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
 | Appearance and wallpaper | `hyprpaper`, `file` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
 | System keyboard projection | `python`, `python-gobject`, `libxkbcommon`, `xkeyboard-config`, `systemd`, `hyprland` | `systemd-localed` owns the graphical XKB tuple; the static user service projects it into Hyprland without owning active groups or per-device rules. |
-| Monitor Safe Apply | `python`, `hyprland`, `bubblewrap`, `systemd` | The static transaction authority owns temporary mode/scale apply and rollback. Bubblewrap isolates prospective full-config verification from the live session; durable confirmation remains disabled pending controlled acceptance. |
+| Monitor transactions | `python`, `hyprland`, `bubblewrap`, `systemd` | The static authority owns confirmed Safe Apply for mode/bitdepth and immediate validated Scale. Bubblewrap isolates prospective full-config verification from the live session; the schema-v3 policy candidate remains repository-only pending controlled acceptance. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
 
 The project uses upstream Hyprland and Quickshell rather than a downstream
@@ -130,7 +130,8 @@ configuration for the main shell. It will install `vanhyprarch-idle`,
 `vanhyprarch-appearance`, `vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
 available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`;
 it will also install `vanhyprarch-monitor` and its static, non-enabled user
-service once Monitor Safe Apply reaches the controlled deployment phase.
+service. The deployed schema-v2 generation remains active until the
+policy-aligned schema-v3 backend passes its separate controlled deployment.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
 Zig Screensaver manager resources under the corresponding
@@ -362,14 +363,15 @@ present in the expected machine-owned file; it cannot edit the catch-all rule
 or managed Hyprland files. No general multi-monitor schema is promised during
 Alpha.
 
-The repository-only Monitor Safe Apply B1 foundation adds the managed
-`vanhyprarch-monitor` Python command and static, non-enabled
-`vanhyprarch-monitor-safe-apply.service`. Both use existing baseline Python,
-systemd, and Hyprland packages; no package was added. The service is started
-only for a transaction, is bounded by `RuntimeMaxSec=90s`, and invokes an
-idempotent recovery entry point through `ExecStopPost`. Runtime journal, lock,
-and socket material is private XDG runtime state. The backend is not deployed
-or connected to QML yet, and its production persistence path remains disabled.
+The managed `vanhyprarch-monitor` Python command and static, non-enabled
+`vanhyprarch-monitor-safe-apply.service` use baseline Python, systemd,
+Hyprland, and Bubblewrap. The service starts only for a transaction, is bounded
+by `RuntimeMaxSec=90s`, and invokes an idempotent recovery entry point through
+`ExecStopPost`; journal, lock, and socket material is private XDG runtime
+state. The deployed schema-v2 engine remains disconnected from QML. Its
+schema-v3 repository successor gives Mode/bitdepth an explicit-confirmation
+window and makes Scale an immediate validated persistence operation. Schema v3
+has not been deployed or live-accepted.
 
 ## Screenshots
 

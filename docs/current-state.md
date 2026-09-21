@@ -912,21 +912,23 @@ manual/on-demand screensaver shortcut, no Super+K Screensaver row, and no
 unbounded manual start operation; adding one is rejected unless a future
 explicit product decision reopens it.
 
-## Monitor Safe Apply backend — RUNTIME VALIDATED, PERSISTENCE FOUNDATION
+## Monitor backend — POLICY-ALIGNED REPOSITORY CANDIDATE
 
 The project now contains the independently supervised, fixture-tested
 `vanhyprarch-monitor` transaction authority and its static user service. The
 backend owns a strict private runtime journal, lock, versioned control socket,
-monotonic confirmation deadline, exact compositor/output identity, full
-topology snapshot, candidate verification, and targeted mode/scale rollback.
-Normal rollback restores only the connector-specific v1-owned runtime fields
-through `hl.monitor()` and verifies fresh `monitors all` readback; a full config
-reload is not the normal rollback path.
+exact compositor/output identity, full topology snapshot, candidate
+verification, and targeted owned-field rollback. A backend-monotonic
+approximately ten-second confirmation deadline is used only for Mode and
+bitdepth. Normal rollback restores only the connector-specific owned runtime
+fields through `hl.monitor()` and verifies fresh `monitors all` readback; a
+full config reload is not the normal rollback path.
 
-The runtime path is deployed and has passed no-op, timeout, explicit-revert,
+The deployed schema-v2 runtime path has passed no-op, timeout, explicit-revert,
 crash-recovery, and deliberately different scale validation. Scale 1.50 was
 authoritatively observed and the automatic deadline restored 1.25, with visual
-confirmation and no persistent change.
+confirmation and no persistent change. That was a low-risk validation of the
+transaction engine, not the final Scale product behavior.
 
 Phase B3A adds repository-only prospective full-config verification, durable
 persistence milestones, watched reload plus bounded ordinary-reload fallback,
@@ -936,17 +938,24 @@ Bubblewrap tree because its Lua verifier executes configuration callbacks.
 The B3A.1 hardening boundary adds real containment probes, invalidates an armed
 temporary candidate on an unexpected external config reload, and accepts a
 persistence reload only after the candidate file and durable journal milestone
-prove transaction ownership. Strict schema-v2 deployment requires the old
-helper to prove any schema-v1 journal terminal and recovery-disarmed before
-controlled removal and replacement; no legacy journal is guessed or migrated.
+prove transaction ownership. The completed schema-v2 deployment required the
+old helper to prove its schema-v1 journal terminal and recovery-disarmed before
+controlled removal and replacement; no legacy journal was guessed or migrated.
+
+The repository schema-v3 candidate now implements the final policy: Mode
+(resolution plus refresh) and bitdepth (8 or 10 bpc) are safe-confirmed; Scale
+is immediate-validated and automatically persists only after runtime readback.
+Both policies share prospective verification, atomic persistence, reload
+reconciliation, and crash recovery. Bitdepth verification uses the effective
+DRM format rather than a requested-state flag and permits only the documented
+`cm="auto"` dependent effective color transition. Schema v3 has not been
+deployed or live-tested.
 
 This is not a completed user feature. The backend is not connected to the
-Monitor panel. Production persistence is wired for controlled acceptance but
-durable Confirm has not been live-tested, and brightness remains outside Safe
-Apply. Only mode
-(resolution plus refresh) and per-output scale are v1
-editable fields. The backend requires one existing explicit machine-owned
-connector profile and never edits the portable catch-all. Fresh-install safe
+Monitor panel. Durable persistence has not been live-tested. Brightness remains
+the existing DDC/CI path and global Text Size remains separate. The backend
+requires one existing explicit machine-owned connector profile and never edits
+the portable catch-all. Fresh-install safe
 profile materialization remains required before Alpha release. See
 [Monitor Safe Apply backend](monitor-safe-apply.md).
 
@@ -959,10 +968,11 @@ profile materialization remains required before Alpha release. See
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Complete controlled live persistence acceptance, then connect the Monitor
-  Safe Apply backend to the Monitor UI and confirmation overlay.
-  Phase B1 intentionally limits Safe Apply to resolution/refresh and scale;
-  color and brightness remain later product work. Text Size remains global.
+- Deploy schema v3 across a proven idle schema-v2 boundary, then separately
+  live-accept safe-confirmed Mode, safe-confirmed bitdepth, immediate Scale,
+  and persistence before connecting the Monitor UI. The confirmation overlay
+  is only for Mode/bitdepth. Brightness remains DDC/CI and Text Size remains
+  global.
 
 ### PROVISIONAL
 

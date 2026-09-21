@@ -2,24 +2,32 @@
 
 ## Status and invariant
 
-The runtime backend has been deployed and validated through a temporary scale
-change from 1.25 to 1.50 and verified automatic rollback. Phase B3A adds the
-repository-only persistence and reconciliation foundation. It is not connected
-to the Monitor panel. The production persistence components are now wired for
-controlled live acceptance, but durable Confirm has not yet been exercised on
-the live machine.
+The deployed schema-v2 backend was validated through a temporary scale change
+from 1.25 to 1.50 and verified automatic rollback. That deliberately low-risk
+exercise validated the runtime transaction engine; it does not define the
+final Scale UX. This repository-only policy realignment introduces schema v3
+and is not deployed or connected to the Monitor panel.
 
-The invariant is: **an unconfirmed display configuration is never persisted**.
-The v1 editable fields are one advertised resolution/refresh mode tuple and
-per-output scale. Position, output enablement, transform, mirroring, bit depth,
-HDR, wide color, ICC, VRR, and brightness are not editable. Those observable
-monitor properties are protected during a transaction. Brightness remains a
-separate DDC operation, and Text Size remains one unrelated global preference.
+The final policy has two transaction classes:
+
+- **safe-confirmed:** resolution/refresh as one mode tuple, bit depth (8 or 10
+  bpc), or both. These changes are temporary until explicit confirmation and
+  automatically roll back after approximately ten seconds.
+- **immediate-validated:** per-output scale. It is applied, authoritatively
+  read back, prospectively verified, and persisted immediately. Any technical
+  failure restores the previous durable bytes and runtime scale; there is no
+  human confirmation window.
+
+The invariant remains: **an unconfirmed safety-critical display configuration
+is never persisted**. Position, output enablement, transform, mirroring, HDR,
+wide-color intent, ICC, VRR, and reserved area are not editable. Brightness
+remains the Monitor panel's separate DDC/CI path. Text Size remains the existing
+global TextSizeController/preference architecture.
 
 ## Authority and lifecycle
 
-`vanhyprarch-monitor` is the sole transaction authority. Its state progression
-is:
+`vanhyprarch-monitor` is the sole authority for both policies. Safe-confirmed
+state progression is:
 
 ```text
 preparing -> applying -> temporary-active -> committing -> committed
@@ -32,10 +40,18 @@ recovery authority for another bounded recovery invocation.
 `instance-vanished` is terminal only because the helper proves that the exact
 bound compositor process is gone and never follows a replacement instance.
 
+Immediate Scale skips `temporary-active`:
+
+```text
+preparing -> applying -> committing -> committed
+                         \-> reverting -> reverted
+```
+
 The confirmation deadline is backend monotonic time and begins only after
 fresh full-topology readback verifies the candidate. The default presentation
-window is ten seconds. A later UI may display the remaining time, but does not
-own it.
+window is ten seconds and exists only for mode/bitdepth candidates. A later UI
+may display the remaining time, but does not own it. Scale has no deadline or
+Confirm operation.
 
 ## Runtime transaction
 
@@ -58,9 +74,10 @@ Hyprland 0.56.2 overlays these fields on an existing rule only when its output
 name exactly equals the requested connector. Before any journaled mutation, the
 backend therefore requires one unambiguous exact connector profile in the
 machine file, rejects every description-addressed machine profile, rejects a
-same-connector override, and proves that the selected profile's mode and scale
-are replaceable. A catch-all-only, `desc:`-only, missing, or duplicate profile
-cannot reach `eval`; the backend never relies on Hyprland's new-rule defaults.
+same-connector override, and proves that every candidate-owned field is
+replaceable in that profile. A catch-all-only, `desc:`-only, missing, or
+duplicate profile cannot reach `eval`; the backend never relies on Hyprland's
+new-rule defaults.
 
 An `ok` response is only command acceptance. Resolution and refresh must match
 the selected advertised tuple, with refresh normalized to integer millihertz
@@ -72,16 +89,27 @@ no identity that distinguishes them. Catalogue comparison uses a sorted set of
 resolution/two-decimal-refresh tuples, making list order and duplicate count
 irrelevant while preserving genuine catalogue changes. Scale must pass the
 bounded 0.5 through 4.0 and 1/120-increment preflight, then match readback
-within one millionth. Full-topology validation indexes outputs by connector and
+within one millionth. Effective bit depth is proved only by `currentFormat`:
+`XRGB8888`/`XBGR8888` mean 8 bpc and
+`XRGB2101010`/`XBGR2101010` mean 10 bpc for Hyprland 0.56.2's output-selection
+path. A 10-bit request that falls back to an 8-bit format fails verification;
+the requested-state `m_enabled10bit` flag is not used as authority.
+
+Full-topology validation indexes outputs by connector and
 physical identity rather than JSON order or numeric monitor ID. It rejects
 physical-identity changes, added or removed outputs, protected-field drift,
 changes to another output's owned fields, or a result with no usable output.
-The generated candidate and rollback calls contain exactly `output`, `mode`,
-and `scale`; they do not intentionally write position, transform, mirror,
-bit depth, color-management intent, VRR, enablement, reserved area, or any
-other rule field. Values exposed by the authoritative monitor JSON remain
-protected readback state; ICC profile state is not exposed by that Hyprland
-0.56.2 response and is therefore not claimed as directly observable.
+Generated calls contain only their owned fields: `output` plus `mode`,
+`bitdepth`, both, or `scale`. They do not intentionally write position,
+transform, mirror, color-management intent, ICC, VRR, enablement, reserved
+area, or another monitor-rule field. Mode-only and Scale operations require
+DRM format and effective color state to remain unchanged. For bitdepth changes,
+all persisted color intent and numeric effective color properties remain
+protected; only the dependent DRM format and, with `cm="auto"` and no ICC,
+effective color preset may change. Eight-bit auto must resolve to `srgb`;
+effective ten-bit auto may be `wide` when supported or `srgb` otherwise. Any
+other transition fails closed. ICC intent is preserved byte-for-byte even
+though the JSON response does not expose its path.
 
 The Hyprland 0.56.2 JSON boundary follows `CHyprCtl::getMonitorData()` exactly:
 physical serial is read from `serial`, while the direct protected color fields
@@ -99,21 +127,23 @@ installed verifier, which completes in about 0.05 seconds, while remaining
 bounded beneath the service stop limit. Reload-event waits are separately
 bounded to 1.5 seconds before and after an ordinary reload fallback.
 Timeout during apply enters rollback; timeout during rollback leaves
-`rollback-failed` recovery-armed for one later bounded retry. There is no
-production config-validation subprocess in B1; a future verifier must use the
-same explicit-bound rule.
+`rollback-failed` recovery-armed for one later bounded retry.
 
 Primary rollback sends another connector-specific `hl.monitor()` containing
-only the snapshot mode and scale, followed by full-topology readback. A normal
+only the safety-critical fields the candidate changed, or the prior Scale for
+an immediate operation, followed by full-topology readback. A normal
 rollback does not reload the complete Hyprland configuration. If the bound
 instance vanished, no command is sent to another instance. If the connector
-now identifies a different display, no snapshot is applied to it.
+now identifies a different display, no snapshot is applied to it. Bitdepth
+rollback restores the exact prior requested 8/10 rule from the machine-profile
+snapshot, then requires the prior effective format and color state. It does not
+mistake an effective 8-bit fallback for the previous requested rule intent.
 
 ## Journal, lock, and supervision
 
 The private `${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/` directory holds
-one version-2 atomic `transaction.json`, one advisory `transaction.lock`, and
-one version-1 `control.sock`. Directory and file ownership and permissions are
+one version-3 atomic `transaction.json`, one advisory `transaction.lock`, and
+one version-2 `control.sock`. Directory and file ownership and permissions are
 validated; the journal and lock are mode `0600`, the directory is mode `0700`,
 and malformed or unknown journal schemas fail closed. Every journal publication
 writes and `fsync`s a same-directory temporary file, atomically replaces the
@@ -131,17 +161,19 @@ idempotent: verified `committed`, `reverted`, or proven `instance-vanished`
 transactions need no action; every other readable state takes one bounded
 rollback path. The service is independent of Quickshell lifetime.
 
-The small newline-delimited JSON socket protocol supports version-1 `begin`,
-`status`, `confirm`, and `revert` requests. Candidate requests have exactly the
-connector, width, height, refresh, and scale fields. Quickshell will eventually
-be only a client of this protocol.
+The small newline-delimited JSON socket protocol supports version-2 `begin`,
+`scale`, `status`, `confirm`, and `revert` requests. `begin` carries an optional
+mode tuple and optional bitdepth, with at least one required. `scale` carries
+only connector and scale and completes its persistence transaction in one
+request. Quickshell will eventually be only a client of this protocol.
 
 ## Persistence and machine-profile boundary
 
 The persistence foundation locates exactly one existing explicit connector
-profile, preserves unrelated bytes and comments, replaces only its mode and
-scale representation, rejects machine/override hash races,
-and atomically replaces a fixture file with preserved mode and ownership.
+profile, preserves unrelated bytes and comments, replaces only the fields
+owned by that candidate (mode, bitdepth, or scale), rejects machine/override
+hash races, and atomically replaces the machine file with preserved mode and
+ownership.
 Recovery restores exact original bytes only when the current hash is either
 the original or the transaction's recorded candidate hash. A different hash
 is an external edit and is never overwritten.
@@ -163,7 +195,7 @@ reconciliation hook. A real containment regression proves that staged Lua
 cannot reach the user bus or Hyprland IPC, alter a host marker, or write the
 read-only staged tree.
 
-After an explicit confirmation, the durable sequence is:
+After an explicit safe-confirmed confirmation, the durable sequence is:
 
 ```text
 temporary-active
@@ -173,6 +205,12 @@ temporary-active
 -> candidate-verified
 -> committed
 ```
+
+Immediate Scale enters the same `committing` persistence milestones directly
+after runtime readback. It neither enters `temporary-active` nor waits for a
+client command. This shares prospective verification, atomic replacement,
+reload reconciliation, post-reload readback, and durable rollback rather than
+creating a weaker second persistence engine.
 
 Atomic replacement uses a same-directory temporary file, restrictive
 permissions, complete write, file `fsync`, `os.replace`, and parent-directory
@@ -191,7 +229,7 @@ An exact-instance socket2 watcher is also armed before the temporary runtime
 apply. Any `configreloaded` observed while applying, while temporary-active, or
 after Confirm begins but before candidate replacement invalidates the
 transaction. The backend stops the confirmation path and performs the normal
-verified rollback even when current-state mode/scale readback happens to look
+verified rollback even when current-state owned-field readback happens to look
 identical. It never silently reapplies the temporary candidate. Reloads can be
 treated as persistence-owned only after the durable `candidate-installed`
 phase and candidate-file hash agree; timing alone is not evidence of ownership.
@@ -201,7 +239,7 @@ remain mandatory. `monitor.layout_changed` is not required.
 If verification, replacement, reload, configuration-error, or post-reload
 readback fails, the backend restores original machine bytes only while it can
 prove that the file is transaction-owned, reconciles the restoration, and then
-uses the normal targeted runtime mode/scale rollback. Durable milestones make
+uses the normal targeted owned-field runtime rollback. Durable milestones make
 recovery deterministic if the process exits immediately before or after any
 replacement or reload step. Every nonterminal commit milestone, including
 `candidate-verified`, restores the original durable bytes and runtime state;
@@ -215,10 +253,12 @@ acceptance; it does not itself begin a transaction or write configuration.
 Fixture and isolated verifier coverage remains the prerequisite, and durable
 Confirm is not considered accepted until that separate live test passes.
 
-The B3A journal is strict schema version 2. It intentionally does not interpret
-schema-v1 recovery material. A backend upgrade must never cross a nonterminal
-or recovery-required transaction from an older schema. The old deployed helper
-must first prove that its journal is terminal and recovery-disarmed, its lock is
+The policy-aligned journal is strict schema version 3. It intentionally does
+not interpret schema-v2 recovery material because the old candidate encoded
+mode plus scale with different semantics. A backend upgrade must never cross a
+nonterminal or recovery-required transaction from an older schema. The old
+deployed helper must first prove that its journal is terminal and
+recovery-disarmed, its lock is
 unheld, and no control listener exists. Only then may controlled deployment
 remove that old terminal runtime journal and install the new helper into clean
 runtime state. Future schema changes require the same explicit upgrade protocol
@@ -234,8 +274,13 @@ materialization does not require replacing the transaction architecture.
 
 ## Deferred live and UI work
 
-A controlled phase must exercise durable confirmation on the live machine,
-including watcher reload, post-reload readback, and protected subsystem checks.
+A controlled phase must first deploy schema v3 only after schema v2 is proven
+idle with no recovery-required journal. Later phases separately exercise live
+safe-confirmed Mode, live safe-confirmed bitdepth, immediate Scale, and durable
+persistence, including watcher reload, post-reload readback, and protected
+subsystem checks.
 Quickshell controller and confirmation-overlay integration remain unimplemented.
 Safe fresh-install profile materialization also remains later work. The
-existing Monitor panel is unchanged, and brightness remains out of scope.
+existing Monitor panel is unchanged. Its current direct Scale writer is not the
+final backend integration, while its DDC/CI Brightness and global Text Size
+ownership remain deliberately separate.

@@ -45,14 +45,16 @@ output without a more specific machine rule uses its preferred mode, automatic
 position, and automatic scale. This fallback is machine-owned and is not a
 Monitor panel write target; it exposes no project-owned scale token.
 
-The Monitor panel may edit only the explicitly documented
-`vanhyprarchMonitorScale` field associated with the focused monitor's specific
-explicit output profile in the machine-owned file. It fails closed when that
-profile, field, or expected file shape is absent or ambiguous and never edits
-the catch-all rule. The public seed contains no connector, fixed mode or scale,
-keyboard layout, bit depth, color profile, device rule, or UI-owned scale
-field. No general multi-monitor schema is promised during Alpha. The override
-seed contains only its administrative header.
+The current pre-integration Monitor panel may edit only the explicitly
+documented `vanhyprarchMonitorScale` field associated with the focused
+monitor's specific explicit output profile. It fails closed when that profile,
+field, or expected file shape is absent or ambiguous and never edits the
+catch-all rule. Final integration moves this write behind the Monitor backend's
+immediate validated Scale transaction; QML will not remain a file writer. The
+public seed contains no connector, fixed mode or scale, keyboard layout, bit
+depth, color profile, device rule, or UI-owned scale field. No general
+multi-monitor schema is promised during Alpha. The override seed contains only
+its administrative header.
 
 Monitor transaction journals are versioned same-boot recovery material, not
 managed deployment payloads. Never replace `vanhyprarch-monitor` while an

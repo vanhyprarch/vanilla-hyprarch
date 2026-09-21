@@ -150,7 +150,27 @@ def captured_hyprland_0562_output() -> dict[str, object]:
 
 
 def candidate_output() -> dict[str, object]:
-    return output(width=1920, height=1080, refresh=60.00001, scale=1.5)
+    return output(width=1920, height=1080, refresh=60.00001, scale=1.25)
+
+
+def effective_output(
+    bitdepth: int,
+    *,
+    width: int = 2560,
+    height: int = 1440,
+    refresh: float = 59.95,
+    scale: float = 1.25,
+) -> dict[str, object]:
+    raw = output(width=width, height=height, refresh=refresh, scale=scale)
+    if bitdepth == 8:
+        raw["currentFormat"] = "XRGB8888"
+        raw["colorManagementPreset"] = "srgb"
+    elif bitdepth == 10:
+        raw["currentFormat"] = "XRGB2101010"
+        raw["colorManagementPreset"] = "wide"
+    else:
+        raise AssertionError("fixture bitdepth must be 8 or 10")
+    return raw
 
 
 def machine_configuration(connector: str = "DP-1") -> bytes:
@@ -169,7 +189,7 @@ hl.monitor({{
     mode = "2560x1440@59.95",
     position = "0x0",
     scale = vanhyprarchMonitorScale,
-    bitdepth = 10,
+    bitdepth = 8,
     cm = "auto",
 }})
 
@@ -361,7 +381,9 @@ class MonitorBackendTests(unittest.TestCase):
         self.store = monitor.RuntimeStore(self.runtime)
         self.store.acquire()
         self.addCleanup(self.store.release)
-        self.candidate = monitor.Candidate.create("DP-1", 1920, 1080, "60.00", "1.50")
+        self.candidate = monitor.Candidate.safe(
+            "DP-1", width=1920, height=1080, refresh="60.00"
+        )
 
     def authority(
         self,
@@ -450,8 +472,8 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(target.identity.model, "LG ULTRAFINE")
         self.assertEqual(target.reserved, [56, 0, 0, 0])
         self.assertEqual(len(target.canonical_advertised_modes()), 13)
-        candidate = monitor.Candidate.create(
-            "DP-1", 3840, 2160, "60.00", "1.25"
+        candidate = monitor.Candidate.safe(
+            "DP-1", width=3840, height=2160, refresh="60.00"
         )
         self.assertEqual(monitor.validate_candidate(candidate, topology), target)
         self.assertEqual(runner.calls, [monitor.monitors_argv(self.instance.signature)])
@@ -498,21 +520,21 @@ class MonitorBackendTests(unittest.TestCase):
     def test_mode_tuple_validation_rejects_unadvertised_combination(self) -> None:
         topology = monitor.parse_monitor_payload([output()])
         monitor.validate_candidate(
-            monitor.Candidate.create("DP-1", 1920, 1080, "60", "1.25"), topology
+            monitor.Candidate.safe("DP-1", width=1920, height=1080, refresh="60"), topology
         )
         with self.assertRaisesRegex(monitor.ValidationError, "advertised"):
             monitor.validate_candidate(
-                monitor.Candidate.create("DP-1", 1920, 1080, "59.95", "1.25"),
+                monitor.Candidate.safe("DP-1", width=1920, height=1080, refresh="59.95"),
                 topology,
             )
 
     def test_scale_validation_uses_range_and_120th_preflight(self) -> None:
         for value in ("0.5", "1", "1.2", "1.25", "4"):
-            monitor.Candidate.create("DP-1", 1920, 1080, "60", value)
+            monitor.Candidate.scale("DP-1", value)
         for value in ("0.49", "4.01", "1.234", "nan", "inf"):
             with self.subTest(value=value):
                 with self.assertRaises(monitor.ValidationError):
-                    monitor.Candidate.create("DP-1", 1920, 1080, "60", value)
+                    monitor.Candidate.scale("DP-1", value)
 
     def test_refresh_matching_respects_two_decimal_catalogue_precision(self) -> None:
         mode_6000 = monitor.Mode(1920, 1080, 60000)
@@ -623,10 +645,16 @@ class MonitorBackendTests(unittest.TestCase):
                     f"server did not create socket: errors={errors!r}, result={result!r}",
                 )
                 self.assertEqual(stat.S_IMODE(store.socket_path.stat().st_mode), 0o600)
-                response = monitor.send_control({"version": 1, "command": "status"})
+                response = monitor.send_control(
+                    {"version": monitor.PROTOCOL_VERSION, "command": "status"}
+                )
                 self.assertEqual(
                     response,
-                    {"version": 1, "ok": True, "status": {"state": "idle"}},
+                    {
+                        "version": monitor.PROTOCOL_VERSION,
+                        "ok": True,
+                        "status": {"state": "idle"},
+                    },
                 )
                 self.assertEqual(runner.calls, [])
             finally:
@@ -681,15 +709,13 @@ class MonitorBackendTests(unittest.TestCase):
 
     def test_candidate_protocol_rejects_out_of_scope_fields(self) -> None:
         request = {
-            "version": 1,
+            "version": monitor.PROTOCOL_VERSION,
             "command": "begin",
             "signature": "fixture_123",
             "candidate": {
                 "connector": "DP-1",
-                "width": 1920,
-                "height": 1080,
-                "refresh": "60",
-                "scale": "1.5",
+                "mode": {"width": 1920, "height": 1080, "refresh": "60"},
+                "bitdepth": None,
                 "position": "0x0",
             },
         }
@@ -715,7 +741,7 @@ class MonitorBackendTests(unittest.TestCase):
         self.begin_success()
         original = json.loads(self.store.journal_path.read_text())
         cases = [
-            {**original, "schema_version": 3},
+            {**original, "schema_version": monitor.SCHEMA_VERSION + 1},
             {**original, "state": "surprise"},
             {**original, "mutation_attempted": "yes"},
             {**original, "persistence_phase": "invented"},
@@ -733,7 +759,7 @@ class MonitorBackendTests(unittest.TestCase):
                 with self.assertRaises(monitor.JournalError):
                     self.store.read()
 
-    def test_terminal_schema_v1_journal_is_not_reinterpreted_by_v2(self) -> None:
+    def test_terminal_older_journal_is_not_reinterpreted_by_v3(self) -> None:
         _, _, journal = self.begin_success()
         legacy = monitor.journal_to_dict(
             replace(
@@ -744,7 +770,7 @@ class MonitorBackendTests(unittest.TestCase):
                 recovery_required=False,
             )
         )
-        legacy["schema_version"] = 1
+        legacy["schema_version"] = 2
         del legacy["persistence_phase"]
         self.store.journal_path.write_text(json.dumps(legacy))
         self.store.journal_path.chmod(0o600)
@@ -785,12 +811,12 @@ class MonitorBackendTests(unittest.TestCase):
         topology = monitor.parse_monitor_payload([output(), inactive_output()])
         with self.assertRaisesRegex(monitor.ValidationError, "inactive"):
             monitor.validate_candidate(
-                monitor.Candidate.create("HDMI-A-1", 1920, 1080, "60", "1"),
+                monitor.Candidate.safe("HDMI-A-1", width=1920, height=1080, refresh="60"),
                 topology,
             )
         with self.assertRaisesRegex(monitor.ValidationError, "does not exist"):
             monitor.validate_candidate(
-                monitor.Candidate.create("DP-9", 1920, 1080, "60", "1"),
+                monitor.Candidate.safe("DP-9", width=1920, height=1080, refresh="60"),
                 topology,
             )
 
@@ -815,12 +841,348 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(runner.calls[1][:4], [monitor.HYPRCTL, "--instance", "fixture_123", "eval"])
         self.assertIn('output = "DP-1"', runner.calls[1][-1])
         self.assertIn('mode = "1920x1080@60"', runner.calls[1][-1])
-        self.assertIn("scale = 1.5", runner.calls[1][-1])
+        self.assertNotIn("scale =", runner.calls[1][-1])
         fields = set(
             re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", runner.calls[1][-1])
         )
-        self.assertEqual(fields, {"output", "mode", "scale"})
+        self.assertEqual(fields, {"output", "mode"})
         self.assertEqual(runner.calls[2][-3:], ["-j", "monitors", "all"])
+
+    def test_safe_candidate_variants_generate_only_owned_fields(self) -> None:
+        cases = (
+            (
+                monitor.Candidate.safe(
+                    "DP-1", width=1920, height=1080, refresh="60"
+                ),
+                {"output", "mode"},
+            ),
+            (monitor.Candidate.safe("DP-1", bitdepth=10), {"output", "bitdepth"}),
+            (
+                monitor.Candidate.safe(
+                    "DP-1", width=1920, height=1080, refresh="60", bitdepth=10
+                ),
+                {"output", "mode", "bitdepth"},
+            ),
+        )
+        for candidate, expected in cases:
+            with self.subTest(candidate=candidate):
+                source = monitor.monitor_eval_source(candidate)
+                fields = set(
+                    re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", source)
+                )
+                self.assertEqual(fields, expected)
+                self.assertNotIn("scale =", source)
+
+    def test_bitdepth_only_apply_and_timeout_restore_effective_depth(self) -> None:
+        baseline = effective_output(8)
+        applied = effective_output(10)
+        candidate = monitor.Candidate.safe("DP-1", bitdepth=10)
+        authority, runner = self.authority([[baseline], OK, [applied]])
+        journal = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(journal.state, "temporary-active")
+        self.assertEqual(journal.deadline_monotonic, 110.0)
+        apply_source = [call[-1] for call in runner.calls if "eval" in call][0]
+        self.assertIn("bitdepth = 10", apply_source)
+        self.assertNotIn("mode =", apply_source)
+        self.assertNotIn("scale =", apply_source)
+        runner.responses.extend([[applied], OK, [baseline]])
+        self.clock.advance(11)
+        reverted = authority.status()
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        rollback_source = [call[-1] for call in runner.calls if "eval" in call][-1]
+        self.assertIn("bitdepth = 8", rollback_source)
+        self.assertNotIn("mode =", rollback_source)
+
+    def test_bitdepth_rollback_restores_requested_intent_after_prior_fallback(self) -> None:
+        self.machine.write_bytes(
+            machine_configuration().replace(b"bitdepth = 8", b"bitdepth = 10")
+        )
+        self.machine.chmod(0o600)
+        fallback8 = effective_output(8)
+        candidate = monitor.Candidate.safe("DP-1", bitdepth=8)
+        authority, runner = self.authority([[fallback8], OK, [fallback8]])
+        journal = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(journal.bitdepth_intent, 10)
+        runner.responses.extend([[fallback8], OK, [fallback8]])
+        self.clock.advance(11)
+        reverted = authority.status()
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        rollback_source = [call[-1] for call in runner.calls if "eval" in call][-1]
+        self.assertIn("bitdepth = 10", rollback_source)
+
+    def test_bitdepth_explicit_revert_and_crash_recovery_restore_depth(self) -> None:
+        baseline = effective_output(8)
+        applied = effective_output(10)
+        candidate = monitor.Candidate.safe("DP-1", bitdepth=10)
+        authority, runner = self.authority([[baseline], OK, [applied]])
+        journal = authority.begin(candidate, self.instance.signature)
+        runner.responses.extend([[applied], OK, [baseline]])
+        reverted = authority.rollback(journal.transaction_id)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("bitdepth = 8", [call[-1] for call in runner.calls if "eval" in call][-1])
+
+        authority, _ = self.authority([[baseline], OK, [applied]])
+        journal = authority.begin(candidate, self.instance.signature)
+        recovery, recovery_runner = self.authority([[applied], OK, [baseline]])
+        recovered = recovery.recover()
+        self.assertEqual(recovered.state, "reverted")
+        self.assertEqual(recovered.transaction_id, journal.transaction_id)
+        self.assertIn(
+            "bitdepth = 8",
+            [call[-1] for call in recovery_runner.calls if "eval" in call][-1],
+        )
+
+    def test_combined_mode_bitdepth_timeout_restores_both_owned_fields(self) -> None:
+        baseline = effective_output(8)
+        applied = effective_output(10, width=1920, height=1080, refresh=60.00001)
+        candidate = monitor.Candidate.safe(
+            "DP-1", width=1920, height=1080, refresh="60.00", bitdepth=10
+        )
+        authority, runner = self.authority([[baseline], OK, [applied]])
+        journal = authority.begin(candidate, self.instance.signature)
+        runner.responses.extend([[applied], OK, [baseline]])
+        self.clock.advance(11)
+        reverted = authority.status()
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        sources = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertIn('mode = "1920x1080@60"', sources[0])
+        self.assertIn("bitdepth = 10", sources[0])
+        self.assertIn('mode = "2560x1440@59.95"', sources[-1])
+        self.assertIn("bitdepth = 8", sources[-1])
+
+    def test_failed_10bit_request_with_effective_8bit_fallback_rolls_back(self) -> None:
+        baseline = effective_output(8)
+        fallback = effective_output(8)
+        candidate = monitor.Candidate.safe("DP-1", bitdepth=10)
+        authority, runner = self.authority(
+            [[baseline], OK, [fallback], [fallback], [fallback], OK, [baseline]]
+        )
+        reverted = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertIn("requested bitdepth is not effective", reverted.failure)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 2)
+
+    def test_cm_auto_effective_transition_and_mode_only_color_protection(self) -> None:
+        baseline8 = monitor.parse_monitor_payload([effective_output(8)])
+        candidate10 = monitor.Candidate.safe("DP-1", bitdepth=10)
+        monitor.verify_candidate_readback(
+            baseline8,
+            candidate10,
+            monitor.parse_monitor_payload([effective_output(10)]),
+            baseline8.target("DP-1").identity,
+            "auto",
+            "",
+        )
+        invalid = effective_output(10)
+        invalid["colorManagementPreset"] = "hdr"
+        with self.assertRaisesRegex(monitor.ValidationError, "auto color preset"):
+            monitor.verify_candidate_readback(
+                baseline8,
+                candidate10,
+                monitor.parse_monitor_payload([invalid]),
+                baseline8.target("DP-1").identity,
+                "auto",
+                "",
+            )
+        baseline10 = monitor.parse_monitor_payload([effective_output(10)])
+        mode = monitor.Candidate.safe(
+            "DP-1", width=1920, height=1080, refresh="60"
+        )
+        changed = effective_output(10, width=1920, height=1080, refresh=60.0)
+        changed["colorManagementPreset"] = "srgb"
+        with self.assertRaisesRegex(monitor.ValidationError, "DRM/color"):
+            monitor.verify_candidate_readback(
+                baseline10,
+                mode,
+                monitor.parse_monitor_payload([changed]),
+                baseline10.target("DP-1").identity,
+                "auto",
+                "",
+            )
+
+    def test_cm_auto_effective_transition_from_10bit_to_8bit(self) -> None:
+        baseline10 = monitor.parse_monitor_payload([effective_output(10)])
+        candidate8 = monitor.Candidate.safe("DP-1", bitdepth=8)
+        monitor.verify_candidate_readback(
+            baseline10,
+            candidate8,
+            monitor.parse_monitor_payload([effective_output(8)]),
+            baseline10.target("DP-1").identity,
+            "auto",
+            "",
+        )
+
+        wrong_format = effective_output(8)
+        wrong_format["currentFormat"] = "XRGB2101010"
+        with self.assertRaisesRegex(
+            monitor.ValidationError, "requested bitdepth is not effective"
+        ):
+            monitor.verify_candidate_readback(
+                baseline10,
+                candidate8,
+                monitor.parse_monitor_payload([wrong_format]),
+                baseline10.target("DP-1").identity,
+                "auto",
+                "",
+            )
+    def test_bitdepth_persistence_changes_only_bitdepth(self) -> None:
+        candidate = monitor.Candidate.safe("DP-1", bitdepth=10)
+        baseline = effective_output(8)
+        applied = effective_output(10)
+        verifier = RecordingVerifier()
+        persister = monitor.MachineConfigPersister(verifier)
+        authority, runner = self.authority(
+            [[baseline], OK, [applied]], persister=persister
+        )
+        journal = authority.begin(candidate, self.instance.signature)
+        runner.responses.extend([[applied], [applied]])
+        committed = authority.confirm(journal.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        after = self.machine.read_text()
+        self.assertIn("bitdepth = 10", after)
+        self.assertIn('mode = "2560x1440@59.95"', after)
+        self.assertIn("vanhyprarchMonitorScale = 1.25", after)
+        self.assertIn('cm = "auto"', after)
+
+    def test_combined_persistence_changes_mode_and_bitdepth_but_not_scale(self) -> None:
+        candidate = monitor.Candidate.safe(
+            "DP-1", width=1920, height=1080, refresh="60.00", bitdepth=10
+        )
+        baseline = effective_output(8)
+        applied = effective_output(10, width=1920, height=1080, refresh=60.0)
+        persister = monitor.MachineConfigPersister(RecordingVerifier())
+        authority, runner = self.authority(
+            [[baseline], OK, [applied]], persister=persister
+        )
+        journal = authority.begin(candidate, self.instance.signature)
+        runner.responses.extend([[applied], [applied]])
+        committed = authority.confirm(journal.transaction_id)
+        self.assertEqual(committed.state, "committed")
+        after = self.machine.read_text()
+        self.assertIn('mode = "1920x1080@60"', after)
+        self.assertIn("bitdepth = 10", after)
+        self.assertIn("vanhyprarchMonitorScale = 1.25", after)
+        self.assertIn('cm = "auto"', after)
+
+    def test_immediate_scale_applies_reads_back_and_persists_without_deadline(self) -> None:
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        applied = output(scale=1.5)
+        persister = monitor.MachineConfigPersister(RecordingVerifier())
+        authority, runner = self.authority(
+            [[output()], OK, [applied], [applied], [applied]],
+            persister=persister,
+        )
+        committed = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(committed.state, "committed")
+        self.assertIsNone(committed.deadline_monotonic)
+        self.assertFalse(committed.recovery_required)
+        source = [call[-1] for call in runner.calls if "eval" in call][0]
+        self.assertEqual(
+            set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", source)),
+            {"output", "scale"},
+        )
+        self.assertIn("scale = 1.5", source)
+        self.assertIn("vanhyprarchMonitorScale = 1.5", self.machine.read_text())
+        with self.assertRaisesRegex(monitor.ValidationError, "cannot confirm"):
+            authority.confirm(committed.transaction_id)
+
+    def test_immediate_scale_readback_mismatch_rolls_runtime_back(self) -> None:
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        wrong = output(scale=1.25)
+        authority, runner = self.authority(
+            [[output()], OK, [wrong], [wrong], [wrong], OK, [output()]],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        reverted = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        sources = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertIn("scale = 1.5", sources[0])
+        self.assertIn("scale = 1.25", sources[-1])
+
+    def test_immediate_scale_persistence_failure_restores_runtime(self) -> None:
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        applied = output(scale=1.5)
+        persister = monitor.MachineConfigPersister(
+            RecordingVerifier(monitor.PersistenceError("fixture verification failed"))
+        )
+        authority, runner = self.authority(
+            [[output()], OK, [applied], [applied], [applied], OK, [output()]],
+            persister=persister,
+        )
+        before = self.machine.read_bytes()
+        reverted = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted")
+        self.assertEqual(self.machine.read_bytes(), before)
+        self.assertIn("scale = 1.25", [call[-1] for call in runner.calls if "eval" in call][-1])
+
+    def test_immediate_scale_reload_failure_restores_durable_and_runtime_state(self) -> None:
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        applied = output(scale=1.5)
+        persister = monitor.MachineConfigPersister(RecordingVerifier())
+        coordinator = SequenceReloadCoordinator(
+            [monitor.PersistenceError("fixture reload failed"), None]
+        )
+        authority, runner = self.authority(
+            [[output()], OK, [applied], [applied], [applied], OK, [output()]],
+            persister=persister,
+            reload_coordinator=coordinator,
+        )
+        before = self.machine.read_bytes()
+        reverted = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertEqual(self.machine.read_bytes(), before)
+        self.assertEqual(reverted.persistence_phase, "original-reloaded")
+        self.assertIn("scale = 1.25", [call[-1] for call in runner.calls if "eval" in call][-1])
+
+    def test_immediate_scale_external_file_edit_is_never_overwritten(self) -> None:
+        external = b"-- external edit survives\n"
+
+        class RacePersister(monitor.MachineConfigPersister):
+            def prepare(inner_self, journal):
+                self.machine.write_bytes(self.machine.read_bytes() + external)
+                return super().prepare(journal)
+
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        applied = output(scale=1.5)
+        authority, runner = self.authority(
+            [[output()], OK, [applied], [applied], [applied], OK, [output()]],
+            persister=RacePersister(RecordingVerifier()),
+        )
+        reverted = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        self.assertTrue(self.machine.read_bytes().endswith(external))
+        self.assertIn("scale = 1.25", [call[-1] for call in runner.calls if "eval" in call][-1])
+
+    def test_immediate_scale_crash_recovery_is_targeted_and_idempotent(self) -> None:
+        class CrashPersister:
+            def prepare(inner_self, journal):
+                raise SystemExit("simulated crash after verified runtime apply")
+
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        applied = output(scale=1.5)
+        authority, _ = self.authority(
+            [[output()], OK, [applied], [applied]], persister=CrashPersister()
+        )
+        with self.assertRaises(SystemExit):
+            authority.begin(candidate, self.instance.signature)
+        crashed = self.store.read()
+        self.assertEqual(crashed.state, "applying")
+        self.assertTrue(crashed.runtime_verified)
+        recovery, runner = self.authority([[applied], OK, [output()]])
+        reverted = recovery.recover()
+        self.assertEqual(reverted.state, "reverted")
+        self.assertIn("scale = 1.25", [call[-1] for call in runner.calls if "eval" in call][-1])
+        count = len(runner.calls)
+        self.assertEqual(recovery.recover(), reverted)
+        self.assertEqual(len(runner.calls), count)
+
+    def test_text_size_and_brightness_remain_outside_monitor_backend(self) -> None:
+        backend = BACKEND.read_text()
+        panel = (REPOSITORY / "home/.config/quickshell/vanhyprarch/components/MonitorPanel.qml").read_text()
+        self.assertNotIn("ddcutil", backend)
+        self.assertNotIn("TextSizeController", backend)
+        self.assertIn("ddcutil", panel)
+        self.assertIn("textSizeController", panel)
 
     def test_catch_all_only_profile_cannot_reach_runtime_apply(self) -> None:
         self.machine.write_bytes(
@@ -859,14 +1221,14 @@ class MonitorBackendTests(unittest.TestCase):
         eval_calls = [call for call in runner.calls if "eval" in call]
         self.assertEqual(len(eval_calls), 2)
         self.assertIn('mode = "2560x1440@59.95"', eval_calls[-1][-1])
-        self.assertIn("scale = 1.25", eval_calls[-1][-1])
+        self.assertNotIn("scale =", eval_calls[-1][-1])
 
     def test_ok_followed_by_wrong_mode_rolls_back(self) -> None:
         self.assert_failed_apply_rolls_back(output(scale=1.5))
 
-    def test_ok_followed_by_wrong_scale_rolls_back(self) -> None:
+    def test_unowned_scale_drift_rolls_back(self) -> None:
         self.assert_failed_apply_rolls_back(
-            output(width=1920, height=1080, refresh=60.0, scale=1.25)
+            output(width=1920, height=1080, refresh=60.0, scale=1.5)
         )
 
     def test_failed_apply_command_still_attempts_bounded_rollback(self) -> None:
@@ -993,7 +1355,7 @@ class MonitorBackendTests(unittest.TestCase):
         fields = set(
             re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", runner.calls[-2][-1])
         )
-        self.assertEqual(fields, {"output", "mode", "scale"})
+        self.assertEqual(fields, {"output", "mode"})
 
     def test_timeout_is_backend_monotonic_rollback(self) -> None:
         authority, runner, journal = self.begin_success()
@@ -1046,8 +1408,8 @@ class MonitorBackendTests(unittest.TestCase):
 
     def test_external_reload_while_temporary_active_invalidates_even_if_readback_matches(self) -> None:
         events = ControlledReloadEventSource()
-        current_candidate = monitor.Candidate.create(
-            "DP-1", 2560, 1440, "59.95", "1.25"
+        current_candidate = monitor.Candidate.safe(
+            "DP-1", width=2560, height=1440, refresh="59.95"
         )
         authority, runner = self.authority(
             [[output()], OK, [output()]], reload_event_source=events
@@ -1234,7 +1596,7 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(committed.persistence_phase, "candidate-verified")
         after = self.machine.read_text()
         self.assertIn('mode = "1920x1080@60"', after)
-        self.assertIn("local vanhyprarchMonitorScale = 1.5", after)
+        self.assertIn("local vanhyprarchMonitorScale = 1.25", after)
         self.assertEqual(stat.S_IMODE(self.machine.stat().st_mode), 0o600)
 
     def test_sandboxed_verifier_stages_complete_import_tree(self) -> None:
@@ -1796,6 +2158,9 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
             self.instance,
             topology.target("DP-1").identity,
             self.candidate,
+            8,
+            "auto",
+            "",
             topology,
             snapshot,
             monitor.snapshot_file(self.override),
@@ -1806,9 +2171,7 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
         self.assertIn(b'mode = "preferred"', changed)
         self.assertIn(b'scale = "auto"', changed)
         self.assertIn(b"-- unrelated machine content", changed)
-        restored_owned = changed.replace(b'"1920x1080@60"', b'"2560x1440@59.95"').replace(
-            b"vanhyprarchMonitorScale = 1.5", b"vanhyprarchMonitorScale = 1.25"
-        )
+        restored_owned = changed.replace(b'"1920x1080@60"', b'"2560x1440@59.95"')
         self.assertEqual(restored_owned, before)
 
     def test_no_catch_all_modification_or_automatic_profile_creation(self) -> None:

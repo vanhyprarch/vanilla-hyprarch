@@ -602,6 +602,22 @@ no live deployment or monitor mutation occurred. The catch-all-only fresh
 install still requires a safe explicit-profile materialization design before
 Alpha release.
 
+## 2026-09-21: Monitor transaction policy realignment
+
+The schema-v2 engine subsequently passed controlled no-op, timeout, explicit
+revert, supervisor-death recovery, and a visible temporary Scale 1.25-to-1.50
+test. That Scale test was deliberately the lower-risk vehicle for proving the
+rollback engine and was not the intended final interaction.
+
+The final policy assigns the confirmation deadline only to Mode and bitdepth;
+Scale now follows one immediate runtime-readback-persistence transaction with
+technical rollback and no human confirmation. Schema v3 separates those
+candidate types, verifies bitdepth through effective DRM format while
+preserving color intent, and shares the hardened persistence and recovery
+machinery. Text Size and DDC/CI Brightness remain separate. This policy-aligned
+generation is repository-only pending separate schema deployment and live
+acceptance.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

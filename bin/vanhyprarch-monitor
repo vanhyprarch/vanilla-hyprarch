@@ -1,11 +1,12 @@
 #!/usr/bin/python
 # SPDX-License-Identifier: GPL-2.0-only
 
-"""Safety-critical backend for temporary Hyprland monitor transactions.
+"""Backend authority for validated Hyprland monitor transactions.
 
-Production persistence is wired for controlled live acceptance. The transaction,
-readback, rollback, journal, prospective verifier, and persistence/reconciliation
-primitives remain independently testable so the UI can remain a later client.
+Mode and bitdepth use explicit-confirmation Safe Apply; Scale persists
+immediately after validation. Transaction, readback, rollback, journal,
+prospective-verifier, and persistence primitives remain independently testable
+so the UI can remain a later client.
 """
 
 from __future__ import annotations
@@ -31,8 +32,8 @@ from typing import Callable, Mapping, Protocol, Sequence
 import uuid
 
 
-SCHEMA_VERSION = 2
-PROTOCOL_VERSION = 1
+SCHEMA_VERSION = 3
+PROTOCOL_VERSION = 2
 HYPRCTL = "/usr/bin/hyprctl"
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE_NAME = "vanhyprarch-monitor-safe-apply.service"
@@ -49,6 +50,12 @@ SCALE_TOLERANCE = Decimal("0.000001")
 MIN_SCALE = Decimal("0.5")
 MAX_SCALE = Decimal("4.0")
 SCALE_DENOMINATOR = Decimal(120)
+SAFE_CONFIRMED_POLICY = "safe-confirmed"
+IMMEDIATE_SCALE_POLICY = "immediate-scale"
+BITDEPTH_FORMATS = {
+    8: frozenset({"XRGB8888", "XBGR8888"}),
+    10: frozenset({"XRGB2101010", "XBGR2101010"}),
+}
 CONNECTOR_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SIGNATURE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 MODE_RE = re.compile(
@@ -79,7 +86,7 @@ KNOWN_STATES = {
 }
 LEGAL_TRANSITIONS = {
     "preparing": {"applying", "reverting", "reverted", "instance-vanished"},
-    "applying": {"temporary-active", "reverting", "instance-vanished"},
+    "applying": {"temporary-active", "committing", "reverting", "instance-vanished"},
     "temporary-active": {"committing", "reverting", "instance-vanished"},
     "committing": {"committed", "reverting", "instance-vanished"},
     "reverting": {"reverted", "rollback-failed", "instance-vanished"},
@@ -329,12 +336,17 @@ class MonitorState:
             self.disabled,
             self.dpms,
             self.mirror_of,
-            self.current_format,
             json.dumps(self.vrr, sort_keys=True, separators=(",", ":")),
             json.dumps(self.reserved, sort_keys=True, separators=(",", ":")),
-            json.dumps(self.color_state, sort_keys=True, separators=(",", ":")),
             self.canonical_advertised_modes(),
         )
+
+    @property
+    def effective_bitdepth(self) -> int | None:
+        for bitdepth, formats in BITDEPTH_FORMATS.items():
+            if self.current_format in formats:
+                return bitdepth
+        return None
 
     def canonical_advertised_modes(self) -> tuple[Mode, ...]:
         return tuple(
@@ -492,25 +504,56 @@ def parse_monitor_payload(payload: object) -> Topology:
 
 @dataclass(frozen=True)
 class Candidate:
+    policy: str
     connector: str
-    mode: Mode
-    scale_millionths: int
+    mode: Mode | None
+    bitdepth: int | None
+    scale_millionths: int | None
 
     @classmethod
-    def create(
-        cls, connector: str, width: int, height: int, refresh: object, scale: object
+    def safe(
+        cls,
+        connector: str,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+        refresh: object | None = None,
+        bitdepth: int | None = None,
     ) -> "Candidate":
         if not isinstance(connector, str) or CONNECTOR_RE.fullmatch(connector) is None:
             raise ValidationError("candidate connector is invalid")
-        if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
-            raise ValidationError("candidate width is invalid")
-        if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
-            raise ValidationError("candidate height is invalid")
+        mode_values = (width, height, refresh)
+        if any(value is not None for value in mode_values):
+            if not all(value is not None for value in mode_values):
+                raise ValidationError("candidate mode requires width, height, and refresh")
+            if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+                raise ValidationError("candidate width is invalid")
+            if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
+                raise ValidationError("candidate height is invalid")
+            mode = Mode(width, height, refresh_to_millihz(refresh))
+        else:
+            mode = None
+        if bitdepth is not None and (type(bitdepth) is not int or bitdepth not in BITDEPTH_FORMATS):
+            raise ValidationError("candidate bitdepth must be 8 or 10")
+        if mode is None and bitdepth is None:
+            raise ValidationError("safe-confirmed candidate must own mode or bitdepth")
+        return cls(SAFE_CONFIRMED_POLICY, connector, mode, bitdepth, None)
+
+    @classmethod
+    def scale(cls, connector: str, scale: object) -> "Candidate":
+        if not isinstance(connector, str) or CONNECTOR_RE.fullmatch(connector) is None:
+            raise ValidationError("candidate connector is invalid")
         return cls(
+            IMMEDIATE_SCALE_POLICY,
             connector,
-            Mode(width, height, refresh_to_millihz(refresh)),
+            None,
+            None,
             scale_to_millionths(scale, preflight=True),
         )
+
+    @property
+    def requires_confirmation(self) -> bool:
+        return self.policy == SAFE_CONFIRMED_POLICY
 
 
 def validate_candidate(candidate: Candidate, topology: Topology) -> MonitorState:
@@ -519,8 +562,10 @@ def validate_candidate(candidate: Candidate, topology: Topology) -> MonitorState
         raise ValidationError("candidate target is inactive or unusable")
     if not target.identity.has_evidence():
         raise ValidationError("candidate target lacks physical identity")
-    if candidate.mode not in set(target.advertised_modes):
+    if candidate.mode is not None and candidate.mode not in set(target.advertised_modes):
         raise ValidationError("candidate mode is not in the advertised catalogue")
+    if candidate.bitdepth is not None and target.effective_bitdepth is None:
+        raise ValidationError("current effective bitdepth cannot be determined")
     if not topology.has_usable_output():
         raise ValidationError("topology has no usable output")
     return target
@@ -607,25 +652,25 @@ def lua_string(value: str) -> str:
     return "".join(parts)
 
 
-def monitor_eval_source(connector: str, mode: Mode, scale_millionths: int) -> str:
-    scale = Decimal(scale_millionths) / 1_000_000
-    scale_text = format(scale.normalize(), "f")
-    return (
-        "hl.monitor({ output = "
-        f"{lua_string(connector)}, mode = {lua_string(mode.as_lua_string())}, "
-        f"scale = {scale_text} }})"
-    )
+def monitor_eval_source(candidate: Candidate) -> str:
+    fields = [f"output = {lua_string(candidate.connector)}"]
+    if candidate.mode is not None:
+        fields.append(f"mode = {lua_string(candidate.mode.as_lua_string())}")
+    if candidate.bitdepth is not None:
+        fields.append(f"bitdepth = {candidate.bitdepth}")
+    if candidate.scale_millionths is not None:
+        scale = Decimal(candidate.scale_millionths) / 1_000_000
+        fields.append(f"scale = {format(scale.normalize(), 'f')}")
+    return "hl.monitor({ " + ", ".join(fields) + " })"
 
 
-def monitor_eval_argv(
-    signature: str, connector: str, mode: Mode, scale_millionths: int
-) -> list[str]:
+def monitor_eval_argv(signature: str, candidate: Candidate) -> list[str]:
     return [
         HYPRCTL,
         "--instance",
         signature,
         "eval",
-        monitor_eval_source(connector, mode, scale_millionths),
+        monitor_eval_source(candidate),
     ]
 
 
@@ -687,10 +732,10 @@ class HyprlandClient:
         self.check_instance()
         return topology
 
-    def apply(self, connector: str, mode: Mode, scale_millionths: int) -> None:
+    def apply(self, candidate: Candidate) -> None:
         self.check_instance()
         result = self.runner(
-            monitor_eval_argv(self.signature, connector, mode, scale_millionths)
+            monitor_eval_argv(self.signature, candidate)
         )
         if result.returncode != 0 or result.stdout.strip() != "ok":
             raise ApplyError(
@@ -738,8 +783,40 @@ def _selected_refresh_matches(
     )
 
 
+def _verify_color_transition(
+    before: MonitorState,
+    after: MonitorState,
+    candidate: Candidate,
+    cm_intent: str,
+    icc_intent: str,
+) -> None:
+    before_numbers = {key: before.color_state[key] for key in HYPRLAND_COLOR_NUMBER_FIELDS}
+    after_numbers = {key: after.color_state[key] for key in HYPRLAND_COLOR_NUMBER_FIELDS}
+    if before_numbers != after_numbers:
+        raise ValidationError("effective color parameters changed unexpectedly")
+    old_preset = before.color_state["colorManagementPreset"]
+    new_preset = after.color_state["colorManagementPreset"]
+    if candidate.bitdepth is None or candidate.bitdepth == before.effective_bitdepth:
+        if before.current_format != after.current_format or old_preset != new_preset:
+            raise ValidationError("effective DRM/color state changed unexpectedly")
+        return
+    if after.current_format not in BITDEPTH_FORMATS[candidate.bitdepth]:
+        raise ValidationError("requested bitdepth is not effective")
+    if cm_intent == "auto" and not icc_intent:
+        allowed = {"srgb"} if candidate.bitdepth == 8 else {"srgb", "wide"}
+        if new_preset not in allowed:
+            raise ValidationError("effective auto color preset is inconsistent with bitdepth")
+    elif new_preset != old_preset:
+        raise ValidationError("fixed effective color preset changed unexpectedly")
+
+
 def verify_candidate_readback(
-    snapshot: Topology, candidate: Candidate, readback: Topology, identity: PhysicalIdentity
+    snapshot: Topology,
+    candidate: Candidate,
+    readback: Topology,
+    identity: PhysicalIdentity,
+    cm_intent: str = "srgb",
+    icc_intent: str = "",
 ) -> None:
     before = snapshot.by_connector()
     after = readback.by_connector()
@@ -757,21 +834,35 @@ def verify_candidate_readback(
                 or old.height != new.height
                 or not _same_refresh(old.refresh_millihz, new.refresh_millihz)
                 or old.scale_millionths != new.scale_millionths
+                or old.current_format != new.current_format
+                or old.color_state != new.color_state
             ):
                 raise ValidationError(f"unselected monitor state changed for {connector}")
     target = after[candidate.connector]
     if target.identity != identity:
         raise ValidationError("target connector physical identity changed")
-    if target.width != candidate.mode.width or target.height != candidate.mode.height:
-        raise ValidationError("requested resolution is not active")
-    if not _selected_refresh_matches(
-        target.refresh_millihz, candidate.mode, target.advertised_modes
+    original = before[candidate.connector]
+    if candidate.mode is not None:
+        if target.width != candidate.mode.width or target.height != candidate.mode.height:
+            raise ValidationError("requested resolution is not active")
+        if not _selected_refresh_matches(
+            target.refresh_millihz, candidate.mode, target.advertised_modes
+        ):
+            raise ValidationError("requested refresh is not active")
+    elif (
+        target.width != original.width
+        or target.height != original.height
+        or not _same_refresh(target.refresh_millihz, original.refresh_millihz)
     ):
-        raise ValidationError("requested refresh is not active")
-    if abs(target.scale_millionths - candidate.scale_millionths) > int(
-        SCALE_TOLERANCE * 1_000_000
-    ):
-        raise ValidationError("requested scale is not active")
+        raise ValidationError("unowned mode changed during apply")
+    if candidate.scale_millionths is not None:
+        if abs(target.scale_millionths - candidate.scale_millionths) > int(
+            SCALE_TOLERANCE * 1_000_000
+        ):
+            raise ValidationError("requested scale is not active")
+    elif target.scale_millionths != original.scale_millionths:
+        raise ValidationError("unowned scale changed during apply")
+    _verify_color_transition(original, target, candidate, cm_intent, icc_intent)
 
 
 def verify_rollback_readback(snapshot: Topology, readback: Topology) -> None:
@@ -783,7 +874,12 @@ def verify_rollback_readback(snapshot: Topology, readback: Topology) -> None:
         raise ValidationError("rollback left no usable output")
     for connector, old in before.items():
         new = after[connector]
-        if old.identity != new.identity or old.protected_key() != new.protected_key():
+        if (
+            old.identity != new.identity
+            or old.protected_key() != new.protected_key()
+            or old.current_format != new.current_format
+            or old.color_state != new.color_state
+        ):
             raise ValidationError(f"protected monitor state was not restored for {connector}")
         if (
             old.width != new.width
@@ -882,8 +978,11 @@ class MachineProfile:
     block_start: int
     block_end: int
     body: str
-    mode_value: str
-    scale_value: str
+    mode_value: str | None
+    scale_value: str | None
+    bitdepth_value: str | None
+    cm_value: str | None
+    icc_value: str | None
 
 
 def _field(body: str, name: str) -> tuple[str, re.Match[str]]:
@@ -891,6 +990,16 @@ def _field(body: str, name: str) -> tuple[str, re.Match[str]]:
     matches = list(pattern.finditer(body))
     if len(matches) != 1:
         raise ValidationError(f"monitor profile has {len(matches)} {name!r} fields")
+    return matches[0].group("value").strip(), matches[0]
+
+
+def _optional_field(body: str, name: str) -> tuple[str | None, re.Match[str] | None]:
+    pattern = re.compile(FIELD_RE_TEMPLATE.format(name=re.escape(name)))
+    matches = list(pattern.finditer(body))
+    if len(matches) > 1:
+        raise ValidationError(f"monitor profile has {len(matches)} {name!r} fields")
+    if not matches:
+        return None, None
     return matches[0].group("value").strip(), matches[0]
 
 
@@ -917,8 +1026,11 @@ def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
         if connector in seen:
             raise ValidationError(f"ambiguous machine profiles for {connector}")
         seen.add(connector)
-        mode_value, _ = _field(body, "mode")
-        scale_value, _ = _field(body, "scale")
+        mode_value, _ = _optional_field(body, "mode")
+        scale_value, _ = _optional_field(body, "scale")
+        bitdepth_value, _ = _optional_field(body, "bitdepth")
+        cm_value, _ = _optional_field(body, "cm")
+        icc_value, _ = _optional_field(body, "icc")
         profiles.append(
             MachineProfile(
                 connector,
@@ -927,6 +1039,9 @@ def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
                 body,
                 mode_value,
                 scale_value,
+                bitdepth_value,
+                cm_value,
+                icc_value,
             )
         )
     if catch_all_count > 1:
@@ -956,18 +1071,56 @@ def reject_superseding_override(content: bytes, connector: str) -> None:
         )
 
 
+def profile_color_intent(profile: MachineProfile) -> tuple[str, str]:
+    cm = "srgb"
+    if profile.cm_value is not None:
+        quoted = LUA_QUOTED_RE.fullmatch(profile.cm_value)
+        if quoted is None:
+            raise ValidationError("explicit profile cm intent is not a simple string")
+        cm = quoted.group(1)
+    icc = ""
+    if profile.icc_value is not None:
+        quoted = LUA_QUOTED_RE.fullmatch(profile.icc_value)
+        if quoted is None:
+            raise ValidationError("explicit profile ICC intent is not a simple string")
+        icc = quoted.group(1)
+    return cm, icc
+
+
+def profile_bitdepth_intent(profile: MachineProfile) -> int | None:
+    if profile.bitdepth_value in {"8", "10"}:
+        return int(profile.bitdepth_value)
+    return None
+
+
 def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
     profile = require_explicit_profile(content, candidate.connector)
     text = content.decode("utf-8")
     body = profile.body
-    _, mode_match = _field(body, "mode")
-    if LUA_QUOTED_RE.fullmatch(profile.mode_value) is None:
-        raise PersistenceError("explicit profile mode is not a replaceable string")
-    new_body = (
-        body[: mode_match.start("value")]
-        + lua_string(candidate.mode.as_lua_string())
-        + body[mode_match.end("value") :]
-    )
+    replacements: list[tuple[int, int, str]] = []
+    if candidate.mode is not None:
+        mode_value, mode_match = _optional_field(body, "mode")
+        if mode_match is None or mode_value is None or LUA_QUOTED_RE.fullmatch(mode_value) is None:
+            raise PersistenceError("explicit profile mode is not a replaceable string")
+        replacements.append(
+            (mode_match.start("value"), mode_match.end("value"), lua_string(candidate.mode.as_lua_string()))
+        )
+    if candidate.bitdepth is not None:
+        bitdepth_value, bitdepth_match = _optional_field(body, "bitdepth")
+        if bitdepth_match is None or bitdepth_value not in {"8", "10"}:
+            raise PersistenceError("explicit profile bitdepth is not replaceable")
+        replacements.append(
+            (bitdepth_match.start("value"), bitdepth_match.end("value"), str(candidate.bitdepth))
+        )
+    new_body = body
+    for start, end, value in sorted(replacements, reverse=True):
+        new_body = new_body[:start] + value + new_body[end:]
+    if candidate.scale_millionths is None:
+        return (
+            text[: profile.block_start]
+            + new_body
+            + text[profile.block_end :]
+        ).encode("utf-8")
     scale_value, scale_match = _field(new_body, "scale")
     scale_text = format(
         (Decimal(candidate.scale_millionths) / 1_000_000).normalize(), "f"
@@ -1008,11 +1161,7 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
             )
     else:
         raise PersistenceError("explicit profile scale is not replaceable")
-    return (
-        text[: profile.block_start]
-        + new_body
-        + text[profile.block_end :]
-    ).encode("utf-8")
+    return (text[: profile.block_start] + new_body + text[profile.block_end :]).encode("utf-8")
 
 
 def atomic_replace(
@@ -1405,6 +1554,9 @@ class TransactionJournal:
     instance: InstanceIdentity
     target_identity: PhysicalIdentity
     candidate: Candidate
+    bitdepth_intent: int | None
+    cm_intent: str
+    icc_intent: str
     snapshot: Topology
     machine_file: FileSnapshot
     override_file: FileSnapshot
@@ -1428,6 +1580,9 @@ JOURNAL_KEYS = {
     "instance",
     "target_identity",
     "candidate",
+    "bitdepth_intent",
+    "cm_intent",
+    "icc_intent",
     "snapshot",
     "machine_file",
     "override_file",
@@ -1543,9 +1698,26 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal.instance has invalid fields")
     if SIGNATURE_RE.fullmatch(instance_raw["signature"]) is None or instance_raw["pid"] <= 1:
         raise JournalError("journal.instance identity is invalid")
-    candidate_raw = _strict_object(raw["candidate"], {"connector", "mode", "scale_millionths"}, "journal.candidate")
-    if not isinstance(candidate_raw["connector"], str) or type(candidate_raw["scale_millionths"]) is not int:
+    candidate_raw = _strict_object(
+        raw["candidate"],
+        {"policy", "connector", "mode", "bitdepth", "scale_millionths"},
+        "journal.candidate",
+    )
+    if not all(isinstance(candidate_raw[key], str) for key in ("policy", "connector")):
         raise JournalError("journal.candidate has invalid fields")
+    if candidate_raw["mode"] is not None and not isinstance(candidate_raw["mode"], dict):
+        raise JournalError("journal.candidate.mode has the wrong type")
+    if candidate_raw["bitdepth"] is not None and type(candidate_raw["bitdepth"]) is not int:
+        raise JournalError("journal.candidate.bitdepth has the wrong type")
+    if candidate_raw["scale_millionths"] is not None and type(candidate_raw["scale_millionths"]) is not int:
+        raise JournalError("journal.candidate.scale_millionths has the wrong type")
+    if raw["bitdepth_intent"] is not None and (
+        type(raw["bitdepth_intent"]) is not int
+        or raw["bitdepth_intent"] not in BITDEPTH_FORMATS
+    ):
+        raise JournalError("journal bitdepth intent is invalid")
+    if not isinstance(raw["cm_intent"], str) or not isinstance(raw["icc_intent"], str):
+        raise JournalError("journal monitor intent has invalid fields")
     snapshot_raw = _strict_object(raw["snapshot"], {"monitors"}, "journal.snapshot")
     if not isinstance(snapshot_raw["monitors"], list):
         raise JournalError("journal.snapshot.monitors is not an array")
@@ -1558,7 +1730,16 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raw["persistence_phase"],
         InstanceIdentity(**instance_raw),
         _identity_from_dict(raw["target_identity"], "journal.target_identity"),
-        Candidate(candidate_raw["connector"], _mode_from_dict(candidate_raw["mode"], "journal.candidate.mode"), candidate_raw["scale_millionths"]),
+        Candidate(
+            candidate_raw["policy"],
+            candidate_raw["connector"],
+            None if candidate_raw["mode"] is None else _mode_from_dict(candidate_raw["mode"], "journal.candidate.mode"),
+            candidate_raw["bitdepth"],
+            candidate_raw["scale_millionths"],
+        ),
+        raw["bitdepth_intent"],
+        raw["cm_intent"],
+        raw["icc_intent"],
         Topology(tuple(_monitor_from_dict(item, "journal.snapshot.monitor") for item in snapshot_raw["monitors"])),
         _file_from_dict(raw["machine_file"], "journal.machine_file"),
         _file_from_dict(raw["override_file"], "journal.override_file"),
@@ -1569,14 +1750,32 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal candidate and target identity disagree")
     if CONNECTOR_RE.fullmatch(journal.candidate.connector) is None:
         raise JournalError("journal candidate connector is invalid")
-    try:
-        scale_to_millionths(
-            Decimal(journal.candidate.scale_millionths) / 1_000_000,
-            preflight=True,
-        )
-    except ValidationError as error:
-        raise JournalError("journal candidate scale is invalid") from error
-    if (
+    if journal.candidate.policy == SAFE_CONFIRMED_POLICY:
+        if journal.candidate.scale_millionths is not None or (
+            journal.candidate.mode is None and journal.candidate.bitdepth is None
+        ):
+            raise JournalError("safe-confirmed journal candidate is invalid")
+        if journal.candidate.bitdepth is not None and journal.candidate.bitdepth not in BITDEPTH_FORMATS:
+            raise JournalError("journal candidate bitdepth is invalid")
+        if journal.candidate.bitdepth is not None and journal.bitdepth_intent is None:
+            raise JournalError("bitdepth candidate lacks previous requested intent")
+    elif journal.candidate.policy == IMMEDIATE_SCALE_POLICY:
+        if (
+            journal.candidate.mode is not None
+            or journal.candidate.bitdepth is not None
+            or journal.candidate.scale_millionths is None
+        ):
+            raise JournalError("immediate-scale journal candidate is invalid")
+        try:
+            scale_to_millionths(
+                Decimal(journal.candidate.scale_millionths) / 1_000_000,
+                preflight=True,
+            )
+        except ValidationError as error:
+            raise JournalError("journal candidate scale is invalid") from error
+    else:
+        raise JournalError("journal candidate policy is invalid")
+    if journal.candidate.mode is not None and (
         journal.candidate.mode.width <= 0
         or journal.candidate.mode.height <= 0
         or journal.candidate.mode.refresh_millihz <= 0
@@ -1588,6 +1787,14 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal snapshot does not contain its target") from error
     if snapshot_target.identity != journal.target_identity:
         raise JournalError("journal target identity does not match its snapshot")
+    try:
+        profile = require_explicit_profile(journal.machine_file.content, journal.candidate.connector)
+        if profile_bitdepth_intent(profile) != journal.bitdepth_intent:
+            raise JournalError("journal bitdepth intent does not match its machine snapshot")
+        if profile_color_intent(profile) != (journal.cm_intent, journal.icc_intent):
+            raise JournalError("journal monitor intent does not match its machine snapshot")
+    except ValidationError as error:
+        raise JournalError("journal machine profile is invalid") from error
     if not Path(journal.machine_file.path).is_absolute() or not Path(journal.override_file.path).is_absolute():
         raise JournalError("journal configuration paths must be absolute")
     if journal.machine_file.mode & 0o077 or journal.override_file.mode & 0o077:
@@ -1611,6 +1818,7 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal deadline exists outside temporary-active")
     if journal.state == "temporary-active" and (
         journal.deadline_monotonic is None
+        or not journal.candidate.requires_confirmation
         or not journal.runtime_verified
         or not journal.mutation_attempted
         or not journal.recovery_required
@@ -1860,6 +2068,35 @@ class TransactionAuthority:
                 "unexpected Hyprland config reload invalidated the temporary candidate"
             )
 
+    @staticmethod
+    def _verify_candidate(journal: TransactionJournal, readback: Topology) -> None:
+        verify_candidate_readback(
+            journal.snapshot,
+            journal.candidate,
+            readback,
+            journal.target_identity,
+            journal.cm_intent,
+            journal.icc_intent,
+        )
+
+    @staticmethod
+    def _rollback_candidate(journal: TransactionJournal) -> Candidate:
+        original = journal.snapshot.target(journal.candidate.connector)
+        if journal.candidate.policy == IMMEDIATE_SCALE_POLICY:
+            return Candidate.scale(original.connector, Decimal(original.scale_millionths) / 1_000_000)
+        bitdepth = None
+        if journal.candidate.bitdepth is not None:
+            bitdepth = journal.bitdepth_intent
+            if bitdepth is None:
+                raise RollbackError("snapshot requested bitdepth cannot be restored")
+        return Candidate(
+            SAFE_CONFIRMED_POLICY,
+            original.connector,
+            original.mode if journal.candidate.mode is not None else None,
+            bitdepth,
+            None,
+        )
+
     def begin(self, candidate: Candidate, signature: str) -> TransactionJournal:
         if self.bound_signature is not None and signature != self.bound_signature:
             raise ValidationError("requested Hyprland instance is not the service-bound instance")
@@ -1872,9 +2109,11 @@ class TransactionAuthority:
         target = validate_candidate(candidate, topology)
         machine = snapshot_file(self.config_paths.machine)
         override = snapshot_file(self.config_paths.override)
-        require_explicit_profile(machine.content, candidate.connector)
+        profile = require_explicit_profile(machine.content, candidate.connector)
         reject_superseding_override(override.content, candidate.connector)
         rewrite_existing_profile(machine.content, candidate)
+        bitdepth_intent = profile_bitdepth_intent(profile)
+        cm_intent, icc_intent = profile_color_intent(profile)
         now = self.clock.monotonic()
         journal = self._write(
             TransactionJournal(
@@ -1895,6 +2134,9 @@ class TransactionAuthority:
                 instance,
                 target.identity,
                 candidate,
+                bitdepth_intent,
+                cm_intent,
+                icc_intent,
                 topology,
                 machine,
                 override,
@@ -1908,13 +2150,9 @@ class TransactionAuthority:
             return self.rollback(journal.transaction_id, reason=journal.failure)
         journal = self._transition(journal, "applying", mutation_attempted=True)
         try:
-            client.apply(candidate.connector, candidate.mode, candidate.scale_millionths)
+            client.apply(candidate)
             self._require_no_unexpected_reload(journal)
-            client.read_until(
-                lambda readback: verify_candidate_readback(
-                    topology, candidate, readback, target.identity
-                )
-            )
+            client.read_until(lambda readback: self._verify_candidate(journal, readback))
             self._require_no_unexpected_reload(journal)
         except InstanceReplaced as error:
             self._close_transaction_watch()
@@ -1925,13 +2163,16 @@ class TransactionAuthority:
             journal = replace(journal, failure=f"apply/readback failed: {error}")
             self.store.write(journal)
             return self.rollback(journal.transaction_id, reason=journal.failure)
-        return self._transition(
-            journal,
-            "temporary-active",
-            runtime_verified=True,
-            deadline_monotonic=self.clock.monotonic() + self.confirmation_seconds,
-            failure=None,
-        )
+        if candidate.requires_confirmation:
+            return self._transition(
+                journal,
+                "temporary-active",
+                runtime_verified=True,
+                deadline_monotonic=self.clock.monotonic() + self.confirmation_seconds,
+                failure=None,
+            )
+        journal = self._checkpoint(journal, runtime_verified=True, failure=None)
+        return self._commit(journal)
 
     def status(self) -> TransactionJournal | None:
         journal = self.store.read()
@@ -2047,10 +2288,7 @@ class TransactionAuthority:
             current_target = current.target(journal.candidate.connector)
             if current_target.identity != journal.target_identity:
                 raise RollbackError("connector now belongs to a different physical display")
-            original = journal.snapshot.target(journal.candidate.connector)
-            client.apply(
-                original.connector, original.mode, original.scale_millionths
-            )
+            client.apply(self._rollback_candidate(journal))
             client.read_until(lambda readback: verify_rollback_readback(journal.snapshot, readback))
         except InstanceReplaced as error:
             return self._transition(
@@ -2077,17 +2315,15 @@ class TransactionAuthority:
             raise ValidationError("transaction ID does not match active journal")
         if journal.state != "temporary-active":
             raise ValidationError(f"transaction cannot confirm from {journal.state}")
+        if not journal.candidate.requires_confirmation:
+            raise ValidationError("immediate scale transactions do not accept confirmation")
+        return self._commit(journal)
+
+    def _commit(self, journal: TransactionJournal) -> TransactionJournal:
         client = self._client(journal)
         watch: ReloadWatch | None = None
         try:
-            client.read_until(
-                lambda current: verify_candidate_readback(
-                    journal.snapshot,
-                    journal.candidate,
-                    current,
-                    journal.target_identity,
-                )
-            )
+            client.read_until(lambda current: self._verify_candidate(journal, current))
             self._require_no_unexpected_reload(journal)
             content, planned_hash = self.persister.prepare(journal)
             self._require_no_unexpected_reload(journal)
@@ -2116,14 +2352,7 @@ class TransactionAuthority:
             journal = self._checkpoint(
                 journal, persistence_phase="candidate-reloaded"
             )
-            client.read_until(
-                lambda current: verify_candidate_readback(
-                    journal.snapshot,
-                    journal.candidate,
-                    current,
-                    journal.target_identity,
-                )
-            )
+            client.read_until(lambda current: self._verify_candidate(journal, current))
             journal = self._checkpoint(
                 journal,
                 persistence_phase="candidate-verified",
@@ -2131,10 +2360,10 @@ class TransactionAuthority:
                 runtime_verified=True,
             )
         except MonitorError as error:
-            if journal.state == "temporary-active":
-                journal = replace(journal, failure=f"confirmation failed: {error}")
+            if journal.state in {"applying", "temporary-active"}:
+                journal = replace(journal, failure=f"persistence failed: {error}")
                 self.store.write(journal)
-            return self.rollback(journal.transaction_id, reason=f"confirmation failed: {error}")
+            return self.rollback(journal.transaction_id, reason=f"persistence failed: {error}")
         finally:
             if watch is not None:
                 watch.close()
@@ -2190,7 +2419,7 @@ def protocol_request(value: object) -> tuple[str, dict[str, object]]:
         expected = {"version", "command"}
     elif command in {"confirm", "revert"}:
         expected = {"version", "command", "transaction_id"}
-    elif command == "begin":
+    elif command in {"begin", "scale"}:
         expected = {"version", "command", "candidate", "signature"}
     else:
         raise ValidationError("unknown control command")
@@ -2207,6 +2436,7 @@ def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
         remaining = max(0.0, journal.deadline_monotonic - clock.monotonic())
     return {
         "transaction_id": journal.transaction_id,
+        "policy": journal.candidate.policy,
         "state": journal.state,
         "sequence": journal.sequence,
         "deadline_monotonic": journal.deadline_monotonic,
@@ -2222,13 +2452,33 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
         journal = authority.status()
     elif command == "begin":
         candidate_raw = _strict_object(
-            raw["candidate"], {"connector", "width", "height", "refresh", "scale"}, "candidate"
+            raw["candidate"], {"connector", "mode", "bitdepth"}, "candidate"
+        )
+        mode_raw = candidate_raw["mode"]
+        if mode_raw is None:
+            mode_fields: dict[str, object | None] = {
+                "width": None, "height": None, "refresh": None
+            }
+        else:
+            mode_fields = _strict_object(
+                mode_raw, {"width", "height", "refresh"}, "candidate.mode"
+            )
+        journal = authority.begin(
+            Candidate.safe(
+                candidate_raw["connector"],
+                width=mode_fields["width"],
+                height=mode_fields["height"],
+                refresh=mode_fields["refresh"],
+                bitdepth=candidate_raw["bitdepth"],
+            ),
+            raw["signature"],
+        )
+    elif command == "scale":
+        candidate_raw = _strict_object(
+            raw["candidate"], {"connector", "scale"}, "candidate"
         )
         journal = authority.begin(
-            Candidate.create(
-                candidate_raw["connector"], candidate_raw["width"], candidate_raw["height"],
-                candidate_raw["refresh"], candidate_raw["scale"],
-            ),
+            Candidate.scale(candidate_raw["connector"], candidate_raw["scale"]),
             raw["signature"],
         )
     elif command == "confirm":
@@ -2293,7 +2543,7 @@ def serve() -> int:
                         response = handle_control(authority, request)
                         if (
                             isinstance(request, dict)
-                            and request.get("command") == "begin"
+                            and request.get("command") in {"begin", "scale"}
                             and response.get("ok") is True
                         ):
                             status = response.get("status")
@@ -2306,7 +2556,7 @@ def serve() -> int:
                     connection.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
                     if (
                         isinstance(request, dict)
-                        and request.get("command") == "begin"
+                        and request.get("command") in {"begin", "scale"}
                         and response.get("ok") is False
                     ):
                         return 1
@@ -2359,22 +2609,38 @@ def send_control(request: dict[str, object]) -> dict[str, object]:
 
 
 def client_command(arguments: argparse.Namespace) -> int:
-    if arguments.action == "apply":
+    if arguments.action in {"apply", "scale"}:
         result = run_command([SYSTEMCTL, "--user", "start", SERVICE_NAME])
         if result.returncode != 0:
             raise MonitorError(result.stderr.strip() or "could not start monitor authority")
-        request = {
-            "version": PROTOCOL_VERSION,
-            "command": "begin",
-            "signature": os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", ""),
-            "candidate": {
-                "connector": arguments.connector,
-                "width": arguments.width,
-                "height": arguments.height,
-                "refresh": arguments.refresh,
-                "scale": arguments.scale,
-            },
-        }
+        if arguments.action == "apply":
+            mode = None
+            if any(value is not None for value in (arguments.width, arguments.height, arguments.refresh)):
+                mode = {
+                    "width": arguments.width,
+                    "height": arguments.height,
+                    "refresh": arguments.refresh,
+                }
+            request = {
+                "version": PROTOCOL_VERSION,
+                "command": "begin",
+                "signature": os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", ""),
+                "candidate": {
+                    "connector": arguments.connector,
+                    "mode": mode,
+                    "bitdepth": arguments.bitdepth,
+                },
+            }
+        else:
+            request = {
+                "version": PROTOCOL_VERSION,
+                "command": "scale",
+                "signature": os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", ""),
+                "candidate": {
+                    "connector": arguments.connector,
+                    "scale": arguments.scale,
+                },
+            }
         deadline = time.monotonic() + 3.0
         while True:
             try:
@@ -2410,12 +2676,15 @@ def argument_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("serve", help="run the systemd-supervised authority")
     subparsers.add_parser("recover", help="run one idempotent recovery pass")
     subparsers.add_parser("status", help="read authoritative transaction status")
-    apply_parser = subparsers.add_parser("apply", help="request a temporary monitor candidate")
+    apply_parser = subparsers.add_parser("apply", help="request a confirmed mode/bitdepth candidate")
     apply_parser.add_argument("--connector", required=True)
-    apply_parser.add_argument("--width", required=True, type=int)
-    apply_parser.add_argument("--height", required=True, type=int)
-    apply_parser.add_argument("--refresh", required=True)
-    apply_parser.add_argument("--scale", required=True)
+    apply_parser.add_argument("--width", type=int)
+    apply_parser.add_argument("--height", type=int)
+    apply_parser.add_argument("--refresh")
+    apply_parser.add_argument("--bitdepth", type=int, choices=(8, 10))
+    scale_parser = subparsers.add_parser("scale", help="apply and persist validated scale immediately")
+    scale_parser.add_argument("--connector", required=True)
+    scale_parser.add_argument("--scale", required=True)
     for action in ("confirm", "revert"):
         action_parser = subparsers.add_parser(action)
         action_parser.add_argument("transaction_id")

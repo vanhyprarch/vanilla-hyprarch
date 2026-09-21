@@ -246,7 +246,7 @@ class MonitorPanelScaleWriterTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
 
-    def test_keyboard_and_safe_apply_boundaries_are_documented(self) -> None:
+    def test_keyboard_and_monitor_policy_boundaries_are_documented(self) -> None:
         decisions = DECISIONS.read_text(encoding="utf-8")
         current_state = CURRENT_STATE.read_text(encoding="utf-8")
 
@@ -255,13 +255,18 @@ class MonitorPanelScaleWriterTests(unittest.TestCase):
         self.assertIn("subscribe", decisions)
         self.assertIn("localectl --no-convert", decisions)
         self.assertIn("Device-specific keyboard rules remain", decisions)
-        self.assertIn("persistence/reconciliation foundation implemented", decisions)
+        self.assertIn(
+            "policy-aligned schema-v3 repository candidate implemented", decisions
+        )
 
         self.assertIn("10-second confirmation", decisions)
         self.assertIn("never persisted", decisions)
-        self.assertIn("Text Size remains one global preference", decisions)
+        self.assertIn("Scale instead follows immediate validation", decisions)
+        self.assertIn("Brightness remains an independent DDC/CI control", decisions)
+        self.assertIn("Text Size remains", decisions)
+        self.assertIn("one global preference", decisions)
         self.assertIn("System Keyboard Synchronization", current_state)
-        self.assertIn("Monitor Safe Apply backend", current_state)
+        self.assertIn("Monitor backend — POLICY-ALIGNED", current_state)
 
 
 if __name__ == "__main__":
