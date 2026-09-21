@@ -1790,7 +1790,7 @@ def serve() -> int:
         except FileNotFoundError:
             pass
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(store.socket_path)
+        server.bind(os.fspath(store.socket_path))
         os.chmod(store.socket_path, 0o600)
         server.listen(4)
         server.setblocking(False)
@@ -1870,7 +1870,7 @@ def send_control(request: dict[str, object]) -> dict[str, object]:
     path = RuntimeStore(runtime_root()).socket_path
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(3.0)
-        client.connect(path)
+        client.connect(os.fspath(path))
         client.sendall((json.dumps(request, separators=(",", ":")) + "\n").encode("utf-8"))
         response = b""
         while b"\n" not in response and len(response) <= 65536:

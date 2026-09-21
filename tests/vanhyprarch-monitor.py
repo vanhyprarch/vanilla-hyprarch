@@ -13,6 +13,8 @@ import re
 import stat
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -330,6 +332,67 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertIn("timed out after 5 seconds", result.stderr)
         self.assertEqual(run.call_args.kwargs["timeout"], monitor.COMMAND_TIMEOUT_SECONDS)
         self.assertFalse(run.call_args.kwargs["shell"])
+
+    def test_real_unix_control_socket_accepts_pathlike_runtime_address(self) -> None:
+        runtime = self.root / "socket-runtime"
+        runtime.mkdir(mode=0o700)
+        store = monitor.RuntimeStore(runtime)
+        store.acquire()
+        clock = FakeClock()
+        runner = QueueRunner([])
+        authority = monitor.TransactionAuthority(
+            store,
+            self.provider,
+            self.paths,
+            runner=runner,
+            clock=clock,
+        )
+        result: list[int] = []
+        errors: list[BaseException] = []
+
+        def run_server() -> None:
+            try:
+                result.append(monitor.serve())
+            except BaseException as error:
+                errors.append(error)
+
+        self.assertIsInstance(store.socket_path, Path)
+        with (
+            mock.patch.object(
+                monitor, "build_production_authority", return_value=authority
+            ),
+            mock.patch.dict(
+                monitor.os.environ, {"XDG_RUNTIME_DIR": str(runtime)}, clear=False
+            ),
+        ):
+            server = threading.Thread(target=run_server)
+            server.start()
+            try:
+                readiness_deadline = time.monotonic() + 2.0
+                while (
+                    not store.socket_path.exists()
+                    and time.monotonic() < readiness_deadline
+                ):
+                    time.sleep(0.01)
+                self.assertTrue(
+                    store.socket_path.is_socket(),
+                    f"server did not create socket: errors={errors!r}, result={result!r}",
+                )
+                self.assertEqual(stat.S_IMODE(store.socket_path.stat().st_mode), 0o600)
+                response = monitor.send_control({"version": 1, "command": "status"})
+                self.assertEqual(
+                    response,
+                    {"version": 1, "ok": True, "status": {"state": "idle"}},
+                )
+                self.assertEqual(runner.calls, [])
+            finally:
+                clock.advance(16.0)
+                server.join(timeout=2.0)
+
+        self.assertFalse(server.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(result, [0])
+        self.assertFalse(store.socket_path.exists())
 
     def test_candidate_protocol_rejects_out_of_scope_fields(self) -> None:
         request = {
