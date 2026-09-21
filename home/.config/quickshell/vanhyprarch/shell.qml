@@ -112,6 +112,7 @@ ShellRoot {
     }
 
     readonly property var globalTextSizeController: textSizeController
+    readonly property var globalMonitorController: monitorController
     readonly property PowerActions globalPowerActions: powerActions
     readonly property int dockWidth: visualMetrics.dockWidth
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
@@ -277,7 +278,7 @@ ShellRoot {
             theme: shellTheme
             metrics: visualMetrics
             textSizeController: root.globalTextSizeController
-            monitorController: monitorController
+            monitorController: root.globalMonitorController
             targetScreen: screenScope.modelData
             focusCoordinator: overlayFocusCoordinator
 

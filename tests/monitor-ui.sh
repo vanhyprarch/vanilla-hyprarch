@@ -49,6 +49,13 @@ grep -Fq 'Math.ceil(root.controller.presentationRemainingSeconds)' "$confirmatio
 
 [ "$(grep -F -c '    MonitorController {' "$shell")" -eq 1 ] \
     || fail 'shell does not own exactly one global MonitorController'
+grep -Fq 'monitorController: root.globalMonitorController' "$shell" \
+    || fail 'per-screen Monitor uses an ambiguous controller binding'
+grep -Fq 'readonly property bool monitorControllerReady:' "$panel" \
+    || fail 'Monitor panel lacks a soft-reload controller guard'
+if grep -Fq 'color: root.text }' "$panel"; then
+    fail 'Monitor selector uses an undefined root text color'
+fi
 grep -Fq '    MonitorConfirmationPanel {' "$shell" \
     || fail 'per-screen confirmation surface is missing from Variants'
 grep -Fq 'textSizeController: root.globalTextSizeController' "$shell" \

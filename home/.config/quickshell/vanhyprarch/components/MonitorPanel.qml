@@ -26,12 +26,16 @@ DockPopup {
     property bool startupWarmupPending: true
     property int brightnessWriteRetriesRemaining: 0
     readonly property var scalePresets: ["1.00", "1.25", "1.50", "2.00"]
+    readonly property bool monitorControllerReady: root.monitorController !== null
+        && root.monitorController !== undefined
     readonly property var monitor: Hyprland.monitorFor(root.targetScreen)
     readonly property string connectorName: monitor ? String(monitor.name || "") : ""
     readonly property var inspectedOutput:
-        root.monitorController.outputFor(root.connectorName)
+        root.monitorControllerReady
+            ? root.monitorController.outputFor(root.connectorName) : null
     readonly property var pendingState:
-        root.monitorController.ensurePending(root.connectorName)
+        root.monitorControllerReady
+            ? root.monitorController.ensurePending(root.connectorName) : null
     readonly property string monitorDescription: {
         if (root.inspectedOutput !== null)
             return root.inspectedOutput.label
@@ -39,7 +43,8 @@ DockPopup {
             : "No display"
     }
     readonly property bool displayEditable: root.inspectedOutput !== null
-        && root.inspectedOutput.editable && !root.monitorController.mutationsBlocked
+        && root.inspectedOutput.editable && root.monitorControllerReady
+        && !root.monitorController.mutationsBlocked
 
     Component.onCompleted: {
         root.componentReady = true
@@ -68,8 +73,10 @@ DockPopup {
     onVisibleChanged: {
         if (visible) {
             root.refreshBrightness(false)
-            root.monitorController.refreshInspect(false)
-            root.monitorController.refreshStatus()
+            if (root.monitorControllerReady) {
+                root.monitorController.refreshInspect(false)
+                root.monitorController.refreshStatus()
+            }
         } else {
             brightnessDebounce.stop()
             root.brightnessWritePending = false
@@ -400,23 +407,27 @@ DockPopup {
         }
         if (!root.displayEditable || root.scaleMatches(Number(preset)))
             return
-        root.monitorController.requestScale(root.connectorName, preset)
+        if (root.monitorControllerReady)
+            root.monitorController.requestScale(root.connectorName, preset)
     }
 
     function pendingResolutionText(): string {
-        root.monitorController.pendingRevision
+        if (root.monitorControllerReady)
+            root.monitorController.pendingRevision
         return root.pendingState === null ? "—"
             : root.pendingState.width + " × " + root.pendingState.height
     }
 
     function pendingRefreshText(): string {
-        root.monitorController.pendingRevision
+        if (root.monitorControllerReady)
+            root.monitorController.pendingRevision
         return root.pendingState === null ? "—"
             : root.formatNumber(root.pendingState.refresh_millihz / 1000, 2) + " Hz"
     }
 
     function pendingBitdepthText(): string {
-        root.monitorController.pendingRevision
+        if (root.monitorControllerReady)
+            root.monitorController.pendingRevision
         return root.pendingState === null || root.pendingState.bitdepth === null
             ? "Unavailable" : root.pendingState.bitdepth + "-bit"
     }
@@ -530,7 +541,7 @@ DockPopup {
             radius: root.metrics.rowRadius
             color: previousMouse.containsMouse ? root.theme.hoverFill
                 : root.theme.normalFill
-            Text { anchors.centerIn: parent; text: "‹"; color: root.text }
+            Text { anchors.centerIn: parent; text: "‹"; color: root.textColor }
             MouseArea {
                 id: previousMouse
                 anchors.fill: parent
@@ -568,7 +579,7 @@ DockPopup {
             radius: root.metrics.rowRadius
             color: nextMouse.containsMouse ? root.theme.hoverFill
                 : root.theme.normalFill
-            Text { anchors.centerIn: parent; text: "›"; color: root.text }
+            Text { anchors.centerIn: parent; text: "›"; color: root.textColor }
             MouseArea {
                 id: nextMouse
                 anchors.fill: parent
@@ -719,6 +730,7 @@ DockPopup {
                 label: "Resolution"
                 value: root.pendingResolutionText()
                 interactive: root.displayEditable
+                    && root.monitorControllerReady
                     && root.monitorController.resolutionOptions(
                         root.connectorName).length > 1
                 changed: root.pendingState !== null
@@ -736,7 +748,8 @@ DockPopup {
             ChoiceRow {
                 label: "Refresh rate"
                 value: root.pendingRefreshText()
-                interactive: root.displayEditable && root.pendingState !== null
+                interactive: root.displayEditable && root.monitorControllerReady
+                    && root.pendingState !== null
                     && root.monitorController.refreshOptions(root.connectorName,
                         root.pendingState.width, root.pendingState.height).length > 1
                 changed: root.pendingState !== null
@@ -777,7 +790,8 @@ DockPopup {
 
                 Text {
                     anchors.centerIn: parent
-                    text: root.monitorController.operationBusy
+                    text: root.monitorControllerReady
+                        && root.monitorController.operationBusy
                         ? "Applying…" : "Apply display changes"
                     color: root.textColor
                     font.pixelSize: root.metrics.bodyFontSize
@@ -788,6 +802,7 @@ DockPopup {
                     id: applyMouse
                     anchors.fill: parent
                     enabled: root.displayEditable
+                        && root.monitorControllerReady
                         && root.monitorController.hasSafeChanges(root.connectorName)
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
@@ -797,13 +812,16 @@ DockPopup {
             }
 
             Text {
-                visible: root.monitorController.errorMessage !== ""
+                visible: (root.monitorControllerReady
+                        && root.monitorController.errorMessage !== "")
                     || (root.inspectedOutput !== null
                         && !root.inspectedOutput.editable)
                 width: parent.width
-                text: root.monitorController.errorMessage !== ""
+                text: root.monitorControllerReady
+                    && root.monitorController.errorMessage !== ""
                     ? root.monitorController.errorMessage
-                    : root.inspectedOutput.unavailable_reason
+                    : root.inspectedOutput !== null
+                        ? root.inspectedOutput.unavailable_reason : ""
                 color: root.theme.danger
                 font.pixelSize: root.metrics.captionFontSize
                 wrapMode: Text.WordWrap

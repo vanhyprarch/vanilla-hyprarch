@@ -63,10 +63,21 @@ class MonitorPanelPolicyTests(unittest.TestCase):
 
     def test_global_controller_and_per_screen_surfaces(self) -> None:
         self.assertEqual(self.shell.count("    MonitorController {"), 1)
+        self.assertIn("globalMonitorController: monitorController", self.shell)
+        self.assertIn(
+            "monitorController: root.globalMonitorController", self.shell
+        )
         variants = self.shell.index("    Variants {")
         confirmation = self.shell.index("    MonitorConfirmationPanel {")
         self.assertGreater(confirmation, variants)
         self.assertIn("controller: monitorController", self.shell)
+
+    def test_soft_reload_guards_controller_and_selector_colors(self) -> None:
+        self.assertIn("monitorControllerReady", self.panel)
+        self.assertIn("? root.monitorController.outputFor", self.panel)
+        self.assertIn("? root.monitorController.ensurePending", self.panel)
+        self.assertNotIn("color: root.text }", self.panel)
+        self.assertEqual(self.panel.count("color: root.textColor }"), 2)
 
 
 if __name__ == "__main__":
