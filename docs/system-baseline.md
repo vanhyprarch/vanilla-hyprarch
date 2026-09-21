@@ -127,7 +127,9 @@ interaction or manual reapplication.
 The future shared bootstrap will deploy the `vanhyprarch` named Quickshell
 configuration for the main shell. It will install `vanhyprarch-idle`,
 `vanhyprarch-appearance`, `vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
-available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`.
+available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`;
+it will also install `vanhyprarch-monitor` and its static, non-enabled user
+service once Monitor Safe Apply reaches the controlled deployment phase.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
 Zig Screensaver manager resources under the corresponding
@@ -358,6 +360,15 @@ focused output, and fails closed unless exactly that profile and field are
 present in the expected machine-owned file; it cannot edit the catch-all rule
 or managed Hyprland files. No general multi-monitor schema is promised during
 Alpha.
+
+The repository-only Monitor Safe Apply B1 foundation adds the managed
+`vanhyprarch-monitor` Python command and static, non-enabled
+`vanhyprarch-monitor-safe-apply.service`. Both use existing baseline Python,
+systemd, and Hyprland packages; no package was added. The service is started
+only for a transaction, is bounded by `RuntimeMaxSec=90s`, and invokes an
+idempotent recovery entry point through `ExecStopPost`. Runtime journal, lock,
+and socket material is private XDG runtime state. The backend is not deployed
+or connected to QML yet, and its production persistence path remains disabled.
 
 ## Screenshots
 

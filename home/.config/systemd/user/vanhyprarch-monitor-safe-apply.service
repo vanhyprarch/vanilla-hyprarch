@@ -1,0 +1,12 @@
+[Unit]
+Description=Supervise one Vanilla HyprArch monitor Safe Apply transaction
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/vanhyprarch-monitor serve
+ExecStopPost=%h/.local/bin/vanhyprarch-monitor recover
+RuntimeMaxSec=90s
+TimeoutStopSec=30s
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true

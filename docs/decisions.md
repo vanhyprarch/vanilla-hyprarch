@@ -689,7 +689,8 @@ seed; neither contains a global XKB fallback. See
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Future milestone; not implemented
+**Implementation:** Phase B1 backend foundation implemented in the repository;
+UI, production persistence, deployment, and live validation remain pending
 
 Future monitor control is per explicit output profile and may cover resolution,
 refresh rate, scale, color depth, and brightness where the output and available
@@ -703,9 +704,23 @@ Risky display changes follow one invariant:
 
 Application failure or confirmation timeout automatically restores the
 known-good runtime configuration. An unconfirmed display configuration is
-never persisted. This decision does not implement Safe Apply, define a general
-multi-monitor schema, or add speculative interfaces; those belong to the
+never persisted. The Phase B1 backend foundation does not complete Safe Apply,
+define a general multi-monitor schema, or connect UI; those remain within the
 separate Monitor Control & Safe Apply milestone.
+
+The first implementation scope is resolution/refresh as one advertised mode
+tuple plus per-output scale. Normal rollback uses connector-specific runtime
+`hl.monitor()` restoration of those two owned fields followed by authoritative
+full-topology readback; full Hyprland configuration reload is not the primary
+rollback path. The authority is independent of Quickshell and runs only for a
+bounded transaction under a static systemd user service. Quickshell remains a
+future client.
+
+Safe Apply currently requires an existing unambiguous explicit connector
+profile in machine configuration. It neither edits the portable catch-all nor
+materializes a new profile. Safe fresh-install profile materialization is a
+separate product requirement before Alpha release. Brightness remains outside
+the Safe Apply transaction, and Text Size remains global.
 
 ## ADR-033: Make Zig Screensaver an explicit capability
 

@@ -582,6 +582,26 @@ absence, errors and timeout, eager registration before UI interaction,
 same-process reload, rollback suppression, confirmed-only presentation, and
 coalescing. Corrected controlled live timing remains pending.
 
+## 2026-09-21: Monitor Safe Apply Phase B1 backend foundation
+
+An isolated repository-only milestone added `vanhyprarch-monitor` as the sole
+authority for temporary display transactions and a static, bounded systemd
+user service with `ExecStopPost` recovery. The strict runtime journal binds a
+transaction to one compositor process and physical connector identity, stores
+the complete protected monitor snapshot plus exact machine/override recovery
+bytes, and publishes only a small versioned local control protocol.
+
+Mode and scale are the only v1 editable fields. Apply success requires fresh
+full-topology readback; normal rollback sends a connector-specific
+`hl.monitor()` restoring those fields and verifies readback instead of reloading
+all Hyprland configuration. Deterministic fixtures cover wrong readback,
+protected drift, hotplug, process and physical-identity replacement, timeout,
+crash recovery, strict journal/locking, and byte-preserving persistence races.
+Production persistence remains deliberately disabled, no UI was changed, and
+no live deployment or monitor mutation occurred. The catch-all-only fresh
+install still requires a safe explicit-profile materialization design before
+Alpha release.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

@@ -315,6 +315,7 @@ io.write(table.concat(loaded, "\n"))
     def test_public_commands_keep_regular_user_local_targets(self) -> None:
         command_classes = {
             "vanhyprarch-idle": "MANAGED",
+            "vanhyprarch-monitor": "MANAGED",
             "vanhyprarch-polkit-session": "MANAGED",
             "vanhyprarch-screenshot": "MANAGED",
             "vanhyprarch-dictation": "MANAGED",
@@ -329,6 +330,22 @@ io.write(table.concat(loaded, "\n"))
             source = REPOSITORY / f"bin/{command}"
             self.assertTrue(source.is_file())
             self.assertTrue(os.access(source, os.X_OK))
+
+        monitor_unit = self.artifact_for_target(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/"
+            "vanhyprarch-monitor-safe-apply.service"
+        )
+        self.assertEqual(monitor_unit["class"], "MANAGED")
+        self.assertEqual(
+            monitor_unit["source"],
+            "home/.config/systemd/user/vanhyprarch-monitor-safe-apply.service",
+        )
+        monitor_runtime = self.artifact_for_target(
+            "${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/"
+            "{transaction.json,transaction.lock,control.sock}"
+        )
+        self.assertEqual(monitor_runtime["class"], "RUNTIME")
+        self.assertEqual(monitor_runtime["authority"], "vanhyprarch-monitor")
 
         player = self.artifact_for_target("$HOME/.local/bin/vanhyprarch-zig-player")
         self.assertEqual(player["class"], "OPTIONAL_COMPONENT_PAYLOAD")

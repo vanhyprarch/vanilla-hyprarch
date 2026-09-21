@@ -246,7 +246,7 @@ class MonitorPanelScaleWriterTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
 
-    def test_future_keyboard_and_safe_apply_boundaries_are_documented(self) -> None:
+    def test_keyboard_and_safe_apply_boundaries_are_documented(self) -> None:
         decisions = DECISIONS.read_text(encoding="utf-8")
         current_state = CURRENT_STATE.read_text(encoding="utf-8")
 
@@ -255,13 +255,13 @@ class MonitorPanelScaleWriterTests(unittest.TestCase):
         self.assertIn("subscribe", decisions)
         self.assertIn("localectl --no-convert", decisions)
         self.assertIn("Device-specific keyboard rules remain", decisions)
-        self.assertIn("Future milestone; not implemented", decisions)
+        self.assertIn("Phase B1 backend foundation implemented", decisions)
 
         self.assertIn("10-second confirmation", decisions)
         self.assertIn("never persisted", decisions)
         self.assertIn("Text Size remains one global preference", decisions)
         self.assertIn("System Keyboard Synchronization", current_state)
-        self.assertIn("Monitor Control & Safe Apply", current_state)
+        self.assertIn("Monitor Safe Apply backend", current_state)
 
 
 if __name__ == "__main__":

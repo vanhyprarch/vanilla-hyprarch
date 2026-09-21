@@ -83,6 +83,50 @@ Retest the absolute-path resolver, required-file tracking, error behavior, and
 `--verify-config` after a Hyprland Lua-loader upgrade before changing the
 import mechanism.
 
+## Hyprland monitor runtime transaction boundary
+
+**Affected components:** Hyprland 0.56.2 (`hyprland 0.56.2-3`) and Python's
+standard JSON/decimal implementation
+
+Hyprland's current Lua runtime configuration interface accepts
+`hl.monitor({...})` through `hyprctl --instance <signature> eval`. Source for
+0.56.2 shows that it copies an existing rule on an exact connector-name match,
+overlays supplied fields, and schedules monitor rule application. The B1
+backend therefore addresses one exact connector and supplies only the owned
+mode and scale fields. It does not use legacy `keyword monitor` syntax or the
+runtime `desc:` selector; [upstream issue 15961](https://github.com/hyprwm/Hyprland/issues/15961)
+records that description-addressed runtime rules can report success without
+applying on this version.
+
+The eval command's `ok` response proves parser/command acceptance only. Mode
+selection may choose a nearby/fallback mode, scale is normalized by compositor
+rules, 10-bit requests may fall back, output commits may fail, and multiple
+outputs are refreshed sequentially rather than as one atomic DRM transaction.
+The mitigation is fresh `hyprctl --instance <signature> -j monitors all`
+readback after every candidate and rollback operation. B1 compares the chosen
+advertised resolution/refresh tuple, scale, physical identity, full output set,
+and protected position/transform/enablement/DPMS/mirror/format/color/VRR state.
+It stores refresh as integer millihertz and permits only a 10-millihertz active
+readback tolerance; scale preflight requires the 1/120 grid and readback within
+one millionth.
+
+A full configuration reload discards runtime monitor-rule projection and
+reapplies parsed persistent configuration. It is intentionally not normal B1
+rollback. Primary rollback issues one connector-specific `hl.monitor()` for
+the snapshotted mode and scale and then verifies the complete topology. An
+external reload therefore invalidates the candidate instead of authorizing it
+to be re-applied. The helper never follows a replaced compositor process or a
+connector that now has different available physical identity data.
+
+This milestone verified command construction and behavior only with injected
+fixtures; it made no live monitor mutation. Before Phase B2 production
+enablement, repeat the controlled runtime experiments against the installed
+Hyprland version. After every Hyprland upgrade, retest Lua monitor eval,
+connector matching, advertised and active refresh representation, scale
+normalization, inactive output JSON, color/readback fields, config reload,
+hotplug, partial multi-output failure, and issue 15961. Remove the exact-name
+restriction only when upstream behavior and a controlled test justify it.
+
 ## System keyboard synchronization boundary
 
 **Affected components:** Hyprland 0.56.2, systemd/systemd-localed 261.3,

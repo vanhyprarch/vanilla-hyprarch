@@ -1,0 +1,1926 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+"""Safety-critical backend for temporary Hyprland monitor transactions.
+
+Phase B1 deliberately leaves production persistence disabled.  The transaction,
+readback, rollback, journal, and persistence primitives are independently
+testable so the UI can remain a client in a later phase.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+from dataclasses import asdict, dataclass, replace
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import selectors
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Callable, Mapping, Protocol, Sequence
+import uuid
+
+
+SCHEMA_VERSION = 1
+PROTOCOL_VERSION = 1
+HYPRCTL = "/usr/bin/hyprctl"
+SYSTEMCTL = "/usr/bin/systemctl"
+SERVICE_NAME = "vanhyprarch-monitor-safe-apply.service"
+RUNTIME_COMPONENT = "monitor-safe-apply"
+DEFAULT_CONFIRM_SECONDS = 10.0
+APPLY_SETTLE_SECONDS = 2.0
+READBACK_INTERVAL_SECONDS = 0.05
+COMMAND_TIMEOUT_SECONDS = 5.0
+REFRESH_TOLERANCE_MILLIHZ = 10
+SCALE_TOLERANCE = Decimal("0.000001")
+MIN_SCALE = Decimal("0.5")
+MAX_SCALE = Decimal("4.0")
+SCALE_DENOMINATOR = Decimal(120)
+CONNECTOR_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+SIGNATURE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+MODE_RE = re.compile(
+    r"^(?P<width>[1-9][0-9]*)x(?P<height>[1-9][0-9]*)@"
+    r"(?P<refresh>[0-9]+(?:\.[0-9]+)?)Hz$"
+)
+TERMINAL_SAFE_STATES = {"committed", "reverted", "instance-vanished"}
+KNOWN_STATES = {
+    "preparing",
+    "applying",
+    "temporary-active",
+    "committing",
+    "reverting",
+    "committed",
+    "reverted",
+    "rollback-failed",
+    "instance-vanished",
+}
+LEGAL_TRANSITIONS = {
+    "preparing": {"applying", "reverting", "reverted", "instance-vanished"},
+    "applying": {"temporary-active", "reverting", "instance-vanished"},
+    "temporary-active": {"committing", "reverting", "instance-vanished"},
+    "committing": {"committed", "reverting", "instance-vanished"},
+    "reverting": {"reverted", "rollback-failed", "instance-vanished"},
+    "rollback-failed": {"reverting", "instance-vanished"},
+    "committed": set(),
+    "reverted": set(),
+    "instance-vanished": set(),
+}
+
+
+class MonitorError(RuntimeError):
+    """An expected fail-closed monitor transaction error."""
+
+
+class ValidationError(MonitorError):
+    pass
+
+
+class JournalError(MonitorError):
+    pass
+
+
+class ConcurrentTransaction(MonitorError):
+    pass
+
+
+class StaleTransaction(MonitorError):
+    pass
+
+
+class HyprlandUnavailable(MonitorError):
+    pass
+
+
+class InstanceReplaced(MonitorError):
+    pass
+
+
+class ApplyError(MonitorError):
+    pass
+
+
+class ReadbackError(MonitorError):
+    pass
+
+
+class RollbackError(MonitorError):
+    pass
+
+
+class PersistenceError(MonitorError):
+    pass
+
+
+class PersistenceDeferred(PersistenceError):
+    pass
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+class Runner(Protocol):
+    def __call__(self, argv: Sequence[str]) -> CommandResult: ...
+
+
+class Clock(Protocol):
+    def monotonic(self) -> float: ...
+
+    def sleep(self, seconds: float) -> None: ...
+
+
+class SystemClock:
+    def monotonic(self) -> float:
+        return time.monotonic()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+
+def run_command(argv: Sequence[str]) -> CommandResult:
+    try:
+        completed = subprocess.run(
+            list(argv),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            shell=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return CommandResult(127, "", str(error))
+    return CommandResult(completed.returncode, completed.stdout, completed.stderr)
+
+
+def _decimal(value: object, label: str) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
+        raise ValidationError(f"{label} is not numeric")
+    try:
+        result = Decimal(str(value))
+    except InvalidOperation as error:
+        raise ValidationError(f"{label} is not numeric") from error
+    if not result.is_finite():
+        raise ValidationError(f"{label} is not finite")
+    return result
+
+
+def refresh_to_millihz(
+    value: object, label: str = "refresh", *, allow_zero: bool = False
+) -> int:
+    refresh = _decimal(value, label)
+    if refresh < 0 or (refresh == 0 and not allow_zero):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValidationError(f"{label} must be {qualifier}")
+    return int((refresh * 1000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def scale_to_millionths(value: object, *, preflight: bool = False) -> int:
+    scale = _decimal(value, "scale")
+    if scale < MIN_SCALE or scale > MAX_SCALE:
+        raise ValidationError(
+            f"scale must be between {MIN_SCALE} and {MAX_SCALE}"
+        )
+    if preflight and scale * SCALE_DENOMINATOR != (
+        scale * SCALE_DENOMINATOR
+    ).to_integral_value():
+        raise ValidationError("scale must be representable in 1/120 increments")
+    return int((scale * 1_000_000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def _strict_object(value: object, keys: set[str], label: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise JournalError(f"{label} is not an object")
+    actual = set(value)
+    if actual != keys:
+        missing = sorted(keys - actual)
+        unknown = sorted(actual - keys)
+        raise JournalError(f"{label} schema mismatch: missing={missing}, unknown={unknown}")
+    return value
+
+
+def _json_value(value: object, label: str) -> object:
+    if value is None or isinstance(value, (bool, str, int, float)):
+        return value
+    if isinstance(value, list):
+        return [_json_value(item, label) for item in value]
+    if isinstance(value, dict) and all(isinstance(key, str) for key in value):
+        return {key: _json_value(item, label) for key, item in value.items()}
+    raise ValidationError(f"{label} contains a non-JSON value")
+
+
+@dataclass(frozen=True)
+class Mode:
+    width: int
+    height: int
+    refresh_millihz: int
+
+    @classmethod
+    def parse_advertised(cls, value: object) -> "Mode":
+        if not isinstance(value, str):
+            raise ValidationError("advertised mode is not a string")
+        match = MODE_RE.fullmatch(value)
+        if match is None:
+            raise ValidationError(f"malformed advertised mode: {value!r}")
+        return cls(
+            int(match.group("width")),
+            int(match.group("height")),
+            refresh_to_millihz(match.group("refresh"), "advertised refresh"),
+        )
+
+    def as_lua_string(self) -> str:
+        refresh = Decimal(self.refresh_millihz) / 1000
+        refresh_text = format(refresh.normalize(), "f")
+        return f"{self.width}x{self.height}@{refresh_text}"
+
+
+@dataclass(frozen=True)
+class PhysicalIdentity:
+    connector: str
+    make: str
+    model: str
+    serial: str
+    description: str
+
+    def has_evidence(self) -> bool:
+        return any((self.make, self.model, self.serial, self.description))
+
+
+@dataclass(frozen=True)
+class MonitorState:
+    connector: str
+    monitor_id: int
+    identity: PhysicalIdentity
+    width: int
+    height: int
+    refresh_millihz: int
+    x: int
+    y: int
+    scale_millionths: int
+    transform: int
+    disabled: bool
+    dpms: bool
+    mirror_of: str
+    current_format: str
+    vrr: object
+    color_state: dict[str, object]
+    advertised_modes: tuple[Mode, ...]
+
+    @property
+    def mode(self) -> Mode:
+        return Mode(self.width, self.height, self.refresh_millihz)
+
+    @property
+    def usable(self) -> bool:
+        return not self.disabled and self.dpms and self.width > 0 and self.height > 0
+
+    def protected_key(self) -> tuple[object, ...]:
+        return (
+            self.identity,
+            self.x,
+            self.y,
+            self.transform,
+            self.disabled,
+            self.dpms,
+            self.mirror_of,
+            self.current_format,
+            json.dumps(self.vrr, sort_keys=True, separators=(",", ":")),
+            json.dumps(self.color_state, sort_keys=True, separators=(",", ":")),
+            tuple(
+                sorted(
+                    self.advertised_modes,
+                    key=lambda mode: (mode.width, mode.height, mode.refresh_millihz),
+                )
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class Topology:
+    monitors: tuple[MonitorState, ...]
+
+    def by_connector(self) -> dict[str, MonitorState]:
+        result: dict[str, MonitorState] = {}
+        for monitor in self.monitors:
+            if monitor.connector in result:
+                raise ValidationError(f"duplicate connector {monitor.connector!r}")
+            result[monitor.connector] = monitor
+        return result
+
+    def target(self, connector: str) -> MonitorState:
+        try:
+            return self.by_connector()[connector]
+        except KeyError as error:
+            raise ValidationError(f"connector {connector!r} does not exist") from error
+
+    def has_usable_output(self) -> bool:
+        return any(monitor.usable for monitor in self.monitors)
+
+
+COLOR_KEY_RE = re.compile(r"(?:color|sdr|hdr|wide|luminance)", re.IGNORECASE)
+COLOR_FIELD_NAMES = {
+    "bitdepth",
+    "cm",
+    "sdrbrightness",
+    "sdrsaturation",
+    "supportshdr",
+    "supportswidecolor",
+}
+
+
+def _color_state(raw: Mapping[str, object], label: str) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in raw.items():
+        lowered = key.lower()
+        if COLOR_KEY_RE.search(key) is not None or lowered in COLOR_FIELD_NAMES:
+            result[key] = _json_value(value, f"{label}.{key}")
+    last_ipc = raw.get("lastIpcObject")
+    if isinstance(last_ipc, dict):
+        for key, value in last_ipc.items():
+            if not isinstance(key, str):
+                raise ValidationError(f"{label}.lastIpcObject has a non-string key")
+            lowered = key.lower()
+            if COLOR_KEY_RE.search(key) is not None or lowered in COLOR_FIELD_NAMES:
+                result[f"lastIpcObject.{key}"] = _json_value(
+                    value, f"{label}.lastIpcObject.{key}"
+                )
+    return result
+
+
+def _required(payload: Mapping[str, object], key: str, expected: type, label: str) -> object:
+    if key not in payload:
+        raise ValidationError(f"{label} omitted {key}")
+    value = payload[key]
+    if expected is int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValidationError(f"{label}.{key} has the wrong type")
+    elif not isinstance(value, expected):
+        raise ValidationError(f"{label}.{key} has the wrong type")
+    return value
+
+
+def parse_monitor_payload(payload: object) -> Topology:
+    if not isinstance(payload, list):
+        raise ValidationError("monitor response is not an array")
+    monitors: list[MonitorState] = []
+    for index, raw in enumerate(payload):
+        label = f"monitor[{index}]"
+        if not isinstance(raw, dict):
+            raise ValidationError(f"{label} is not an object")
+        connector = _required(raw, "name", str, label)
+        if not connector or CONNECTOR_RE.fullmatch(connector) is None:
+            raise ValidationError(f"{label}.name is not a safe connector")
+        disabled = _required(raw, "disabled", bool, label)
+        monitor_id = _required(raw, "id", int, label)
+        make = _required(raw, "make", str, label)
+        model = _required(raw, "model", str, label)
+        serial_number = _required(raw, "serialNumber", str, label)
+        description = _required(raw, "description", str, label)
+        width = _required(raw, "width", int, label)
+        height = _required(raw, "height", int, label)
+        refresh = refresh_to_millihz(
+            _required(raw, "refreshRate", (int, float), label),
+            f"{label}.refreshRate",
+            allow_zero=disabled,
+        )
+        x = _required(raw, "x", int, label)
+        y = _required(raw, "y", int, label)
+        scale = scale_to_millionths(_required(raw, "scale", (int, float), label))
+        transform = _required(raw, "transform", int, label)
+        dpms = _required(raw, "dpmsStatus", bool, label)
+        mirror_of = _required(raw, "mirrorOf", str, label)
+        current_format = _required(raw, "currentFormat", str, label)
+        if "vrr" not in raw:
+            raise ValidationError(f"{label} omitted vrr")
+        vrr = _json_value(raw["vrr"], f"{label}.vrr")
+        available = _required(raw, "availableModes", list, label)
+        modes = tuple(Mode.parse_advertised(mode) for mode in available)
+        color_state = _color_state(raw, label)
+        identity = PhysicalIdentity(connector, make, model, serial_number, description)
+        if not identity.has_evidence():
+            raise ValidationError(f"{label} has no physical identity evidence")
+        if not disabled and (width <= 0 or height <= 0 or not modes):
+            raise ValidationError(f"{label} is active but unusable")
+        monitors.append(
+            MonitorState(
+                connector,
+                monitor_id,
+                identity,
+                width,
+                height,
+                refresh,
+                x,
+                y,
+                scale,
+                transform,
+                disabled,
+                dpms,
+                mirror_of,
+                current_format,
+                vrr,
+                color_state,
+                modes,
+            )
+        )
+    topology = Topology(tuple(monitors))
+    topology.by_connector()
+    return topology
+
+
+@dataclass(frozen=True)
+class Candidate:
+    connector: str
+    mode: Mode
+    scale_millionths: int
+
+    @classmethod
+    def create(
+        cls, connector: str, width: int, height: int, refresh: object, scale: object
+    ) -> "Candidate":
+        if not isinstance(connector, str) or CONNECTOR_RE.fullmatch(connector) is None:
+            raise ValidationError("candidate connector is invalid")
+        if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+            raise ValidationError("candidate width is invalid")
+        if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
+            raise ValidationError("candidate height is invalid")
+        return cls(
+            connector,
+            Mode(width, height, refresh_to_millihz(refresh)),
+            scale_to_millionths(scale, preflight=True),
+        )
+
+
+def validate_candidate(candidate: Candidate, topology: Topology) -> MonitorState:
+    target = topology.target(candidate.connector)
+    if target.disabled or not target.usable:
+        raise ValidationError("candidate target is inactive or unusable")
+    if not target.identity.has_evidence():
+        raise ValidationError("candidate target lacks physical identity")
+    if candidate.mode not in set(target.advertised_modes):
+        raise ValidationError("candidate mode is not in the advertised catalogue")
+    if not topology.has_usable_output():
+        raise ValidationError("topology has no usable output")
+    return target
+
+
+@dataclass(frozen=True)
+class InstanceIdentity:
+    signature: str
+    pid: int
+    start_time_ticks: int
+    executable_device: int
+    executable_inode: int
+
+
+class InstanceProvider(Protocol):
+    def current(self, signature: str) -> InstanceIdentity: ...
+
+
+def _process_start_time(pid: int) -> int:
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text(encoding="ascii").split()
+        return int(fields[21])
+    except (OSError, IndexError, ValueError) as error:
+        raise HyprlandUnavailable("cannot read Hyprland process start time") from error
+
+
+class ProcInstanceProvider:
+    def __init__(self, runtime_dir: Path) -> None:
+        self.runtime_dir = runtime_dir
+
+    def current(self, signature: str) -> InstanceIdentity:
+        if SIGNATURE_RE.fullmatch(signature) is None:
+            raise HyprlandUnavailable("invalid Hyprland instance signature")
+        lock_path = self.runtime_dir / "hypr" / signature / "hyprland.lock"
+        try:
+            if lock_path.is_symlink() or not lock_path.is_file():
+                raise HyprlandUnavailable("Hyprland instance lock is not a regular file")
+            first_line = lock_path.read_text(encoding="utf-8").splitlines()[0]
+            pid = int(first_line)
+            if pid <= 1:
+                raise ValueError
+        except (OSError, IndexError, ValueError) as error:
+            if isinstance(error, HyprlandUnavailable):
+                raise
+            raise HyprlandUnavailable("cannot resolve Hyprland instance") from error
+        return process_instance_identity(signature, pid)
+
+
+def process_instance_identity(signature: str, pid: int) -> InstanceIdentity:
+    try:
+        executable = Path(f"/proc/{pid}/exe")
+        executable_stat = executable.stat()
+        if Path(os.readlink(executable)).name != "Hyprland":
+            raise HyprlandUnavailable("instance process is not Hyprland")
+        process_stat = Path(f"/proc/{pid}").stat()
+        if process_stat.st_uid != os.getuid():
+            raise HyprlandUnavailable("Hyprland instance has the wrong owner")
+        start_time = _process_start_time(pid)
+    except OSError as error:
+        raise HyprlandUnavailable("bound Hyprland process does not exist") from error
+    return InstanceIdentity(
+        signature,
+        pid,
+        start_time,
+        executable_stat.st_dev,
+        executable_stat.st_ino,
+    )
+
+
+def require_same_instance(expected: InstanceIdentity, actual: InstanceIdentity) -> None:
+    if expected != actual:
+        raise InstanceReplaced("Hyprland instance disappeared or was replaced")
+
+
+def lua_string(value: str) -> str:
+    encoded = value.encode("utf-8")
+    parts = ['"']
+    for byte in encoded:
+        if 0x20 <= byte <= 0x7E and byte not in (0x22, 0x5C):
+            parts.append(chr(byte))
+        else:
+            parts.append(f"\\x{byte:02x}")
+    parts.append('"')
+    return "".join(parts)
+
+
+def monitor_eval_source(connector: str, mode: Mode, scale_millionths: int) -> str:
+    scale = Decimal(scale_millionths) / 1_000_000
+    scale_text = format(scale.normalize(), "f")
+    return (
+        "hl.monitor({ output = "
+        f"{lua_string(connector)}, mode = {lua_string(mode.as_lua_string())}, "
+        f"scale = {scale_text} }})"
+    )
+
+
+def monitor_eval_argv(
+    signature: str, connector: str, mode: Mode, scale_millionths: int
+) -> list[str]:
+    return [
+        HYPRCTL,
+        "--instance",
+        signature,
+        "eval",
+        monitor_eval_source(connector, mode, scale_millionths),
+    ]
+
+
+def monitors_argv(signature: str) -> list[str]:
+    return [HYPRCTL, "--instance", signature, "-j", "monitors", "all"]
+
+
+class HyprlandClient:
+    def __init__(
+        self,
+        signature: str,
+        expected_instance: InstanceIdentity,
+        instance_provider: InstanceProvider,
+        runner: Runner = run_command,
+        clock: Clock | None = None,
+    ) -> None:
+        self.signature = signature
+        self.expected_instance = expected_instance
+        self.instance_provider = instance_provider
+        self.runner = runner
+        self.clock = clock or SystemClock()
+
+    def check_instance(self) -> None:
+        try:
+            actual = self.instance_provider.current(self.signature)
+        except HyprlandUnavailable as error:
+            try:
+                process_identity = process_instance_identity(
+                    self.expected_instance.signature, self.expected_instance.pid
+                )
+            except HyprlandUnavailable as process_error:
+                raise InstanceReplaced("bound Hyprland instance disappeared") from process_error
+            if process_identity != self.expected_instance:
+                raise InstanceReplaced("bound Hyprland instance was replaced") from error
+            raise
+        require_same_instance(self.expected_instance, actual)
+
+    def read_topology(self) -> Topology:
+        self.check_instance()
+        result = self.runner(monitors_argv(self.signature))
+        if result.returncode != 0:
+            raise HyprlandUnavailable(
+                "monitor readback failed: "
+                + (result.stderr.strip() or result.stdout.strip() or "no diagnostic")
+            )
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise ReadbackError("monitor readback is not valid JSON") from error
+        topology = parse_monitor_payload(payload)
+        self.check_instance()
+        return topology
+
+    def apply(self, connector: str, mode: Mode, scale_millionths: int) -> None:
+        self.check_instance()
+        result = self.runner(
+            monitor_eval_argv(self.signature, connector, mode, scale_millionths)
+        )
+        if result.returncode != 0 or result.stdout.strip() != "ok":
+            raise ApplyError(
+                "Hyprland rejected monitor eval: "
+                + (result.stderr.strip() or result.stdout.strip() or "no diagnostic")
+            )
+        self.check_instance()
+
+    def read_until(self, verifier: Callable[[Topology], None]) -> Topology:
+        deadline = self.clock.monotonic() + APPLY_SETTLE_SECONDS
+        last_error: MonitorError | None = None
+        while True:
+            try:
+                topology = self.read_topology()
+                verifier(topology)
+                return topology
+            except (ReadbackError, ValidationError) as error:
+                last_error = error
+            if self.clock.monotonic() >= deadline:
+                raise ReadbackError(f"authoritative readback did not converge: {last_error}")
+            self.clock.sleep(READBACK_INTERVAL_SECONDS)
+
+
+def _same_refresh(left: int, right: int) -> bool:
+    return abs(left - right) <= REFRESH_TOLERANCE_MILLIHZ
+
+
+def verify_candidate_readback(
+    snapshot: Topology, candidate: Candidate, readback: Topology, identity: PhysicalIdentity
+) -> None:
+    before = snapshot.by_connector()
+    after = readback.by_connector()
+    if set(before) != set(after):
+        raise ValidationError("monitor topology changed during apply")
+    if not readback.has_usable_output():
+        raise ValidationError("no usable output remains")
+    for connector, old in before.items():
+        new = after[connector]
+        if old.identity != new.identity or old.protected_key() != new.protected_key():
+            raise ValidationError(f"protected monitor state changed for {connector}")
+        if connector != candidate.connector:
+            if (
+                old.width != new.width
+                or old.height != new.height
+                or not _same_refresh(old.refresh_millihz, new.refresh_millihz)
+                or old.scale_millionths != new.scale_millionths
+            ):
+                raise ValidationError(f"unselected monitor state changed for {connector}")
+    target = after[candidate.connector]
+    if target.identity != identity:
+        raise ValidationError("target connector physical identity changed")
+    if target.width != candidate.mode.width or target.height != candidate.mode.height:
+        raise ValidationError("requested resolution is not active")
+    if not _same_refresh(target.refresh_millihz, candidate.mode.refresh_millihz):
+        raise ValidationError("requested refresh is not active")
+    if abs(target.scale_millionths - candidate.scale_millionths) > int(
+        SCALE_TOLERANCE * 1_000_000
+    ):
+        raise ValidationError("requested scale is not active")
+
+
+def verify_rollback_readback(snapshot: Topology, readback: Topology) -> None:
+    before = snapshot.by_connector()
+    after = readback.by_connector()
+    if set(before) != set(after):
+        raise ValidationError("monitor topology changed during rollback")
+    if not readback.has_usable_output():
+        raise ValidationError("rollback left no usable output")
+    for connector, old in before.items():
+        new = after[connector]
+        if old.identity != new.identity or old.protected_key() != new.protected_key():
+            raise ValidationError(f"protected monitor state was not restored for {connector}")
+        if (
+            old.width != new.width
+            or old.height != new.height
+            or not _same_refresh(old.refresh_millihz, new.refresh_millihz)
+            or old.scale_millionths != new.scale_millionths
+        ):
+            raise ValidationError(f"owned monitor state was not restored for {connector}")
+
+
+@dataclass(frozen=True)
+class FileSnapshot:
+    path: str
+    content_base64: str
+    sha256: str
+    mode: int
+    uid: int
+    gid: int
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+
+    @property
+    def content(self) -> bytes:
+        try:
+            return base64.b64decode(self.content_base64, validate=True)
+        except ValueError as error:
+            raise JournalError("journal contains invalid file snapshot bytes") from error
+
+
+def snapshot_file(path: Path, *, require_private: bool = True) -> FileSnapshot:
+    try:
+        if path.is_symlink():
+            raise ValidationError(f"{path} must not be a symlink")
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValidationError(f"{path} is not a regular file")
+            if metadata.st_uid != os.getuid():
+                raise ValidationError(f"{path} is not owned by the current user")
+            if require_private and stat.S_IMODE(metadata.st_mode) & 0o077:
+                raise ValidationError(f"{path} permissions are not private")
+            content = b""
+            while True:
+                chunk = os.read(descriptor, 65536)
+                if not chunk:
+                    break
+                content += chunk
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise ValidationError(f"cannot snapshot {path}: {error}") from error
+    return FileSnapshot(
+        str(path),
+        base64.b64encode(content).decode("ascii"),
+        hashlib.sha256(content).hexdigest(),
+        stat.S_IMODE(metadata.st_mode),
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
+def snapshot_matches(snapshot: FileSnapshot) -> bool:
+    try:
+        current = snapshot_file(Path(snapshot.path))
+    except ValidationError:
+        return False
+    return (
+        current.sha256 == snapshot.sha256
+        and current.mode == snapshot.mode
+        and current.uid == snapshot.uid
+        and current.gid == snapshot.gid
+        and current.device == snapshot.device
+        and current.inode == snapshot.inode
+        and current.size == snapshot.size
+        and current.mtime_ns == snapshot.mtime_ns
+    )
+
+
+MONITOR_BLOCK_RE = re.compile(r"hl\.monitor\s*\(\s*\{(?P<body>.*?)\}\s*\)", re.DOTALL)
+FIELD_RE_TEMPLATE = r"(?m)^(?P<prefix>[ \t]*{name}[ \t]*=[ \t]*)(?P<value>[^,\n]+)(?P<suffix>[ \t]*,?[ \t]*)$"
+LUA_QUOTED_RE = re.compile(r'^"([^"\\]*)"$')
+NUMBER_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
+IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class MachineProfile:
+    connector: str
+    block_start: int
+    block_end: int
+    body: str
+    mode_value: str
+    scale_value: str
+
+
+def _field(body: str, name: str) -> tuple[str, re.Match[str]]:
+    pattern = re.compile(FIELD_RE_TEMPLATE.format(name=re.escape(name)))
+    matches = list(pattern.finditer(body))
+    if len(matches) != 1:
+        raise ValidationError(f"monitor profile has {len(matches)} {name!r} fields")
+    return matches[0].group("value").strip(), matches[0]
+
+
+def parse_machine_profiles(content: bytes) -> tuple[list[MachineProfile], int]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValidationError("machine configuration is not UTF-8") from error
+    profiles: list[MachineProfile] = []
+    catch_all_count = 0
+    seen: set[str] = set()
+    for match in MONITOR_BLOCK_RE.finditer(text):
+        body = match.group("body")
+        output_value, _ = _field(body, "output")
+        quoted = LUA_QUOTED_RE.fullmatch(output_value)
+        if quoted is None:
+            raise ValidationError("monitor output must be a simple quoted connector")
+        connector = quoted.group(1)
+        if connector == "":
+            catch_all_count += 1
+            continue
+        if CONNECTOR_RE.fullmatch(connector) is None:
+            raise ValidationError("machine profile has an unsafe connector")
+        if connector in seen:
+            raise ValidationError(f"ambiguous machine profiles for {connector}")
+        seen.add(connector)
+        mode_value, _ = _field(body, "mode")
+        scale_value, _ = _field(body, "scale")
+        profiles.append(
+            MachineProfile(
+                connector,
+                match.start("body"),
+                match.end("body"),
+                body,
+                mode_value,
+                scale_value,
+            )
+        )
+    if catch_all_count > 1:
+        raise ValidationError("machine configuration has ambiguous catch-all profiles")
+    return profiles, catch_all_count
+
+
+def require_explicit_profile(content: bytes, connector: str) -> MachineProfile:
+    profiles, _ = parse_machine_profiles(content)
+    if any(profile.connector.startswith("desc:") for profile in profiles):
+        raise ValidationError("description-addressed machine profiles are ambiguous")
+    matches = [profile for profile in profiles if profile.connector == connector]
+    if len(matches) != 1:
+        raise ValidationError(
+            f"connector {connector!r} requires exactly one existing explicit machine profile"
+        )
+    return matches[0]
+
+
+def reject_superseding_override(content: bytes, connector: str) -> None:
+    profiles, _ = parse_machine_profiles(content)
+    if any(profile.connector.startswith("desc:") for profile in profiles):
+        raise ValidationError("description-addressed override profiles are ambiguous")
+    if any(profile.connector == connector for profile in profiles):
+        raise ValidationError(
+            f"user override supersedes the machine profile for {connector!r}"
+        )
+
+
+def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
+    profile = require_explicit_profile(content, candidate.connector)
+    text = content.decode("utf-8")
+    body = profile.body
+    _, mode_match = _field(body, "mode")
+    if LUA_QUOTED_RE.fullmatch(profile.mode_value) is None:
+        raise PersistenceError("explicit profile mode is not a replaceable string")
+    new_body = (
+        body[: mode_match.start("value")]
+        + lua_string(candidate.mode.as_lua_string())
+        + body[mode_match.end("value") :]
+    )
+    scale_value, scale_match = _field(new_body, "scale")
+    scale_text = format(
+        (Decimal(candidate.scale_millionths) / 1_000_000).normalize(), "f"
+    )
+    if NUMBER_RE.fullmatch(scale_value):
+        new_body = (
+            new_body[: scale_match.start("value")]
+            + scale_text
+            + new_body[scale_match.end("value") :]
+        )
+    elif IDENTIFIER_RE.fullmatch(scale_value):
+        scale_references = re.findall(
+            rf"(?m)^[ \t]*scale[ \t]*=[ \t]*{re.escape(scale_value)}[ \t]*,?[ \t]*$",
+            text,
+        )
+        if len(scale_references) != 1:
+            raise PersistenceError("profile scale variable is shared or ambiguous")
+        assignment = re.compile(
+            rf"(?m)^(?P<prefix>[ \t]*local[ \t]+{re.escape(scale_value)}[ \t]*=[ \t]*)"
+            r"(?P<value>[0-9]+(?:\.[0-9]+)?)(?P<suffix>[ \t]*)$"
+        )
+        matches = list(assignment.finditer(text))
+        if len(matches) != 1:
+            raise PersistenceError("profile scale variable is missing or ambiguous")
+        variable_match = matches[0]
+        assignment_precedes_profile = variable_match.start() < profile.block_start
+        text = (
+            text[: variable_match.start("value")]
+            + scale_text
+            + text[variable_match.end("value") :]
+        )
+        if assignment_precedes_profile:
+            delta = len(scale_text) - len(variable_match.group("value"))
+            profile = replace(
+                profile,
+                block_start=profile.block_start + delta,
+                block_end=profile.block_end + delta,
+            )
+    else:
+        raise PersistenceError("explicit profile scale is not replaceable")
+    return (
+        text[: profile.block_start]
+        + new_body
+        + text[profile.block_end :]
+    ).encode("utf-8")
+
+
+def atomic_replace(
+    path: Path,
+    content: bytes,
+    mode: int,
+    *,
+    uid: int | None = None,
+    gid: int | None = None,
+) -> None:
+    directory = path.parent
+    prefix = f".{path.name}.vanhyprarch-monitor."
+    descriptor = -1
+    temporary_path: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(prefix=prefix, dir=directory)
+        temporary_path = Path(temporary_name)
+        os.fchmod(descriptor, mode)
+        if uid is not None or gid is not None:
+            os.fchown(descriptor, -1 if uid is None else uid, -1 if gid is None else gid)
+        offset = 0
+        while offset < len(content):
+            offset += os.write(descriptor, content[offset:])
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary_path, path)
+        temporary_path = None
+        directory_descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except OSError as error:
+        raise PersistenceError(f"atomic replacement failed for {path}: {error}") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+class ProspectiveVerifier(Protocol):
+    def __call__(self, machine_content: bytes) -> None: ...
+
+
+class Persister(Protocol):
+    def prepare(self, journal: "TransactionJournal") -> tuple[bytes, str]: ...
+
+    def persist(self, journal: "TransactionJournal", content: bytes) -> None: ...
+
+    def recover_original(self, journal: "TransactionJournal") -> None: ...
+
+
+class DisabledProductionPersister:
+    def prepare(self, journal: "TransactionJournal") -> tuple[bytes, str]:
+        raise PersistenceDeferred("production monitor persistence is deferred to Phase B2")
+
+    def persist(self, journal: "TransactionJournal", content: bytes) -> None:
+        raise PersistenceDeferred("production monitor persistence is deferred to Phase B2")
+
+    def recover_original(self, journal: "TransactionJournal") -> None:
+        return
+
+
+class MachineConfigPersister:
+    """Fixture-testable byte-preserving persistence primitive.
+
+    A later phase will supply a verifier that stages the complete XDG config
+    tree and will add reload/reconciliation before production enables this.
+    """
+
+    def __init__(self, verifier: ProspectiveVerifier) -> None:
+        self.verifier = verifier
+
+    def prepare(self, journal: "TransactionJournal") -> tuple[bytes, str]:
+        if not snapshot_matches(journal.machine_file):
+            raise PersistenceError("machine configuration changed during transaction")
+        if not snapshot_matches(journal.override_file):
+            raise PersistenceError("user override changed during transaction")
+        content = rewrite_existing_profile(journal.machine_file.content, journal.candidate)
+        try:
+            self.verifier(content)
+        except MonitorError:
+            raise
+        except Exception as error:
+            raise PersistenceError(f"prospective configuration verification failed: {error}") from error
+        return content, hashlib.sha256(content).hexdigest()
+
+    def persist(self, journal: "TransactionJournal", content: bytes) -> None:
+        if not snapshot_matches(journal.machine_file):
+            raise PersistenceError("machine configuration changed before atomic write")
+        if not snapshot_matches(journal.override_file):
+            raise PersistenceError("user override changed before atomic write")
+        atomic_replace(
+            Path(journal.machine_file.path),
+            content,
+            journal.machine_file.mode,
+            uid=journal.machine_file.uid,
+            gid=journal.machine_file.gid,
+        )
+        current = snapshot_file(Path(journal.machine_file.path))
+        expected = hashlib.sha256(content).hexdigest()
+        if current.sha256 != expected or current.mode != journal.machine_file.mode:
+            raise PersistenceError("persisted machine configuration verification failed")
+
+    def recover_original(self, journal: "TransactionJournal") -> None:
+        path = Path(journal.machine_file.path)
+        current = snapshot_file(path)
+        if current.sha256 == journal.machine_file.sha256:
+            return
+        if (
+            journal.planned_machine_sha256 is None
+            or current.sha256 != journal.planned_machine_sha256
+        ):
+            raise PersistenceError("machine file has an unrelated external edit")
+        atomic_replace(
+            path,
+            journal.machine_file.content,
+            journal.machine_file.mode,
+            uid=journal.machine_file.uid,
+            gid=journal.machine_file.gid,
+        )
+
+
+@dataclass(frozen=True)
+class TransactionJournal:
+    schema_version: int
+    transaction_id: str
+    state: str
+    sequence: int
+    created_monotonic: float
+    updated_monotonic: float
+    deadline_monotonic: float | None
+    failure: str | None
+    mutation_attempted: bool
+    runtime_verified: bool
+    persistence_verified: bool
+    recovery_required: bool
+    planned_machine_sha256: str | None
+    instance: InstanceIdentity
+    target_identity: PhysicalIdentity
+    candidate: Candidate
+    snapshot: Topology
+    machine_file: FileSnapshot
+    override_file: FileSnapshot
+
+
+JOURNAL_KEYS = {
+    "schema_version",
+    "transaction_id",
+    "state",
+    "sequence",
+    "created_monotonic",
+    "updated_monotonic",
+    "deadline_monotonic",
+    "failure",
+    "mutation_attempted",
+    "runtime_verified",
+    "persistence_verified",
+    "recovery_required",
+    "planned_machine_sha256",
+    "instance",
+    "target_identity",
+    "candidate",
+    "snapshot",
+    "machine_file",
+    "override_file",
+}
+
+
+def _mode_from_dict(value: object, label: str) -> Mode:
+    raw = _strict_object(value, {"width", "height", "refresh_millihz"}, label)
+    if not all(type(raw[key]) is int for key in raw):
+        raise JournalError(f"{label} has invalid numeric fields")
+    return Mode(raw["width"], raw["height"], raw["refresh_millihz"])
+
+
+def _identity_from_dict(value: object, label: str) -> PhysicalIdentity:
+    keys = {"connector", "make", "model", "serial", "description"}
+    raw = _strict_object(value, keys, label)
+    if not all(isinstance(raw[key], str) for key in keys):
+        raise JournalError(f"{label} has invalid fields")
+    return PhysicalIdentity(**raw)
+
+
+def _monitor_from_dict(value: object, label: str) -> MonitorState:
+    keys = {
+        "connector", "monitor_id", "identity", "width", "height",
+        "refresh_millihz", "x", "y", "scale_millionths", "transform",
+        "disabled", "dpms", "mirror_of", "current_format", "vrr",
+        "color_state", "advertised_modes",
+    }
+    raw = _strict_object(value, keys, label)
+    integer_keys = {
+        "monitor_id", "width", "height", "refresh_millihz", "x", "y",
+        "scale_millionths", "transform",
+    }
+    if not all(type(raw[key]) is int for key in integer_keys):
+        raise JournalError(f"{label} has invalid integer fields")
+    if not all(isinstance(raw[key], str) for key in ("connector", "mirror_of", "current_format")):
+        raise JournalError(f"{label} has invalid string fields")
+    if not all(type(raw[key]) is bool for key in ("disabled", "dpms")):
+        raise JournalError(f"{label} has invalid boolean fields")
+    if not isinstance(raw["color_state"], dict) or not isinstance(raw["advertised_modes"], list):
+        raise JournalError(f"{label} has invalid collection fields")
+    return MonitorState(
+        raw["connector"], raw["monitor_id"], _identity_from_dict(raw["identity"], f"{label}.identity"),
+        raw["width"], raw["height"], raw["refresh_millihz"], raw["x"], raw["y"],
+        raw["scale_millionths"], raw["transform"], raw["disabled"], raw["dpms"],
+        raw["mirror_of"], raw["current_format"], _json_value(raw["vrr"], f"{label}.vrr"),
+        _json_value(raw["color_state"], f"{label}.color_state"),
+        tuple(_mode_from_dict(mode, f"{label}.advertised_modes") for mode in raw["advertised_modes"]),
+    )
+
+
+def _file_from_dict(value: object, label: str) -> FileSnapshot:
+    keys = {
+        "path", "content_base64", "sha256", "mode", "uid", "gid",
+        "device", "inode", "size", "mtime_ns",
+    }
+    raw = _strict_object(value, keys, label)
+    if not all(isinstance(raw[key], str) for key in ("path", "content_base64", "sha256")):
+        raise JournalError(f"{label} has invalid string fields")
+    if not all(type(raw[key]) is int for key in keys - {"path", "content_base64", "sha256"}):
+        raise JournalError(f"{label} has invalid integer fields")
+    result = FileSnapshot(**raw)
+    if hashlib.sha256(result.content).hexdigest() != result.sha256:
+        raise JournalError(f"{label} content hash is invalid")
+    return result
+
+
+def journal_to_dict(journal: TransactionJournal) -> dict[str, object]:
+    return asdict(journal)
+
+
+def journal_from_dict(value: object) -> TransactionJournal:
+    raw = _strict_object(value, JOURNAL_KEYS, "journal")
+    if raw["schema_version"] != SCHEMA_VERSION:
+        raise JournalError("unknown journal schema version")
+    if raw["state"] not in KNOWN_STATES:
+        raise JournalError("unknown journal state")
+    for key in ("transaction_id", "state"):
+        if not isinstance(raw[key], str):
+            raise JournalError(f"journal.{key} has the wrong type")
+    try:
+        if str(uuid.UUID(raw["transaction_id"])) != raw["transaction_id"]:
+            raise ValueError
+    except ValueError as error:
+        raise JournalError("journal.transaction_id is not a canonical UUID") from error
+    for key in ("sequence",):
+        if type(raw[key]) is not int:
+            raise JournalError(f"journal.{key} has the wrong type")
+    for key in ("created_monotonic", "updated_monotonic"):
+        if isinstance(raw[key], bool) or not isinstance(raw[key], (int, float)):
+            raise JournalError(f"journal.{key} has the wrong type")
+    if raw["deadline_monotonic"] is not None and not isinstance(raw["deadline_monotonic"], (int, float)):
+        raise JournalError("journal.deadline_monotonic has the wrong type")
+    if raw["failure"] is not None and not isinstance(raw["failure"], str):
+        raise JournalError("journal.failure has the wrong type")
+    if raw["planned_machine_sha256"] is not None and not isinstance(raw["planned_machine_sha256"], str):
+        raise JournalError("journal.planned_machine_sha256 has the wrong type")
+    for key in ("mutation_attempted", "runtime_verified", "persistence_verified", "recovery_required"):
+        if type(raw[key]) is not bool:
+            raise JournalError(f"journal.{key} has the wrong type")
+    instance_raw = _strict_object(
+        raw["instance"],
+        {"signature", "pid", "start_time_ticks", "executable_device", "executable_inode"},
+        "journal.instance",
+    )
+    if not isinstance(instance_raw["signature"], str) or not all(
+        type(instance_raw[key]) is int
+        for key in ("pid", "start_time_ticks", "executable_device", "executable_inode")
+    ):
+        raise JournalError("journal.instance has invalid fields")
+    if SIGNATURE_RE.fullmatch(instance_raw["signature"]) is None or instance_raw["pid"] <= 1:
+        raise JournalError("journal.instance identity is invalid")
+    candidate_raw = _strict_object(raw["candidate"], {"connector", "mode", "scale_millionths"}, "journal.candidate")
+    if not isinstance(candidate_raw["connector"], str) or type(candidate_raw["scale_millionths"]) is not int:
+        raise JournalError("journal.candidate has invalid fields")
+    snapshot_raw = _strict_object(raw["snapshot"], {"monitors"}, "journal.snapshot")
+    if not isinstance(snapshot_raw["monitors"], list):
+        raise JournalError("journal.snapshot.monitors is not an array")
+    journal = TransactionJournal(
+        raw["schema_version"], raw["transaction_id"], raw["state"], raw["sequence"],
+        float(raw["created_monotonic"]), float(raw["updated_monotonic"]),
+        None if raw["deadline_monotonic"] is None else float(raw["deadline_monotonic"]),
+        raw["failure"], raw["mutation_attempted"], raw["runtime_verified"],
+        raw["persistence_verified"], raw["recovery_required"], raw["planned_machine_sha256"],
+        InstanceIdentity(**instance_raw),
+        _identity_from_dict(raw["target_identity"], "journal.target_identity"),
+        Candidate(candidate_raw["connector"], _mode_from_dict(candidate_raw["mode"], "journal.candidate.mode"), candidate_raw["scale_millionths"]),
+        Topology(tuple(_monitor_from_dict(item, "journal.snapshot.monitor") for item in snapshot_raw["monitors"])),
+        _file_from_dict(raw["machine_file"], "journal.machine_file"),
+        _file_from_dict(raw["override_file"], "journal.override_file"),
+    )
+    if journal.sequence < 0 or journal.created_monotonic < 0 or journal.updated_monotonic < 0:
+        raise JournalError("journal counters or timestamps are invalid")
+    if journal.candidate.connector != journal.target_identity.connector:
+        raise JournalError("journal candidate and target identity disagree")
+    if CONNECTOR_RE.fullmatch(journal.candidate.connector) is None:
+        raise JournalError("journal candidate connector is invalid")
+    try:
+        scale_to_millionths(
+            Decimal(journal.candidate.scale_millionths) / 1_000_000,
+            preflight=True,
+        )
+    except ValidationError as error:
+        raise JournalError("journal candidate scale is invalid") from error
+    if (
+        journal.candidate.mode.width <= 0
+        or journal.candidate.mode.height <= 0
+        or journal.candidate.mode.refresh_millihz <= 0
+    ):
+        raise JournalError("journal candidate mode is invalid")
+    try:
+        snapshot_target = journal.snapshot.target(journal.candidate.connector)
+    except ValidationError as error:
+        raise JournalError("journal snapshot does not contain its target") from error
+    if snapshot_target.identity != journal.target_identity:
+        raise JournalError("journal target identity does not match its snapshot")
+    if not Path(journal.machine_file.path).is_absolute() or not Path(journal.override_file.path).is_absolute():
+        raise JournalError("journal configuration paths must be absolute")
+    if journal.machine_file.mode & 0o077 or journal.override_file.mode & 0o077:
+        raise JournalError("journal configuration metadata is not private")
+    if not journal.snapshot.monitors:
+        raise JournalError("journal snapshot has no monitors")
+    try:
+        journal.snapshot.by_connector()
+    except ValidationError as error:
+        raise JournalError("journal snapshot connector inventory is invalid") from error
+    if not journal.target_identity.has_evidence():
+        raise JournalError("journal target has no physical identity evidence")
+    if journal.machine_file.uid != os.getuid() or journal.override_file.uid != os.getuid():
+        raise JournalError("journal configuration ownership is invalid")
+    if any(
+        re.fullmatch(r"[0-9a-f]{64}", file_snapshot.sha256) is None
+        for file_snapshot in (journal.machine_file, journal.override_file)
+    ):
+        raise JournalError("journal configuration hash is invalid")
+    if journal.deadline_monotonic is not None and journal.state != "temporary-active":
+        raise JournalError("journal deadline exists outside temporary-active")
+    if journal.state == "temporary-active" and (
+        journal.deadline_monotonic is None
+        or not journal.runtime_verified
+        or not journal.mutation_attempted
+        or not journal.recovery_required
+    ):
+        raise JournalError("temporary-active journal invariants are invalid")
+    if journal.state == "committed" and (
+        not journal.runtime_verified
+        or not journal.persistence_verified
+        or journal.recovery_required
+    ):
+        raise JournalError("committed journal invariants are invalid")
+    if journal.state == "reverted" and (
+        not journal.runtime_verified or journal.recovery_required
+    ):
+        raise JournalError("reverted journal invariants are invalid")
+    if journal.state == "instance-vanished" and journal.recovery_required:
+        raise JournalError("instance-vanished journal remains recovery-armed")
+    if journal.state in {
+        "preparing", "applying", "committing", "reverting", "rollback-failed"
+    } and not journal.recovery_required:
+        raise JournalError(f"{journal.state} journal is not recovery-armed")
+    return journal
+
+
+class RuntimeStore:
+    def __init__(self, runtime_root: Path) -> None:
+        self.directory = runtime_root / "vanhyprarch" / RUNTIME_COMPONENT
+        self.journal_path = self.directory / "transaction.json"
+        self.lock_path = self.directory / "transaction.lock"
+        self.socket_path = self.directory / "control.sock"
+        self._lock_descriptor: int | None = None
+
+    @staticmethod
+    def _require_private_directory(path: Path) -> None:
+        try:
+            metadata = path.lstat()
+        except OSError as error:
+            raise JournalError(f"cannot inspect runtime directory {path}: {error}") from error
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid():
+            raise JournalError(f"unsafe runtime directory {path}")
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise JournalError(f"runtime directory {path} is not private")
+
+    def prepare(self) -> None:
+        runtime_root = self.directory.parents[1]
+        self._require_private_directory(runtime_root)
+        self.directory.parent.mkdir(mode=0o700, exist_ok=True)
+        self.directory.mkdir(mode=0o700, exist_ok=True)
+        self._require_private_directory(self.directory.parent)
+        self._require_private_directory(self.directory)
+
+    def _validate_existing(self) -> bool:
+        runtime_root = self.directory.parents[1]
+        try:
+            runtime_root.lstat()
+            self.directory.parent.lstat()
+            self.directory.lstat()
+        except FileNotFoundError:
+            return False
+        self._require_private_directory(runtime_root)
+        self._require_private_directory(self.directory.parent)
+        self._require_private_directory(self.directory)
+        return True
+
+    def acquire(self) -> None:
+        self.prepare()
+        if self._lock_descriptor is not None:
+            return
+        flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW
+        try:
+            descriptor = os.open(self.lock_path, flags, 0o600)
+            os.fchmod(descriptor, 0o600)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, BlockingIOError) as error:
+            try:
+                os.close(descriptor)
+            except (UnboundLocalError, OSError):
+                pass
+            raise ConcurrentTransaction("another monitor transaction owns the lock") from error
+        self._lock_descriptor = descriptor
+
+    def release(self) -> None:
+        if self._lock_descriptor is not None:
+            os.close(self._lock_descriptor)
+            self._lock_descriptor = None
+
+    def write(self, journal: TransactionJournal) -> None:
+        if self._lock_descriptor is None:
+            raise JournalError("journal write requires the transaction lock")
+        data = (
+            json.dumps(journal_to_dict(journal), sort_keys=True, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
+        atomic_replace(self.journal_path, data, 0o600)
+        metadata = self.journal_path.stat()
+        if stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid():
+            raise JournalError("journal permissions or ownership are unsafe")
+
+    def read(self) -> TransactionJournal | None:
+        if not self._validate_existing():
+            return None
+        try:
+            if self.journal_path.is_symlink():
+                raise JournalError("journal must not be a symlink")
+            metadata = self.journal_path.stat()
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
+                raise JournalError("journal is not a current-user regular file")
+            if stat.S_IMODE(metadata.st_mode) != 0o600:
+                raise JournalError("journal permissions are not 0600")
+            payload = json.loads(self.journal_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError) as error:
+            raise JournalError(f"cannot read transaction journal: {error}") from error
+        return journal_from_dict(payload)
+
+
+@dataclass(frozen=True)
+class ConfigPaths:
+    machine: Path
+    override: Path
+
+
+def default_config_paths(environment: Mapping[str, str] = os.environ) -> ConfigPaths:
+    home = environment.get("HOME", "")
+    if not home or not Path(home).is_absolute():
+        raise ValidationError("HOME must be an absolute path")
+    config_home_text = environment.get("XDG_CONFIG_HOME", str(Path(home) / ".config"))
+    config_home = Path(config_home_text)
+    if not config_home.is_absolute():
+        raise ValidationError("XDG_CONFIG_HOME must be an absolute path")
+    return ConfigPaths(
+        config_home / "vanhyprarch/machine/hyprland.lua",
+        config_home / "vanhyprarch/overrides/hyprland.lua",
+    )
+
+
+class TransactionAuthority:
+    def __init__(
+        self,
+        store: RuntimeStore,
+        instance_provider: InstanceProvider,
+        config_paths: ConfigPaths,
+        runner: Runner = run_command,
+        clock: Clock | None = None,
+        persister: Persister | None = None,
+        confirmation_seconds: float = DEFAULT_CONFIRM_SECONDS,
+        bound_signature: str | None = None,
+    ) -> None:
+        self.store = store
+        self.instance_provider = instance_provider
+        self.config_paths = config_paths
+        self.runner = runner
+        self.clock = clock or SystemClock()
+        self.persister = persister or DisabledProductionPersister()
+        self.confirmation_seconds = confirmation_seconds
+        self.bound_signature = bound_signature
+
+    def _client(self, journal: TransactionJournal) -> HyprlandClient:
+        return HyprlandClient(
+            journal.instance.signature,
+            journal.instance,
+            self.instance_provider,
+            self.runner,
+            self.clock,
+        )
+
+    def _write(self, journal: TransactionJournal) -> TransactionJournal:
+        self.store.write(journal)
+        return journal
+
+    def _transition(self, journal: TransactionJournal, state: str, **changes: object) -> TransactionJournal:
+        if state not in LEGAL_TRANSITIONS[journal.state]:
+            raise JournalError(f"illegal transaction transition {journal.state} -> {state}")
+        return self._write(
+            replace(
+                journal,
+                state=state,
+                sequence=journal.sequence + 1,
+                updated_monotonic=self.clock.monotonic(),
+                **changes,
+            )
+        )
+
+    def begin(self, candidate: Candidate, signature: str) -> TransactionJournal:
+        if self.bound_signature is not None and signature != self.bound_signature:
+            raise ValidationError("requested Hyprland instance is not the service-bound instance")
+        previous = self.store.read()
+        if previous is not None and previous.state not in TERMINAL_SAFE_STATES:
+            raise StaleTransaction("non-terminal monitor transaction requires recovery")
+        instance = self.instance_provider.current(signature)
+        client = HyprlandClient(signature, instance, self.instance_provider, self.runner, self.clock)
+        topology = client.read_topology()
+        target = validate_candidate(candidate, topology)
+        machine = snapshot_file(self.config_paths.machine)
+        override = snapshot_file(self.config_paths.override)
+        require_explicit_profile(machine.content, candidate.connector)
+        reject_superseding_override(override.content, candidate.connector)
+        rewrite_existing_profile(machine.content, candidate)
+        now = self.clock.monotonic()
+        journal = self._write(
+            TransactionJournal(
+                SCHEMA_VERSION,
+                str(uuid.uuid4()),
+                "preparing",
+                0,
+                now,
+                now,
+                None,
+                None,
+                False,
+                False,
+                False,
+                True,
+                None,
+                instance,
+                target.identity,
+                candidate,
+                topology,
+                machine,
+                override,
+            )
+        )
+        journal = self._transition(journal, "applying", mutation_attempted=True)
+        try:
+            client.apply(candidate.connector, candidate.mode, candidate.scale_millionths)
+            client.read_until(
+                lambda readback: verify_candidate_readback(
+                    topology, candidate, readback, target.identity
+                )
+            )
+        except InstanceReplaced as error:
+            return self._transition(
+                journal, "instance-vanished", failure=str(error), recovery_required=False
+            )
+        except MonitorError as error:
+            journal = replace(journal, failure=f"apply/readback failed: {error}")
+            self.store.write(journal)
+            return self.rollback(journal.transaction_id, reason=journal.failure)
+        return self._transition(
+            journal,
+            "temporary-active",
+            runtime_verified=True,
+            deadline_monotonic=self.clock.monotonic() + self.confirmation_seconds,
+            failure=None,
+        )
+
+    def status(self) -> TransactionJournal | None:
+        journal = self.store.read()
+        if (
+            journal is not None
+            and journal.state == "temporary-active"
+            and journal.deadline_monotonic is not None
+            and self.clock.monotonic() >= journal.deadline_monotonic
+        ):
+            return self.rollback(journal.transaction_id, reason="confirmation deadline expired")
+        return journal
+
+    def rollback(self, transaction_id: str, *, reason: str = "manual revert") -> TransactionJournal:
+        journal = self.store.read()
+        if journal is None or journal.transaction_id != transaction_id:
+            raise ValidationError("transaction ID does not match active journal")
+        if journal.state == "reverted":
+            return journal
+        if journal.state == "instance-vanished":
+            return journal
+        if journal.state == "committed":
+            raise ValidationError("committed transaction cannot be reverted by recovery")
+        if journal.state != "reverting":
+            journal = self._transition(
+                journal,
+                "reverting",
+                deadline_monotonic=None,
+                failure=reason,
+                recovery_required=True,
+            )
+        if journal.planned_machine_sha256 is not None and not journal.persistence_verified:
+            try:
+                self.persister.recover_original(journal)
+            except MonitorError as error:
+                return self._transition(
+                    journal,
+                    "rollback-failed",
+                    failure=f"persistence recovery failed: {error}",
+                    recovery_required=True,
+                )
+        if not journal.mutation_attempted:
+            return self._transition(
+                journal, "reverted", runtime_verified=True, recovery_required=False
+            )
+        try:
+            client = self._client(journal)
+            current = client.read_topology()
+            current_target = current.target(journal.candidate.connector)
+            if current_target.identity != journal.target_identity:
+                raise RollbackError("connector now belongs to a different physical display")
+            original = journal.snapshot.target(journal.candidate.connector)
+            client.apply(
+                original.connector, original.mode, original.scale_millionths
+            )
+            client.read_until(lambda readback: verify_rollback_readback(journal.snapshot, readback))
+        except InstanceReplaced as error:
+            return self._transition(
+                journal, "instance-vanished", failure=str(error), recovery_required=False
+            )
+        except MonitorError as error:
+            return self._transition(
+                journal,
+                "rollback-failed",
+                failure=f"rollback failed: {error}",
+                recovery_required=True,
+            )
+        return self._transition(
+            journal,
+            "reverted",
+            runtime_verified=True,
+            recovery_required=False,
+            deadline_monotonic=None,
+        )
+
+    def confirm(self, transaction_id: str) -> TransactionJournal:
+        journal = self.status()
+        if journal is None or journal.transaction_id != transaction_id:
+            raise ValidationError("transaction ID does not match active journal")
+        if journal.state != "temporary-active":
+            raise ValidationError(f"transaction cannot confirm from {journal.state}")
+        client = self._client(journal)
+        try:
+            current = client.read_topology()
+            verify_candidate_readback(
+                journal.snapshot, journal.candidate, current, journal.target_identity
+            )
+            content, planned_hash = self.persister.prepare(journal)
+            journal = self._transition(
+                journal,
+                "committing",
+                planned_machine_sha256=planned_hash,
+                deadline_monotonic=None,
+            )
+            self.persister.persist(journal, content)
+            current = client.read_topology()
+            verify_candidate_readback(
+                journal.snapshot, journal.candidate, current, journal.target_identity
+            )
+        except InstanceReplaced as error:
+            return self._transition(
+                journal, "instance-vanished", failure=str(error), recovery_required=False
+            )
+        except MonitorError as error:
+            if journal.state == "temporary-active":
+                journal = replace(journal, failure=f"confirmation failed: {error}")
+                self.store.write(journal)
+            return self.rollback(journal.transaction_id, reason=f"confirmation failed: {error}")
+        journal = replace(journal, persistence_verified=True)
+        self.store.write(journal)
+        return self._transition(
+            journal,
+            "committed",
+            runtime_verified=True,
+            recovery_required=False,
+            failure=None,
+        )
+
+    def recover(self) -> TransactionJournal | None:
+        journal = self.store.read()
+        if journal is None or journal.state in TERMINAL_SAFE_STATES:
+            return journal
+        if journal.state == "committing" and journal.persistence_verified:
+            return self._transition(
+                journal, "committed", recovery_required=False, failure=None
+            )
+        return self.rollback(journal.transaction_id, reason="crash recovery")
+
+
+def runtime_root(environment: Mapping[str, str] = os.environ) -> Path:
+    value = environment.get("XDG_RUNTIME_DIR", "")
+    path = Path(value)
+    if not value or not path.is_absolute():
+        raise ValidationError("XDG_RUNTIME_DIR must be an absolute path")
+    return path
+
+
+def build_production_authority(*, require_environment_signature: bool = True) -> TransactionAuthority:
+    root = runtime_root()
+    store = RuntimeStore(root)
+    store.acquire()
+    signature = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    if require_environment_signature and SIGNATURE_RE.fullmatch(signature) is None:
+        store.release()
+        raise ValidationError("HYPRLAND_INSTANCE_SIGNATURE is missing or invalid")
+    return TransactionAuthority(
+        store,
+        ProcInstanceProvider(root),
+        default_config_paths(),
+        bound_signature=signature if require_environment_signature else None,
+    )
+
+
+def protocol_request(value: object) -> tuple[str, dict[str, object]]:
+    if not isinstance(value, dict) or value.get("version") != PROTOCOL_VERSION:
+        raise ValidationError("unknown control protocol version")
+    command = value.get("command")
+    if command == "status":
+        expected = {"version", "command"}
+    elif command in {"confirm", "revert"}:
+        expected = {"version", "command", "transaction_id"}
+    elif command == "begin":
+        expected = {"version", "command", "candidate", "signature"}
+    else:
+        raise ValidationError("unknown control command")
+    if set(value) != expected:
+        raise ValidationError("control request contains missing or unknown fields")
+    return command, value
+
+
+def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
+    if journal is None:
+        return {"state": "idle"}
+    remaining = None
+    if journal.deadline_monotonic is not None:
+        remaining = max(0.0, journal.deadline_monotonic - clock.monotonic())
+    return {
+        "transaction_id": journal.transaction_id,
+        "state": journal.state,
+        "sequence": journal.sequence,
+        "deadline_monotonic": journal.deadline_monotonic,
+        "remaining_seconds": remaining,
+        "failure": journal.failure,
+        "recovery_required": journal.recovery_required,
+    }
+
+
+def handle_control(authority: TransactionAuthority, request: object) -> dict[str, object]:
+    command, raw = protocol_request(request)
+    if command == "status":
+        journal = authority.status()
+    elif command == "begin":
+        candidate_raw = _strict_object(
+            raw["candidate"], {"connector", "width", "height", "refresh", "scale"}, "candidate"
+        )
+        journal = authority.begin(
+            Candidate.create(
+                candidate_raw["connector"], candidate_raw["width"], candidate_raw["height"],
+                candidate_raw["refresh"], candidate_raw["scale"],
+            ),
+            raw["signature"],
+        )
+    elif command == "confirm":
+        journal = authority.confirm(raw["transaction_id"])
+    else:
+        journal = authority.rollback(raw["transaction_id"])
+    return {"version": PROTOCOL_VERSION, "ok": True, "status": _status_payload(journal, authority.clock)}
+
+
+def serve() -> int:
+    authority = build_production_authority()
+    store = authority.store
+    try:
+        stale = store.read()
+        if stale is not None and stale.state not in TERMINAL_SAFE_STATES:
+            recovered = authority.recover()
+            if recovered is not None and recovered.recovery_required:
+                raise RollbackError(recovered.failure or "stale transaction recovery failed")
+        try:
+            store.socket_path.unlink()
+        except FileNotFoundError:
+            pass
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(store.socket_path)
+        os.chmod(store.socket_path, 0o600)
+        server.listen(4)
+        server.setblocking(False)
+        selector = selectors.DefaultSelector()
+        selector.register(server, selectors.EVENT_READ)
+        idle_deadline = authority.clock.monotonic() + 15.0
+        served_transaction_id: str | None = None
+        while True:
+            journal = authority.status()
+            if (
+                journal is not None
+                and served_transaction_id == journal.transaction_id
+                and journal.state in TERMINAL_SAFE_STATES
+            ):
+                return 0
+            if served_transaction_id is None and authority.clock.monotonic() >= idle_deadline:
+                return 0
+            timeout = 0.25
+            if journal is not None and journal.deadline_monotonic is not None:
+                timeout = max(0.0, min(timeout, journal.deadline_monotonic - authority.clock.monotonic()))
+            for key, _ in selector.select(timeout):
+                connection, _ = key.fileobj.accept()
+                with connection:
+                    connection.settimeout(2.0)
+                    data = b""
+                    while b"\n" not in data and len(data) <= 65536:
+                        chunk = connection.recv(4096)
+                        if not chunk:
+                            break
+                        data += chunk
+                    request: object = None
+                    try:
+                        if len(data) > 65536 or b"\n" not in data:
+                            raise ValidationError("invalid control request framing")
+                        request = json.loads(data.split(b"\n", 1)[0])
+                        response = handle_control(authority, request)
+                        if (
+                            isinstance(request, dict)
+                            and request.get("command") == "begin"
+                            and response.get("ok") is True
+                        ):
+                            status = response.get("status")
+                            if isinstance(status, dict):
+                                transaction_id = status.get("transaction_id")
+                                if isinstance(transaction_id, str):
+                                    served_transaction_id = transaction_id
+                    except (MonitorError, json.JSONDecodeError) as error:
+                        response = {"version": PROTOCOL_VERSION, "ok": False, "error": str(error)}
+                    connection.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
+                    if (
+                        isinstance(request, dict)
+                        and request.get("command") == "begin"
+                        and response.get("ok") is False
+                    ):
+                        return 1
+    finally:
+        try:
+            store.socket_path.unlink()
+        except FileNotFoundError:
+            pass
+        store.release()
+
+
+def recover_command() -> int:
+    authority = build_production_authority(require_environment_signature=False)
+    try:
+        journal = authority.recover()
+        if journal is not None and journal.recovery_required:
+            print(journal.failure or "monitor recovery failed", file=sys.stderr)
+            return 1
+        return 0
+    finally:
+        authority.store.release()
+
+
+def send_control(request: dict[str, object]) -> dict[str, object]:
+    path = RuntimeStore(runtime_root()).socket_path
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(path)
+        client.sendall((json.dumps(request, separators=(",", ":")) + "\n").encode("utf-8"))
+        response = b""
+        while b"\n" not in response and len(response) <= 65536:
+            chunk = client.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+    if b"\n" not in response:
+        raise MonitorError("monitor authority returned an incomplete response")
+    value = json.loads(response.split(b"\n", 1)[0])
+    if not isinstance(value, dict) or value.get("version") != PROTOCOL_VERSION:
+        raise MonitorError("monitor authority returned an invalid response")
+    return value
+
+
+def client_command(arguments: argparse.Namespace) -> int:
+    if arguments.action == "apply":
+        result = run_command([SYSTEMCTL, "--user", "start", SERVICE_NAME])
+        if result.returncode != 0:
+            raise MonitorError(result.stderr.strip() or "could not start monitor authority")
+        request = {
+            "version": PROTOCOL_VERSION,
+            "command": "begin",
+            "signature": os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", ""),
+            "candidate": {
+                "connector": arguments.connector,
+                "width": arguments.width,
+                "height": arguments.height,
+                "refresh": arguments.refresh,
+                "scale": arguments.scale,
+            },
+        }
+        deadline = time.monotonic() + 3.0
+        while True:
+            try:
+                response = send_control(request)
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                if time.monotonic() >= deadline:
+                    raise MonitorError("monitor authority socket did not become ready")
+                time.sleep(0.05)
+    else:
+        request = {"version": PROTOCOL_VERSION, "command": arguments.action}
+        if arguments.action in {"confirm", "revert"}:
+            request["transaction_id"] = arguments.transaction_id
+        try:
+            response = send_control(request)
+        except (FileNotFoundError, ConnectionRefusedError):
+            if arguments.action != "status":
+                raise
+            store = RuntimeStore(runtime_root())
+            journal = store.read()
+            response = {
+                "version": PROTOCOL_VERSION,
+                "ok": True,
+                "status": _status_payload(journal, SystemClock()),
+            }
+    print(json.dumps(response, sort_keys=True))
+    return 0 if response.get("ok") is True else 1
+
+
+def argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    subparsers.add_parser("serve", help="run the systemd-supervised authority")
+    subparsers.add_parser("recover", help="run one idempotent recovery pass")
+    subparsers.add_parser("status", help="read authoritative transaction status")
+    apply_parser = subparsers.add_parser("apply", help="request a temporary monitor candidate")
+    apply_parser.add_argument("--connector", required=True)
+    apply_parser.add_argument("--width", required=True, type=int)
+    apply_parser.add_argument("--height", required=True, type=int)
+    apply_parser.add_argument("--refresh", required=True)
+    apply_parser.add_argument("--scale", required=True)
+    for action in ("confirm", "revert"):
+        action_parser = subparsers.add_parser(action)
+        action_parser.add_argument("transaction_id")
+    return parser
+
+
+def main() -> int:
+    arguments = argument_parser().parse_args()
+    try:
+        if arguments.action == "serve":
+            return serve()
+        if arguments.action == "recover":
+            return recover_command()
+        return client_command(arguments)
+    except (MonitorError, OSError, json.JSONDecodeError) as error:
+        print(f"vanhyprarch-monitor: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

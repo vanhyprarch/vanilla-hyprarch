@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-20.
+Snapshot date: 2026-09-21.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -33,8 +33,10 @@ Repository-managed sources:
 - `home/.config/hypr/hyprpaper.conf`
 - `home/.config/hypr/hyprlock.conf`
 - `home/.config/systemd/user/vanhyprarch-keyboard-sync.service`
+- `home/.config/systemd/user/vanhyprarch-monitor-safe-apply.service`
 - `home/.config/quickshell/vanhyprarch/`
 - `bin/vanhyprarch-keyboard-sync`
+- `bin/vanhyprarch-monitor`
 - `install/configure-flatpak`
 - `install/install-zig-player`
 - `install/zig-screensaver/`
@@ -910,6 +912,26 @@ manual/on-demand screensaver shortcut, no Super+K Screensaver row, and no
 unbounded manual start operation; adding one is rejected unless a future
 explicit product decision reopens it.
 
+## Monitor Safe Apply backend — PHASE B1 REPOSITORY-ONLY FOUNDATION
+
+The project now contains the independently supervised, fixture-tested
+`vanhyprarch-monitor` transaction authority and its static user service. The
+backend owns a strict private runtime journal, lock, versioned control socket,
+monotonic confirmation deadline, exact compositor/output identity, full
+topology snapshot, candidate verification, and targeted mode/scale rollback.
+Normal rollback restores only the connector-specific v1-owned runtime fields
+through `hl.monitor()` and verifies fresh `monitors all` readback; a full config
+reload is not the normal rollback path.
+
+This is not a completed user feature. The backend is not connected to the
+Monitor panel, production persistence is deliberately disabled, no live
+deployment or monitor mutation has occurred, and brightness remains outside
+Safe Apply. Only mode (resolution plus refresh) and per-output scale are v1
+editable fields. The backend requires one existing explicit machine-owned
+connector profile and never edits the portable catch-all. Fresh-install safe
+profile materialization remains required before Alpha release. See
+[Monitor Safe Apply backend](monitor-safe-apply.md).
+
 ## Known open work
 
 ### PLANNED
@@ -919,11 +941,10 @@ explicit product decision reopens it.
   configured first reboot and post-install use on minimal Arch.
 - Define optional/recommended packages separately from the core baseline;
   `file-roller` is a candidate convenience, not a core requirement.
-- Implement Monitor Control & Safe Apply for per-output resolution, refresh
-  rate, scale, color depth, and supported brightness. Risky changes must be
-  applied temporarily and confirmed within 10 seconds before persistence;
-  failure or timeout restores the known-good runtime configuration. Text Size
-  remains global.
+- Connect the Monitor Safe Apply backend to the Monitor UI, complete controlled
+  production persistence and deployment, and perform guarded live validation.
+  Phase B1 intentionally limits Safe Apply to resolution/refresh and scale;
+  color and brightness remain later product work. Text Size remains global.
 
 ### PROVISIONAL
 

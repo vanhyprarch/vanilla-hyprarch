@@ -118,6 +118,22 @@ per-device input rules. The create-once machine file remains
 global XKB fallback. Explicit per-device exceptions may remain machine- or
 user-owned without becoming synchronizer state.
 
+## Monitor Safe Apply ownership
+
+`$HOME/.local/bin/vanhyprarch-monitor` and the static, non-enabled
+`vanhyprarch-monitor-safe-apply.service` are `MANAGED`. The helper is the sole
+authority for one bounded transaction; Quickshell is a future client and owns
+no duplicate countdown or candidate state. Its journal, lock, and control
+socket are private `RUNTIME` recovery material under `XDG_RUNTIME_DIR`, not a
+persistent preference.
+
+Confirmed monitor preference belongs only in the existing
+`MACHINE_CONFIGURATION` file. Phase B1 production persistence is disabled;
+fixture tests prove exact-byte preservation around the selected explicit
+profile, hash-race rejection, and atomic replacement. The helper never changes
+the create-once seed, portable catch-all, managed Hyprland files, or user
+override. Fresh-install explicit-profile materialization remains deferred.
+
 ## PolicyKit session lifecycle ownership
 
 `$HOME/.local/bin/vanhyprarch-polkit-session` and the

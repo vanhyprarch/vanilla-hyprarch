@@ -63,6 +63,9 @@ The shared bootstrap will eventually:
   `vanhyprarch-keyboard-sync` through the same public-command contract;
 - deploy the static `vanhyprarch-keyboard-sync.service` user unit without
   enabling it; Hyprland remains its startup and reload-reconciliation owner;
+- deploy `vanhyprarch-monitor` and its static
+  `vanhyprarch-monitor-safe-apply.service` without enabling the unit; the unit
+  is activated only for one bounded Safe Apply transaction;
 - deploy immutable Zig Screensaver manager resources, but leave the optional
   `vanhyprarch-zig-player` payload absent until explicitly installed;
 - establish required symlinks and enable or disable documented services;
@@ -89,6 +92,12 @@ For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and
 validation must be recoverable from the canonical repository. Development-
 machine behavior alone is not complete integration.
+
+Before Monitor Safe Apply can be complete for a fresh Alpha installation, the
+bootstrap/product flow must safely materialize an explicit machine-owned
+profile for a selected physical output. Phase B1 intentionally rejects a
+catch-all-only machine file, does not infer or create a profile, and leaves the
+portable catch-all unchanged.
 
 The bootstrap must create `$HOME/.local/bin` as a user-owned directory when
 needed, preserve rollback material before replacing a managed command, and
