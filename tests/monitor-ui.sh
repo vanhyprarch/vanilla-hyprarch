@@ -58,10 +58,20 @@ grep -Fq 'running: root.transactionInFlight && root.checksEnabled' "$controller"
     || fail 'status polling is not limited to an active backend transaction'
 grep -Fq 'Hyprland.refreshMonitors()' "$controller" \
     || fail 'terminal operations do not refresh Quickshell monitor projections'
-grep -Fq 'id: displayReadouts' "$panel" \
-    || fail 'top monitor readouts are not grouped independently'
-grep -A4 -F 'id: displayReadouts' "$panel" | grep -Fq 'spacing: 0' \
-    || fail 'top monitor readouts still inherit section-sized gaps'
+if grep -Fq 'id: displayReadouts' "$panel"; then
+    fail 'duplicate read-only Monitor summary is still present'
+fi
+for label in 'Resolution' 'Refresh rate' 'Color depth'; do
+    if [ "$(grep -F -c "label: \"$label\"" "$panel")" -ne 1 ]; then
+        fail "$label does not have exactly one editable row"
+    fi
+done
+grep -Fq 'value: root.pendingResolutionText()' "$panel" \
+    || fail 'Resolution no longer projects pending/current selection'
+grep -Fq 'value: root.pendingRefreshText()' "$panel" \
+    || fail 'Refresh rate no longer projects pending/current selection'
+grep -Fq 'value: root.pendingBitdepthText()' "$panel" \
+    || fail 'Color depth no longer projects pending/current selection'
 
 grep -Fq 'CenteredOverlay {' "$confirmation" \
     || fail 'confirmation bypasses the central overlay architecture'

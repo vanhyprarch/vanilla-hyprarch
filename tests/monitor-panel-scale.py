@@ -53,12 +53,26 @@ class MonitorPanelPolicyTests(unittest.TestCase):
         self.assertIn("function hasSafeChanges(connector: string)", self.controller)
         self.assertIn('? "Applying…" : "Apply display changes"', self.panel)
 
+    def test_display_fields_have_only_editable_rows(self) -> None:
+        self.assertNotIn("id: displayReadouts", self.panel)
+        self.assertNotIn("function resolutionText()", self.panel)
+        self.assertNotIn("function refreshText()", self.panel)
+        for label in ("Resolution", "Refresh rate", "Color depth"):
+            self.assertEqual(self.panel.count(f'label: "{label}"'), 1)
+        self.assertIn("value: root.pendingResolutionText()", self.panel)
+        self.assertIn("value: root.pendingRefreshText()", self.panel)
+        self.assertIn("value: root.pendingBitdepthText()", self.panel)
+
     def test_hdr_policy_is_explicitly_per_monitor_and_global(self) -> None:
+        resolution = self.panel.index('label: "Resolution"')
+        refresh = self.panel.index('label: "Refresh rate"')
         color = self.panel.index('label: "Color depth"')
         hdr = self.panel.index('label: "Forced HDR"')
         automatic = self.panel.index('label: "Automatic HDR"')
         all_displays = self.panel.index('detailLabel: "All displays"', automatic)
         apply = self.panel.index('text: root.monitorControllerReady', automatic)
+        self.assertLess(resolution, refresh)
+        self.assertLess(refresh, color)
         self.assertLess(color, hdr)
         self.assertLess(hdr, automatic)
         self.assertLess(automatic, all_displays)

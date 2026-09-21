@@ -369,22 +369,6 @@ DockPopup {
             : root.monitorDescription
     }
 
-    function resolutionText(): string {
-        if (root.inspectedOutput === null
-                || root.inspectedOutput.current_mode === null)
-            return "—"
-        return root.inspectedOutput.current_mode.width + " × "
-            + root.inspectedOutput.current_mode.height
-    }
-
-    function refreshText(): string {
-        if (root.inspectedOutput === null
-                || root.inspectedOutput.current_mode === null)
-            return "—"
-        return root.formatNumber(
-            root.inspectedOutput.current_mode.refresh_millihz / 1000, 2) + " Hz"
-    }
-
     function scaleText(): string {
         if (root.inspectedOutput === null)
             return "—"
@@ -738,31 +722,6 @@ DockPopup {
             PanelSeparator {
                 metrics: root.metrics
                 theme: root.theme
-            }
-
-            Column {
-                id: displayReadouts
-
-                width: parent.width
-                spacing: 0
-
-                InfoRow {
-                    label: "Resolution"
-                    value: root.resolutionText()
-                }
-
-                InfoRow {
-                    label: "Refresh rate"
-                    value: root.refreshText()
-                }
-
-                InfoRow {
-                    label: "Color depth"
-                    value: root.inspectedOutput !== null
-                        && root.inspectedOutput.effective_bitdepth !== null
-                        ? root.inspectedOutput.effective_bitdepth + "-bit"
-                        : "Unavailable"
-                }
             }
 
             ChoiceRow {
