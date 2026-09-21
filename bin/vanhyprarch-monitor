@@ -2331,6 +2331,10 @@ def recover_command() -> int:
             return 1
         return 0
     finally:
+        try:
+            authority.store.socket_path.unlink()
+        except FileNotFoundError:
+            pass
         authority.store.release()
 
 

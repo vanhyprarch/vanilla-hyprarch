@@ -638,6 +638,31 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(result, [0])
         self.assertFalse(store.socket_path.exists())
 
+    def test_recovery_entry_point_removes_dead_control_socket_under_lock(self) -> None:
+        runtime = self.root / "recovery-runtime"
+        runtime.mkdir(mode=0o700)
+        store = monitor.RuntimeStore(runtime)
+        store.acquire()
+        authority = monitor.TransactionAuthority(
+            store,
+            self.provider,
+            self.paths,
+            runner=QueueRunner([]),
+            clock=self.clock,
+        )
+        stale = monitor.socket.socket(monitor.socket.AF_UNIX, monitor.socket.SOCK_STREAM)
+        stale.bind(os.fspath(store.socket_path))
+        stale.close()
+        self.assertTrue(store.socket_path.is_socket())
+        with mock.patch.object(
+            monitor, "build_production_authority", return_value=authority
+        ):
+            self.assertEqual(monitor.recover_command(), 0)
+        self.assertFalse(store.socket_path.exists())
+        replacement = monitor.RuntimeStore(runtime)
+        replacement.acquire()
+        replacement.release()
+
     def test_socket_reload_watch_supports_nonblocking_event_poll(self) -> None:
         path = self.root / "reload-events.sock"
         server = monitor.socket.socket(monitor.socket.AF_UNIX, monitor.socket.SOCK_STREAM)
