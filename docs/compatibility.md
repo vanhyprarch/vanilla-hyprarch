@@ -867,7 +867,7 @@ preference means the in-memory first-run default ON; only explicit panel actions
 write the versioned preference. BlueZ 5.87 reads one `main.conf`, not a
 configuration drop-in directory, so the Phase 4 system stage deploys the
 tracked complete minimal file only after package-pristine proof and preserves
-the administrator file for rollback. Disposable-VM acceptance remains pending.
+the administrator file for rollback. Disposable-VM adoption and reboot passed.
 On the development machine, manual reboot tests confirmed saved OFF
 restores OFF and saved ON restores ON, with discovery inactive in both cases.
 Retest the file-loading and `AutoEnable` behavior after a BlueZ upgrade.

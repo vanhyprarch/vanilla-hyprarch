@@ -8,8 +8,8 @@ Phase 3 implements the separate
 [create-once initialization](create-once-initialization.md) boundary. Neither
 is a package installer, service integrator, privileged adoption framework,
 optional-component manager, or general migration framework. The separate
-feature-branch [Phase 4 system stage](system-integration.md) consumes the
-privileged and service boundaries and remains pending disposable-VM acceptance.
+accepted [Phase 4 system stage](system-integration.md) consumes the privileged
+and service boundaries.
 
 The machine-readable representation is
 `deployment/ownership-v2.toml`. Its target strings are declarative XDG path

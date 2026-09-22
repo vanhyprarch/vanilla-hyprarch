@@ -15,8 +15,8 @@ optional-component lifecycle, or doctor command. See
 [Managed-file deployment](managed-file-deployment.md) and
 [Create-once initialization](create-once-initialization.md).
 
-Phase 4 implements the separate installer-internal system-integration stage on
-its feature branch. It derives official packages and system enablement from the
+Phase 4 implements the separate installer-internal system-integration stage. It
+derives official packages and system enablement from the
 published manifests, builds the sole yay exception as an explicit non-root
 user, adopts BlueZ only after package-pristine proof and exact backup, reuses
 the system-Flathub helper, and keeps local crash recovery for BlueZ and service
@@ -24,10 +24,10 @@ transactions. A narrow shell bootstrap installs only `python` when a fresh
 Arch base lacks the interpreter, verifies it, and stops. A later plan invocation
 delegates to the Python stage for human review before a separately approved
 full apply; the shell does not duplicate the manifest package transaction.
-Deterministic acceptance is isolated from the development host.
-Publication remains blocked until guided destructive and reboot acceptance in
-the user's snapshotted disposable Arch x86_64 GNOME Boxes VM. See
-[DF2 system integration](system-integration.md).
+Deterministic acceptance remained isolated from the development host. A fresh
+Arch Minimal GNOME Boxes VM passed no-Python bootstrap, partial-state resume,
+full and preserve-only repeat applies, reboot, and integrated Phase 2/3/4
+validation. See [DF2 system integration](system-integration.md).
 
 The machine-readable authorities introduced by this phase are:
 
@@ -151,7 +151,8 @@ the owner of one direct hypridle process.
 
 The service manifest is the Phase 4 system-stage authority. Phase 4 changes
 enablement only after packages and adopted configuration are ready; it neither
-starts services nor manipulates user units. VM acceptance remains pending.
+starts services nor manipulates user units. Persistent enablement and reboot
+behavior passed disposable-VM acceptance.
 
 ## Monitor installation boundary
 

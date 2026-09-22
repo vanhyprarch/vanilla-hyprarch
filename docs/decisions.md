@@ -1022,15 +1022,16 @@ components, and complete installer orchestration remain later phases.
 
 **Status:** Accepted
 **Date:** 2026-09-22
-**Implementation:** DF2 Phase 4 feature branch; deterministic acceptance
-complete, disposable GNOME Boxes VM acceptance required before publication
+**Implementation:** DF2 Phase 4; deterministic and disposable GNOME Boxes VM
+acceptance complete
 
 The installer-internal system stage consumes the package, service, and
 ownership manifests and exposes plan, apply, and validate without becoming the
-full installer. Production apply runs as root with one explicit non-root target
-user. Official package, adopted `/etc`, system Flatpak, and systemd enablement
-operations stay privileged; the approved yay Git/makepkg path always runs as
-that target user through a fixed argument-vector privilege drop.
+full installer. Production plan, apply, and validate run as root with one
+explicit non-root target user so private system provenance remains
+authoritative. Official package, adopted `/etc`, system Flatpak, and systemd
+enablement operations stay privileged; the approved yay Git/makepkg path always
+runs as that target user through a fixed argument-vector privilege drop.
 
 Arch sync databases are never refreshed independently. Pending upgrades from
 the current database block provisioning and defer the full `pacman -Syu` to the

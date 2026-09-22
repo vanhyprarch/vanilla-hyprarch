@@ -6,9 +6,9 @@ cross a fresh Arch system from no Python to a verified `python` package. A
 separate invocation then executes the Python stage. The Python stage consumes
 the package, service-policy, and ownership-v2 manifests and exposes `plan`,
 `apply`, and `validate`. Neither layer is the final installer or a public session command.
-The feature has completed one real apply in a user-managed disposable Arch
-x86_64 VM; post-apply idempotence and reboot acceptance remain pending. It must
-never be applied to the development host.
+The feature passed full, idempotence, reboot, and integrated Phase 2/3/4
+acceptance in a user-managed disposable Arch x86_64 VM. It must never be
+applied to the development host.
 
 ## Pre-Python bootstrap boundary
 
@@ -230,10 +230,13 @@ rewrite, Flathub mutation, service mutation, or provenance rewrite.
 ## Acceptance boundary
 
 Deterministic tests use fake pacman, systemctl, Flatpak, Git, makepkg, and
-archive inspection plus disposable roots and abrupt child-process exits. They
-are not a substitute for real system integration. Publication remains blocked
-until the user prepares and snapshots a disposable current Arch x86_64 VM in
-GNOME Boxes and completes guided package, reboot, service, BlueZ, Flatpak, and
-integrated Phase 2/3/4 acceptance. Phase 4 is never applied to the development
-host. The manual VM must exercise `install/bootstrap` while Python is absent;
-manually installing Python would bypass the bootstrap acceptance under test.
+archive inspection plus disposable roots and abrupt child-process exits. The
+user-managed Arch Minimal GNOME Boxes VM additionally passed no-Python
+bootstrap, partial-state resume, package/yay/BlueZ/Flatpak/service integration,
+preserve-only repeat apply, reboot, and integrated Phase 2/3/4 validation.
+Phase 4 is never applied to the development host.
+
+Ly also exposed a package-provided UWSM-managed Hyprland choice, although UWSM
+is intentionally absent and unsupported. Cleaning the first-login session list
+without unsafely modifying package-owned files is deferred to Phase 5. The
+supported chain remains `Ly -> /usr/bin/start-hyprland -> Hyprland`.

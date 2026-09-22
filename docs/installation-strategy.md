@@ -3,9 +3,8 @@
 This document is the canonical plan for making Vanilla HyprArch reproducible.
 The pinned Zig Screensaver component manager is implemented; the historical
 `install-zig-player` command is only a compatibility wrapper. DF2 now has
-separate managed-file, create-once, and feature-branch system-integration
-stages, but no shared top-level project bootstrap or archinstall preset exists
-yet. System integration remains pending disposable GNOME Boxes VM acceptance.
+separate managed-file, create-once, and accepted system-integration stages, but
+no shared top-level project bootstrap or archinstall preset exists yet.
 
 The current repository is therefore a development and testing source tree, not
 a copy-and-run installation payload. Its Hyprland files now express portable
@@ -426,9 +425,9 @@ sensitive to archinstall schema changes.
 The existing `install/` tree contains the pinned external-player component,
 the idempotent system-Flathub configuration component, the managed-file and
 create-once cores, the narrow pre-Python bootstrap, and the internal Phase 4
-system-integration stage. Phase 4 must first pass guided destructive/reboot
-acceptance in the user's disposable GNOME Boxes VM. Future work may then add
-the shared top-level orchestration, a small
+system-integration stage. Phase 4 passed guided destructive/reboot and
+integrated Phase 2/3/4 acceptance in the user's disposable GNOME Boxes VM.
+Future work may add the shared top-level orchestration, a small
 archinstall integration and recommended configuration or template, and
 first-login validation. Exact filenames for those remaining pieces are
 intentionally not selected until the bootstrap interface and current

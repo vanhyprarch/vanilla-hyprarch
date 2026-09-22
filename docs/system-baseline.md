@@ -248,7 +248,8 @@ replacement, because BlueZ does not load a `main.conf.d` drop-in directory.
 Users must not copy it blindly over an existing customized administrator file.
 The Phase 4 system stage now validates package-pristine state through pacman,
 preserves exact private rollback material, and fails closed rather than
-overwrite unknown configuration. Disposable-VM acceptance remains required.
+overwrite unknown configuration. Adoption, preservation, and reboot passed
+disposable-VM acceptance.
 
 ## Desktop portals and authorization
 
