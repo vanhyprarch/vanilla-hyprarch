@@ -62,6 +62,7 @@ Matrix, Doom, and Game of Life.
   Additional system components, and Power workflows with native catalogs and
   visible terminal transactions;
 - normalized package, component, ownership, and service-policy manifests plus a
+  staged, rollback-capable deployment core for Vanilla-managed user files and a
   pinned, checksummed Zig Screensaver install/adopt/reinstall/uninstall lifecycle;
 - required, unpinned Flatpak from the official Arch repositories, with an
   idempotent bootstrap component for the required system Flathub remote;
@@ -75,9 +76,11 @@ Matrix, Doom, and Game of Life.
 The shared automated bootstrap and optional archinstall entry point are not
 finished. Development starts from a working minimal Arch installation and the
 structured package manifest in [`packages/`](packages/), but tracked
-configuration must currently be reviewed and deployed manually. DF2 Phase 1
-defines package roles, deployment ownership, and future service policy without
-implementing or running an installer.
+configuration still requires the unfinished full bootstrap. DF2 Phase 1
+defines package roles, deployment ownership, and future service policy. Phase 2
+implements only the reusable `VANILLA_MANAGED` user-file deployment core; it
+does not provision packages, initialize create-once state, change services, or
+perform privileged integration.
 
 The repository now separates managed portable Hyprland configuration from
 create-once machine configuration and a user-owned customization override.
@@ -88,14 +91,17 @@ The tracked BlueZ `main.conf` is also a complete system-file replacement and
 must not overwrite an existing administrator configuration without review and
 rollback. See the
 [deployment ownership contract](docs/deployment-ownership.md),
+[managed-file deployment core](docs/managed-file-deployment.md),
 [installation strategy](docs/installation-strategy.md), and
 [system baseline](docs/system-baseline.md). The accepted DF2 package and
 distribution decisions are summarized in
 [Distribution Foundation 2](docs/distribution-foundation-2.md).
 
 For development, public commands may be symlinked from `bin/` into
-`$HOME/.local/bin`. The future production bootstrap will install regular
-executables there atomically and will not depend on a Git checkout.
+`$HOME/.local/bin`. The managed-file core can install regular executables and
+complete configuration trees atomically into an isolated installed target
+without retaining a Git-checkout dependency. The future production bootstrap
+will call that core as one step in the larger installation lifecycle.
 
 Dictation is a separate opt-in component, not part of the baseline. Its
 installer, dependencies, exact verification chain, runtime activation, and

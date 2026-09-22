@@ -344,10 +344,11 @@ class OwnershipManifestTests(unittest.TestCase):
                     self.assertTrue(source_path.is_file(), source)
                 elif item["kind"] == "tree":
                     self.assertTrue(source_path.is_dir(), source)
-                    self.assertIn(
-                        item.get("mode_policy"),
-                        {"preserve-source", "resource-files-only"},
-                    )
+                    self.assertEqual(item.get("mode_policy"), "explicit")
+                    self.assertRegex(item["directory_mode"], r"^0[0-7]{3}$")
+                    self.assertRegex(item["file_mode"], r"^0[0-7]{3}$")
+                    if item.get("executable"):
+                        self.assertRegex(item["executable_mode"], r"^0[0-7]{3}$")
                     for relative in item.get("included", []):
                         self.assertFalse(Path(relative).is_absolute(), relative)
                         self.assertNotIn("..", Path(relative).parts)
@@ -383,6 +384,15 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertEqual(self.by_id["user-hyprland-override"]["class"], "CREATE_ONCE_USER")
         self.assertEqual(self.by_id["mpv-config"]["class"], "CREATE_ONCE_USER")
         self.assertEqual(self.by_id["mimeapps-config"]["class"], "CREATE_ONCE_USER")
+
+    def test_managed_deployment_provenance_is_backend_owned(self) -> None:
+        identifier = self.document["managed_deployment_provenance"]
+        self.assertEqual(identifier, "managed-deployment-provenance")
+        provenance = self.by_id[identifier]
+        self.assertEqual(provenance["class"], "BACKEND_OWNED")
+        self.assertEqual(provenance["authority"], "vanhyprarch-managed-deploy")
+        self.assertEqual(provenance["mode"], "0600")
+        self.assertNotIn("source", provenance)
 
     def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
         for item in self.artifacts:

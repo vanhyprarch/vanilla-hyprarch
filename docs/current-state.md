@@ -1009,7 +1009,7 @@ not a fabricated live HDR indicator; Hyprland 0.56.2 does not publish generic
 are complete on the development machine's HDR display; SDR-only mpv and other
 physical-hardware boundaries remain separately deferred.
 
-## Distribution Foundation 2 Phase 1 — REPOSITORY IMPLEMENTED
+## Distribution Foundation 2 Phase 2 — MANAGED DEPLOYMENT CORE IMPLEMENTED
 
 Package role and default installation policy now have one structured authority
 in `packages/manifest-v1.toml`. Printing, network printing, dictation, and Zig
@@ -1019,9 +1019,17 @@ user/backend/generated/runtime/package-owned, optional-payload, and adopted
 privileged boundaries. A separate service-policy manifest records future
 activation ownership without changing systemd state.
 
-This phase contains validation and decisions only. No installer, executor,
-deployment, package transaction, service change, create-once seed publication,
-VM acceptance, or live-system adoption has been implemented.
+The internal `install/managed_deploy.py` engine now consumes ownership v2 and
+implements plan/install/update/validate for the 21 `VANILLA_MANAGED` user
+artifacts. Installed mode uses regular files, explicit modes, private staging,
+atomic generation exchange, mode-0600 hash provenance, safe stale removal, and
+per-artifact rollback. Deterministic Release A/B fixtures prove idempotence,
+source-tree independence, conflict refusal, path/symlink safety, and rollback.
+
+This remains a deployment core rather than the full installer. No package
+transaction, system service change, create-once seed publication, privileged
+adoption, optional-component lifecycle, VM acceptance, or live-system
+deployment has been implemented.
 
 ## Known open work
 
@@ -1030,8 +1038,8 @@ VM acceptance, or live-system adoption has been implemented.
 - Build the shared bootstrap and thin optional archinstall integration defined
   in the [installation strategy](installation-strategy.md), supporting both a
   configured first reboot and post-install use on minimal Arch.
-- Build the executor that consumes the normalized package, component,
-  ownership, and service-policy manifests; Phase 1 defines policy only.
+- Build the full bootstrap around the managed-file core, including separately
+  authorized package, create-once, service, privileged, and validation phases.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.
@@ -1050,5 +1058,5 @@ VM acceptance, or live-system adoption has been implemented.
 
 - Shared bootstrap and optional archinstall integration
 - Remove Application ownership mapping
-- Vanilla HyprArch self-update; ownership boundaries now exist, but no updater,
-  deployment ledger, release staging, or rollback engine has been designed
+- Vanilla HyprArch self-update; the managed-file engine is not a full system or
+  package updater

@@ -1,10 +1,16 @@
 # Distribution Foundation 2
 
-## Phase 1 status
+## Phase 1 and Phase 2 status
 
 Phase 1 normalizes package, component, service, and deployment ownership policy.
-It does not provide an installer, updater, package transaction, deployment
-engine, service mutation, first-login action, or doctor command.
+Phase 2 adds the reusable user-space deployment core for `VANILLA_MANAGED`
+artifacts only. It provides deterministic plan/install/update/validate
+operations, regular installed copies, minimal hash/mode provenance, atomic
+file/tree generation exchange, safe stale-artifact removal, and local rollback.
+It does not provide the full installer, a package transaction, create-once
+initialization, privileged adoption, service mutation, first-login action,
+optional-component lifecycle, or doctor command. See
+[Managed-file deployment](managed-file-deployment.md).
 
 The machine-readable authorities introduced by this phase are:
 
@@ -144,5 +150,6 @@ unsupported partial upgrade. When the Arch state is unsuitable for a required
 package change, update must fail clearly and ask the administrator to update
 Arch first.
 
-Exact executor behavior is deferred. Phase 1 implements policy and validation
-only.
+Exact full-installer package/update behavior remains deferred. The Phase 2
+executor updates only proven `VANILLA_MANAGED` user files and never performs a
+package transaction.

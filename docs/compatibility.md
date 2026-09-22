@@ -998,10 +998,11 @@ Vanilla HyprArch must not blindly update its configuration or external player.
 A player update requires an explicit version, architecture, asset-name,
 checksum, release URL, and source-tag update followed by controller, timing,
 output, input, and license-notice validation. Project self-update remains
-unavailable. The first ownership contract now distinguishes managed, machine,
-override, preference, generated, runtime, optional, and system-adopted
-artifacts, but no deployment ledger, release staging, updater transaction, or
-rollback engine exists yet.
+unavailable. The ownership contract distinguishes managed, machine, override,
+preference, generated, runtime, optional, and system-adopted artifacts. DF2
+Phase 2 adds staging, provenance, and local rollback only for managed user
+files; no package updater, full bootstrap, global transaction, or self-update
+workflow exists yet.
 
 Before changing this baseline:
 

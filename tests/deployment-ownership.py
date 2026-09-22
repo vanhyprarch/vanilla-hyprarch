@@ -84,6 +84,16 @@ class DeploymentOwnershipTests(unittest.TestCase):
         self.assertNotIn("source", artifact)
         self.assertFalse(GENERATED_SOURCE.exists())
 
+    def test_managed_deployment_provenance_is_not_a_preference(self) -> None:
+        identifier = self.manifest["managed_deployment_provenance"]
+        self.assertEqual(identifier, "managed-deployment-provenance")
+        artifact = next(item for item in self.artifacts if item["id"] == identifier)
+        self.assertEqual(artifact["class"], "BACKEND_OWNED")
+        self.assertEqual(artifact["authority"], "vanhyprarch-managed-deploy")
+        self.assertEqual(artifact["mode"], "0600")
+        self.assertFalse(artifact["user_editable"])
+        self.assertNotIn("source", artifact)
+
     def test_appearance_preference_renderer_and_manager_ownership(self) -> None:
         preference = self.artifact_for_target(
             "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"

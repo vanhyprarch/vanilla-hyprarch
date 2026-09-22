@@ -921,8 +921,8 @@ projection and performs no marker inspection, per-row process launch, or poll.
 
 **Status:** Accepted
 **Date:** 2026-09-22
-**Implementation:** Phase 1 manifests and deterministic validation implemented;
-executor and deployment deferred
+**Implementation:** Phase 1 manifests and deterministic validation; the later
+managed-file executor is recorded separately in ADR-038
 
 Package role, default-install policy, component membership, artifact ownership,
 and service activation policy are separate machine-readable concerns. The
@@ -953,3 +953,29 @@ Ly keeps the package-owned Hyprland session entry; selecting it once at first
 login is acceptable. The future mpv and MIME configuration files are
 create-once user-owned seeds and are not created in Phase 1. Exact seed content
 and deployment remain Phase 3 work.
+
+## ADR-038: Deploy managed user files through staged generations
+
+**Status:** Accepted
+**Date:** 2026-09-22
+**Implementation:** DF2 Phase 2 managed-file core
+
+The first executable distribution layer consumes `ownership-v2.toml` and may
+act only on `VANILLA_MANAGED` user artifacts. An internal standard-library
+Python command provides shared plan, install, update, and validate behavior;
+it is not a public session command or a full installer.
+
+Installed content uses regular files, explicit manifest modes, private
+same-filesystem staging, fsync, and Linux atomic rename exchange for updates.
+A minimal mode-0600 backend-owned JSON record stores declarative managed
+targets, exact entry modes/hashes, and optional release identity. This evidence
+allows safe replacement and stale removal without treating matching unknown
+content as owned. It contains no preferences or runtime state.
+
+Rollback is local to the current artifact and its provenance transition.
+Earlier successful artifacts may remain recorded as a resumable partial
+deployment; no global machine transaction is introduced. Unknown content,
+drift, symlinks, source/destination overlap, unsupported ownership classes,
+and unsafe paths fail closed. Package operations, create-once initialization,
+service integration, privileged adoption, and optional payload lifecycles stay
+in later phases.

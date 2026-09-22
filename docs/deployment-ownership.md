@@ -2,8 +2,11 @@
 
 This document defines the Vanilla HyprArch deployment ownership contract. It
 describes who may change an artifact and what normal project updates must
-preserve. It does not define an installer, updater, deployment ledger, rollback
-engine, or migration framework.
+preserve. DF2 Phase 2 now implements the narrow managed-user-file executor and
+provenance described in [Managed-file deployment](managed-file-deployment.md).
+It is not a package installer, service integrator, create-once initializer,
+privileged adoption framework, optional-component manager, or general migration
+framework.
 
 The machine-readable representation is
 `deployment/ownership-v2.toml`. Its target strings are declarative XDG path
@@ -33,6 +36,15 @@ and mode fields preserve the narrower owner and lifecycle.
 Development mode may use repository symlinks intentionally. Installed mode is
 always regular files and must not retain a runtime dependency on Git, a
 worktree, or the source path.
+
+Managed directory trees declare explicit directory and ordinary-file modes.
+Any executable member is individually named in the manifest with its explicit
+mode; installed deployment never inherits arbitrary checkout modes.
+
+The `managed-deployment-provenance` artifact is mode-0600 `BACKEND_OWNED`
+bookkeeping. It records only installed managed paths, exact modes/hashes, and
+release provenance. It is not a preference. A previous record is required
+before update may replace or remove an existing target.
 
 ## Create-once seeds
 

@@ -7,10 +7,11 @@ bootstrap or archinstall preset exists yet.
 
 The current repository is therefore a development and testing source tree, not
 a copy-and-run installation payload. Its Hyprland files now express portable
-managed, create-once machine, and user-override ownership, but no deployment
-engine consumes those boundaries yet. The complete BlueZ `main.conf`
-replacement must still be reviewed rather than copied blindly onto another
-system.
+managed, create-once machine, and user-override ownership. The Phase 2
+managed-file core consumes only the managed user-file boundary; the complete
+bootstrap and every other ownership lifecycle remain unfinished. The complete
+BlueZ `main.conf` replacement must still be reviewed rather than copied blindly
+onto another system.
 
 The initial Alpha support target is deliberately narrow: Arch Linux x86_64 on
 a documented fresh-install or archinstall-derived base. It does not promise
@@ -153,8 +154,11 @@ Existing version-1 seed receipts migrate to completed without touching user
 content.
 
 The version-2 ownership manifest declares deployability plus install/update
-semantics for future work. It is still policy, not an executor, transaction,
-rollback, migration, or uninstall implementation. Version 1 remains historical.
+semantics. DF2 Phase 2 implements those semantics only for
+`VANILLA_MANAGED` user artifacts through the reusable managed-file core. Its
+per-artifact staging, provenance, atomic exchange, and rollback are not the
+full bootstrap, a global transaction, create-once migration, optional-component
+uninstall, or privileged integration. Version 1 remains historical.
 
 ## Create-once application state
 

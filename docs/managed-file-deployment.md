@@ -1,0 +1,206 @@
+# Managed-file deployment
+
+DF2 Phase 2 implements the installed-mode deployment core for user-space
+artifacts classified as `VANILLA_MANAGED` in
+`deployment/ownership-v2.toml`. It is a reusable part of the future bootstrap,
+not the complete installer.
+
+## Boundary
+
+`install/managed_deploy.py` is an internal source/release command and Python
+library. It is intentionally not installed as a public session command. It
+does not invoke pacman, yay, sudo, systemctl, a user manager, a package
+service, or a live desktop process.
+
+Its complete Phase 2 command surface is `plan/install/update/validate`.
+
+The engine actively refuses an explicitly requested artifact outside
+`VANILLA_MANAGED`. It never deploys create-once, user-owned, backend-owned,
+generated, runtime, package-owned, adopted privileged, or optional-component
+payload artifacts. In particular, Phase 2 does not create machine or override
+configuration, mpv or MIME configuration, wallpaper starter copies, durable
+preferences, or `/etc/bluetooth/main.conf`.
+
+The ownership manifest remains the inventory and path authority. The Phase 2
+addition to that contract is deliberately small:
+
+- every managed tree has explicit directory and ordinary-file modes;
+- executable members of a tree are named explicitly with an executable mode;
+- optional lightweight validators are named on their artifact;
+- one `BACKEND_OWNED` artifact declares the deployment provenance path.
+
+No source file is discovered through Git. A checkout and an extracted release
+tree are equivalent inputs.
+
+## Current managed inventory
+
+The current manifest supplies exactly 21 Phase 2 artifacts:
+
+- Hyprland configuration: `hyprland-loader`, `hyprland-managed-core`,
+  `hypridle-config`, `hyprpaper-config`, and `hyprlock-config`;
+- shell configuration: `quickshell-config`;
+- public commands: `appearance-command`, `dictation-command`, `idle-command`,
+  `keyboard-command`, `monitor-command`, `polkit-command`,
+  `screensaver-command`, and `screenshot-command`;
+- user systemd files: `keyboard-unit`, `monitor-transaction-unit`, and
+  `polkit-drop-in`;
+- project data/resources: `wallpaper-assets`, `zig-screensaver-manager`,
+  `zig-screensaver-metadata`, and `dictation-resources`.
+
+This inventory is descriptive; the executor still selects it from the
+manifest rather than from a Python list.
+
+## Invocation
+
+The CLI requires an explicit absolute release root. Target paths may be taken
+from the target user's environment or supplied explicitly:
+
+```text
+python install/managed_deploy.py \
+  --source-root /absolute/path/to/vanilla-release \
+  [--release-id IDENTIFIER] \
+  [--home HOME] \
+  [--xdg-config-home PATH] \
+  [--xdg-data-home PATH] \
+  [--xdg-state-home PATH] \
+  plan install|update
+
+python install/managed_deploy.py [same options] install
+python install/managed_deploy.py [same options] update
+python install/managed_deploy.py [same options] validate
+```
+
+`plan` shares source validation, target resolution, provenance, conflict, and
+action classification with real deployment but performs no writes. Its
+tab-separated records are deterministic:
+
+```text
+ACTION<TAB>ARTIFACT_ID<TAB>DECLARATIVE_TARGET<TAB>REASON
+```
+
+Actions are `create`, `replace`, `remove`, `preserve`, or `conflict`.
+
+`install` expects absent managed targets. An existing destination without
+valid Vanilla provenance is a conflict even when its bytes happen to match.
+Repeating the same completed install is a no-op. A partial install created by
+an interrupted Phase 2 operation may resume only against the same release
+digest.
+
+`update` requires valid prior provenance. It replaces changed managed
+artifacts, leaves byte-and-mode-identical artifacts untouched, adds new
+managed artifacts, and removes an artifact absent from the new manifest only
+when its previous target and exact content are still proven by provenance.
+Missing or modified managed content fails closed instead of adopting or
+overwriting it.
+
+`validate` verifies the provenance schema and mode, complete artifact
+inventory, regular-file/directory types, current-user ownership, exact modes,
+hashes, lightweight artifact validators, and equality with the supplied
+release.
+
+## Target and source safety
+
+Target context resolves HOME plus XDG config, data, and state roots. Standard
+fallbacks are `$HOME/.config`, `$HOME/.local/share`, and
+`$HOME/.local/state`. Values must be absolute. Declarative target expressions
+are parsed as data rather than shell-expanded, and only the supported
+HOME/XDG forms are accepted.
+
+Source paths must be normalized relative paths beneath the explicit release
+root. Deployable target paths must stay beneath their selected target root.
+Duplicate or overlapping destinations and source/destination overlap are
+rejected. NUL, traversal, patterns in deployable suffixes, missing sources,
+special files, and unexpected source symlinks fail closed.
+
+Existing destination symlinks and symlinked parent components are never
+followed. An existing unknown file, tree, or type mismatch is a conflict.
+Phase 2 deliberately has no development-symlink adoption flag, so running it
+against the current repository-backed live development layout fails closed.
+
+The engine runs as the receiving user, creates no arbitrary ownership, and
+does not call `chown`. HOME and managed installed content must belong to the
+current UID/GID. Newly needed parent directories use mode `0755`; existing
+user directories are not remoded.
+
+## Staging and replacement
+
+Every artifact is copied into a private mode-0700 staging directory beside its
+destination. Copying uses regular-file descriptors without following source
+symlinks. The manifest supplies final modes; checkout modes and the caller's
+umask are not copied into installed content. Files and directory generations
+are fsynced before publication.
+
+New artifacts publish through same-directory `os.replace`. Updates use
+Linux `renameat2(RENAME_EXCHANGE)` to exchange the complete staged generation
+and the old generation atomically on the target filesystem. This applies to
+standalone files and complete directory trees, so Quickshell never observes a
+partially copied tree. A filesystem without atomic exchange support fails
+closed.
+
+The exchanged old generation remains private rollback material until final
+byte, type, mode, owner, validator, and provenance verification succeeds.
+Parent directories and the provenance directory are fsynced after atomic
+publication.
+
+## Provenance
+
+The mode-0600 record at
+`${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/managed-deployment-v1.json`
+is `BACKEND_OWNED` by `vanhyprarch-managed-deploy`. It contains only:
+
+- its schema and ownership-manifest schema;
+- complete or resumable-partial deployment status;
+- optional caller-supplied release identity and deterministic release digest;
+- managed artifact IDs, `VANILLA_MANAGED` class, and declarative targets;
+- artifact kinds, exact modes, deterministic entry lists, and SHA-256 hashes.
+
+It contains no preferences, machine choices, Monitor state, Appearance state,
+Power & Idle state, runtime state, or package state. Declarative targets, not
+resolved machine-specific absolute paths, are stored. The record is written
+atomically and read back before rollback material is discarded.
+
+This ledger is the minimum evidence needed to distinguish an installed
+Vanilla artifact from unknown pre-existing user content and to remove stale
+managed artifacts safely. Hashes are not the only boundary: class, path,
+type, mode, UID/GID, and symlink checks are also required.
+
+## Rollback and interruption
+
+Rollback is local to one artifact plus the provenance transition describing
+that artifact. Failure after an exchange restores the exact prior file or
+complete tree and verifies the restoration. Failure while creating a new
+artifact removes only the newly published artifact. Failure while committing
+provenance restores its exact prior bytes or removes a newly created record.
+
+Earlier unrelated artifacts that completed successfully remain committed and
+are described by a `partial` ledger. Repeating the same operation and release
+resumes from that evidence. Phase 2 intentionally does not implement a global
+machine transaction.
+
+## Validation split
+
+Deployment-time validation is intentionally lightweight and bounded:
+
+- source, staged, and installed structural/hash/mode validation always runs;
+- Python artifacts named by the manifest are compiled in memory;
+- shell artifacts named by the manifest pass `/bin/sh -n`;
+- the Quickshell tree must contain `shell.qml`, all QML/JS/SVG text must decode
+  as UTF-8, and its Python helpers compile in memory.
+
+Repository tests retain deeper subsystem responsibility. They exercise
+Hyprland config verification, Quickshell offscreen harnesses, helper behavior,
+and systemd unit verification without turning deployment into a full CI run.
+Phase 2 only writes user unit and drop-in files; it never enables, starts,
+stops, or reloads a user service manager.
+
+## Development and installed modes
+
+Development mode may continue to use intentional repository symlinks. Phase 2
+does not change or migrate them. Installed mode always creates regular
+files/directories containing complete bytes. Removing the source checkout or
+release extraction after deployment does not break the installed tree.
+
+The future full installer may call this engine after package provisioning and
+before later lifecycle phases. Package transactions, create-once
+initialization, privileged adoption, service integration, optional component
+add/remove, and whole-system doctor behavior remain outside this core.
