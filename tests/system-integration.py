@@ -274,8 +274,6 @@ class Fixture:
                     "NetworkManager.service": "disabled",
                     "bluetooth.service": "disabled",
                     "sddm.service": "disabled",
-                    "ly@tty2.service": "disabled",
-                    "getty@tty2.service": "enabled",
                 },
                 "default_target": "graphical.target",
                 "flathub": None,
@@ -327,31 +325,6 @@ class Fixture:
         executable = self.root / "usr/bin/yay"
         executable.write_text("#!/bin/sh\n", encoding="utf-8")
         executable.chmod(0o755)
-
-    def mark_legacy_phase4(self) -> None:
-        state = self.state()
-        state["installed"] = sorted((set(state["installed"]) - {"sddm"}) | {"ly"})
-        state["services"].update({
-            "NetworkManager.service": "enabled",
-            "bluetooth.service": "enabled",
-            "sddm.service": "not-found",
-            "ly@tty2.service": "enabled",
-            "getty@tty2.service": "disabled",
-        })
-        save_json(self.runner_state, state)
-        directory = self.root / MODULE.STATE_DIRECTORY.lstrip("/")
-        directory.mkdir(parents=True, exist_ok=True)
-        directory.chmod(0o700)
-        integration_state = {
-            "schema": 1,
-            "services": {
-                "desired": MODULE.LEGACY_SERVICE_POLICY,
-                "policy_sha256": MODULE._sha256(MODULE._json_bytes(MODULE.LEGACY_SERVICE_POLICY)),
-            },
-        }
-        path = self.root / MODULE.STATE_FILE.lstrip("/")
-        path.write_bytes(MODULE._json_bytes(integration_state))
-        path.chmod(0o600)
 
     def set_display_manager_alias(self, target: str) -> None:
         alias = self.root / MODULE.DISPLAY_MANAGER_ALIAS.lstrip("/")
@@ -1005,119 +978,22 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertNotIn("hypridle.service", desired)
         self.assertNotIn("vanhyprarch-monitor-safe-apply.service", desired)
 
-    def test_fresh_plan_installs_sddm_without_legacy_actions(self) -> None:
+    def test_fresh_plan_installs_and_enables_only_baseline_display_manager(self) -> None:
         state = self.fixture.state()
         state["installed"].remove("sddm")
         state["services"]["sddm.service"] = "not-found"
         save_json(self.fixture.runner_state, state)
-        plan = self.fixture.engine().plan()
-        pairs = {(item.action, item.subject) for item in plan.items}
-        self.assertIn(("package-install", "sddm"), pairs)
-        self.assertIn(("service-enable", "sddm.service"), pairs)
-        self.assertFalse(any("ly@tty2" in item.subject for item in plan.items))
-        self.assertFalse(any(item.subject == "ly" for item in plan.items))
-        inspected = [value for entry in self.fixture.state()["log"] for value in entry["argv"]]
-        self.assertNotIn("ly@tty2.service", inspected)
-        self.assertNotIn("getty@tty2.service", inspected)
-
-    def test_exact_legacy_phase4_state_migrates_and_retains_ly(self) -> None:
-        self.fixture.mark_legacy_phase4()
-        ly_config = self.fixture.root / "etc/ly/config.ini"
-        ly_config.parent.mkdir(parents=True)
-        ly_config.write_bytes(b"legacy rollback config\n")
-        plan = self.fixture.engine().plan()
-        pairs = {(item.action, item.subject) for item in plan.items}
-        self.assertIn(("package-install", "sddm"), pairs)
-        self.assertIn(("legacy-service-disable", "ly@tty2.service"), pairs)
-        self.assertIn(("legacy-package-preserve", "ly"), pairs)
-        self.assertIn(("service-enable", "sddm.service"), pairs)
-
         engine = self.fixture.engine()
-        engine.apply()
-        state = self.fixture.state()
-        self.assertIn("ly", state["installed"])
-        self.assertIn("sddm", state["installed"])
-        self.assertEqual(state["services"]["ly@tty2.service"], "disabled")
-        self.assertEqual(state["services"]["sddm.service"], "enabled")
-        self.assertEqual(
-            os.readlink(self.fixture.root / MODULE.DISPLAY_MANAGER_ALIAS.lstrip("/")),
-            MODULE.SDDM_UNIT_TARGET,
-        )
-        integration_state = load_json(self.fixture.root / MODULE.STATE_FILE.lstrip("/"))
-        self.assertEqual(
-            integration_state["display_manager"],
-            {"state": "pending-ly-retirement"},
-        )
-        self.assertEqual(ly_config.read_bytes(), b"legacy rollback config\n")
-
-    def test_proven_legacy_alias_is_replaced_and_restored_on_enable_failure(self) -> None:
-        legacy_target = "/usr/lib/systemd/system/ly@tty2.service"
-        self.fixture.mark_legacy_phase4()
-        self.fixture.set_display_manager_alias(legacy_target)
-        self.fixture.update(fail_once="/usr/bin/systemctl enable -- sddm.service")
-        with self.assertRaisesRegex(IntegrationError, "could not enable sddm"):
-            self.fixture.engine().apply()
-        self.assertEqual(
-            os.readlink(self.fixture.root / MODULE.DISPLAY_MANAGER_ALIAS.lstrip("/")),
-            legacy_target,
-        )
-        self.assertEqual(self.fixture.state()["services"]["ly@tty2.service"], "enabled")
-
-        self.fixture.engine().apply()
-        self.assertEqual(
-            os.readlink(self.fixture.root / MODULE.DISPLAY_MANAGER_ALIAS.lstrip("/")),
-            MODULE.SDDM_UNIT_TARGET,
-        )
-
-    def test_legacy_service_crash_recovers_old_or_committed_migration(self) -> None:
-        for checkpoint in ("services-after-one-change", "services-after-state-commit"):
-            with self.subTest(checkpoint=checkpoint):
-                fixture = Fixture()
-                try:
-                    fixture.mark_legacy_phase4()
-                    installed_before = set(fixture.state()["installed"])
-                    state = fixture.state()
-                    state["installed"] = sorted(set(state["installed"]) | {"sddm"})
-                    state["services"]["sddm.service"] = "disabled"
-                    save_json(fixture.runner_state, state)
-                    pid = os.fork()
-                    if pid == 0:
-                        with mock.patch.dict(os.environ, {
-                            "VANHYPRARCH_SYSTEM_INTEGRATION_TESTING": "1",
-                            "VANHYPRARCH_SYSTEM_INTEGRATION_FAULT_AT": checkpoint,
-                        }):
-                            fixture.engine()._apply_services(installed_before=installed_before)
-                        os._exit(0)
-                    _, status = os.waitpid(pid, 0)
-                    self.assertEqual(os.waitstatus_to_exitcode(status), 197)
-                    fixture.engine().recover()
-                    state = fixture.state()
-                    if checkpoint == "services-after-state-commit":
-                        self.assertEqual(state["services"]["ly@tty2.service"], "disabled")
-                        self.assertEqual(state["services"]["sddm.service"], "enabled")
-                        self.assertEqual(
-                            load_json(fixture.root / MODULE.STATE_FILE.lstrip("/"))["display_manager"],
-                            {"state": "pending-ly-retirement"},
-                        )
-                    else:
-                        self.assertEqual(state["services"]["ly@tty2.service"], "enabled")
-                        self.assertEqual(state["services"]["sddm.service"], "disabled")
-                        self.assertIsNone(fixture.engine()._display_manager_alias())
-                finally:
-                    fixture.close()
-
-    def test_already_migrated_plan_and_apply_are_preserve_only(self) -> None:
-        self.fixture.mark_legacy_phase4()
-        engine = self.fixture.engine()
-        engine.apply()
         plan = engine.plan()
-        self.assertFalse(plan.blockers)
-        self.assertFalse(plan.changes)
-        before = len(self.fixture.state()["log"])
-        engine.apply()
-        commands = self.fixture.state()["log"][before:]
-        self.assertFalse(any(entry["argv"][1:2] in (["-S"], ["-U"]) for entry in commands))
-        self.assertFalse(any(entry["argv"][1] in {"enable", "disable"} for entry in commands if entry["argv"][0] == "/usr/bin/systemctl"))
+        pairs = {(item.action, item.subject) for item in plan.items}
+        self.assertIn(("package-install", "sddm"), pairs)
+        self.assertIn(("service-enable", "sddm.service"), pairs)
+        inspected_units = {
+            entry["argv"][3]
+            for entry in self.fixture.state()["log"]
+            if entry["argv"][:3] == ["/usr/bin/systemctl", "is-enabled", "--"]
+        }
+        self.assertEqual(inspected_units, set(engine.desired_system_services))
 
     def test_unrelated_display_manager_alias_blocks_without_replacement(self) -> None:
         state = self.fixture.state()
@@ -1127,8 +1003,8 @@ class IntegrationTestCase(unittest.TestCase):
         self.fixture.set_display_manager_alias("/usr/lib/systemd/system/gdm.service")
         plan = self.fixture.engine().plan()
         self.assertTrue(plan.blockers)
-        self.assertIn("unrelated manager", plan.blockers[0].detail)
-        with self.assertRaisesRegex(IntegrationError, "unrelated manager"):
+        self.assertIn("unsupported pre-existing", plan.blockers[0].detail)
+        with self.assertRaisesRegex(IntegrationError, "unsupported pre-existing"):
             self.fixture.engine().apply()
         self.assertEqual(
             os.readlink(self.fixture.root / MODULE.DISPLAY_MANAGER_ALIAS.lstrip("/")),
@@ -1170,14 +1046,6 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertLess(payload_index, enable_index)
         self.assertFalse(any(command[1:2] in (["start"], ["stop"], ["restart"], ["reload"], ["try-restart"]) for command in commands if command and command[0] == "/usr/bin/systemctl"))
 
-    def test_unproven_ly_installation_fails_closed(self) -> None:
-        state = self.fixture.state()
-        state["installed"] = sorted(set(state["installed"]) | {"ly"})
-        save_json(self.fixture.runner_state, state)
-        plan = self.fixture.engine().plan()
-        self.assertTrue(plan.blockers)
-        self.assertIn("not the exact provenance-proven", plan.blockers[0].detail)
-
     def test_service_apply_mixed_state_and_second_run_noop(self) -> None:
         engine = self.fixture.engine()
         engine._apply_services()
@@ -1198,7 +1066,7 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertEqual(self.fixture.state()["services"], prior)
         self.assertFalse((self.fixture.root / MODULE.TRANSACTION_FILE.lstrip("/")).exists())
 
-    def test_migrated_service_failure_preserves_proven_sddm_alias(self) -> None:
+    def test_baseline_service_failure_preserves_proven_sddm_alias(self) -> None:
         engine = self.fixture.adopt_everything()
         state = self.fixture.state()
         state["services"]["bluetooth.service"] = "disabled"

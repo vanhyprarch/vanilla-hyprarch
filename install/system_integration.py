@@ -43,16 +43,6 @@ LOCK_FILE = f"{STATE_DIRECTORY}/system-integration.lock"
 BLUEZ_BACKUP = f"{STATE_DIRECTORY}/bluez/main.conf.pre-vanilla"
 DISPLAY_MANAGER_ALIAS = "/etc/systemd/system/display-manager.service"
 SDDM_UNIT_TARGET = "/usr/lib/systemd/system/sddm.service"
-LEGACY_LY_UNIT_TARGETS = {
-    "/usr/lib/systemd/system/ly.service",
-    "/usr/lib/systemd/system/ly@tty2.service",
-}
-LEGACY_SERVICE_POLICY = {
-    "NetworkManager.service": "enabled",
-    "bluetooth.service": "enabled",
-    "getty@tty2.service": "disabled",
-    "ly@tty2.service": "enabled",
-}
 FLATHUB_NAME = "flathub"
 FLATHUB_URL = "https://dl.flathub.org/repo/"
 AUR_YAY_ORIGIN = "https://aur.archlinux.org/yay.git"
@@ -187,9 +177,7 @@ class SystemPlan:
             "bluez-preserve",
             "service-preserve",
             "flathub-preserve",
-            "legacy-package-preserve",
-            "legacy-service-preserve",
-            "migration-state-preserve",
+            "display-manager-state-preserve",
             "default-target-preserve",
             "sddm-system-preserve",
             "sddm-generated-preserve",
@@ -490,13 +478,6 @@ class SystemIntegration:
             return os.path.normpath(raw)
         return os.path.normpath(str(Path(DISPLAY_MANAGER_ALIAS).parent / raw))
 
-    def _remove_legacy_display_manager_alias(self, expected: str) -> None:
-        if expected not in LEGACY_LY_UNIT_TARGETS or self._display_manager_alias() != expected:
-            raise IntegrationError("legacy display-manager alias changed before migration")
-        alias = self._system_path(DISPLAY_MANAGER_ALIAS)
-        alias.unlink()
-        self._fsync_directory(alias.parent)
-
     def _restore_display_manager_alias(self, expected: str) -> None:
         current = self._display_manager_alias()
         if expected == "absent":
@@ -507,78 +488,29 @@ class SystemIntegration:
             if current != SDDM_UNIT_TARGET:
                 raise IntegrationError("proven SDDM alias changed during service rollback")
             return
-        if expected not in LEGACY_LY_UNIT_TARGETS:
-            raise IntegrationError("service transaction recorded an unsafe prior display-manager alias")
-        if current == expected:
-            return
-        if current is not None:
-            raise IntegrationError("display-manager alias drifted during service rollback")
-        alias = self._system_path(DISPLAY_MANAGER_ALIAS)
-        parent = alias.parent
-        details = parent.lstat()
-        if stat.S_ISLNK(details.st_mode) or not stat.S_ISDIR(details.st_mode):
-            raise IntegrationError("display-manager alias parent is unsafe")
-        if (details.st_uid, details.st_gid) != (self.root_uid, self.root_gid):
-            raise IntegrationError("display-manager alias parent has unexpected ownership")
-        os.symlink(expected, alias)
-        self._fsync_directory(parent)
+        raise IntegrationError("service transaction recorded an unsafe prior display-manager alias")
 
-    def _legacy_provenance_is_exact(self, state: dict) -> bool:
-        services = state.get("services")
-        return isinstance(services, dict) and services == {
-            "desired": LEGACY_SERVICE_POLICY,
-            "policy_sha256": _sha256(_json_bytes(LEGACY_SERVICE_POLICY)),
-        }
-
-    def _display_manager_context(self, installed: set[str]) -> dict[str, str]:
+    def _display_manager_context(self) -> dict[str, str]:
         default_target = self._default_target()
         if default_target != "graphical.target":
             raise IntegrationError(
                 f"default target is {default_target or 'unknown'}, expected graphical.target; refusing to change administrator policy"
             )
         state = self._read_state()
-        migration = state.get("display_manager")
+        baseline = state.get("display_manager")
         alias = self._display_manager_alias()
-        if alias is not None and alias != SDDM_UNIT_TARGET and alias not in LEGACY_LY_UNIT_TARGETS:
+        if alias is not None and alias != SDDM_UNIT_TARGET:
             raise IntegrationError(
-                f"display-manager.service belongs to an unrelated manager: {alias}"
+                f"unsupported pre-existing display-manager.service alias: {alias}"
             )
 
-        if migration is not None:
-            if not isinstance(migration, dict) or migration.get("state") not in {
-                "sddm-baseline",
-                "pending-ly-retirement",
-            }:
-                raise IntegrationError("invalid display-manager migration provenance")
-            mode = str(migration["state"])
+        if baseline is not None:
+            if baseline != {"state": "sddm-baseline"}:
+                raise IntegrationError("invalid display-manager baseline provenance")
             if alias != SDDM_UNIT_TARGET:
                 raise IntegrationError("proven SDDM state lacks its exact display-manager alias")
-            if mode == "sddm-baseline" and "ly" in installed:
-                raise IntegrationError("fresh SDDM baseline unexpectedly contains Ly")
-            if mode == "pending-ly-retirement" and "ly" not in installed:
-                raise IntegrationError("pending Ly retirement state lost its rollback package")
-            return {"mode": mode, "alias": alias or "absent"}
+            return {"mode": "sddm-baseline", "alias": alias}
 
-        if "ly" in installed:
-            if not self._legacy_provenance_is_exact(state):
-                raise IntegrationError("installed Ly is not the exact provenance-proven Phase 4 baseline")
-            legacy_states = {
-                "ly@tty2.service": self._service_state("ly@tty2.service"),
-                "getty@tty2.service": self._service_state("getty@tty2.service"),
-            }
-            if legacy_states != {
-                "ly@tty2.service": "enabled",
-                "getty@tty2.service": "disabled",
-            }:
-                raise IntegrationError("legacy Ly services do not match the accepted Phase 4 state")
-            if self._service_state("sddm.service") == "enabled":
-                raise IntegrationError("legacy Ly state has unproven SDDM enablement")
-            if alias not in {None, *LEGACY_LY_UNIT_TARGETS}:
-                raise IntegrationError("legacy Ly state has a conflicting display-manager alias")
-            return {"mode": "legacy-ly", "alias": alias or "absent"}
-
-        if self._legacy_provenance_is_exact(state):
-            raise IntegrationError("legacy Phase 4 provenance exists but the Ly package is absent")
         if alias is not None:
             raise IntegrationError("an unproven display-manager.service alias already exists")
         if self._service_state("sddm.service") == "enabled":
@@ -607,9 +539,9 @@ class SystemIntegration:
             for item in plan.items
         ]
 
-    def _display_manager_plan(self, installed: set[str]) -> list[PlanItem]:
+    def _display_manager_plan(self) -> list[PlanItem]:
         try:
-            context = self._display_manager_context(installed)
+            context = self._display_manager_context()
         except IntegrationError as error:
             return [PlanItem("conflict", "display-manager", str(error))]
         mode = context["mode"]
@@ -624,31 +556,13 @@ class SystemIntegration:
                 f"current={current_sddm}; alias={context['alias']}; desired=enabled",
             )
         )
-        if mode in {"legacy-ly", "pending-ly-retirement"}:
-            current_ly = self._service_state("ly@tty2.service")
-            items.extend(
-                (
-                    PlanItem("legacy-package-preserve", "ly", "rollback package retained until human acceptance"),
-                    PlanItem(
-                        "legacy-service-preserve" if current_ly == "disabled" else "legacy-service-disable",
-                        "ly@tty2.service",
-                        f"current={current_ly}; desired=disabled; no process stop",
-                    ),
-                    PlanItem(
-                        "migration-state-preserve" if mode == "pending-ly-retirement" else "migration-state-update",
-                        "pending-ly-retirement",
-                        "Ly removal is deferred to Slice 4",
-                    ),
-                )
+        items.append(
+            PlanItem(
+                "display-manager-state-preserve" if mode == "sddm-baseline" else "display-manager-state-create",
+                "sddm-baseline",
+                "Vanilla display-manager baseline",
             )
-        else:
-            items.append(
-                PlanItem(
-                    "migration-state-preserve" if mode == "sddm-baseline" else "migration-state-create",
-                    "sddm-baseline",
-                    "new display-manager baseline installation",
-                )
-            )
+        )
         return items
 
     def _read_state(self) -> dict:
@@ -896,7 +810,7 @@ class SystemIntegration:
         except SddmLoginError as error:
             items.append(PlanItem("sddm-conflict", "sddm-login", str(error)))
         items.extend(self._service_plan())
-        items.extend(self._display_manager_plan(installed))
+        items.extend(self._display_manager_plan())
         if pending:
             items.append(PlanItem("prerequisite-block", "phase4-apply", "package provisioning is blocked until administrator-managed full upgrade"))
         return SystemPlan(tuple(items))
@@ -1348,27 +1262,17 @@ class SystemIntegration:
         if current != desired:
             raise IntegrationError(f"service enablement verification failed for {unit}: {current}")
 
-    def _apply_services(self, *, installed_before: set[str] | None = None) -> None:
-        installed = self._read_installed_packages() if installed_before is None else installed_before
-        context = self._display_manager_context(installed)
-        mode = context["mode"]
+    def _apply_services(self) -> None:
+        context = self._display_manager_context()
         desired = dict(self.desired_system_services)
-        if mode in {"legacy-ly", "pending-ly-retirement"}:
-            desired["ly@tty2.service"] = "disabled"
-        desired = dict(sorted(desired.items()))
         prior = {unit: self._service_state(unit) for unit in desired}
         unsupported = {unit: value for unit, value in prior.items() if value not in {"enabled", "disabled"}}
         if unsupported:
             raise IntegrationError("unsupported pre-existing service enablement state: " + ", ".join(f"{unit}={value}" for unit, value in unsupported.items()))
-        target_migration = (
-            "pending-ly-retirement"
-            if mode in {"legacy-ly", "pending-ly-retirement"}
-            else "sddm-baseline"
-        )
         alias_ready = context["alias"] == SDDM_UNIT_TARGET
         if prior == desired and alias_ready:
             state = self._read_state()
-            if state.get("display_manager") == {"state": target_migration}:
+            if state.get("display_manager") == {"state": "sddm-baseline"}:
                 return
         transaction = {
             "schema": SCHEMA_VERSION,
@@ -1378,7 +1282,7 @@ class SystemIntegration:
             "prior": prior,
             "desired": desired,
             "prior_alias": context["alias"],
-            "display_manager": {"state": target_migration},
+            "display_manager": {"state": "sddm-baseline"},
         }
         self._write_transaction(transaction)
         self._fault("services-before-first-change")
@@ -1387,10 +1291,8 @@ class SystemIntegration:
             ordered_units = [
                 unit
                 for unit in desired
-                if unit not in {"ly@tty2.service", "sddm.service"}
+                if unit != "sddm.service"
             ]
-            if "ly@tty2.service" in desired:
-                ordered_units.append("ly@tty2.service")
             ordered_units.append("sddm.service")
             for unit in ordered_units:
                 wanted = desired[unit]
@@ -1399,8 +1301,6 @@ class SystemIntegration:
                 )
                 if prior[unit] == wanted and not alias_needs_enable:
                     continue
-                if unit == "sddm.service" and context["alias"] in LEGACY_LY_UNIT_TARGETS:
-                    self._remove_legacy_display_manager_alias(context["alias"])
                 self._set_service_state(unit, wanted)
                 changed += 1
                 if changed == 1:
@@ -1417,7 +1317,7 @@ class SystemIntegration:
                 "policy_sha256": _sha256(_json_bytes(manifest_desired)),
                 "transaction_id": transaction["id"],
             }
-            state["display_manager"] = {"state": target_migration}
+            state["display_manager"] = {"state": "sddm-baseline"}
             self._write_state(state)
             self._fault("services-after-state-commit")
             self._remove_transaction()
@@ -1434,20 +1334,14 @@ class SystemIntegration:
         if not isinstance(prior, dict) or not isinstance(desired, dict):
             raise IntegrationError("invalid service recovery transaction")
         allowed_desired = dict(self.desired_system_services)
-        allowed_pending = dict(allowed_desired)
-        allowed_pending["ly@tty2.service"] = "disabled"
-        allowed_pending = dict(sorted(allowed_pending.items()))
-        if desired not in (allowed_desired, allowed_pending):
+        if desired != allowed_desired:
             raise IntegrationError("service recovery transaction does not match manifest policy")
         if any(value not in {"enabled", "disabled"} for value in prior.values()):
             raise IntegrationError("service recovery transaction has unsupported prior state")
         current = {unit: self._service_state(unit) for unit in prior}
         state = self._read_state()
         display_manager = transaction.get("display_manager")
-        if display_manager not in (
-            {"state": "sddm-baseline"},
-            {"state": "pending-ly-retirement"},
-        ):
+        if display_manager != {"state": "sddm-baseline"}:
             raise IntegrationError("service recovery transaction has invalid display-manager state")
         committed = (
             isinstance(state.get("services"), dict)
@@ -1519,13 +1413,13 @@ class SystemIntegration:
             installed, pending = self._base_preflight()
             if pending:
                 raise IntegrationError("pending Arch upgrades detected; administrator must complete a normal pacman -Syu before Vanilla package provisioning")
-            self._display_manager_context(installed)
+            self._display_manager_context()
             self._install_official_packages(installed)
             self._bootstrap_yay()
             self._apply_bluez()
             self._apply_flatpak()
             self._apply_sddm_login()
-            self._apply_services(installed_before=installed)
+            self._apply_services()
             self.validate()
             return self.plan()
 
@@ -1554,12 +1448,9 @@ class SystemIntegration:
             current = self._service_state(unit)
             if current != desired:
                 raise IntegrationError(f"service policy mismatch: {unit} is {current}, expected {desired}")
-        display_manager = self._display_manager_context(installed)
+        display_manager = self._display_manager_context()
         if display_manager["alias"] != SDDM_UNIT_TARGET:
             raise IntegrationError("display-manager.service does not point to sddm.service")
-        if display_manager["mode"] == "pending-ly-retirement":
-            if self._service_state("ly@tty2.service") != "disabled":
-                raise IntegrationError("legacy ly@tty2.service remains enabled")
         default_names = set(self.official_default_packages)
         forbidden_direct = {"cups", "cups-pk-helper", "system-config-printer", "avahi", "p7zip"}
         overlap = sorted(default_names & forbidden_direct)

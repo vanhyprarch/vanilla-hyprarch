@@ -37,10 +37,8 @@ Slice 1 adds repository source contracts only:
 - deterministic Python and mocked Qt tests validate presentation,
   authentication plumbing, session resolution, and power actions.
 
-Slice 1 itself installs nothing. Ly remains the published Phase 4 baseline
-until later work deliberately changes the package manifest and systemd service
-policy. It does not touch PAM, install SDDM, or change a running display
-manager.
+Slice 1 itself installs nothing. It does not touch PAM, install SDDM, or
+change a running display manager.
 
 ## Slice 2 privileged deployment
 
@@ -87,14 +85,14 @@ python install/sddm_login_integration.py apply \
 python install/sddm_login_integration.py validate --target-user USER
 ```
 
-Slice 2 itself did not install SDDM, alter package or service policy, retire
-Ly, modify PAM, or start/reload a display manager. Slice 3 extends the same
+Slice 2 itself did not install SDDM, alter package or service policy, modify
+PAM, or start/reload a display manager. Slice 3 extends the same
 publisher and provenance boundary to the Vanilla SDDM drop-in.
 
-## Slice 3 baseline and migration
+## Slice 3 baseline
 
-The future manifest now requires official `sddm` directly and no longer lists
-`ly`; Qt and Xorg dependencies remain pacman-owned transitive dependencies.
+The manifest requires official `sddm` directly and does not list `ly`; Qt and
+Xorg dependencies remain pacman-owned transitive dependencies.
 The service manifest enables only normal `sddm.service` display-manager
 semantics. It contains no continuing `ly@tty2.service` or
 `getty@tty2.service` policy.
@@ -111,13 +109,10 @@ then enables `sddm.service`, which owns the standard
 already be `graphical.target`; a deliberate non-graphical administrator choice
 is a blocker, not a mutation.
 
-Legacy migration is allowed only when the Ly package, `ly@tty2.service`,
-`getty@tty2.service`, and Phase 4 service provenance exactly match the accepted
-published state. It installs and prepares SDDM, disables Ly only for the next
-boot, enables SDDM only for the next boot, and records
-`pending-ly-retirement`. It never stops the running greeter, starts SDDM,
-removes Ly, or deletes `/etc/ly`. An unrelated display-manager alias fails
-closed.
+SDDM is the only supported baseline. Ly was superseded before Alpha, and no
+released Vanilla version used it, so there is no production Ly migration,
+rollback, or retirement operation. An unsupported pre-existing
+display-manager alias fails closed rather than being migrated.
 
 ## Machine binding contract
 
@@ -167,9 +162,9 @@ the scale to `0.72` through `2.0`. Input and logo widths also have proportional
 screen bounds. Physical VM, HiDPI, 4K, and multi-monitor acceptance remains a
 later deployed-candidate requirement.
 
-## Follow-on work
+## Acceptance gate
 
-Current-VM authentication/logout acceptance must precede Slice 4 Ly package
-retirement. A restored-snapshot full fresh installation remains the final and
-more important acceptance path. Neither acceptance nor retirement is part of
-Slice 3.
+A full fresh installation from the saved VM snapshot is the release gate. It
+must prove direct SDDM installation, the Vanilla greeter and session, login and
+logout, reboot persistence, idempotence, and source-checkout independence.
+There is no Slice 4 Ly-retirement operation.

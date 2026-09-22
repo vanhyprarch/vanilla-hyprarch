@@ -871,7 +871,7 @@ while retaining the established dock-panel coexistence semantics.
 **Implementation:** Implemented and live validated
 
 The inactive `graphical-session.target` in the direct
-`Ly -> start-hyprland -> Hyprland` architecture cannot own the packaged
+`start-hyprland -> Hyprland` architecture cannot own the packaged
 `hyprpolkitagent.service` lifecycle. Vanilla therefore owns the session edge
 explicitly without replacing the package unit or introducing a new session
 target.
@@ -949,8 +949,7 @@ the initial source acquisition path, but installed runtime layout remains
 compatible with future release archives. Vanilla update never silently runs a
 full Arch upgrade or an unsupported partial upgrade.
 
-Ly keeps the package-owned Hyprland session entry; selecting it once at first
-login is acceptable. The future mpv and MIME configuration files are
+The future mpv and MIME configuration files are
 create-once user-owned seeds and are not created in Phase 1. Exact seed content
 and deployment remain Phase 3 work.
 
@@ -1055,8 +1054,8 @@ host.
 
 **Status:** Accepted
 **Date:** 2026-09-22
-**Implementation:** DF2 Phase 5 Slices 1–3; VM acceptance and Ly retirement
-remain later gates
+**Implementation:** DF2 Phase 5 Slices 1–3; fresh-install VM acceptance remains
+the release gate
 
 Ly 1.4.1 cannot provide the accepted password-only scene without a maintained
 custom package: its username and session rows are structurally present, and
@@ -1076,7 +1075,8 @@ ambiguous configuration fails closed.
 Slice 1 establishes generic theme and desktop-entry sources. Slice 2 adds the
 root-only provenance-backed publisher and generated machine binding under the
 new `VANILLA_MANAGED_SYSTEM` ownership boundary. Slice 3 extends that payload
-to the X11/theme drop-in, makes SDDM the fresh package/service baseline, and
-adds exact fail-closed Phase 4 Ly migration while retaining Ly for rollback.
+to the X11/theme drop-in and makes SDDM the sole package/service baseline. Ly
+was superseded before Alpha, so no production Ly migration or retirement path
+exists. Unsupported pre-existing display-manager state fails closed.
 The detailed contract and remaining integration boundaries are documented in
 [DF2 Phase 5 SDDM login](phase-5-sddm-login.md).

@@ -114,20 +114,15 @@ Global text size uses the versioned preference documented in
 [Global text size](text-size.md); a missing preference means the 12-pixel
 default without creating state.
 
-## Session startup — IMPLEMENTED
+## Session startup — IMPLEMENTED, FRESH-INSTALL ACCEPTANCE PENDING
 
-The graphical session remains the direct
-`Ly -> /usr/bin/start-hyprland -> Hyprland` path. UWSM is not part of the
-Vanilla HyprArch architecture. This describes the current published and
-deployed Phase 4 baseline.
-
-The accepted future display-manager path is now
+The supported display-manager path is
 `SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland Wayland`.
 Phase 5 Slices 1–3 now define the undeployed
-[SDDM theme, session, privileged payload, and baseline migration](phase-5-sddm-login.md).
-The feature branch changes the future package/service baseline, but Ly
-retirement and VM acceptance are not complete, so the published machine's
-current boot and login path has not changed.
+[SDDM theme, session, privileged payload, and baseline](phase-5-sddm-login.md).
+Ly was superseded before Alpha and has no supported production migration
+path. UWSM remains unsupported. Fresh-install acceptance from the saved VM
+snapshot is the release gate.
 
 Before registering its startup children, the managed portable core reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
@@ -240,7 +235,7 @@ helper running in the new compositor environment imports only
 `HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY`, and `DISPLAY` into the user
 manager, waits for success, and then restarts the service. This closes the race
 in Hyprland 0.56.2's asynchronous built-in activation-environment publication
-and ensures every fresh compositor launched by a normal Ly login selects its
+and ensures every fresh compositor launched by a normal graphical login selects its
 own IPC path. `XDG_RUNTIME_DIR` remains user-manager-owned. Vanilla does not
 expose a clean user-requested same-login compositor restart; upstream launcher
 crash/safe-mode recovery is not a release gate. `config.reloaded` only requests
@@ -251,7 +246,7 @@ devices, write per-device rules, or read/store/switch active groups. See
 
 Controlled live validation covered graphical Italian-to-US-to-Italian localed
 changes, console-only isolation, repeated localed owner reincarnation, config
-reload reconciliation, service restart, and fresh Ly login. The original proxy
+reload reconciliation, service restart, and fresh graphical login. The original proxy
 signal-delivery defect was reproduced, replaced by the direct owner-aware
 connection design above, and verified against a later owner before migration
 continued.
@@ -1076,12 +1071,11 @@ owner provenance below `/var/lib/vanhyprarch/sddm-login`, and recovers durable
 pre-commit or post-commit transactions. Disposable-root tests cover collision
 refusal, symlink parents, manual drift, source updates, idempotence, source-tree
 independence, and every defined interruption point. Slice 3 adds the
-provenance-owned X11/theme drop-in, replaces Ly with official SDDM in the
-future manifest, enables `sddm.service` through its normal display-manager
-alias only after payload validation, and recognizes only the exact accepted
-Phase 4 Ly state for migration. That migration disables Ly for the next boot
-but retains its package and configuration as rollback material. Ly remains the
-published active baseline and no VM authentication acceptance has occurred.
+provenance-owned X11/theme drop-in, makes official SDDM the sole supported
+manifest baseline, and enables `sddm.service` through its normal
+display-manager alias only after payload validation. Unsupported pre-existing
+display-manager configuration fails closed. No VM authentication acceptance
+has occurred.
 
 ## Known open work
 
@@ -1093,9 +1087,9 @@ published active baseline and no VM authentication acceptance has occurred.
   Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
 - Build the full bootstrap orchestration around the published distribution
   cores.
-- Complete Phase 5 current-VM acceptance, safe Ly retirement, and restored-
-  snapshot fresh-install acceptance. Slices 1–3 are repository-complete but
-  intentionally not installed on a real system yet.
+- Complete Phase 5 fresh-install acceptance from the saved VM snapshot.
+  Slices 1–3 are repository-complete but intentionally not installed on a
+  real system yet.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

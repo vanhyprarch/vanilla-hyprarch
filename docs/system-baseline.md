@@ -259,10 +259,9 @@ The Wayland portal stack is:
 - `xdg-desktop-portal-hyprland`
 - `xdg-desktop-portal-gtk`
 
-The published VM still uses the direct
-`Ly -> /usr/bin/start-hyprland -> Hyprland` session path. The future baseline
-is `SDDM X11 greeter -> Vanilla theme -> /usr/bin/start-hyprland -> Hyprland
-Wayland`; UWSM is not part of either architecture. The required official
+The supported baseline is
+`SDDM X11 greeter -> Vanilla theme -> /usr/bin/start-hyprland -> Hyprland
+Wayland`; UWSM is not part of the architecture. The required official
 `hyprpolkitagent` package provides graphical PolicyKit authentication for GUI
 applications that need privileged authorization. Hyprland invokes the managed
 direct-session lifecycle helper from the existing `hyprland.start` callback
@@ -329,16 +328,15 @@ icon theme and uses it for project UI controls.
 
 ## Display manager
 
-The future package baseline selects official `sddm`; `ly` is absent from clean
+The package baseline selects official `sddm`; `ly` is absent from clean
 installation plans. SDDM uses its supported X11 greeter, the Vanilla-owned
 password-only theme, and the direct Vanilla Wayland session. Normal
 `sddm.service` enablement owns `display-manager.service`; Vanilla does not model
 SDDM as a tty2 instance and has no continuing getty@tty2 policy.
 
-The published accepted VM remains on Ly until the Slice 3 candidate completes
-manual migration acceptance. Its migration retains the Ly package and
-`/etc/ly`, disables only future `ly@tty2.service` activation, and records
-`pending-ly-retirement`; removal is a later explicit step.
+Ly was superseded before Alpha, and no released Vanilla version used it.
+There is no production Ly migration or retirement path. Fresh-install
+acceptance from the saved VM snapshot is the release gate.
 
 ## Locking and idle
 
