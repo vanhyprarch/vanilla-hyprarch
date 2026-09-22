@@ -39,6 +39,7 @@ FLATHUB_URL = "https://dl.flathub.org/repo/"
 AUR_YAY_ORIGIN = "https://aur.archlinux.org/yay.git"
 PACKAGE_NAME = re.compile(r"^[a-z0-9@._+:-]+$")
 DEPENDENCY_NAME = re.compile(r"^([a-z0-9@._+:-]+)")
+ARCHITECTURE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]*$")
 SERVICE_NAME = re.compile(r"^[A-Za-z0-9@_.:-]+\.(?:service|socket|path)$")
 
 
@@ -679,28 +680,96 @@ class SystemIntegration:
         self._write_state(state)
 
     def _parse_srcinfo(self, text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-        pkgbase = ""
-        packages: list[str] = []
-        architectures: list[str] = []
-        dependencies: list[str] = []
+        pkgbase: str | None = None
+        base_fields: dict[str, list[str]] = {}
+        package_sections: list[tuple[str, dict[str, list[str]]]] = []
+        current_fields: dict[str, list[str]] | None = None
+
         for raw_line in text.splitlines():
             line = raw_line.strip()
-            if not line or "=" not in line:
+            if not line or line.startswith("#"):
                 continue
+            if "=" not in line:
+                raise IntegrationError("yay PKGBUILD metadata contains a malformed assignment")
             key, value = (part.strip() for part in line.split("=", 1))
             if key == "pkgbase":
+                if pkgbase is not None or package_sections or not value:
+                    raise IntegrationError("yay PKGBUILD metadata has malformed pkgbase sections")
                 pkgbase = value
+                current_fields = base_fields
             elif key == "pkgname":
-                packages.append(value)
-            elif key == "arch":
-                architectures.append(value)
-            elif key == "depends" or key == "makedepends" or key == "checkdepends" or key.startswith(("depends_", "makedepends_", "checkdepends_")):
-                dependencies.append(_dependency_name(value))
-        if pkgbase != "yay" or packages != ["yay"]:
+                if pkgbase is None or not value:
+                    raise IntegrationError("yay PKGBUILD metadata has malformed pkgname sections")
+                current_fields = {}
+                package_sections.append((value, current_fields))
+            elif current_fields is None:
+                raise IntegrationError("yay PKGBUILD metadata assignment precedes pkgbase")
+            else:
+                current_fields.setdefault(key, []).append(value)
+
+        packages = tuple(name for name, _fields in package_sections)
+        if pkgbase != "yay" or packages != ("yay",):
             raise IntegrationError("yay PKGBUILD metadata has unexpected pkgbase/package identity")
-        if not architectures or not set(architectures).issubset({"x86_64", "any"}):
+
+        def validate_architectures(values: list[str], *, required: bool) -> None:
+            if required and not values:
+                raise IntegrationError("yay PKGBUILD metadata has missing architecture")
+            if any(not value or ARCHITECTURE_NAME.fullmatch(value) is None for value in values):
+                raise IntegrationError("yay PKGBUILD metadata has malformed architecture")
+            if len(set(values)) != len(values):
+                raise IntegrationError("yay PKGBUILD metadata has duplicate architecture")
+            if "any" in values and len(values) != 1:
+                raise IntegrationError("yay PKGBUILD metadata illegally mixes any with other architectures")
+
+        package_fields = package_sections[0][1]
+        base_architectures = base_fields.get("arch", [])
+        package_architectures = package_fields.get("arch", [])
+        validate_architectures(base_architectures, required=True)
+        validate_architectures(package_architectures, required=False)
+        # A pkgname assignment overrides the inherited pkgbase assignment;
+        # absence inherits it. Repeated values remain a list, never a scalar.
+        architectures = package_architectures or base_architectures
+        if "x86_64" not in architectures and "any" not in architectures:
             raise IntegrationError("yay PKGBUILD metadata has unexpected architecture")
-        return pkgbase, tuple(packages), tuple(sorted(set(architectures))), tuple(sorted(set(dependencies)))
+
+        for fields in (base_fields, package_fields):
+            for key in fields:
+                prefix = next(
+                    (
+                        value
+                        for value in ("depends", "makedepends", "checkdepends")
+                        if key.startswith(value + "_")
+                    ),
+                    None,
+                )
+                if prefix is not None:
+                    architecture = key[len(prefix) + 1:]
+                    if (
+                        not architecture
+                        or architecture == "any"
+                        or ARCHITECTURE_NAME.fullmatch(architecture) is None
+                    ):
+                        raise IntegrationError("yay PKGBUILD metadata has malformed architecture-specific dependency")
+        if any(
+            key == "makedepends"
+            or key == "checkdepends"
+            or key.startswith(("makedepends_", "checkdepends_"))
+            for key in package_fields
+        ):
+            raise IntegrationError("yay PKGBUILD metadata puts build/test dependencies in a pkgname section")
+
+        dependency_values: list[str] = []
+        for key in ("makedepends", "makedepends_x86_64", "checkdepends", "checkdepends_x86_64"):
+            dependency_values.extend(base_fields.get(key, []))
+        for key in ("depends", "depends_x86_64"):
+            values = package_fields.get(key, base_fields.get(key, []))
+            if values == [""]:
+                values = []
+            elif any(not value for value in values):
+                raise IntegrationError("yay PKGBUILD metadata has ambiguous empty dependency assignment")
+            dependency_values.extend(values)
+        dependencies = tuple(sorted({_dependency_name(value) for value in dependency_values}))
+        return pkgbase, packages, tuple(architectures), dependencies
 
     def _verify_yay_dependency_policy(self, dependencies: Sequence[str]) -> None:
         unavailable = []

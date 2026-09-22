@@ -110,6 +110,16 @@ the stage requires exactly one package output and verifies its `.PKGINFO`
 pkgname, pkgbase, and architecture before privileged `pacman -U` installation.
 The exact private build directory is removed afterward.
 
+The `.SRCINFO` reader keeps repeatable fields as lists and evaluates the
+selected `yay` pkgname section separately from the shared pkgbase section.
+Multiple unique pkgbase architectures are valid; the selected package is
+eligible on Alpha when its effective list contains `x86_64`, or contains only
+`any`. Missing architecture metadata, duplicates, `any` mixed with another
+architecture, and architecture lists that exclude x86_64 fail closed.
+Architecture-qualified dependencies for other targets are not installed on
+x86_64. This source compatibility check is distinct from the later `.PKGINFO`
+check of the package archive actually produced by makepkg.
+
 AUR PKGBUILDs are community code executed as the non-root build user. The
 approved exception is not equivalent to an official package trust boundary and
 does not authorize recursive AUR dependency resolution.

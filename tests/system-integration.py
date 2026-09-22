@@ -178,9 +178,15 @@ class FakeRunner:
         if user is None:
             raise AssertionError("makepkg was not delegated to target user")
         if args[1:] == ["--printsrcinfo"]:
+            if "yay_srcinfo" in state:
+                return CommandResult(0, state["yay_srcinfo"])
             pkgname = state.get("yay_pkgname", "yay")
             dependency = state.get("yay_dependency", "go")
-            return CommandResult(0, f"pkgbase = yay\npkgname = {pkgname}\narch = x86_64\nmakedepends = {dependency}>=1\ndepends = pacman\n")
+            return CommandResult(
+                0,
+                f"pkgbase = yay\narch = x86_64\nmakedepends = {dependency}>=1\n"
+                f"depends = pacman\npkgname = {pkgname}\n",
+            )
         package = cwd / "yay-1.0-1-x86_64.pkg.tar.zst"
         if args[1:] == ["--packagelist"]:
             outputs = [package]
@@ -222,7 +228,7 @@ class Fixture:
             self.runner_state,
             {
                 "architecture": "x86_64",
-                "installed": defaults,
+                "installed": sorted(set(defaults) | {"pacman"}),
                 "pending": [],
                 "official": sorted(set(official) | {"go", "pacman"}),
                 "foreign": [],
@@ -424,6 +430,96 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertFalse(any((self.fixture.root / "var/tmp").iterdir()))
         self.assertEqual(engine._yay_status(set(state["installed"])).action, "aur-preserve")
 
+    def test_current_real_yay_srcinfo_preserves_repeated_architectures(self) -> None:
+        source = REPOSITORY / "tests/fixtures/yay-cb43f848.srcinfo"
+        pkgbase, packages, architectures, dependencies = self.fixture.engine()._parse_srcinfo(
+            source.read_text(encoding="utf-8")
+        )
+        self.assertEqual(pkgbase, "yay")
+        self.assertEqual(packages, ("yay",))
+        self.assertEqual(
+            architectures,
+            ("i686", "pentium4", "x86_64", "arm", "armv7h", "armv6h", "aarch64", "riscv64"),
+        )
+        self.assertEqual(dependencies, ("git", "go", "pacman"))
+
+    def test_current_real_yay_srcinfo_completes_bootstrap(self) -> None:
+        source = REPOSITORY / "tests/fixtures/yay-cb43f848.srcinfo"
+        self.fixture.update(yay_srcinfo=source.read_text(encoding="utf-8"))
+        self.fixture.engine()._bootstrap_yay()
+        state = self.fixture.state()
+        self.assertIn("yay", state["installed"])
+        self.assertIn("go", state["installed"])
+
+    def test_srcinfo_architecture_compatibility_is_strict(self) -> None:
+        parser = self.fixture.engine()._parse_srcinfo
+
+        for architecture in ("x86_64", "any"):
+            with self.subTest(architecture=architecture):
+                _base, _packages, architectures, _dependencies = parser(
+                    f"pkgbase = yay\narch = {architecture}\npkgname = yay\n"
+                )
+                self.assertEqual(architectures, (architecture,))
+
+        rejected = {
+            "excluded": "pkgbase = yay\narch = aarch64\npkgname = yay\n",
+            "mixed-any": "pkgbase = yay\narch = any\narch = x86_64\npkgname = yay\n",
+            "missing": "pkgbase = yay\npkgname = yay\n",
+            "duplicate": "pkgbase = yay\narch = x86_64\narch = x86_64\npkgname = yay\n",
+        }
+        for case, srcinfo in rejected.items():
+            with self.subTest(case=case), self.assertRaisesRegex(IntegrationError, "architecture"):
+                parser(srcinfo)
+
+    def test_srcinfo_pkgname_arch_and_dependency_overrides_are_effective(self) -> None:
+        _base, _packages, architectures, dependencies = self.fixture.engine()._parse_srcinfo(
+            "pkgbase = yay\n"
+            "arch = aarch64\n"
+            "depends = inherited\n"
+            "makedepends = builder\n"
+            "makedepends_x86_64 = native-builder\n"
+            "makedepends_aarch64 = foreign-builder\n"
+            "pkgname = yay\n"
+            "arch = x86_64\n"
+            "depends = selected\n"
+            "depends_x86_64 = selected-native\n"
+            "depends_aarch64 = selected-foreign\n"
+        )
+        self.assertEqual(architectures, ("x86_64",))
+        self.assertEqual(dependencies, ("builder", "native-builder", "selected", "selected-native"))
+
+        _base, _packages, _architectures, extended = self.fixture.engine()._parse_srcinfo(
+            "pkgbase = yay\n"
+            "arch = x86_64\n"
+            "depends = inherited\n"
+            "pkgname = yay\n"
+            "depends = inherited\n"
+            "depends = extended\n"
+        )
+        self.assertEqual(extended, ("extended", "inherited"))
+
+    def test_partial_official_package_apply_resumes_without_reinstall(self) -> None:
+        engine = self.fixture.engine()
+        plan = engine.plan()
+        self.assertTrue(
+            all(
+                item.action == "package-preserve"
+                for item in plan.items
+                if item.subject in engine.official_default_packages
+            )
+        )
+        self.assertIn(("aur-bootstrap", "yay"), {(item.action, item.subject) for item in plan.items})
+
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        transactions = [
+            entry["argv"][5:]
+            for entry in self.fixture.state()["log"][before:]
+            if entry["argv"][:5] == ["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--"]
+        ]
+        self.assertEqual(transactions, [["go"]])
+        self.assertFalse(engine.validate().blockers)
+
     def test_existing_valid_yay_is_preserved_without_build(self) -> None:
         self.fixture.install_existing_yay()
         engine = self.fixture.engine()
@@ -500,6 +596,18 @@ class IntegrationTestCase(unittest.TestCase):
         self.fixture.update(built_metadata="pkgname = other\npkgbase = yay\narch = x86_64\n")
         with self.assertRaisesRegex(IntegrationError, "built package metadata"):
             self.fixture.engine()._bootstrap_yay()
+
+    def test_built_package_architecture_is_checked_separately(self) -> None:
+        self.fixture.update(built_metadata="pkgname = yay\npkgbase = yay\narch = any\n")
+        self.fixture.engine()._bootstrap_yay()
+
+        incompatible = Fixture()
+        try:
+            incompatible.update(built_metadata="pkgname = yay\npkgbase = yay\narch = aarch64\n")
+            with self.assertRaisesRegex(IntegrationError, "built package metadata"):
+                incompatible.engine()._bootstrap_yay()
+        finally:
+            incompatible.close()
 
     def test_bluez_package_pristine_adoption_backup_and_preserve(self) -> None:
         engine = self.fixture.engine()
