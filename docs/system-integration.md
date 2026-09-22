@@ -176,18 +176,21 @@ An absent stable `flathub` is added from the canonical descriptor, an exact
 same-named configuration fails closed. No user remote, beta remote, or Flatpak
 application is changed.
 
-Only default system entries with `enabled` or `disabled` policy in
-`deployment/service-policy-v1.toml` are mutated:
+The published Phase 4 policy enabled NetworkManager, Bluetooth, and
+`ly@tty2.service`, while disabling `getty@tty2.service`. Phase 5 Slice 3
+intentionally replaces the future default-system policy with:
 
 - enable `NetworkManager.service`;
 - enable `bluetooth.service`;
-- enable `ly@tty2.service`;
-- disable `getty@tty2.service`.
+- enable normal `sddm.service` display-manager semantics.
 
-Phase 4 changes enablement only; it does not start, stop, or restart units.
+The Slice 3 migration recognizes only exact provenance-backed Phase 4 Ly
+state, disables `ly@tty2.service` for the next boot, and retains both the Ly
+package and `/etc/ly` until human acceptance. Fresh systems never receive Ly
+or a special tty2/getty policy. Integration changes enablement only; it does
+not start, stop, restart, or reload display-manager units.
 Package/D-Bus-activated user services and every static Vanilla user unit are
-observed only through the manifest and never passed to systemctl. Ly retains
-the package-owned Hyprland session and no Vanilla Ly configuration is created.
+observed only through the manifest and never passed to systemctl.
 
 The service transaction durably records every exact prior and desired state
 before the first mutation. An ordinary failure rolls back changes from that
@@ -201,9 +204,9 @@ than being approximated.
 Private root state is stored as mode-0600 JSON beneath the root-owned mode-0700
 `/var/lib/vanhyprarch/` directory:
 
-- `system-integration-v1.json` contains only BlueZ adoption provenance,
-  committed service-policy identity, and diagnostics for a yay build performed
-  by Vanilla;
+- `system-integration-v1.json` contains BlueZ adoption provenance, committed
+  service-policy identity, the minimal SDDM baseline or pending-Ly-retirement
+  marker, and diagnostics for a yay build performed by Vanilla;
 - `system-integration-transaction-v1.json` exists only for an incomplete BlueZ
   or service-policy local transaction;
 - `system-integration.lock` serializes mutating invocations without storing
@@ -236,7 +239,8 @@ bootstrap, partial-state resume, package/yay/BlueZ/Flatpak/service integration,
 preserve-only repeat apply, reboot, and integrated Phase 2/3/4 validation.
 Phase 4 is never applied to the development host.
 
-Ly also exposed a package-provided UWSM-managed Hyprland choice, although UWSM
-is intentionally absent and unsupported. Cleaning the first-login session list
-without unsafely modifying package-owned files is deferred to Phase 5. The
-supported chain remains `Ly -> /usr/bin/start-hyprland -> Hyprland`.
+The accepted VM still boots Ly until a Slice 3 candidate is applied and the
+machine reboots. The candidate's supported future chain is
+`SDDM X11 greeter -> Vanilla theme -> /usr/bin/start-hyprland -> Hyprland
+Wayland`; UWSM remains absent and unsupported. Manual current-VM and restored-
+snapshot fresh-install acceptance have not occurred yet.

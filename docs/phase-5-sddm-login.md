@@ -1,6 +1,6 @@
 # DF2 Phase 5 SDDM login
 
-Status: **SLICES 1–2 IMPLEMENTED IN REPOSITORY; NOT DEPLOYED OR VM-ACCEPTED**
+Status: **SLICES 1–3 IMPLEMENTED IN REPOSITORY; NOT DEPLOYED OR VM-ACCEPTED**
 
 Decision date: 2026-09-22
 
@@ -69,11 +69,11 @@ siblings of their destinations so Linux `renameat2(RENAME_EXCHANGE)` can swap
 complete file/directory generations atomically on the target filesystem.
 
 The fixed publication order is session entry first, then the complete theme
-generation containing its generated binding. Intent is durable before either
-namespace changes. Before the provenance commit point, recovery restores the
-old proven generation; after it, recovery retains the verified candidate and
-finishes cleanup. Unknown content, symlinks, unsafe parents, wrong types,
-ownership/mode drift, a session shadow at
+generation containing its generated binding, then the SDDM drop-in. Intent is
+durable before any namespace changes. Before the provenance commit point,
+recovery restores the old proven generation; after it, recovery retains the
+verified candidate and finishes cleanup. Unknown content, symlinks, unsafe
+parents, wrong types, ownership/mode drift, a session shadow at
 `/usr/local/share/wayland-sessions/vanhyprarch.desktop`, or administrator edits
 to managed payloads are conflicts rather than overwrite authority.
 
@@ -87,10 +87,37 @@ python install/sddm_login_integration.py apply \
 python install/sddm_login_integration.py validate --target-user USER
 ```
 
-Slice 2 does not install SDDM, alter package or service policy, retire Ly,
-write an SDDM drop-in, modify PAM, or start/reload a display manager. Its
-deployment engine exists for later privileged orchestration and has been
-validated only against disposable filesystem roots in this slice.
+Slice 2 itself did not install SDDM, alter package or service policy, retire
+Ly, modify PAM, or start/reload a display manager. Slice 3 extends the same
+publisher and provenance boundary to the Vanilla SDDM drop-in.
+
+## Slice 3 baseline and migration
+
+The future manifest now requires official `sddm` directly and no longer lists
+`ly`; Qt and Xorg dependencies remain pacman-owned transitive dependencies.
+The service manifest enables only normal `sddm.service` display-manager
+semantics. It contains no continuing `ly@tty2.service` or
+`getty@tty2.service` policy.
+
+The managed `/etc/sddm.conf.d/10-vanhyprarch.conf` explicitly keeps the
+greeter on X11, selects `vanhyprarch`, disables avatar lookup, and disables
+remembered user/session and session reuse. It configures neither autologin nor
+PAM and is published with the theme, session, and generated binding before any
+display-manager enablement.
+
+Fresh integration installs SDDM, validates the complete Phase 5 payload, and
+then enables `sddm.service`, which owns the standard
+`display-manager.service` alias. It requires the effective default target to
+already be `graphical.target`; a deliberate non-graphical administrator choice
+is a blocker, not a mutation.
+
+Legacy migration is allowed only when the Ly package, `ly@tty2.service`,
+`getty@tty2.service`, and Phase 4 service provenance exactly match the accepted
+published state. It installs and prepares SDDM, disables Ly only for the next
+boot, enables SDDM only for the next boot, and records
+`pending-ly-retirement`. It never stops the running greeter, starts SDDM,
+removes Ly, or deletes `/etc/ly`. An unrelated display-manager alias fails
+closed.
 
 ## Machine binding contract
 
@@ -142,7 +169,7 @@ later deployed-candidate requirement.
 
 ## Follow-on work
 
-Later slices must separately add SDDM package and service policy, safe Ly
-migration and retirement, orchestration, and VM acceptance. Those changes must
-preserve the source/deployment contracts established here rather than adding
-session or user selection to the visible theme.
+Current-VM authentication/logout acceptance must precede Slice 4 Ly package
+retirement. A restored-snapshot full fresh installation remains the final and
+more important acceptance path. Neither acceptance nor retirement is part of
+Slice 3.

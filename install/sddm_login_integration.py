@@ -33,6 +33,7 @@ SESSION_PATH = "/usr/share/wayland-sessions/vanhyprarch.desktop"
 SHADOW_SESSION_PATH = "/usr/local/share/wayland-sessions/vanhyprarch.desktop"
 THEME_PATH = "/usr/share/sddm/themes/vanhyprarch"
 BINDING_PATH = f"{THEME_PATH}/theme.conf.user"
+CONFIG_PATH = "/etc/sddm.conf.d/10-vanhyprarch.conf"
 START_HYPRLAND_PATH = "/usr/bin/start-hyprland"
 STATE_DIRECTORY = "/var/lib/vanhyprarch/sddm-login"
 PROVENANCE_PATH = f"{STATE_DIRECTORY}/provenance-v1.json"
@@ -40,6 +41,7 @@ TRANSACTION_PATH = f"{STATE_DIRECTORY}/transaction-v1.json"
 LOCK_PATH = f"{STATE_DIRECTORY}/sddm-login.lock"
 THEME_SOURCE = "system/usr/share/sddm/themes/vanhyprarch"
 SESSION_SOURCE = "system/usr/share/wayland-sessions/vanhyprarch.desktop"
+CONFIG_SOURCE = "system/etc/sddm.conf.d/10-vanhyprarch.conf"
 CANONICAL_LOGO_SOURCE = "home/.config/quickshell/vanhyprarch/assets/logo.svg"
 OWNERSHIP_SOURCE = "deployment/ownership-v2.toml"
 THEME_SOURCE_FILES = (
@@ -355,6 +357,7 @@ class SddmLoginIntegration:
         for path in (
             self._path(THEME_PATH).parent,
             self._path(SESSION_PATH).parent,
+            self._path(CONFIG_PATH).parent,
         ):
             self._ensure_directory(path, 0o755)
 
@@ -402,7 +405,7 @@ class SddmLoginIntegration:
         finally:
             os.close(descriptor)
 
-    def _load_source_files(self) -> tuple[dict[str, bytes], bytes, bytes]:
+    def _load_source_files(self) -> tuple[dict[str, bytes], bytes, bytes, bytes]:
         theme_directory = self._source_file(f"{THEME_SOURCE}/Main.qml").parent
         actual = sorted(path.name for path in theme_directory.iterdir())
         if actual != sorted(THEME_SOURCE_FILES):
@@ -416,17 +419,25 @@ class SddmLoginIntegration:
         session = self._read_regular(
             self._source_file(SESSION_SOURCE), "session source"
         )
+        config = self._read_regular(
+            self._source_file(CONFIG_SOURCE), "SDDM configuration source"
+        )
         canonical_logo = self._read_regular(
             self._source_file(CANONICAL_LOGO_SOURCE), "canonical logo"
         )
         self._validate_ownership_manifest()
         self._validate_theme_bytes(theme, canonical_logo=canonical_logo)
         self._validate_session_bytes(session)
+        self._validate_config_bytes(config)
         source_bytes = os.fsencode(self.source_root)
-        for name, data in (*theme.items(), ("vanhyprarch.desktop", session)):
+        for name, data in (
+            *theme.items(),
+            ("vanhyprarch.desktop", session),
+            ("10-vanhyprarch.conf", config),
+        ):
             if source_bytes in data:
                 raise ValidationError(f"source checkout path leaked into {name}")
-        return theme, session, canonical_logo
+        return theme, session, config, canonical_logo
 
     def _validate_ownership_manifest(self) -> None:
         path = self._source_file(OWNERSHIP_SOURCE)
@@ -469,6 +480,14 @@ class SddmLoginIntegration:
             "sddm-target-binding": {
                 "target": BINDING_PATH,
                 "class": "GENERATED",
+                "kind": "file",
+                "mode": "0644",
+                "authority": "vanhyprarch-sddm-login",
+            },
+            "sddm-vanilla-config": {
+                "source": CONFIG_SOURCE,
+                "target": CONFIG_PATH,
+                "class": "VANILLA_MANAGED_SYSTEM",
                 "kind": "file",
                 "mode": "0644",
                 "authority": "vanhyprarch-sddm-login",
@@ -583,6 +602,26 @@ class SddmLoginIntegration:
         if re.search(r"(?i)uwsm|/home/|(?:^|[= ])(?:sh|bash|env)(?:[ /]|$)", text):
             raise ValidationError("session entry contains a forbidden launch path")
 
+    @staticmethod
+    def _validate_config_bytes(data: bytes) -> None:
+        config = _read_ini_bytes(data, "Vanilla SDDM configuration")
+        expected = {
+            "General": {"DisplayServer": "x11"},
+            "Theme": {"Current": "vanhyprarch", "EnableAvatars": "false"},
+            "Users": {
+                "RememberLastUser": "false",
+                "RememberLastSession": "false",
+                "ReuseSession": "false",
+            },
+        }
+        if config.sections() != list(expected) or any(
+            dict(config[section]) != values for section, values in expected.items()
+        ):
+            raise ValidationError("Vanilla SDDM configuration contract changed")
+        text = data.decode("utf-8")
+        if re.search(r"(?i)autologin|displayserver\s*=\s*wayland|/home/|uwsm", text):
+            raise ValidationError("SDDM configuration contains forbidden behavior")
+
     def _binding_bytes(self) -> bytes:
         return (
             "[General]\n"
@@ -628,7 +667,7 @@ class SddmLoginIntegration:
         }
 
     def _candidate_provenance(self) -> tuple[dict[str, object], dict[str, bytes]]:
-        theme, session, canonical_logo = self._load_source_files()
+        theme, session, config, canonical_logo = self._load_source_files()
         binding = self._binding_bytes()
         theme_entries = [
             self._entry(".", "directory", 0o755, self.root_uid, self.root_gid)
@@ -664,10 +703,14 @@ class SddmLoginIntegration:
                 ".", "file", 0o644, self.root_uid, self.root_gid, binding
             )
         ]
+        config_entries = [
+            self._entry(".", "file", 0o644, self.root_uid, self.root_gid, config)
+        ]
         immutable_hashes = {
             f"theme/{name}": _sha256(theme[name]) for name in sorted(theme)
         }
         immutable_hashes["session/vanhyprarch.desktop"] = _sha256(session)
+        immutable_hashes["config/10-vanhyprarch.conf"] = _sha256(config)
         artifacts = {
             "sddm-vanilla-theme": self._record(
                 "sddm-vanilla-theme",
@@ -690,6 +733,13 @@ class SddmLoginIntegration:
                 "file",
                 binding_entries,
             ),
+            "sddm-vanilla-config": self._record(
+                "sddm-vanilla-config",
+                "VANILLA_MANAGED_SYSTEM",
+                CONFIG_PATH,
+                "file",
+                config_entries,
+            ),
         }
         provenance: dict[str, object] = {
             "schema": SCHEMA_VERSION,
@@ -704,7 +754,12 @@ class SddmLoginIntegration:
             "canonical_logo_sha256": _sha256(canonical_logo),
             "artifacts": artifacts,
         }
-        payload = {**theme, "theme.conf.user": binding, "@session": session}
+        payload = {
+            **theme,
+            "theme.conf.user": binding,
+            "@session": session,
+            "@config": config,
+        }
         return provenance, payload
 
     def _validate_record(self, record: object, identifier: str) -> dict[str, object]:
@@ -722,6 +777,11 @@ class SddmLoginIntegration:
                 "file",
             ),
             "sddm-target-binding": ("GENERATED", BINDING_PATH, "file"),
+            "sddm-vanilla-config": (
+                "VANILLA_MANAGED_SYSTEM",
+                CONFIG_PATH,
+                "file",
+            ),
         }[identifier]
         if (
             record.get("class"),
@@ -774,6 +834,7 @@ class SddmLoginIntegration:
             "sddm-vanilla-theme",
             "vanhyprarch-wayland-session",
             "sddm-target-binding",
+            "sddm-vanilla-config",
         }
         if not isinstance(artifacts, dict) or set(artifacts) != expected_ids:
             raise ValidationError("SDDM login provenance inventory is invalid")
@@ -891,6 +952,13 @@ class SddmLoginIntegration:
             "GENERATED",
             BINDING_PATH,
         )
+        config_path = self._path(CONFIG_PATH)
+        config_record = self._snapshot_file(
+            config_path,
+            "sddm-vanilla-config",
+            "VANILLA_MANAGED_SYSTEM",
+            CONFIG_PATH,
+        )
         if validate_semantics:
             immutable = {name: theme_data[name] for name in THEME_SOURCE_FILES}
             self._validate_theme_bytes(immutable)
@@ -898,11 +966,15 @@ class SddmLoginIntegration:
             expected_binding = self._binding_bytes()
             if theme_data["theme.conf.user"] != expected_binding:
                 raise ValidationError("generated SDDM target binding is invalid")
+            self._validate_config_bytes(
+                self._read_regular(config_path, "Vanilla SDDM configuration")
+            )
         return (
             {
                 "sddm-vanilla-theme": theme_record,
                 "vanhyprarch-wayland-session": session_record,
                 "sddm-target-binding": binding_record,
+                "sddm-vanilla-config": config_record,
             },
             theme_data,
         )
@@ -940,13 +1012,18 @@ class SddmLoginIntegration:
         if prior is not None:
             self._validate_provenance(prior)
         changes = value.get("changes")
-        if not isinstance(changes, dict) or set(changes) != {"session", "theme"}:
+        if not isinstance(changes, dict) or set(changes) != {
+            "session",
+            "theme",
+            "config",
+        }:
             raise ValidationError("SDDM login transaction changes are invalid")
         if not all(isinstance(item, bool) for item in changes.values()):
             raise ValidationError("SDDM login transaction changes are malformed")
         expected_containers = {
             "session": f".vanhyprarch-sddm-login-{identifier}-session",
             "theme": f".vanhyprarch-sddm-login-{identifier}-theme",
+            "config": f".vanhyprarch-sddm-login-{identifier}-config",
         }
         if value.get("containers") != expected_containers:
             raise ValidationError("SDDM login transaction containers are invalid")
@@ -1019,6 +1096,7 @@ class SddmLoginIntegration:
         for path in (
             self._path(THEME_PATH),
             self._path(SESSION_PATH),
+            self._path(CONFIG_PATH),
             self._path(STATE_DIRECTORY),
             self._path(SHADOW_SESSION_PATH),
         ):
@@ -1066,6 +1144,7 @@ class SddmLoginIntegration:
         if provenance is None:
             theme_exists = _lexists(self._path(THEME_PATH))
             session_exists = _lexists(self._path(SESSION_PATH))
+            config_exists = _lexists(self._path(CONFIG_PATH))
             items.append(
                 PlanItem(
                     "conflict" if theme_exists else "system-create",
@@ -1074,6 +1153,16 @@ class SddmLoginIntegration:
                     "pre-existing theme is not provenance-proven"
                     if theme_exists
                     else "install complete Vanilla theme generation",
+                )
+            )
+            items.append(
+                PlanItem(
+                    "conflict" if config_exists else "system-create",
+                    "sddm-vanilla-config",
+                    CONFIG_PATH,
+                    "pre-existing SDDM drop-in is not provenance-proven"
+                    if config_exists
+                    else "install Vanilla X11 greeter and theme selection policy",
                 )
             )
             items.append(
@@ -1150,6 +1239,10 @@ class SddmLoginIntegration:
             prior_artifacts["vanhyprarch-wayland-session"]
             != candidate_artifacts["vanhyprarch-wayland-session"]
         )
+        config_change = (
+            prior_artifacts["sddm-vanilla-config"]
+            != candidate_artifacts["sddm-vanilla-config"]
+        )
         state_change = provenance != candidate
         items.extend(
             (
@@ -1176,6 +1269,14 @@ class SddmLoginIntegration:
                     "republish deterministic binding inside the changed theme generation"
                     if theme_change
                     else "generated binding matches target-user provenance",
+                ),
+                PlanItem(
+                    "system-update" if config_change else "system-preserve",
+                    "sddm-vanilla-config",
+                    CONFIG_PATH,
+                    "publish changed SDDM configuration"
+                    if config_change
+                    else "installed SDDM configuration matches source and provenance",
                 ),
                 PlanItem(
                     "state-update" if state_change else "state-preserve",
@@ -1277,11 +1378,11 @@ class SddmLoginIntegration:
 
     def _container_path(self, transaction: dict[str, object], kind: str) -> Path:
         name = transaction["containers"][kind]
-        parent = (
-            self._path(SESSION_PATH).parent
-            if kind == "session"
-            else self._path(THEME_PATH).parent
-        )
+        parent = {
+            "session": self._path(SESSION_PATH).parent,
+            "theme": self._path(THEME_PATH).parent,
+            "config": self._path(CONFIG_PATH).parent,
+        }[kind]
         expected = f".vanhyprarch-sddm-login-{transaction['id']}-{kind}"
         if name != expected or Path(name).name != name:
             raise ValidationError("transaction container identity is invalid")
@@ -1336,6 +1437,12 @@ class SddmLoginIntegration:
             self._write_payload_file(container / "payload", payload["@session"], 0o644)
             _fsync_directory(container)
             self._fault("after-session-staging")
+        if changes["config"]:
+            container = self._container_path(transaction, "config")
+            self._create_private_container(container)
+            self._write_payload_file(container / "payload", payload["@config"], 0o644)
+            _fsync_directory(container)
+            self._fault("after-config-staging")
         if changes["theme"]:
             root = self._container_path(transaction, "theme") / "payload"
             self._write_payload_file(
@@ -1413,7 +1520,13 @@ class SddmLoginIntegration:
         prior: dict[str, object] | None,
         candidate: dict[str, object],
     ) -> None:
-        destination = self._path(SESSION_PATH if kind == "session" else THEME_PATH)
+        destination = self._path(
+            {
+                "session": SESSION_PATH,
+                "theme": THEME_PATH,
+                "config": CONFIG_PATH,
+            }[kind]
+        )
         container = self._container_path(transaction, kind)
         payload = container / "payload"
         if prior is None:
@@ -1453,6 +1566,13 @@ class SddmLoginIntegration:
                 prior_artifacts.get("sddm-vanilla-theme"),
                 candidate_artifacts["sddm-vanilla-theme"],
             )
+        if transaction["changes"]["config"]:
+            self._publish_one(
+                transaction,
+                "config",
+                prior_artifacts.get("sddm-vanilla-config"),
+                candidate_artifacts["sddm-vanilla-config"],
+            )
         self._write_transaction(transaction, "verifying")
 
     def _remove_container(self, path: Path) -> None:
@@ -1487,7 +1607,13 @@ class SddmLoginIntegration:
         prior: dict[str, object] | None,
         candidate: dict[str, object],
     ) -> None:
-        destination = self._path(SESSION_PATH if kind == "session" else THEME_PATH)
+        destination = self._path(
+            {
+                "session": SESSION_PATH,
+                "theme": THEME_PATH,
+                "config": CONFIG_PATH,
+            }[kind]
+        )
         container = self._container_path(transaction, kind)
         payload = container / "payload"
         if not _lexists(container):
@@ -1533,10 +1659,17 @@ class SddmLoginIntegration:
         for kind, identifier in (
             ("session", "vanhyprarch-wayland-session"),
             ("theme", "sddm-vanilla-theme"),
+            ("config", "sddm-vanilla-config"),
         ):
             if not transaction["changes"][kind]:
                 continue
-            destination = self._path(SESSION_PATH if kind == "session" else THEME_PATH)
+            destination = self._path(
+                {
+                    "session": SESSION_PATH,
+                    "theme": THEME_PATH,
+                    "config": CONFIG_PATH,
+                }[kind]
+            )
             if not self._path_matches_record(destination, candidate[identifier]):
                 raise ConflictError(f"committed {kind} candidate drifted")
             self._remove_container(self._container_path(transaction, kind))
@@ -1567,11 +1700,16 @@ class SddmLoginIntegration:
                 for kind, identifier in (
                     ("theme", "sddm-vanilla-theme"),
                     ("session", "vanhyprarch-wayland-session"),
+                    ("config", "sddm-vanilla-config"),
                 ):
                     if not transaction["changes"][kind]:
                         continue
                     destination = self._path(
-                        SESSION_PATH if kind == "session" else THEME_PATH
+                        {
+                            "session": SESSION_PATH,
+                            "theme": THEME_PATH,
+                            "config": CONFIG_PATH,
+                        }[kind]
                     )
                     old_record = prior_artifacts.get(identifier)
                     if old_record is None:
@@ -1586,6 +1724,7 @@ class SddmLoginIntegration:
                 for kind, identifier in (
                     ("theme", "sddm-vanilla-theme"),
                     ("session", "vanhyprarch-wayland-session"),
+                    ("config", "sddm-vanilla-config"),
                 ):
                     if transaction["changes"][kind]:
                         self._restore_one(
@@ -1653,10 +1792,13 @@ class SddmLoginIntegration:
                     != candidate_artifacts["vanhyprarch-wayland-session"],
                     "theme": prior_artifacts.get("sddm-vanilla-theme")
                     != candidate_artifacts["sddm-vanilla-theme"],
+                    "config": prior_artifacts.get("sddm-vanilla-config")
+                    != candidate_artifacts["sddm-vanilla-config"],
                 },
                 "containers": {
                     "session": f".vanhyprarch-sddm-login-{transaction_id}-session",
                     "theme": f".vanhyprarch-sddm-login-{transaction_id}-theme",
+                    "config": f".vanhyprarch-sddm-login-{transaction_id}-config",
                 },
             }
             try:
@@ -1734,6 +1876,12 @@ class SddmLoginIntegration:
                     "sddm-target-binding",
                     BINDING_PATH,
                     "generated binding matches canonical target user",
+                ),
+                PlanItem(
+                    "system-preserve",
+                    "sddm-vanilla-config",
+                    CONFIG_PATH,
+                    "installed SDDM configuration matches root-private provenance",
                 ),
                 PlanItem(
                     "state-preserve",

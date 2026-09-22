@@ -177,7 +177,7 @@ workspace navigation and the special scratchpad remain available.
 
 ## ADR-011: Use Ly as the display manager
 
-**Status:** Accepted
+**Status:** Superseded by ADR-041
 **Date:** 2026-09-08
 
 Ly is the selected display manager and runs through `ly@tty2.service` on tty2.
@@ -1055,8 +1055,8 @@ host.
 
 **Status:** Accepted
 **Date:** 2026-09-22
-**Implementation:** DF2 Phase 5 Slice 1 source contract and Slice 2 privileged
-transactional deployment; package/service migration remains a later slice
+**Implementation:** DF2 Phase 5 Slices 1–3; VM acceptance and Ly retirement
+remain later gates
 
 Ly 1.4.1 cannot provide the accepted password-only scene without a maintained
 custom package: its username and session rows are structurally present, and
@@ -1075,7 +1075,8 @@ ambiguous configuration fails closed.
 
 Slice 1 establishes generic theme and desktop-entry sources. Slice 2 adds the
 root-only provenance-backed publisher and generated machine binding under the
-new `VANILLA_MANAGED_SYSTEM` ownership boundary. Both deliberately leave the
-Phase 4 Ly package and service policy unchanged. The detailed contract and
-remaining integration boundaries are documented in
+new `VANILLA_MANAGED_SYSTEM` ownership boundary. Slice 3 extends that payload
+to the X11/theme drop-in, makes SDDM the fresh package/service baseline, and
+adds exact fail-closed Phase 4 Ly migration while retaining Ly for rollback.
+The detailed contract and remaining integration boundaries are documented in
 [DF2 Phase 5 SDDM login](phase-5-sddm-login.md).

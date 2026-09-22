@@ -300,13 +300,13 @@ owner = "system-keyboard-synchronization"
 reason = "The keyboard helper invokes xkbcli directly for tuple validation."
 
 [[package]]
-name = "ly"
+name = "sddm"
 source = "official"
 role = "required"
 default_install = true
 direct = true
 owner = "session"
-reason = "Provides the selected display manager for the direct Hyprland session."
+reason = "Provides the baseline X11 greeter for the direct Hyprland Wayland session."
 
 [[package]]
 name = "mesa"

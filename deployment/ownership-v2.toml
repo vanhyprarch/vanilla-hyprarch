@@ -813,6 +813,20 @@ machine_specific = true
 notes = "Generated only from the canonical target account and fixed Vanilla session path; never stores credentials."
 
 [[artifact]]
+id = "sddm-vanilla-config"
+source = "system/etc/sddm.conf.d/10-vanhyprarch.conf"
+target = "/etc/sddm.conf.d/10-vanhyprarch.conf"
+class = "VANILLA_MANAGED_SYSTEM"
+component = "sddm-login"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-sddm-login"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Selects the Vanilla theme on the supported X11 greeter and disables remembered user/session state."
+
+[[artifact]]
 id = "sddm-login-state"
 target = "/var/lib/vanhyprarch/sddm-login"
 class = "BACKEND_OWNED"
@@ -838,7 +852,7 @@ machine_specific = false
 
 [[artifact]]
 id = "package-system-units"
-target = "/usr/lib/systemd/system/{NetworkManager,bluetooth,ly@,getty@,cups}.service"
+target = "/usr/lib/systemd/system/{NetworkManager,bluetooth,sddm,cups}.service"
 class = "PACKAGE_OWNED"
 component = "system-services"
 kind = "pattern"

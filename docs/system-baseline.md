@@ -259,12 +259,14 @@ The Wayland portal stack is:
 - `xdg-desktop-portal-hyprland`
 - `xdg-desktop-portal-gtk`
 
-Vanilla HyprArch uses the direct
-`Ly -> /usr/bin/start-hyprland -> Hyprland` session path; UWSM is not part of
-the project architecture. The required official `hyprpolkitagent` package
-provides graphical PolicyKit authentication for GUI applications that need
-privileged authorization. Hyprland invokes the managed direct-session
-lifecycle helper from the existing `hyprland.start` callback with:
+The published VM still uses the direct
+`Ly -> /usr/bin/start-hyprland -> Hyprland` session path. The future baseline
+is `SDDM X11 greeter -> Vanilla theme -> /usr/bin/start-hyprland -> Hyprland
+Wayland`; UWSM is not part of either architecture. The required official
+`hyprpolkitagent` package provides graphical PolicyKit authentication for GUI
+applications that need privileged authorization. Hyprland invokes the managed
+direct-session lifecycle helper from the existing `hyprland.start` callback
+with:
 
 ```text
 exec $HOME/.local/bin/vanhyprarch-polkit-session session-start
@@ -327,14 +329,16 @@ icon theme and uses it for project UI controls.
 
 ## Display manager
 
-`ly` is the selected display manager. `ly@tty2.service` is enabled and active;
-`getty@tty2.service` is disabled so Ly owns tty2. SDDM is installed only as a
-disabled rollback artifact on the current machine and is not part of the
-Vanilla HyprArch package manifest.
+The future package baseline selects official `sddm`; `ly` is absent from clean
+installation plans. SDDM uses its supported X11 greeter, the Vanilla-owned
+password-only theme, and the direct Vanilla Wayland session. Normal
+`sddm.service` enablement owns `display-manager.service`; Vanilla does not model
+SDDM as a tty2 instance and has no continuing getty@tty2 policy.
 
-The current Ly configuration uses its own login animation. User-session
-screensaver rendering is instead delegated to the independent native Zig
-Player; Ly itself is not run inside the graphical session.
+The published accepted VM remains on Ly until the Slice 3 candidate completes
+manual migration acceptance. Its migration retains the Ly package and
+`/etc/ly`, disables only future `ly@tty2.service` activation, and records
+`pending-ly-retirement`; removal is a later explicit step.
 
 ## Locking and idle
 

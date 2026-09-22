@@ -65,7 +65,7 @@ REQUIRED_DEFAULT = {
     "hyprshutdown",
     "imv",
     "libxkbcommon",
-    "ly",
+    "sddm",
     "mesa",
     "mpv",
     "networkmanager",
@@ -219,6 +219,15 @@ class PackageManifestTests(unittest.TestCase):
             {"base-devel", "git"},
         )
         self.assertNotIn("go", self.by_name)
+
+    def test_sddm_replaces_ly_as_the_direct_default_display_manager(self) -> None:
+        self.assertNotIn("ly", self.by_name)
+        sddm = self.by_name["sddm"]
+        self.assertEqual(sddm["source"], "official")
+        self.assertEqual(sddm["role"], "required")
+        self.assertTrue(sddm["default_install"])
+        self.assertTrue(sddm["direct"])
+        self.assertEqual(sddm["owner"], "session")
 
     def test_dictation_packages_do_not_leak_into_default_install(self) -> None:
         self.assertEqual(self.names(component="dictation"), {"gnupg", "wtype"})
@@ -480,12 +489,11 @@ class ServicePolicyTests(unittest.TestCase):
                 self.assertIn(item["component"], self.component_ids)
 
     def test_required_system_service_policy(self) -> None:
-        for name in ("NetworkManager.service", "bluetooth.service", "ly@tty2.service"):
+        for name in ("NetworkManager.service", "bluetooth.service", "sddm.service"):
             self.assertEqual(self.by_name[name]["policy"], "enabled")
             self.assertTrue(self.by_name[name]["default_install"])
-        getty = self.by_name["getty@tty2.service"]
-        self.assertEqual(getty["policy"], "disabled")
-        self.assertIn("ly@tty2.service", getty["conflicts_with"])
+        self.assertNotIn("ly@tty2.service", self.by_name)
+        self.assertNotIn("getty@tty2.service", self.by_name)
 
     def test_printing_services_are_component_only(self) -> None:
         for name in ("cups.service", "cups.socket", "cups.path"):

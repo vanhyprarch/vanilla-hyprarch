@@ -59,6 +59,7 @@ class Fixture:
             "deployment/ownership-v2.toml",
             "system/usr/share/sddm/themes/vanhyprarch",
             "system/usr/share/wayland-sessions/vanhyprarch.desktop",
+            "system/etc/sddm.conf.d/10-vanhyprarch.conf",
             "home/.config/quickshell/vanhyprarch/assets/logo.svg",
         )
         for relative in paths:
@@ -87,6 +88,7 @@ class Fixture:
         self._mkdir("usr/local/share", 0o755)
         self._mkdir("usr/local/share/wayland-sessions", 0o755)
         self._mkdir("usr/bin", 0o755)
+        self._mkdir("etc", 0o755)
         self._mkdir("var", 0o755)
         self._mkdir("var/lib", 0o755)
         self._mkdir("var/lib/vanhyprarch", 0o700)
@@ -143,6 +145,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
             [
                 "system-create",
                 "system-create",
+                "system-create",
                 "generated-create",
                 "state-create",
             ],
@@ -155,6 +158,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
                 "system-preserve",
                 "system-preserve",
                 "generated-preserve",
+                "system-preserve",
                 "state-preserve",
             ],
         )
@@ -189,6 +193,40 @@ class SddmLoginIntegrationTests(unittest.TestCase):
         self.assertNotIn("/home/", binding)
         self.assertNotIn(str(self.fixture.source), binding)
 
+    def test_sddm_drop_in_is_exact_x11_policy_and_provenance_owned(self) -> None:
+        self.fixture.integration().apply()
+        config = self.fixture.installed(MODULE.CONFIG_PATH)
+        self.assertEqual(
+            config.read_text(encoding="utf-8"),
+            "[General]\nDisplayServer=x11\n\n"
+            "[Theme]\nCurrent=vanhyprarch\nEnableAvatars=false\n\n"
+            "[Users]\nRememberLastUser=false\nRememberLastSession=false\nReuseSession=false\n",
+        )
+        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
+        provenance = json.loads(
+            self.fixture.installed(MODULE.PROVENANCE_PATH).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            provenance["artifacts"]["sddm-vanilla-config"]["target"],
+            MODULE.CONFIG_PATH,
+        )
+
+    def test_unproven_or_modified_sddm_drop_in_fails_closed(self) -> None:
+        config = self.fixture.installed(MODULE.CONFIG_PATH)
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("[General]\nDisplayServer=wayland\n", encoding="utf-8")
+        self.assertTrue(self.fixture.integration().plan().blockers)
+
+        fixture = Fixture()
+        try:
+            fixture.integration().apply()
+            installed = fixture.installed(MODULE.CONFIG_PATH)
+            installed.write_text("[General]\nDisplayServer=wayland\n", encoding="utf-8")
+            with self.assertRaises(ValidationError):
+                fixture.integration(source=False).validate()
+        finally:
+            fixture.cleanup()
+
     def test_second_apply_is_substantive_noop(self) -> None:
         integration = self.fixture.integration()
         integration.apply()
@@ -197,6 +235,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
             MODULE.THEME_PATH,
             MODULE.BINDING_PATH,
             MODULE.SESSION_PATH,
+            MODULE.CONFIG_PATH,
             MODULE.PROVENANCE_PATH,
         ):
             details = self.fixture.installed(absolute).stat()
@@ -209,6 +248,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
                 "system-preserve",
                 "system-preserve",
                 "generated-preserve",
+                "system-preserve",
                 "state-preserve",
             ],
         )
@@ -391,6 +431,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
                 "sddm-vanilla-theme",
                 "vanhyprarch-wayland-session",
                 "sddm-target-binding",
+                "sddm-vanilla-config",
             },
         )
         self.assertNotIn(str(self.fixture.source), raw)
@@ -477,6 +518,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
             "during-theme-staging",
             "after-theme-staging",
             "after-session-staging",
+            "after-config-staging",
             "after-generated-binding-staging",
             "after-first-publication",
             "before-final-publication",
@@ -511,6 +553,7 @@ class SddmLoginIntegrationTests(unittest.TestCase):
                     for parent in (
                         fixture.installed("/usr/share/sddm/themes"),
                         fixture.installed("/usr/share/wayland-sessions"),
+                        fixture.installed("/etc/sddm.conf.d"),
                     ):
                         for container in parent.glob(".vanhyprarch-sddm-login-*"):
                             self.assertEqual(stat.S_IMODE(container.stat().st_mode), 0o700)

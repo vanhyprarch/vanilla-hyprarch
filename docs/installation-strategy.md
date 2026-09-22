@@ -188,10 +188,12 @@ is absent, and delegates Appearance and Power & Idle defaults to their owning
 backends. It remains separate from package/service integration and the full
 bootstrap. See [Create-once initialization](create-once-initialization.md).
 
-The package-owned Hyprland session entry remains the Ly authority. Future
-system integration enables `ly@tty2.service` and disables the conflicting
-`getty@tty2.service`; selecting Hyprland once at first login is acceptable
-Alpha behavior and does not justify a Vanilla-owned Ly configuration.
+The future graphical-login authority is the Vanilla-owned SDDM theme and
+`vanhyprarch.desktop` session. System integration deploys and validates that
+payload before enabling normal `sddm.service`; it does not start or restart a
+display manager during installation. Fresh systems have no Ly or tty2-specific
+policy. Exact accepted Phase 4 installations retain Ly only as rollback while
+manual SDDM acceptance is pending.
 
 ## Vanilla update boundary
 

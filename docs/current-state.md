@@ -123,11 +123,11 @@ deployed Phase 4 baseline.
 
 The accepted future display-manager path is now
 `SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland Wayland`.
-Phase 5 Slice 1 adds only the undeployed
-[SDDM theme and session source contract](phase-5-sddm-login.md). Package,
-privileged deployment, service migration, Ly retirement, and VM acceptance are
-not implemented yet, so this source milestone does not change the current boot
-or login path.
+Phase 5 Slices 1–3 now define the undeployed
+[SDDM theme, session, privileged payload, and baseline migration](phase-5-sddm-login.md).
+The feature branch changes the future package/service baseline, but Ly
+retirement and VM acceptance are not complete, so the published machine's
+current boot and login path has not changed.
 
 Before registering its startup children, the managed portable core reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
@@ -1067,16 +1067,21 @@ rather than the full installer. Optional-component lifecycle, full installer
 orchestration, first-login acceptance, and live development-host deployment
 are not implemented.
 
-DF2 Phase 5 Slices 1–2 now provide the undeployed Vanilla SDDM theme/session
-source contract and a dedicated root-only transactional deployment backend.
+DF2 Phase 5 Slices 1–3 now provide the undeployed Vanilla SDDM theme/session
+source contract, a dedicated root-only transactional deployment backend, and
+the future SDDM package/service baseline.
 The backend resolves and records one explicit target account, publishes the
 session before the complete theme/binding generation, stores private hash/mode/
 owner provenance below `/var/lib/vanhyprarch/sddm-login`, and recovers durable
 pre-commit or post-commit transactions. Disposable-root tests cover collision
 refusal, symlink parents, manual drift, source updates, idempotence, source-tree
-independence, and every defined interruption point. SDDM is not yet a baseline
-package, Ly remains the published active baseline, service policy is unchanged,
-and no VM authentication acceptance has occurred.
+independence, and every defined interruption point. Slice 3 adds the
+provenance-owned X11/theme drop-in, replaces Ly with official SDDM in the
+future manifest, enables `sddm.service` through its normal display-manager
+alias only after payload validation, and recognizes only the exact accepted
+Phase 4 Ly state for migration. That migration disables Ly for the next boot
+but retains its package and configuration as rollback material. Ly remains the
+published active baseline and no VM authentication acceptance has occurred.
 
 ## Known open work
 
@@ -1088,9 +1093,9 @@ and no VM authentication acceptance has occurred.
   Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
 - Build the full bootstrap orchestration around the published distribution
   cores.
-- Complete the later Phase 5 slices for SDDM package/service migration, safe Ly
-  retirement, orchestration, and current/fresh-VM acceptance. Slices 1–2 are
-  repository-complete but intentionally not installed on a real system yet.
+- Complete Phase 5 current-VM acceptance, safe Ly retirement, and restored-
+  snapshot fresh-install acceptance. Slices 1–3 are repository-complete but
+  intentionally not installed on a real system yet.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

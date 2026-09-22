@@ -18,22 +18,13 @@ startup_owner = "systemd"
 notes = "Enable only after the adopted BlueZ configuration passes validation."
 
 [[service]]
-name = "ly@tty2.service"
+name = "sddm.service"
 scope = "system"
 owner = "package"
 policy = "enabled"
 default_install = true
 startup_owner = "systemd"
-notes = "The user may select the package-owned Hyprland session once at first login."
-
-[[service]]
-name = "getty@tty2.service"
-scope = "system"
-owner = "package"
-policy = "disabled"
-default_install = true
-startup_owner = "systemd"
-conflicts_with = ["ly@tty2.service"]
+notes = "Enable only after the Vanilla SDDM payload validates; the package unit owns the display-manager.service alias."
 
 [[service]]
 name = "cups.service"
