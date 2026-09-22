@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -13,6 +16,13 @@ from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 BOOTSTRAP = REPOSITORY / "install/bootstrap"
+SPEC = importlib.util.spec_from_file_location(
+    "bootstrap_system_integration", REPOSITORY / "install/system_integration.py"
+)
+assert SPEC and SPEC.loader
+SYSTEM_INTEGRATION = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = SYSTEM_INTEGRATION
+SPEC.loader.exec_module(SYSTEM_INTEGRATION)
 
 
 def executable(path: Path, content: str) -> None:
@@ -26,7 +36,9 @@ class Fixture:
         self.root = Path(self.temporary.name)
         self.bin = self.root / "usr/bin"
         self.bin.mkdir(parents=True)
+        (self.root / "etc").mkdir()
         (self.root / "usr/lib").mkdir(parents=True)
+        (self.root / "etc/arch-release").write_text("", encoding="utf-8")
         (self.root / ".vanhyprarch-bootstrap-test-root").write_text(
             "VANHYPRARCH_BOOTSTRAP_TEST_ROOT_V1\n", encoding="utf-8"
         )
@@ -158,6 +170,45 @@ class Fixture:
     def commands(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines()
 
+    def python_preflight(self) -> None:
+        home = self.root / "home/tester"
+        home.mkdir(parents=True, exist_ok=True)
+        home.chmod(0o700)
+        target_uid = os.getuid() or 1000
+        target_gid = os.getgid() or 1000
+        if os.getuid() == 0:
+            os.chown(home, target_uid, target_gid)
+
+        class Runner:
+            def run(inner_self, argv, *, cwd=None, env=None, user=None):
+                if list(argv) == ["/usr/bin/uname", "-m"]:
+                    architecture = (self.root / "architecture").read_text(
+                        encoding="utf-8"
+                    )
+                    return SYSTEM_INTEGRATION.CommandResult(0, architecture)
+                if list(argv) == ["/usr/bin/pacman", "-Qq"]:
+                    return SYSTEM_INTEGRATION.CommandResult(0, "python\n")
+                if list(argv) == ["/usr/bin/pacman", "-Si", "--", "pacman"]:
+                    return SYSTEM_INTEGRATION.CommandResult(0, "Name : pacman\n")
+                if list(argv) == ["/usr/bin/pacman", "-Qu"]:
+                    return SYSTEM_INTEGRATION.CommandResult(1)
+                raise AssertionError(f"unexpected Python preflight command: {argv}")
+
+        target = SYSTEM_INTEGRATION.TargetUser(
+            "tester", target_uid, target_gid, Path("/home/tester")
+        )
+        engine = SYSTEM_INTEGRATION.SystemIntegration(
+            source_root=REPOSITORY,
+            target_username="tester",
+            runner=Runner(),
+            system_root=self.root,
+            account_resolver=lambda name: target,
+            effective_uid=0,
+            root_identity=(os.getuid(), os.getgid()),
+            testing=True,
+        )
+        engine._base_preflight()
+
 
 class PythonBootstrapTests(unittest.TestCase):
     def fixture(self, **kwargs) -> Fixture:
@@ -278,6 +329,44 @@ class PythonBootstrapTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = fixture.commands()
         self.assertFalse(any("<-Sy>" in line or "<-Syu>" in line for line in commands))
+
+    def test_shell_and_python_use_the_same_arch_identity_contract(self) -> None:
+        fixture = self.fixture()
+        release = fixture.root / "usr/lib/os-release"
+        outside = fixture.root / "unsafe-os-release-target"
+        outside.write_text("ID=arch\n", encoding="utf-8")
+        cases = (
+            ("unquoted", "ID=arch\n", False, True),
+            ("quoted", 'NAME="Arch Linux"\nID="arch"\n', False, True),
+            ("unrelated", "ID=debian\n", False, False),
+            ("malformed-quotes", "ID='arch\"\n", False, False),
+            ("missing", None, False, False),
+            ("symlink", None, True, False),
+        )
+        for name, content, symlinked, expected in cases:
+            with self.subTest(name=name):
+                release.unlink(missing_ok=True)
+                if symlinked:
+                    release.symlink_to(outside)
+                elif content is not None:
+                    release.write_text(content, encoding="utf-8")
+
+                shell = fixture.run("plan", effective_uid=1000)
+                shell_accepted = shell.returncode == 0
+                try:
+                    fixture.python_preflight()
+                except SYSTEM_INTEGRATION.IntegrationError:
+                    python_accepted = False
+                else:
+                    python_accepted = True
+
+                self.assertEqual(shell_accepted, expected, shell.stderr)
+                self.assertEqual(python_accepted, expected)
+                self.assertEqual(shell_accepted, python_accepted)
+
+        self.assertEqual(
+            (fixture.root / "etc/arch-release").read_bytes(), b""
+        )
 
 
 if __name__ == "__main__":

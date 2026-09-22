@@ -348,9 +348,9 @@ class SystemIntegration:
         identity = None
         for line in release_text.splitlines():
             if line.startswith("ID="):
-                identity = line.removeprefix("ID=").strip().strip("\"'")
+                identity = line
                 break
-        if identity != "arch":
+        if identity not in {"ID=arch", 'ID="arch"', "ID='arch'"}:
             raise IntegrationError("supported base requires Arch Linux")
         architecture = self._require_success(self._run(["/usr/bin/uname", "-m"]), "could not inspect architecture").strip()
         if architecture != "x86_64":

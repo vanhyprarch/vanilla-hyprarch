@@ -343,6 +343,32 @@ class IntegrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(IntegrationError, "requires Arch Linux"):
             self.fixture.engine().plan()
 
+    def test_arch_identity_requires_safe_authoritative_os_release(self) -> None:
+        release = self.fixture.root / "usr/lib/os-release"
+        legacy = self.fixture.root / "etc/arch-release"
+        legacy.write_text("", encoding="utf-8")
+
+        release.write_text("ID=arch\n", encoding="utf-8")
+        self.fixture.engine()._base_preflight()
+        release.write_text('NAME="Arch Linux"\nID="arch"\n', encoding="utf-8")
+        self.fixture.engine()._base_preflight()
+
+        release.write_text("ID=other\n", encoding="utf-8")
+        with self.assertRaisesRegex(IntegrationError, "requires Arch Linux"):
+            self.fixture.engine()._base_preflight()
+
+        release.unlink()
+        with self.assertRaisesRegex(IntegrationError, "requires Arch Linux"):
+            self.fixture.engine()._base_preflight()
+
+        outside = self.fixture.root / "unsafe-os-release-target"
+        outside.write_text("ID=arch\n", encoding="utf-8")
+        release.symlink_to(outside)
+        with self.assertRaisesRegex(IntegrationError, "requires Arch Linux"):
+            self.fixture.engine()._base_preflight()
+
+        self.assertEqual(legacy.read_bytes(), b"")
+
     def test_unusable_sync_database_blocks_preflight(self) -> None:
         state = self.fixture.state()
         state["official"].remove("pacman")
