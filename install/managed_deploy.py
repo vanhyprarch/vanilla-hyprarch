@@ -209,6 +209,7 @@ class TargetContext:
     config: Path
     data: Path
     state: Path
+    cache: Path
 
     @classmethod
     def build(
@@ -218,6 +219,7 @@ class TargetContext:
         config: str | Path | None = None,
         data: str | Path | None = None,
         state: str | Path | None = None,
+        cache: str | Path | None = None,
     ) -> "TargetContext":
         home_path = cls._absolute(home, "HOME")
         return cls(
@@ -225,6 +227,7 @@ class TargetContext:
             config=cls._absolute(config or home_path / ".config", "XDG_CONFIG_HOME"),
             data=cls._absolute(data or home_path / ".local/share", "XDG_DATA_HOME"),
             state=cls._absolute(state or home_path / ".local/state", "XDG_STATE_HOME"),
+            cache=cls._absolute(cache or home_path / ".cache", "XDG_CACHE_HOME"),
         )
 
     @staticmethod
@@ -247,6 +250,7 @@ class TargetContext:
         config: str | None = None,
         data: str | None = None,
         state: str | None = None,
+        cache: str | None = None,
         environment: dict[str, str] | None = None,
     ) -> "TargetContext":
         values = os.environ if environment is None else environment
@@ -258,6 +262,7 @@ class TargetContext:
             config=config if config is not None else values.get("XDG_CONFIG_HOME"),
             data=data if data is not None else values.get("XDG_DATA_HOME"),
             state=state if state is not None else values.get("XDG_STATE_HOME"),
+            cache=cache if cache is not None else values.get("XDG_CACHE_HOME"),
         )
 
     def resolve(self, expression: object) -> tuple[Path, Path]:
@@ -267,6 +272,7 @@ class TargetContext:
             ("${XDG_CONFIG_HOME:-$HOME/.config}", self.config),
             ("${XDG_DATA_HOME:-$HOME/.local/share}", self.data),
             ("${XDG_STATE_HOME:-$HOME/.local/state}", self.state),
+            ("${XDG_CACHE_HOME:-$HOME/.cache}", self.cache),
             ("$HOME", self.home),
         )
         for prefix, root in prefixes:

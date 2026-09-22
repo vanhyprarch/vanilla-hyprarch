@@ -3,6 +3,29 @@ installed_mode = "regular-files"
 development_mode = "repository-symlinks-allowed"
 runtime_source_independent = true
 managed_deployment_provenance = "managed-deployment-provenance"
+create_once_transaction_state = "create-once-transaction-state"
+
+[[initializer]]
+id = "xdg-user-directories"
+kind = "external-command"
+command = "xdg-user-dirs-update"
+state_artifact = "xdg-user-directories"
+
+[[initializer]]
+id = "appearance-defaults"
+kind = "artifact-command"
+command_artifact = "appearance-command"
+initialize_arguments = ["initialize-defaults"]
+status_arguments = ["initialize-status"]
+state_artifact = "appearance-preference"
+
+[[initializer]]
+id = "power-idle-defaults"
+kind = "artifact-command"
+command_artifact = "idle-command"
+initialize_arguments = ["initialize-defaults"]
+status_arguments = ["initialize-status"]
+state_artifact = "power-idle-preference"
 
 [[ownership_class]]
 name = "VANILLA_MANAGED"
@@ -169,29 +192,58 @@ machine_specific = false
 
 [[artifact]]
 id = "mpv-config"
+source = "seeds/home/.config/mpv/mpv.conf"
 target = "${XDG_CONFIG_HOME:-$HOME/.config}/mpv/mpv.conf"
 class = "CREATE_ONCE_USER"
 component = "default-applications"
 kind = "file"
 mode = "0644"
 authority = "user"
-status = "planned"
+status = "implemented"
 user_editable = true
 machine_specific = false
 notes = "Phase 3 supplies the accepted provisional seed; skip any existing file and never merge."
 
 [[artifact]]
 id = "mimeapps-config"
+source = "seeds/home/.config/mimeapps.list"
 target = "${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list"
 class = "CREATE_ONCE_USER"
 component = "default-applications"
 kind = "file"
 mode = "0644"
+validators = ["mimeapps-defaults"]
 authority = "user"
-status = "planned"
+status = "implemented"
 user_editable = true
 machine_specific = false
 notes = "Phase 3 supplies a minimal seed; skip any existing user MIME configuration and never merge."
+
+[[artifact]]
+id = "xdg-user-directories"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+class = "USER_OWNED"
+component = "xdg-user-directories"
+kind = "file"
+mode = "0600"
+authority = "xdg-user-dirs-update"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Initialize with xdg-user-dirs-update only when absent; preserve customized locations."
+
+[[artifact]]
+id = "xdg-user-directories-locale"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.locale"
+class = "USER_OWNED"
+component = "xdg-user-directories"
+kind = "file"
+mode = "0644"
+authority = "xdg-user-dirs-update"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Locale record may be created by xdg-user-dirs-update; Vanilla never writes it directly."
 
 [[artifact]]
 id = "quickshell-config"
@@ -468,6 +520,19 @@ status = "implemented"
 user_editable = false
 machine_specific = false
 notes = "Artifact hashes and release provenance only; never stores preferences or runtime state."
+
+[[artifact]]
+id = "create-once-transaction-state"
+target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-transaction-v1"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "tree"
+mode = "0700"
+authority = "vanhyprarch-create-once"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Exists only during one create-once publish; it records intent, never user content or overwrite authority."
 
 [[artifact]]
 id = "text-size-preference"

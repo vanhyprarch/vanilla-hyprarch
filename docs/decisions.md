@@ -987,3 +987,33 @@ cleanup. This ordering distinguishes a killed Vanilla operation from manual
 drift without weakening destination checks or introducing a general journal.
 Read-only planning reports recovery as required; mutating operations recover
 before starting new work.
+
+## ADR-039: Initialize durable user state through no-clobber seeds and owners
+
+**Status:** Accepted
+**Date:** 2026-09-22
+**Implementation:** DF2 Phase 3 create-once initialization core
+
+Create-once state is not managed-release content. The internal standard-library
+initializer consumes ownership v2, publishes only implemented
+`CREATE_ONCE_MACHINE` and `CREATE_ONCE_USER` files with atomic no-clobber
+semantics, and treats any safe existing regular file as user authority. It never
+compares an existing file to a seed as permission to overwrite, merge, repair,
+or delete it.
+
+A minimal durable intent exists only during one seed publication. It permits
+safe candidate cleanup and restart after abrupt termination but stores no
+preferences and grants no future overwrite authority. Read-only planning
+reports incomplete intent; initialization recovers before new mutation.
+
+XDG user directories remain owned by `xdg-user-dirs-update`. Appearance owns
+its preference, starter-wallpaper completion receipt, and user copies. Power &
+Idle owns its preference and generated fragment. Phase 3 calls narrow offline
+owner interfaces rather than duplicating those schemas or contacting live
+Hyprland/hypridle. Text Size, Bluetooth power, and launcher state remain lazy
+because their fresh-state behavior already has safe defaults.
+
+The mpv and MIME seeds become user-owned immediately. MIME seeding is also
+suppressed by existing user configuration in any standards-defined XDG user
+location. Package installation, system services, privileged adoption, optional
+components, and complete installer orchestration remain later phases.

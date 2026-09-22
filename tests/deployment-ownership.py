@@ -94,6 +94,26 @@ class DeploymentOwnershipTests(unittest.TestCase):
         self.assertFalse(artifact["user_editable"])
         self.assertNotIn("source", artifact)
 
+    def test_phase3_initializer_contract_is_manifest_driven(self) -> None:
+        hooks = {item["id"]: item for item in self.manifest["initializer"]}
+        self.assertEqual(
+            set(hooks),
+            {"xdg-user-directories", "appearance-defaults", "power-idle-defaults"},
+        )
+        self.assertEqual(
+            self.manifest["create_once_transaction_state"],
+            "create-once-transaction-state",
+        )
+        for identifier in (
+            "machine-hyprland",
+            "user-hyprland-override",
+            "mpv-config",
+            "mimeapps-config",
+        ):
+            artifact = next(item for item in self.artifacts if item["id"] == identifier)
+            self.assertEqual(artifact["status"], "implemented")
+            self.assertIn("source", artifact)
+
     def test_appearance_preference_renderer_and_manager_ownership(self) -> None:
         preference = self.artifact_for_target(
             "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"

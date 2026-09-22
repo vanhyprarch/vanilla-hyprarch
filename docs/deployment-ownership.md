@@ -2,11 +2,12 @@
 
 This document defines the Vanilla HyprArch deployment ownership contract. It
 describes who may change an artifact and what normal project updates must
-preserve. DF2 Phase 2 now implements the narrow managed-user-file executor and
+preserve. DF2 Phase 2 implements the narrow managed-user-file executor and
 provenance described in [Managed-file deployment](managed-file-deployment.md).
-It is not a package installer, service integrator, create-once initializer,
-privileged adoption framework, optional-component manager, or general migration
-framework.
+Phase 3 implements the separate
+[create-once initialization](create-once-initialization.md) boundary. Neither
+is a package installer, service integrator, privileged adoption framework,
+optional-component manager, or general migration framework.
 
 The machine-readable representation is
 `deployment/ownership-v2.toml`. Its target strings are declarative XDG path
@@ -49,10 +50,16 @@ before update may replace or remove an existing target.
 ## Create-once seeds
 
 Files below `seeds/` are installation inputs, not normal managed-update
-payloads. A future deployment step may copy a seed only when its target does
+payloads. The Phase 3 initializer may copy a seed only when its target does
 not exist. Once created, the target takes the ownership class declared in the
-manifest and normal updates preserve it. The live machine and override files
+manifest and normal updates preserve it. The machine and override files
 are private user configuration with mode `0600`.
+
+The provisional mpv and minimal MIME defaults are mode-0644 create-once user
+seeds. Alternate user-level MIME configuration in standards-defined XDG
+locations prevents MIME seeding. A short-lived backend-owned transaction intent
+allows killed create publication to recover without treating user edits as
+replaceable state; it conveys no ongoing ownership of created bytes.
 
 The Hyprland machine seed contains one portable catch-all monitor rule. Any
 output without a more specific machine rule uses its preferred mode, automatic

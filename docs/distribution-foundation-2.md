@@ -1,16 +1,19 @@
 # Distribution Foundation 2
 
-## Phase 1 and Phase 2 status
+## Phase 1 through Phase 3 status
 
 Phase 1 normalizes package, component, service, and deployment ownership policy.
 Phase 2 adds the reusable user-space deployment core for `VANILLA_MANAGED`
 artifacts only. It provides deterministic plan/install/update/validate
 operations, regular installed copies, minimal hash/mode provenance, atomic
 file/tree generation exchange, safe stale-artifact removal, and local rollback.
-It does not provide the full installer, a package transaction, create-once
-initialization, privileged adoption, service mutation, first-login action,
+Phase 3 adds manifest-driven create-once/backend initialization with
+no-clobber publication, isolated XDG targets, owner-specific offline hooks, and
+crash recovery. It does not provide the full installer, a package transaction,
+privileged adoption, service mutation, first-login action,
 optional-component lifecycle, or doctor command. See
-[Managed-file deployment](managed-file-deployment.md).
+[Managed-file deployment](managed-file-deployment.md) and
+[Create-once initialization](create-once-initialization.md).
 
 The machine-readable authorities introduced by this phase are:
 
@@ -84,7 +87,7 @@ installed system.
 direct because Vanilla chooses PipeWire as the provider satisfying mpv's JACK
 requirement.
 
-Phase 3 will supply a create-once `$XDG_CONFIG_HOME/mpv/mpv.conf` seed with mode
+Phase 3 supplies a create-once `$XDG_CONFIG_HOME/mpv/mpv.conf` seed with mode
 `0644`. The installer must create it only when absent, after which it is
 user-owned. Updates never replace or merge it. The accepted provisional content
 is:
@@ -97,7 +100,8 @@ fullscreen=yes
 ```
 
 Physical acceptance remains explicit: **test this MPV baseline on an SDR-only
-monitor**. No seed file or live configuration is created in Phase 1.
+monitor**. Phase 3 acceptance uses disposable targets and creates no live
+configuration.
 
 ## Default applications and MIME ownership
 
@@ -106,12 +110,13 @@ imv for images, and mpv for media. Inspection of installed package metadata and
 the current official imv file list identifies the primary desktop IDs as
 `firefox.desktop`, `thunar.desktop`, `imv.desktop`, and `mpv.desktop`.
 
-Phase 3 will define a deliberately small MIME coverage set and revalidate those
-IDs against the packages being provisioned. It will add a create-once
+Phase 3 defines a deliberately small MIME coverage set and revalidates those
+IDs against current package/upstream desktop metadata. It adds a create-once
 `$XDG_CONFIG_HOME/mimeapps.list` seed only when no user MIME configuration
 exists. The file becomes user-owned immediately; installation and update never
-overwrite or automatically merge an existing file. Phase 1 intentionally does
-not create the seed or claim an exhaustive MIME database.
+overwrite or automatically merge an existing file. The seed does not claim an
+exhaustive MIME database. Existing user configuration in the
+other standards-defined XDG locations also prevents seeding.
 
 ## Display manager and services
 

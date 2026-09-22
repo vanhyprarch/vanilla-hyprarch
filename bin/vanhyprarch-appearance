@@ -58,6 +58,8 @@ DEFAULT_WALLPAPERS = {
     "light": "Wolkenstein_1_light.png",
     "dark": "Wolkenstein_1_dark.png",
 }
+INITIALIZE_TEST_MODE = "VANHYPRARCH_APPEARANCE_TESTING"
+INITIALIZE_FAULT = "VANHYPRARCH_APPEARANCE_TEST_FAULT_AT"
 
 Runner = Callable[..., subprocess.CompletedProcess[Any]]
 PopenFactory = Callable[..., subprocess.Popen[Any]]
@@ -264,6 +266,27 @@ class AppearanceManager:
         self.require_mode(mode)
         return self.wallpaper_root / MODE_DIRECTORIES[mode]
 
+    def _ensure_owned_directory(
+        self, path: Path, boundary: Path, mode: int
+    ) -> None:
+        try:
+            relative = path.relative_to(boundary)
+        except ValueError as error:
+            raise AppearanceError(
+                f"directory escapes its ownership boundary: {path}"
+            ) from error
+        boundary.mkdir(mode=mode, parents=True, exist_ok=True)
+        current = boundary
+        for part in (None, *relative.parts):
+            if part is not None:
+                current /= part
+                current.mkdir(mode=mode, exist_ok=True)
+            metadata = current.lstat()
+            if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                raise AppearanceError(f"directory must not be a symbolic link: {current}")
+            if metadata.st_uid != os.getuid():
+                raise AppearanceError(f"directory is not owned by the current user: {current}")
+
     @staticmethod
     def require_mode(mode: str) -> None:
         if mode not in MODES:
@@ -272,7 +295,7 @@ class AppearanceManager:
     def ensure_user_directories(self) -> None:
         for directory in (self.mode_directory("light"), self.mode_directory("dark")):
             try:
-                directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+                self._ensure_owned_directory(directory, self.pictures, 0o755)
             except OSError as error:
                 raise AppearanceError(
                     f"could not create wallpaper directory {directory}: {error}"
@@ -333,7 +356,8 @@ class AppearanceManager:
     def _write_private_json(self, path: Path, value: object) -> None:
         directory = path.parent
         try:
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            boundary = self.config_home if path == self.preference_path else self.state_home
+            self._ensure_owned_directory(directory, boundary, 0o700)
             os.chmod(directory, 0o700)
             descriptor, temporary_name = tempfile.mkstemp(
                 prefix=f".{path.name}.", dir=directory
@@ -353,11 +377,62 @@ class AppearanceManager:
                     stream.flush()
                     os.fsync(stream.fileno())
                 os.replace(temporary, path)
+                self._fsync_directory(directory)
             finally:
                 if temporary.exists():
                     temporary.unlink()
         except OSError as error:
             raise AppearanceError(f"could not save {path.name}: {error}") from error
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _create_private_json(self, path: Path, value: object) -> bool:
+        """Create JSON without clobbering state that appeared concurrently."""
+        directory = path.parent
+        try:
+            self._ensure_owned_directory(directory, self.config_home, 0o700)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", dir=directory
+            )
+            temporary = Path(temporary_name)
+            try:
+                os.fchmod(descriptor, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump(
+                        value,
+                        stream,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    stream.write("\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                try:
+                    os.link(temporary, path, follow_symlinks=False)
+                except FileExistsError:
+                    return False
+                self._fsync_directory(directory)
+                return True
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+        except OSError as error:
+            raise AppearanceError(f"could not create {path.name}: {error}") from error
+
+    @staticmethod
+    def _initialization_fault(point: str) -> None:
+        if (
+            os.environ.get(INITIALIZE_TEST_MODE) == "1"
+            and os.environ.get(INITIALIZE_FAULT) == point
+        ):
+            os._exit(198)
 
     def write_preference(self, preference: Preference) -> None:
         self._preference_from_object(preference.as_json())
@@ -474,7 +549,7 @@ class AppearanceManager:
         destination: Path,
         expected_digest: str,
     ) -> bool:
-        destination.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        self._ensure_owned_directory(destination.parent, self.pictures, 0o755)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{destination.name}.", dir=destination.parent
         )
@@ -494,6 +569,8 @@ class AppearanceManager:
                 os.link(temporary, destination, follow_symlinks=False)
             except FileExistsError:
                 return False
+            self._fsync_directory(destination.parent)
+            self._initialization_fault("after-starter-publish")
             return True
         except OSError as error:
             raise AppearanceError(
@@ -597,9 +674,45 @@ class AppearanceManager:
         try:
             self.write_asset_receipt(seeded_receipt)
             result["initialized"] = True
+            self._initialization_fault("after-starter-marker")
         except AppearanceError as error:
             result["errors"].append(str(error))
         return result
+
+    def initialization_status(self) -> dict[str, object]:
+        preference = self.read_preference()
+        receipt = self.read_asset_receipt()
+        return {
+            "version": 1,
+            "preference": "initialized" if preference is not None else "missing",
+            "starter_content": "initialized" if receipt is not None else "missing",
+        }
+
+    def initialize_defaults(self) -> dict[str, object]:
+        asset_result = self.seed_official_assets()
+        if asset_result["errors"]:
+            raise AppearanceError(
+                "; ".join(str(item) for item in asset_result["errors"])
+            )
+        preference = self.read_preference()
+        preference_created = False
+        if preference is None:
+            candidate = Preference(
+                "light",
+                self.default_wallpaper("light"),
+                self.default_wallpaper("dark"),
+            )
+            preference_created = self._create_private_json(
+                self.preference_path, candidate.as_json()
+            )
+            preference = self.read_preference()
+            if preference is None:
+                raise AppearanceError("appearance preference was not created")
+        return {
+            "version": 1,
+            "preference": "created" if preference_created else "preserved",
+            "starter_content": asset_result,
+        }
 
     def _legacy_mode(self) -> str | None:
         try:
@@ -1303,7 +1416,7 @@ def print_json(value: object) -> None:
 def usage() -> None:
     print(
         "usage: vanhyprarch-appearance "
-        "status|reconcile|set-mode MODE|set-wallpaper MODE PATH|catalog MODE|seed-assets|renderer-start",
+        "status|reconcile|set-mode MODE|set-wallpaper MODE PATH|catalog MODE|seed-assets|initialize-status|initialize-defaults|renderer-start",
         file=sys.stderr,
     )
 
@@ -1322,6 +1435,14 @@ def main(arguments: Sequence[str] | None = None) -> int:
             for error in result["errors"]:
                 print(f"vanhyprarch-appearance: {error}", file=sys.stderr)
             return 1 if result["errors"] else 0
+        if argv == ["initialize-status"]:
+            print_json(manager.initialization_status())
+            return 0
+        if argv == ["initialize-defaults"]:
+            with manager.operation_lock():
+                result = manager.initialize_defaults()
+            print_json(result)
+            return 0
         if argv == ["reconcile"]:
             errors = manager.reconcile()
         elif len(argv) == 2 and argv[0] == "set-mode":

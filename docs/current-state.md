@@ -1009,7 +1009,7 @@ not a fabricated live HDR indicator; Hyprland 0.56.2 does not publish generic
 are complete on the development machine's HDR display; SDR-only mpv and other
 physical-hardware boundaries remain separately deferred.
 
-## Distribution Foundation 2 Phase 2 — MANAGED DEPLOYMENT CORE IMPLEMENTED
+## Distribution Foundation 2 Phases 1–3 — DEPLOYMENT AND INITIALIZATION CORES IMPLEMENTED
 
 Package role and default installation policy now have one structured authority
 in `packages/manifest-v1.toml`. Printing, network printing, dictation, and Zig
@@ -1030,8 +1030,17 @@ Deterministic Release A/B fixtures, including abrupt subprocess termination,
 prove idempotence, source-tree independence, conflict refusal,
 path/symlink safety, rollback, and crash recovery.
 
-This remains a deployment core rather than the full installer. No package
-transaction, system service change, create-once seed publication, privileged
+The internal `install/create_once.py` Phase 3 layer now creates the four
+implemented machine/user seeds only when absent, initializes XDG user
+directories only when their configuration is absent, and calls offline
+Appearance and Power & Idle owner interfaces. Starter wallpaper deletion and
+customization remain preserved through the Appearance receipt. Text Size,
+Bluetooth preference, and launcher state remain safely lazy. Abrupt create,
+Appearance starter-seed, and Power & Idle initialization tests run only against
+disposable targets.
+
+These remain distribution cores rather than the full installer. No package
+transaction, system service change, privileged
 adoption, optional-component lifecycle, VM acceptance, or live-system
 deployment has been implemented.
 
@@ -1042,8 +1051,9 @@ deployment has been implemented.
 - Build the shared bootstrap and thin optional archinstall integration defined
   in the [installation strategy](installation-strategy.md), supporting both a
   configured first reboot and post-install use on minimal Arch.
-- Build the full bootstrap around the managed-file core, including separately
-  authorized package, create-once, service, privileged, and validation phases.
+- Build the full bootstrap around the managed-file and create-once cores,
+  including separately authorized package, service, privileged, and validation
+  phases.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

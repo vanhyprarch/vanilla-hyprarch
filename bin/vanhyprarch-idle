@@ -18,6 +18,8 @@ usage()
     cat >&2 <<EOF
 Usage:
   $program_name status
+  $program_name initialize-status
+  $program_name initialize-defaults
   $program_name session-start
   $program_name apply
   $program_name configure <screensaver> <display> <suspend> <lock>
@@ -44,6 +46,13 @@ fail()
     write_session_start_error "$failure_message"
     printf '%s: %s\n' "$program_name" "$failure_message" >&2
     exit 1
+}
+
+initialization_fault()
+{
+    [ "${VANHYPRARCH_IDLE_TESTING:-0}" = 1 ] || return 0
+    [ "${VANHYPRARCH_IDLE_TEST_FAULT_AT:-}" = "$1" ] || return 0
+    kill -KILL $$
 }
 
 write_session_start_error()
@@ -126,6 +135,21 @@ prepare_paths()
 
     exec 8>"$backend_lock" || fail "could not open $backend_lock"
     flock -x 8 || fail "could not lock $backend_lock"
+}
+
+prepare_initialization_status_paths()
+{
+    [ -n "${HOME:-}" ] || fail 'HOME is not set'
+    case $HOME in /*) ;; *) fail 'HOME must be an absolute path' ;; esac
+    config_home=${XDG_CONFIG_HOME:-$HOME/.config}
+    case $config_home in /*) ;; *) fail 'XDG_CONFIG_HOME must be an absolute path' ;; esac
+    preferences_dir=$config_home/$runtime_subdir
+    preferences_file=$preferences_dir/$preferences_name
+    hypr_dir=$config_home/hypr
+    hypridle_main=$hypr_dir/hypridle.conf
+    managed_fragment=$hypr_dir/$managed_fragment_name
+    screensaver_manager=$HOME/.local/bin/vanhyprarch-screensaver
+    current_uid=$(/usr/bin/id -u) || fail 'could not determine the current user ID'
 }
 
 load_screensaver_capability()
@@ -441,6 +465,80 @@ write_preferences()
         rm -f -- "$preferences_temporary" 2>/dev/null || true
         return 1
     fi
+}
+
+write_initial_preferences_if_absent()
+{
+    ensure_preferences_dir
+    preferences_temporary=$preferences_dir/.$preferences_name.initialize.$$
+    rm -f -- "$preferences_temporary" || return 1
+    if ! {
+        {
+            printf 'version=2\n'
+            printf 'screensaver=%s\n' "$screensaver"
+            printf 'display=%s\n' "$display"
+            printf 'suspend=%s\n' "$suspend"
+            printf 'lock=%s\n' "$lock_point"
+            printf 'effect=%s\n' "$effect"
+        } > "$preferences_temporary" &&
+            chmod 600 -- "$preferences_temporary" &&
+            sync -f -- "$preferences_temporary"
+    }; then
+        rm -f -- "$preferences_temporary" 2>/dev/null || true
+        return 1
+    fi
+    if ln -- "$preferences_temporary" "$preferences_file" 2>/dev/null; then
+        sync -f -- "$preferences_dir" || {
+            rm -f -- "$preferences_temporary"
+            return 1
+        }
+        preferences_created=true
+    else
+        [ -f "$preferences_file" ] && [ ! -L "$preferences_file" ] || {
+            rm -f -- "$preferences_temporary"
+            return 1
+        }
+        preferences_created=false
+    fi
+    rm -f -- "$preferences_temporary"
+}
+
+initialize_generated_fragment()
+{
+    [ -d "$hypr_dir" ] && [ ! -L "$hypr_dir" ] ||
+        fail "$hypr_dir is not a safe deployed Hyprland directory"
+    [ -f "$hypridle_main" ] && [ ! -L "$hypridle_main" ] ||
+        fail "$hypridle_main is not a deployed regular file"
+    if [ -e "$managed_fragment" ] || [ -L "$managed_fragment" ]; then
+        [ -f "$managed_fragment" ] && [ ! -L "$managed_fragment" ] ||
+            fail "$managed_fragment must be a regular file"
+    fi
+    candidate_fragment=$hypr_dir/.${managed_fragment_name}.initialize.$$
+    [ ! -e "$candidate_fragment" ] && [ ! -L "$candidate_fragment" ] ||
+        fail "$candidate_fragment already exists"
+    trap 'rm -f -- "$candidate_fragment"' 0 HUP INT TERM
+    render_fragment > "$candidate_fragment" ||
+        fail 'could not render initial hypridle configuration'
+    chmod 600 -- "$candidate_fragment" ||
+        fail 'could not secure initial hypridle configuration'
+    sync -f -- "$candidate_fragment" ||
+        fail 'could not make initial hypridle configuration durable'
+    effective_listener_count
+    validate_generated_fragment "$candidate_fragment" "$listener_count"
+    if [ -f "$managed_fragment" ] && [ ! -L "$managed_fragment" ] &&
+        cmp -s -- "$candidate_fragment" "$managed_fragment"; then
+        rm -f -- "$candidate_fragment"
+        trap - 0 HUP INT TERM
+        fragment_result=preserved
+        return 0
+    fi
+    mv -f -- "$candidate_fragment" "$managed_fragment" ||
+        fail 'could not publish initial hypridle configuration'
+    sync -f -- "$hypr_dir" ||
+        fail 'could not make initial hypridle namespace durable'
+    initialization_fault after-initial-fragment
+    trap - 0 HUP INT TERM
+    fragment_result=generated
 }
 
 write_caffeine()
@@ -933,6 +1031,48 @@ command_status()
     print_status
 }
 
+command_initialize_status()
+{
+    [ "$#" -eq 0 ] || fail 'initialize-status takes no arguments'
+    if [ ! -e "$preferences_file" ] && [ ! -L "$preferences_file" ]; then
+        printf 'preference=missing\nfragment=deferred\n'
+        return 0
+    fi
+    [ -f "$preferences_file" ] && [ ! -L "$preferences_file" ] ||
+        fail "$preferences_file is not a safe regular file"
+    load_preferences
+    validate_preferences
+    load_screensaver_capability
+    caffeine=off
+    if [ ! -e "$managed_fragment" ] && [ ! -L "$managed_fragment" ]; then
+        printf 'preference=initialized\nfragment=missing\n'
+        return 0
+    fi
+    validate_fragment_coherence
+    printf 'preference=initialized\nfragment=valid\n'
+}
+
+command_initialize_defaults()
+{
+    [ "$#" -eq 0 ] || fail 'initialize-defaults takes no arguments'
+    preferences_created=false
+    load_preferences
+    validate_preferences
+    if [ ! -e "$preferences_file" ] && [ ! -L "$preferences_file" ]; then
+        write_initial_preferences_if_absent ||
+            fail 'could not create initial Power & Idle preferences'
+        initialization_fault after-initial-preference
+        load_preferences
+        validate_preferences
+    fi
+    load_screensaver_capability
+    caffeine=off
+    initialize_generated_fragment
+    printf 'preference=%s\nfragment=%s\n' \
+        "$([ "$preferences_created" = true ] && printf created || printf preserved)" \
+        "$fragment_result"
+}
+
 cleanup_session_start()
 {
     cleanup_status=$?
@@ -1345,12 +1485,18 @@ case $command in
         command_render "$@"
         exit 0
         ;;
+    initialize-status)
+        prepare_initialization_status_paths
+        command_initialize_status "$@"
+        exit 0
+        ;;
 esac
 
 prepare_paths
 
 case $command in
     status) command_status "$@" ;;
+    initialize-defaults) command_initialize_defaults "$@" ;;
     session-start) command_session_start "$@" ;;
     apply) command_apply "$@" ;;
     configure) command_configure "$@" ;;

@@ -162,12 +162,18 @@ uninstall, or privileged integration. Version 1 remains historical.
 
 ## Create-once application state
 
-Phase 3 will add the accepted provisional mpv seed and a minimal MIME seed.
+Phase 3 implements the accepted provisional mpv seed and a minimal MIME seed.
 Their targets are `$XDG_CONFIG_HOME/mpv/mpv.conf` and
 `$XDG_CONFIG_HOME/mimeapps.list`, both mode `0644`. A future installer may
 create either only when its target is absent. Each becomes user-owned
-immediately and is never overwritten or merged automatically. Phase 1 records
-that ownership but supplies and deploys neither seed.
+immediately and is never overwritten or merged automatically. Existing
+standards-defined user MIME configuration also suppresses the MIME seed.
+
+The same internal initializer publishes the machine and override seeds with
+no-clobber semantics, invokes `xdg-user-dirs-update` only when its configuration
+is absent, and delegates Appearance and Power & Idle defaults to their owning
+backends. It remains separate from package/service integration and the full
+bootstrap. See [Create-once initialization](create-once-initialization.md).
 
 The package-owned Hyprland session entry remains the Ly authority. Future
 system integration enables `ly@tty2.service` and disables the conflicting

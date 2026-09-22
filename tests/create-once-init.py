@@ -1,0 +1,594 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
+import tomllib
+import unittest
+from pathlib import Path
+from unittest import mock
+
+
+REPOSITORY = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPOSITORY / "install"))
+
+from create_once import (  # noqa: E402
+    ConflictError,
+    CreateOnceInitializer,
+    InitTarget,
+)
+from managed_deploy import ManagedDeployment, SafetyError, TargetContext  # noqa: E402
+
+
+MPV_BYTES = (
+    b"vo=gpu-next\n"
+    b"target-colorspace-hint=auto\n"
+    b"target-colorspace-hint-mode=source\n"
+    b"fullscreen=yes\n"
+)
+MIME_BYTES = b"""[Default Applications]
+audio/flac=mpv.desktop;
+audio/mpeg=mpv.desktop;
+audio/ogg=mpv.desktop;
+audio/opus=mpv.desktop;
+image/gif=imv.desktop;
+image/jpeg=imv.desktop;
+image/png=imv.desktop;
+image/svg+xml=imv.desktop;
+image/webp=imv.desktop;
+inode/directory=thunar.desktop;
+text/html=firefox.desktop;
+video/mp4=mpv.desktop;
+video/webm=mpv.desktop;
+video/x-matroska=mpv.desktop;
+x-scheme-handler/http=firefox.desktop;
+x-scheme-handler/https=firefox.desktop;
+"""
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class Fixture:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.root.mkdir(mode=0o700)
+        self.home = root / "home"
+        self.config = root / "config"
+        self.data = root / "data"
+        self.state = root / "state"
+        self.cache = root / "cache"
+        self.runtime = root / "runtime"
+        for path in (self.home, self.config, self.data, self.state, self.cache, self.runtime):
+            path.mkdir(mode=0o700)
+        self.target = InitTarget(
+            TargetContext.build(
+                home=self.home,
+                config=self.config,
+                data=self.data,
+                state=self.state,
+                cache=self.cache,
+            ),
+            self.runtime,
+        )
+
+    def cli(self, source: Path, command: str, environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        if environment:
+            env.update(environment)
+        return subprocess.run(
+            [
+                sys.executable,
+                str(REPOSITORY / "install/create_once.py"),
+                "--source-root",
+                str(source),
+                "--home",
+                str(self.home),
+                "--xdg-config-home",
+                str(self.config),
+                "--xdg-data-home",
+                str(self.data),
+                "--xdg-state-home",
+                str(self.state),
+                "--xdg-cache-home",
+                str(self.cache),
+                "--xdg-runtime-dir",
+                str(self.runtime),
+                command,
+            ],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+
+
+def write_minimal_release(root: Path) -> None:
+    (root / "deployment").mkdir(parents=True)
+    (root / "seeds").mkdir()
+    (root / "seeds/example.conf").write_text("seed\n", encoding="utf-8")
+    (root / "deployment/ownership-v2.toml").write_text(
+        textwrap.dedent(
+            """\
+            schema_version = 2
+            create_once_transaction_state = "transaction"
+
+            [[artifact]]
+            id = "example"
+            source = "seeds/example.conf"
+            target = "${XDG_CONFIG_HOME:-$HOME/.config}/example.conf"
+            class = "CREATE_ONCE_USER"
+            component = "test"
+            kind = "file"
+            mode = "0600"
+            authority = "user"
+            status = "implemented"
+            user_editable = true
+            machine_specific = false
+
+            [[artifact]]
+            id = "ignored-managed"
+            source = "seeds/example.conf"
+            target = "${XDG_CONFIG_HOME:-$HOME/.config}/ignored.conf"
+            class = "VANILLA_MANAGED"
+            component = "test"
+            kind = "file"
+            mode = "0644"
+            authority = "vanilla-hyprarch"
+            status = "implemented"
+            user_editable = false
+            machine_specific = false
+
+            [[artifact]]
+            id = "transaction"
+            target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-transaction-v1"
+            class = "BACKEND_OWNED"
+            component = "distribution"
+            kind = "tree"
+            mode = "0700"
+            authority = "vanhyprarch-create-once"
+            status = "implemented"
+            user_editable = false
+            machine_specific = false
+            """
+        ),
+        encoding="utf-8",
+    )
+
+
+def install_fake_xdg_user_dirs(root: Path) -> Path:
+    binary_dir = root / "fake-bin"
+    binary_dir.mkdir()
+    command = binary_dir / "xdg-user-dirs-update"
+    command.write_text(
+        """#!/bin/sh
+set -eu
+mkdir -p "$XDG_CONFIG_HOME" "$HOME/Desktop" "$HOME/Documents" "$HOME/Downloads" "$HOME/Music" "$HOME/Pictures" "$HOME/Public" "$HOME/Templates" "$HOME/Videos"
+cat > "$XDG_CONFIG_HOME/user-dirs.dirs" <<EOF
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+EOF
+chmod 600 "$XDG_CONFIG_HOME/user-dirs.dirs"
+locale_value=${LANG:-C}
+printf '%s\n' "${locale_value%%.*}" > "$XDG_CONFIG_HOME/user-dirs.locale"
+chmod 644 "$XDG_CONFIG_HOME/user-dirs.locale"
+""",
+        encoding="utf-8",
+    )
+    command.chmod(0o755)
+    return binary_dir
+
+
+class MinimalCreateOnceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.release = self.root / "release"
+        write_minimal_release(self.release)
+        self.fixture = Fixture(self.root / "target")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def initializer(self) -> CreateOnceInitializer:
+        return CreateOnceInitializer(source_root=self.release, target=self.fixture.target)
+
+    def test_manifest_selects_only_create_once(self) -> None:
+        initializer = self.initializer()
+        self.assertEqual([item.identifier for item in initializer.seeds], ["example"])
+
+    def test_plan_is_zero_write(self) -> None:
+        before = sorted(str(path.relative_to(self.fixture.root)) for path in self.fixture.root.rglob("*"))
+        plan = self.initializer().plan()
+        after = sorted(str(path.relative_to(self.fixture.root)) for path in self.fixture.root.rglob("*"))
+        self.assertEqual(before, after)
+        self.assertEqual([item.action for item in plan], ["create"])
+
+    def test_create_exact_mode_and_idempotence(self) -> None:
+        previous = os.umask(0o077)
+        try:
+            first = self.initializer().initialize()
+            target = self.fixture.config / "example.conf"
+            before = (target.stat().st_ino, target.stat().st_mtime_ns, digest(target))
+            second = self.initializer().initialize()
+            after = (target.stat().st_ino, target.stat().st_mtime_ns, digest(target))
+        finally:
+            os.umask(previous)
+        self.assertEqual(first[-1].action, "seeded-by-vanilla")
+        self.assertEqual(second[-1].action, "preserve-existing")
+        self.assertEqual(before, after)
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+        self.assertEqual(target.read_bytes(), b"seed\n")
+        self.assertFalse((self.fixture.config / "ignored.conf").exists())
+
+    def test_existing_custom_file_is_preserved_byte_for_byte(self) -> None:
+        target = self.fixture.config / "example.conf"
+        target.write_bytes(b"custom\x00bytes")
+        target.chmod(0o640)
+        before = (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes(), stat.S_IMODE(target.stat().st_mode))
+        result = self.initializer().initialize()
+        after = (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes(), stat.S_IMODE(target.stat().st_mode))
+        self.assertEqual(result[-1].action, "preserve-existing")
+        self.assertEqual(before, after)
+
+    def test_existing_symlink_and_wrong_type_fail_closed(self) -> None:
+        target = self.fixture.config / "example.conf"
+        target.symlink_to(self.fixture.home / "outside")
+        with self.assertRaises(ConflictError):
+            self.initializer().initialize()
+        target.unlink()
+        target.mkdir()
+        with self.assertRaises(ConflictError):
+            self.initializer().initialize()
+
+    def test_symlinked_parent_fails_closed(self) -> None:
+        self.fixture.config.rmdir()
+        self.fixture.config.symlink_to(self.fixture.home)
+        with self.assertRaises(SafetyError):
+            self.initializer().plan()
+
+    def test_source_symlink_fails_closed(self) -> None:
+        source = self.release / "seeds/example.conf"
+        source.unlink()
+        source.symlink_to("/etc/passwd")
+        with self.assertRaises(SafetyError):
+            self.initializer().initialize()
+
+    def test_abrupt_crash_windows_recover_idempotently(self) -> None:
+        target = self.fixture.config / "example.conf"
+        for checkpoint, published in (
+            ("before-publish:example", False),
+            ("after-publish:example", True),
+            ("after-metadata-commit:example", True),
+        ):
+            if target.exists():
+                target.unlink()
+            transaction = self.fixture.state / "vanhyprarch/create-once-transaction-v1"
+            if transaction.exists():
+                shutil.rmtree(transaction)
+            crashed = self.fixture.cli(
+                self.release,
+                "initialize",
+                {
+                    "VANHYPRARCH_CREATE_ONCE_TESTING": "1",
+                    "VANHYPRARCH_CREATE_ONCE_TEST_FAULT_AT": checkpoint,
+                },
+            )
+            self.assertEqual(crashed.returncode, 197, (checkpoint, crashed.stderr))
+            self.assertEqual(target.exists(), published)
+            planned = self.fixture.cli(self.release, "plan")
+            self.assertEqual(planned.returncode, 2)
+            self.assertIn("recovery-required", planned.stdout)
+            recovered = self.fixture.cli(self.release, "initialize")
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(target.read_bytes(), b"seed\n")
+            self.assertFalse(transaction.exists())
+            second = self.fixture.cli(self.release, "initialize")
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("preserve-existing", second.stdout)
+
+    def test_malformed_transaction_fails_closed(self) -> None:
+        transaction = self.fixture.state / "vanhyprarch/create-once-transaction-v1"
+        transaction.mkdir(parents=True)
+        (transaction / "intent.json").write_text("{", encoding="utf-8")
+        (transaction / "intent.json").chmod(0o600)
+        result = self.fixture.cli(self.release, "initialize")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("malformed", result.stderr)
+
+
+class ActualManifestTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.fixture = Fixture(self.root / "target")
+        self.fake_bin = install_fake_xdg_user_dirs(self.root)
+        self.path = f"{self.fake_bin}:{os.environ.get('PATH', '')}"
+        deployment = ManagedDeployment(
+            source_root=REPOSITORY,
+            target=self.fixture.target.xdg,
+            release_id="phase3-test",
+        )
+        deployment.apply("install")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def initializer(self) -> CreateOnceInitializer:
+        return CreateOnceInitializer(source_root=REPOSITORY, target=self.fixture.target)
+
+    def initialize(self) -> list:
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            return self.initializer().initialize()
+
+    def validate(self) -> list:
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            return self.initializer().validate()
+
+    def test_manifest_exact_create_once_inventory_and_seed_bytes(self) -> None:
+        initializer = self.initializer()
+        self.assertEqual(
+            [item.identifier for item in initializer.seeds],
+            ["machine-hyprland", "mimeapps-config", "mpv-config", "user-hyprland-override"],
+        )
+        self.assertEqual((REPOSITORY / "seeds/home/.config/mpv/mpv.conf").read_bytes(), MPV_BYTES)
+        self.assertEqual((REPOSITORY / "seeds/home/.config/mimeapps.list").read_bytes(), MIME_BYTES)
+
+    def test_actual_plan_is_zero_write(self) -> None:
+        def snapshot() -> list[tuple[str, int, int, int]]:
+            return sorted(
+                (
+                    str(path.relative_to(self.fixture.root)),
+                    path.lstat().st_ino,
+                    path.lstat().st_mtime_ns,
+                    path.lstat().st_size,
+                )
+                for path in self.fixture.root.rglob("*")
+            )
+
+        before = snapshot()
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            plan = self.initializer().plan()
+        self.assertEqual(before, snapshot())
+        self.assertIn("backend-initialize", {item.action for item in plan})
+
+    def test_full_initialization_modes_backends_and_second_run(self) -> None:
+        first = self.initialize()
+        expected = {
+            self.fixture.config / "vanhyprarch/machine/hyprland.lua": 0o600,
+            self.fixture.config / "vanhyprarch/overrides/hyprland.lua": 0o600,
+            self.fixture.config / "mpv/mpv.conf": 0o644,
+            self.fixture.config / "mimeapps.list": 0o644,
+            self.fixture.config / "vanhyprarch/appearance.json": 0o600,
+            self.fixture.config / "vanhyprarch/power-idle.conf": 0o600,
+            self.fixture.config / "hypr/vanhyprarch-idle.conf": 0o600,
+        }
+        before: dict[Path, tuple[int, int, str]] = {}
+        for path, mode in expected.items():
+            self.assertTrue(path.is_file(), path)
+            self.assertFalse(path.is_symlink())
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+            before[path] = (path.stat().st_ino, path.stat().st_mtime_ns, digest(path))
+        self.assertEqual((self.fixture.config / "mpv/mpv.conf").read_bytes(), MPV_BYTES)
+        self.assertEqual((self.fixture.config / "mimeapps.list").read_bytes(), MIME_BYTES)
+        self.assertTrue((self.fixture.config / "user-dirs.dirs").is_file())
+        self.assertTrue((self.fixture.config / "user-dirs.locale").is_file())
+        second = self.initialize()
+        for path in expected:
+            self.assertEqual(before[path], (path.stat().st_ino, path.stat().st_mtime_ns, digest(path)))
+        self.validate()
+        self.assertTrue(any(item.action == "backend-initialized" for item in first))
+        self.assertFalse(any(item.action == "seeded-by-vanilla" for item in second))
+
+    def test_custom_create_once_files_are_never_changed(self) -> None:
+        values = {
+            self.fixture.config / "vanhyprarch/machine/hyprland.lua": b"-- machine custom\n",
+            self.fixture.config / "vanhyprarch/overrides/hyprland.lua": b"-- override custom\n",
+            self.fixture.config / "mpv/mpv.conf": b"fullscreen=no\n",
+            self.fixture.config / "mimeapps.list": b"[Default Applications]\ntext/plain=custom.desktop;\n",
+        }
+        for path, data in values.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        self.initialize()
+        self.initialize()
+        for path, data in values.items():
+            self.assertEqual(path.read_bytes(), data)
+
+    def test_alternate_user_mime_configuration_prevents_seed(self) -> None:
+        alternate = self.fixture.data / "applications/mimeapps.list"
+        alternate.parent.mkdir(parents=True)
+        alternate.write_text("[Default Applications]\ntext/plain=custom.desktop;\n", encoding="utf-8")
+        results = self.initialize()
+        self.assertFalse((self.fixture.config / "mimeapps.list").exists())
+        mime = next(item for item in results if item.identifier == "mimeapps-config")
+        self.assertEqual(mime.action, "preserve-existing")
+        self.validate()
+
+    def test_custom_pictures_path_is_authoritative(self) -> None:
+        localized = self.fixture.home / "Immagini personalizzate"
+        self.fixture.config.joinpath("user-dirs.dirs").write_text(
+            f'XDG_PICTURES_DIR="{localized}"\n', encoding="utf-8"
+        )
+        self.fixture.config.joinpath("user-dirs.dirs").chmod(0o600)
+        self.initialize()
+        self.assertTrue((localized / "Wallpapers/Light/Wolkenstein_1_light.png").is_file())
+        self.assertFalse((self.fixture.home / "Pictures/Wallpapers").exists())
+
+    def test_wallpaper_deletion_modification_and_user_addition_survive(self) -> None:
+        self.initialize()
+        root = self.fixture.home / "Pictures/Wallpapers"
+        deleted = root / "Light/Wolkenstein_2_light.png"
+        modified = root / "Dark/Wolkenstein_2_dark.png"
+        own = root / "Dark/my-wallpaper.png"
+        deleted.unlink()
+        modified.write_bytes(b"customized")
+        own.write_bytes(b"mine")
+        self.initialize()
+        self.assertFalse(deleted.exists())
+        self.assertEqual(modified.read_bytes(), b"customized")
+        self.assertEqual(own.read_bytes(), b"mine")
+
+    def test_custom_backend_preferences_and_malformed_state(self) -> None:
+        self.initialize()
+        appearance = self.fixture.config / "vanhyprarch/appearance.json"
+        value = json.loads(appearance.read_text(encoding="utf-8"))
+        value["mode"] = "dark"
+        appearance.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+        power = self.fixture.config / "vanhyprarch/power-idle.conf"
+        power.write_text("version=2\nscreensaver=never\ndisplay=300\nsuspend=never\nlock=display\neffect=colormix\n", encoding="utf-8")
+        self.initialize()
+        self.assertEqual(json.loads(appearance.read_text(encoding="utf-8"))["mode"], "dark")
+        self.assertIn("display=300\n", power.read_text(encoding="utf-8"))
+        appearance.write_text("{", encoding="utf-8")
+        with self.assertRaises(ConflictError):
+            self.initialize()
+        self.assertEqual(appearance.read_text(encoding="utf-8"), "{")
+
+    def test_malformed_power_idle_preference_fails_closed(self) -> None:
+        self.initialize()
+        power = self.fixture.config / "vanhyprarch/power-idle.conf"
+        power.write_text("invalid\n", encoding="utf-8")
+        with self.assertRaises(ConflictError):
+            self.initializer().plan()
+        with self.assertRaises(ConflictError):
+            self.initialize()
+        self.assertEqual(power.read_text(encoding="utf-8"), "invalid\n")
+
+    def test_appearance_abrupt_seed_crashes_recover(self) -> None:
+        command = self.fixture.home / ".local/bin/vanhyprarch-appearance"
+        environment = self.fixture.target.environment()
+        for checkpoint in ("after-starter-publish", "after-starter-marker"):
+            shutil.rmtree(self.fixture.home / "Pictures", ignore_errors=True)
+            receipt = self.fixture.state / "vanhyprarch/appearance-assets.json"
+            if receipt.exists():
+                receipt.unlink()
+            preference = self.fixture.config / "vanhyprarch/appearance.json"
+            if preference.exists():
+                preference.unlink()
+            crashed_env = environment | {
+                "VANHYPRARCH_APPEARANCE_TESTING": "1",
+                "VANHYPRARCH_APPEARANCE_TEST_FAULT_AT": checkpoint,
+            }
+            crashed = subprocess.run(
+                [command, "initialize-defaults"],
+                env=crashed_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(crashed.returncode, 198)
+            recovered = subprocess.run(
+                [command, "initialize-defaults"],
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(recovered.returncode, 0)
+            self.assertTrue(receipt.is_file())
+            self.assertTrue(preference.is_file())
+
+    def test_power_idle_abrupt_initialization_recovers(self) -> None:
+        command = self.fixture.home / ".local/bin/vanhyprarch-idle"
+        environment = self.fixture.target.environment()
+        for checkpoint in ("after-initial-preference", "after-initial-fragment"):
+            preference = self.fixture.config / "vanhyprarch/power-idle.conf"
+            fragment = self.fixture.config / "hypr/vanhyprarch-idle.conf"
+            preference.unlink(missing_ok=True)
+            fragment.unlink(missing_ok=True)
+            crashed = subprocess.run(
+                [command, "initialize-defaults"],
+                env=environment
+                | {
+                    "VANHYPRARCH_IDLE_TESTING": "1",
+                    "VANHYPRARCH_IDLE_TEST_FAULT_AT": checkpoint,
+                },
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(crashed.returncode, -9, (checkpoint, crashed.stderr))
+            recovered = subprocess.run(
+                [command, "initialize-defaults"],
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertTrue(preference.is_file())
+            self.assertTrue(fragment.is_file())
+
+    def test_phase2_update_and_phase3_preserve_converge(self) -> None:
+        self.initialize()
+        machine = self.fixture.config / "vanhyprarch/machine/hyprland.lua"
+        machine.write_text("-- changed machine\n", encoding="utf-8")
+        wallpaper = self.fixture.home / "Pictures/Wallpapers/Light/Wolkenstein_4_light.png"
+        wallpaper.unlink()
+        deployment = ManagedDeployment(source_root=REPOSITORY, target=self.fixture.target.xdg, release_id="phase3-test")
+        plan = deployment.apply("update")
+        self.assertFalse(plan.changes)
+        self.initialize()
+        self.assertEqual(machine.read_text(encoding="utf-8"), "-- changed machine\n")
+        self.assertFalse(wallpaper.exists())
+        deployment.validate_installed(require_current_release=True)
+        self.validate()
+
+    def test_source_tree_removal_does_not_break_initialized_files(self) -> None:
+        self.initialize()
+        snapshots = {
+            path: digest(path)
+            for path in (
+                self.fixture.config / "mpv/mpv.conf",
+                self.fixture.config / "mimeapps.list",
+                self.fixture.config / "vanhyprarch/machine/hyprland.lua",
+            )
+        }
+        copied_source = self.root / "source-copy"
+        shutil.copytree(REPOSITORY, copied_source, ignore=shutil.ignore_patterns(".git"))
+        independent = Fixture(self.root / "independent-target")
+        ManagedDeployment(source_root=copied_source, target=independent.target.xdg, release_id="copy").apply("install")
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            CreateOnceInitializer(source_root=copied_source, target=independent.target).initialize()
+        shutil.rmtree(copied_source)
+        self.assertEqual((independent.config / "mpv/mpv.conf").read_bytes(), MPV_BYTES)
+        for path, expected in snapshots.items():
+            self.assertEqual(digest(path), expected)
+
+
+class ManifestContractTests(unittest.TestCase):
+    def test_initializer_contract_and_mime_desktop_ids(self) -> None:
+        with (REPOSITORY / "deployment/ownership-v2.toml").open("rb") as stream:
+            manifest = tomllib.load(stream)
+        hooks = {item["id"]: item for item in manifest["initializer"]}
+        self.assertEqual(set(hooks), {"xdg-user-directories", "appearance-defaults", "power-idle-defaults"})
+        text = (REPOSITORY / "seeds/home/.config/mimeapps.list").read_text(encoding="utf-8")
+        self.assertEqual(text.count("[Default Applications]"), 1)
+        self.assertNotIn("[Added Associations]", text)
+        self.assertEqual(
+            {value.rstrip(";") for line in text.splitlines() if "=" in line for value in [line.split("=", 1)[1]]},
+            {"firefox.desktop", "thunar.desktop", "imv.desktop", "mpv.desktop"},
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
