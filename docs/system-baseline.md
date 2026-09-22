@@ -2,7 +2,8 @@
 
 This document defines the reusable Vanilla HyprArch base system. It describes
 project requirements, not a complete snapshot of every package installed on the
-development machine. Package facts were verified locally through 2026-09-19.
+development machine. Package names were revalidated against the available Arch
+repository metadata on 2026-09-22.
 
 The starting point is a working minimal Arch Linux installation with systemd,
 network access, a suitable kernel, firmware, and GPU drivers. Kernel, firmware,
@@ -11,24 +12,22 @@ therefore outside the generic package manifest.
 
 ## Package policy
 
-`packages/official.txt` is the machine-readable list of explicitly supported
-baseline packages from official Arch repositories. Pacman resolves their
-transitive dependencies; the manifest is not a lockfile or an export of the
-entire installed system.
+`packages/manifest-v1.toml` is the sole machine-readable package authority. It
+separates source, role, component membership, and default-install policy.
+Pacman resolves transitive dependencies; the manifest is not a lockfile,
+dependency solver, or export of the development system.
 
-`packages/aur.txt` lists foreign/AUR packages deliberately required by the
-project or its bootstrap. Official Arch packages remain the default, and an AUR
-package must not be introduced for convenience when a reasonable official
-alternative exists. Every AUR entry requires an explicit requirement and
-maintenance rationale.
+Official Arch packages remain the default. Every AUR entry requires an
+explicit requirement and maintenance rationale.
 
 `yay` is the sole current exception. It is intentionally required in the final
 Vanilla HyprArch system and bootstrap, even though it is not a desktop runtime
 dependency. Its inclusion does not authorize the installer or future agents to
 select other AUR packages freely.
 
-All packages in the current official manifest were verified as installed and
-available from Arch's official repositories by 2026-09-19.
+All official package names in the current manifest were verified as available
+from the local Arch repository databases. The manifest is deliberately not an
+installed-package snapshot.
 
 `wayland` is independently fundamental to the baseline Wayland desktop rather
 than being retained for the optional player. `curl` is explicit because the
@@ -38,15 +37,15 @@ development system. Zig is not a runtime or baseline package.
 
 `flatpak` is a required, unpinned official Arch package. Clean installations
 install the version currently available from the enabled official repositories,
-and normal `yay -Syu` system upgrades keep it current. Flatpak is not sourced
-from the AUR and its locally validated version is not an installation pin.
+and administrator-owned Arch upgrades keep it current. Vanilla update does not
+silently run a full distribution upgrade. Flatpak is not sourced from the AUR
+and its locally validated version is not an installation pin.
 
-Optional feature manifests are additive and are never consumed by the normal
-baseline bootstrap implicitly. `packages/optional-dictation-official.txt`
-contains `gnupg` and `wtype`, both from the official repositories. GnuPG
-verifies the detached upstream Voxtype signature; `wtype` is Voxtype's sole
-configured Wayland typing driver. The Voxtype executable itself is a pinned,
-verified upstream release artifact, not an Arch or AUR package.
+Component packages are never inferred from role. The structured manifest marks
+`gnupg` and `wtype` as non-default members of the optional `dictation`
+component. GnuPG verifies the detached upstream Voxtype signature; `wtype` is
+Voxtype's sole configured Wayland typing driver. The Voxtype executable itself
+is a pinned, verified upstream release artifact, not an Arch or AUR package.
 
 The official `file` package is explicit because the Appearance manager invokes
 its MIME detector to validate user wallpaper content against the installed
@@ -130,9 +129,10 @@ configuration for the main shell. It will install `vanhyprarch-idle`,
 `vanhyprarch-appearance`, `vanhyprarch-screensaver`, `vanhyprarch-screenshot`, and the independently
 available `vanhyprarch-dictation` manager from `bin/` under `$HOME/.local/bin`;
 it will also install `vanhyprarch-monitor` and its static, non-enabled user
-service. The published schema-v4 generation is the accepted single-monitor
-runtime; newer journal schemas require their own controlled deployment boundary
-and must never replace a backend that owns nonterminal recovery material.
+service. The published schema-v5/protocol-v4 generation is the accepted
+single-monitor runtime; any future journal schema requires its own controlled
+deployment boundary and must never replace a backend that owns nonterminal
+recovery material.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
 Zig Screensaver manager resources under the corresponding
@@ -174,13 +174,22 @@ belong in machine configuration.
 | Browser | `firefox` |
 | Terminal | `foot` |
 | File manager | `thunar` |
-| Graphical audio control | `pavucontrol` |
+| Image viewer | `imv` |
+| Media player | `mpv` |
+| Graphical audio control | `pavucontrol` (recommended, installed by default) |
 
-Thunar integration uses `gvfs` for virtual filesystems and `tumbler` for
-thumbnails. `file-roller` is deliberately excluded from the core baseline: it
-is not installed and is a desktop convenience rather than a shell/runtime
-requirement. It may later be considered for an optional or recommended package
-set.
+`dunst` is the required package/D-Bus-activated notification daemon, so a fresh
+install does not depend on accidental host software. Phase 3 will add minimal
+create-once mpv and MIME seeds. Existing `$XDG_CONFIG_HOME/mpv/mpv.conf` and
+`$XDG_CONFIG_HOME/mimeapps.list` files are always preserved without automatic
+merge.
+
+Thunar integration uses `gvfs` for trash and normal session mounting,
+`tumbler` for image thumbnails, and `thunar-archive-plugin` with `xarchiver`
+for archive actions. `7zip`, `zip`, `unzip`, and `zstd` complete the explicit
+archive engines; Arch base supplies tar, gzip, bzip2, and xz. `p7zip` is
+forbidden, while RAR, `thunar-volman`, `gvfs-mtp`, and video thumbnails remain
+optional/later.
 
 ## Audio
 
@@ -190,13 +199,13 @@ The audio baseline is PipeWire with WirePlumber:
 - `pipewire-audio`
 - `pipewire-alsa`
 - `pipewire-pulse`
+- `pipewire-jack`
 - `wireplumber`
 - `pavucontrol`
 
 The shell uses Quickshell's native PipeWire service. Hyprland media-key bindings
-call WirePlumber's `wpctl`. Although `pipewire-jack` is installed on the
-development machine, no project requirement for JACK compatibility has been
-established, so it is not in the baseline manifest.
+call WirePlumber's `wpctl`. `pipewire-jack` is intentionally direct because
+Vanilla chooses PipeWire as the provider for mpv's current JACK requirement.
 
 ## Networking
 
@@ -347,7 +356,8 @@ all `Never`, automatic lock `None`, and Caffeine off.
 ## Monitor control utilities
 
 The implemented monitor panel directly requires `ddcutil` for DDC/CI brightness
-operations. `i2c-tools` is included with that support. Actual DDC availability,
+operations. Pacman supplies `i2c-tools` transitively; Vanilla does not declare a
+separate direct contract with it. Actual DDC availability,
 I2C permissions, connector names, monitor modes, scale, color depth, and GPU
 drivers are hardware-specific installation concerns.
 
@@ -374,14 +384,12 @@ The managed `vanhyprarch-monitor` Python command and static, non-enabled
 Hyprland, and Bubblewrap. The service starts only for a transaction, is bounded
 by `RuntimeMaxSec=90s`, and invokes an idempotent recovery entry point through
 `ExecStopPost`; journal, lock, and socket material is private XDG runtime
-state. The published schema-v4 engine gives Mode/bitdepth an
+state. The published schema-v5/protocol-v4/inspect-v3 engine gives Mode,
+bitdepth, forced HDR, and global Automatic HDR an
 explicit-confirmation window, makes Scale an immediate validated persistence
 operation, and includes explicit opt-in profile materialization. Its real UI
 and single-monitor runtime/persistence paths are live-accepted; real fallback
-materialization and physical multi-monitor acceptance remain deferred. The
-local schema-v5 HDR candidate adds forced per-monitor HDR plus global Automatic
-HDR to that same confirmation authority and requires a controlled schema-upgrade
-deployment.
+materialization and physical multi-monitor acceptance remain deferred.
 
 ## Screenshots
 
@@ -404,17 +412,17 @@ change monitor scale, bit depth, color management, or cursor settings.
 
 ## Printing
 
-The verified printing baseline is:
+Printing is a recommended component that is not installed by the default Alpha
+policy. Its direct packages are:
 
 - `cups`
-- `cups-filters`
 - `cups-pk-helper`
 - `system-config-printer`
 
-`cups.service` is enabled and active. `avahi` is installed transitively on the
-development machine, but `avahi-daemon.service` is disabled and inactive, so it
-is not declared as a project requirement pending a decision on network-printer
-discovery.
+`cups-filters` remains dependency-manager territory. Printing services are
+activated only when the component is selected. `avahi` belongs to the separate
+non-default `network-printing` extension so network discovery does not become
+implicit local-printing or core membership.
 
 ## Deliberate exclusions
 

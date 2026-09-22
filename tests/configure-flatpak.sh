@@ -5,8 +5,7 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 helper=$repository_dir/install/configure-flatpak
-official_packages=$repository_dir/packages/official.txt
-aur_packages=$repository_dir/packages/aur.txt
+package_manifest=$repository_dir/packages/manifest-v1.toml
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-flatpak-test.XXXXXX")
 
 cleanup()
@@ -24,14 +23,20 @@ fail()
     exit 1
 }
 
-[ "$(grep -Fxc flatpak "$official_packages")" -eq 1 ] ||
-    fail 'flatpak is not exactly once in the official package manifest'
-if grep -Eq '^flatpak[^[:alpha:]-]|^flatpak-' "$official_packages"; then
-    fail 'flatpak is version-pinned or malformed in the official manifest'
-fi
-if grep -Eq '^flatpak($|[^[:alpha:]-])' "$aur_packages"; then
-    fail 'flatpak was added to the AUR package manifest'
-fi
+python - "$package_manifest" <<'PY' || fail 'flatpak package policy is invalid'
+import sys
+import tomllib
+from pathlib import Path
+
+with Path(sys.argv[1]).open("rb") as stream:
+    packages = tomllib.load(stream)["package"]
+flatpak = [item for item in packages if item["name"] == "flatpak"]
+assert len(flatpak) == 1
+assert flatpak[0]["source"] == "official"
+assert flatpak[0]["role"] == "required"
+assert flatpak[0]["default_install"] is True
+assert "version" not in flatpak[0]
+PY
 
 mock_flatpak=$test_dir/flatpak
 cat > "$mock_flatpak" <<'EOF'

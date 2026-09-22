@@ -1,36 +1,38 @@
 # Deployment ownership
 
-This document defines the first Vanilla HyprArch deployment ownership
-contract. It describes who may change an artifact and what normal project
-updates must preserve. It does not define an installer, updater, deployment
-ledger, rollback engine, or migration framework.
+This document defines the Vanilla HyprArch deployment ownership contract. It
+describes who may change an artifact and what normal project updates must
+preserve. It does not define an installer, updater, deployment ledger, rollback
+engine, or migration framework.
 
 The machine-readable representation is
-`deployment/ownership-v1.toml`. Its target strings are descriptive XDG path
-expressions, not shell commands.
+`deployment/ownership-v2.toml`. Its target strings are declarative XDG path
+expressions, not shell commands. The version-1 file remains as historical
+evidence and is not the input for future deployment work.
 
 ## Ownership classes
 
 | Class | Authority and update rule |
 | --- | --- |
-| `MANAGED` | Vanilla HyprArch supplies the authoritative bytes and may replace them during a reviewed project update. Users are not expected to edit deployed copies. |
-| `MACHINE_CONFIGURATION` | The file describes actual hardware or user-environment reality. Vanilla HyprArch may initialize it once, but normal updates preserve it. Users may edit it; project UI may edit only explicitly documented fields. |
-| `USER_CUSTOMIZATION_OVERRIDE` | An optional advanced escape hatch owned by the user. It is unnecessary for the curated default experience and is preserved by normal updates. |
-| `PERSISTENT_STATE_PREFERENCE` | Durable user selection or backend state. Its owning backend, not release payloads, controls its format and writes. It is not a configuration override. |
-| `PERSISTENT_STATE_PROVENANCE` | Durable backend-owned initialization/provenance state. It may retain historical seed hashes for migration, but is not a user preference or release payload. |
-| `GENERATED` | An effective projection derived from managed policy and preserved preferences. Release payloads do not own its bytes; its generator may replace it. |
-| `RUNTIME` | Session- or process-lifetime state. It is neither a release payload nor durable preference. |
-| `USER_CONTENT` | User-owned content that Vanilla may seed non-destructively. Updates preserve user additions and modifications and never manage the containing directory wholesale. |
-| `OPTIONAL_COMPONENT_PAYLOAD` | Files present only when the named optional component is installed. They are not unconditional baseline payloads. |
-| `SYSTEM_ADOPTED_MANAGED` | A system-level file that becomes managed only through an explicit administrator adoption boundary with separate validation and rollback work. |
+| `VANILLA_MANAGED` | Vanilla supplies authoritative source bytes. Installed mode copies regular files; update may replace them only after staging and validation. |
+| `CREATE_ONCE_MACHINE` | Vanilla may initialize an absent machine-owned target from a seed. Normal updates always preserve it. |
+| `CREATE_ONCE_USER` | Vanilla may initialize an absent user-owned target from a seed. Normal updates always preserve it and never merge automatically. |
+| `USER_OWNED` | User content, preferences, or durable user state. It is observed or seeded only through its documented owner and is never replaced by deployment. A backend may remain the only supported writer for a structured preference. |
+| `BACKEND_OWNED` | Durable backend provenance or bookkeeping written and migrated only by its owning backend, never by copying release bytes. |
+| `GENERATED` | An effective projection derived by its owning backend. It has no release source and is regenerated rather than deployed. |
+| `RUNTIME` | Session- or process-lifetime state. It has no release source and is never installed or updated. |
+| `PACKAGE_OWNED` | Files supplied by Arch packages. Vanilla may require the package but never copies or forks these targets. |
+| `ADOPTED_PRIVILEGED` | A privileged target managed only after explicit administrator adoption, exact backup, validation, and fail-closed conflict handling. |
+| `OPTIONAL_COMPONENT_PAYLOAD` | Payload installed and removed only by the named optional-component manager, never by unconditional baseline deployment. |
 
-`MACHINE_CONFIGURATION`, `USER_CUSTOMIZATION_OVERRIDE`, and
-`PERSISTENT_STATE_PREFERENCE` are intentionally distinct. Machine
-configuration records facts and choices such as connectors, modes, scale,
-color handling, keyboard layout, and device rules. A customization override
-allows an advanced user to supersede selected curated project behavior. A
-persistent preference records a user selection such as an idle timeout and is
-written through its owning backend.
+Machine configuration, user customization, backend preferences, and generated
+state remain intentionally distinct even where version 2 groups their update
+behavior more directly. Artifact `authority`, `component`, `status`, `kind`,
+and mode fields preserve the narrower owner and lifecycle.
+
+Development mode may use repository symlinks intentionally. Installed mode is
+always regular files and must not retain a runtime dependency on Git, a
+worktree, or the source path.
 
 ## Create-once seeds
 
@@ -94,7 +96,7 @@ hypridle. Caffeine itself remains session runtime state under
 
 ## Appearance preference and renderer ownership
 
-`appearance.json` is a `PERSISTENT_STATE_PREFERENCE` written only by
+`appearance.json` is `USER_OWNED` durable preference and written only by
 `vanhyprarch-appearance`. It stores the desired mode and relative Light/Dark
 wallpaper selections. The managed `hyprpaper.conf` contains renderer policy but
 no user selection. Hyprpaper's process, IPC state, and active wallpaper are
@@ -103,14 +105,14 @@ bounded restart suppression, and renderer logging stay under
 `XDG_RUNTIME_DIR/vanhyprarch`.
 
 The eight GPL-2.0-only files under `assets/wallpapers/` and their deployed XDG
-data copies are `MANAGED` distribution payload. The copies seeded beneath
-`<XDG Pictures>/Wallpapers/Light` and `Dark` are `USER_CONTENT`; their parent
+data copies are `VANILLA_MANAGED` distribution payload. The copies seeded beneath
+`<XDG Pictures>/Wallpapers/Light` and `Dark` are `USER_OWNED`; their parent
 directories and every file in them become user-owned immediately after the
 one-shot bootstrap. Normal updates never manage those directories wholesale or
 inject, replace, restore, or remove their contents.
 
-The private mode-0600 `appearance-assets.json` record is
-`PERSISTENT_STATE_PROVENANCE`, not an Appearance preference. Its version-2
+The private mode-0600 `appearance-assets.json` record is `BACKEND_OWNED`
+provenance, not an Appearance preference. Its version-2
 schema records that starter content initialization completed and may retain
 historical version-1 seed hashes solely for compatibility and audit. A
 version-1 receipt, or an existing Appearance preference when that receipt is
@@ -120,29 +122,29 @@ no such durable evidence receives the currently distributed starter set.
 ## System keyboard synchronization ownership
 
 `$HOME/.local/bin/vanhyprarch-keyboard-sync` and its static systemd user unit
-are `MANAGED` payload. Hyprland owns service startup and reload reconciliation;
-the unit is not enabled independently. `systemd-localed` owns the durable
+are `VANILLA_MANAGED` payload. Hyprland owns service startup and reload
+reconciliation; the unit is not enabled independently. `systemd-localed` owns the durable
 graphical XKB tuple, while the helper owns only its validated runtime projection
 into Hyprland.
 
 The project does not own `/etc/vconsole.conf`,
 `/etc/X11/xorg.conf.d/00-keyboard.conf`, locale1 state, active layout groups, or
-per-device input rules. The create-once machine file remains
-`MACHINE_CONFIGURATION`; the validated development-machine file contains no
-global XKB fallback. Explicit per-device exceptions may remain machine- or
-user-owned without becoming synchronizer state.
+per-device input rules. The machine file is `CREATE_ONCE_MACHINE`; the
+validated development-machine file contains no global XKB fallback. Explicit
+per-device exceptions may remain machine- or user-owned without becoming
+synchronizer state.
 
 ## Monitor Safe Apply ownership
 
 `$HOME/.local/bin/vanhyprarch-monitor` and the static, non-enabled
-`vanhyprarch-monitor-safe-apply.service` are `MANAGED`. The helper is the sole
+`vanhyprarch-monitor-safe-apply.service` are `VANILLA_MANAGED`. The helper is the sole
 authority for one bounded transaction; Quickshell is a deployed client and owns
 no duplicate countdown or candidate state. Its journal, lock, and control
 socket are private `RUNTIME` recovery material under `XDG_RUNTIME_DIR`, not a
 persistent preference.
 
 Confirmed monitor preference belongs only in the existing
-`MACHINE_CONFIGURATION` file. The production Confirm path uses the tested
+`CREATE_ONCE_MACHINE` file. The production Confirm path uses the tested
 exact-byte replacement, prospective verification, reload reconciliation, and
 recovery machinery. Mode and bitdepth durable Confirm plus immediate Scale
 persistence have completed controlled single-monitor live acceptance through
@@ -159,7 +161,7 @@ physical multi-monitor acceptance also remains deferred.
 
 `$HOME/.local/bin/vanhyprarch-polkit-session` and the
 `hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf` user drop-in
-are `MANAGED` payload. They own ordered start and graceful logout stop for the
+are `VANILLA_MANAGED` payload. They own ordered start and graceful logout stop for the
 real direct Hyprland session. The official package continues to own the base
 `/usr/lib/systemd/user/hyprpolkitagent.service` unit and agent executable;
 Vanilla neither copies nor edits that package file.
@@ -167,7 +169,7 @@ Vanilla neither copies nor edits that package file.
 ## Zig Screensaver ownership
 
 `$HOME/.local/bin/vanhyprarch-screensaver`, its private Python implementation,
-and canonical v0.1.1 verification metadata are baseline `MANAGED` artifacts.
+and canonical v0.1.1 verification metadata are baseline `VANILLA_MANAGED` artifacts.
 The player binary, license, notices, README, installed release record, and
 mode-0644 marker are `OPTIONAL_COMPONENT_PAYLOAD`. Their sole lifecycle and
 marker authority is `vanhyprarch-screensaver`; QML only consumes its strict

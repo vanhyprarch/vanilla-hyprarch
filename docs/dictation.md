@@ -2,7 +2,7 @@
 
 Vanilla HyprArch provides dictation as an optional component. It is not
 installed by the baseline bootstrap and does not add anything to
-`packages/official.txt` or `packages/aur.txt`.
+the default package set in `packages/manifest-v1.toml`.
 
 ## Default behavior
 

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 import unittest
 import warnings
 
@@ -17,8 +18,8 @@ REPOSITORY = Path(__file__).resolve().parent.parent
 HELPER = REPOSITORY / "bin/vanhyprarch-keyboard-sync"
 UNIT = REPOSITORY / "home/.config/systemd/user/vanhyprarch-keyboard-sync.service"
 CORE = REPOSITORY / "home/.config/hypr/vanhyprarch/core.lua"
-PACKAGES = REPOSITORY / "packages/official.txt"
-OWNERSHIP = REPOSITORY / "deployment/ownership-v1.toml"
+PACKAGES = REPOSITORY / "packages/manifest-v1.toml"
+OWNERSHIP = REPOSITORY / "deployment/ownership-v2.toml"
 MACHINE_SEED = REPOSITORY / "seeds/home/.config/vanhyprarch/machine/hyprland.lua"
 
 LOADER = importlib.machinery.SourceFileLoader("vanhyprarch_keyboard_sync", str(HELPER))
@@ -1176,7 +1177,8 @@ class StaticIntegrationTests(unittest.TestCase):
         self.assertNotIn("uwsm", core.lower())
 
     def test_packages_and_ownership_are_explicit(self) -> None:
-        packages = PACKAGES.read_text(encoding="utf-8").splitlines()
+        with PACKAGES.open("rb") as stream:
+            packages = {item["name"] for item in tomllib.load(stream)["package"]}
         self.assertIn("python", packages)
         self.assertIn("python-gobject", packages)
         self.assertIn("libxkbcommon", packages)

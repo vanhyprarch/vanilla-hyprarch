@@ -2,7 +2,7 @@
 
 ## Status and invariant
 
-The published schema-v4 backend and Monitor UI have completed single-monitor
+The published schema-v5/protocol-v4/inspect-v3 backend and Monitor UI have completed single-monitor
 live acceptance. Mode-only and bitdepth-only changes passed automatic timeout
 rollback and durable Keep, Mode passed explicit Revert, and immediate Scale
 passed a 1.25→1.50→1.25 durable persistence round trip. Escape and outside
@@ -12,7 +12,7 @@ reconstructed the overlay, and still rolled back at that deadline. The earlier
 temporary Scale exercise validated the rollback engine at lower risk; it does
 not define the final Scale UX.
 
-The HDR extension candidate advances the journal to schema 5, control protocol
+The published HDR extension advances the journal to schema 5, control protocol
 4, and inspection schema 3. The final policy has two transaction classes:
 
 - **safe-confirmed:** resolution/refresh as one mode tuple, bit depth (8 or 10

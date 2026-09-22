@@ -31,7 +31,7 @@ POWER_ACTIONS = (
     REPOSITORY
     / "home/.config/quickshell/vanhyprarch/components/PowerActions.qml"
 )
-MANIFEST = REPOSITORY / "deployment/ownership-v1.toml"
+MANIFEST = REPOSITORY / "deployment/ownership-v2.toml"
 
 
 def load_helper() -> object:
@@ -513,9 +513,9 @@ class PolkitSessionLifecycleTests(unittest.TestCase):
             "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/"
             "hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf"
         )
-        self.assertEqual(helper_artifact["class"], "MANAGED")
+        self.assertEqual(helper_artifact["class"], "VANILLA_MANAGED")
         self.assertEqual(helper_artifact["mode"], "0755")
-        self.assertEqual(by_target[drop_in_target]["class"], "MANAGED")
+        self.assertEqual(by_target[drop_in_target]["class"], "VANILLA_MANAGED")
         self.assertFalse(
             (REPOSITORY / "home/.config/systemd/user/hyprpolkitagent.service").exists()
         )

@@ -9,9 +9,7 @@ manager=$repository_dir/bin/vanhyprarch-dictation
 config=$component_dir/config.toml
 service=$component_dir/vanhyprarch-voxtype.service
 binary_manifest=$component_dir/binaries.toml
-official_manifest=$repository_dir/packages/official.txt
-aur_manifest=$repository_dir/packages/aur.txt
-optional_manifest=$repository_dir/packages/optional-dictation-official.txt
+package_manifest=$repository_dir/packages/manifest-v1.toml
 bindings=$repository_dir/home/.config/hypr/vanhyprarch/bindings.lua
 hyprland_config=$repository_dir/home/.config/hypr/vanhyprarch/core.lua
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-dictation-static.XXXXXX")
@@ -40,14 +38,22 @@ assert_line()
 python -m py_compile "$manager"
 sh -n "$component_dir/install" "$component_dir/uninstall"
 
-! grep -Eq '^(voxtype|voxtype-bin|wtype|gnupg)$' "$official_manifest" ||
-    fail 'dictation dependency leaked into the required official manifest'
-! grep -Eq '^(voxtype|voxtype-bin)$' "$aur_manifest" ||
-    fail 'Voxtype leaked into the AUR manifest'
-assert_line gnupg "$optional_manifest"
-assert_line wtype "$optional_manifest"
-[ "$(sed '/^[[:space:]]*$/d' "$optional_manifest" | wc -l)" -eq 2 ] ||
-    fail 'optional dictation manifest has unexpected entries'
+python - "$package_manifest" <<'PY' || fail 'dictation package policy is invalid'
+import sys
+import tomllib
+from pathlib import Path
+
+with Path(sys.argv[1]).open("rb") as stream:
+    packages = tomllib.load(stream)["package"]
+by_name = {item["name"]: item for item in packages}
+assert {item["name"] for item in packages if item.get("component") == "dictation"} == {"gnupg", "wtype"}
+for name in ("gnupg", "wtype"):
+    assert by_name[name]["source"] == "official"
+    assert by_name[name]["role"] == "optional"
+    assert by_name[name]["default_install"] is False
+assert "voxtype" not in by_name
+assert "voxtype-bin" not in by_name
+PY
 
 assert_line 'max_duration_secs = 120' "$config"
 assert_line 'model = "small.en"' "$config"

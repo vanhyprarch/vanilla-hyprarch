@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -500,11 +501,12 @@ os._exit(0)
             'hl.dsp.exec_cmd("vanhyprarch-screenshot"))',
             bindings,
         )
-        packages = set(
-            (REPOSITORY / "packages/official.txt")
-            .read_text(encoding="utf-8")
-            .splitlines()
-        )
+        with (REPOSITORY / "packages/manifest-v1.toml").open("rb") as stream:
+            packages = {
+                item["name"]
+                for item in tomllib.load(stream)["package"]
+                if item["source"] == "official"
+            }
         self.assertTrue({"grim", "slurp", "wl-clipboard"} <= packages)
         self.assertTrue({"hyprpicker", "jq", "wayfreeze"}.isdisjoint(packages))
         self.assertTrue(os.access(HELPER, os.X_OK))

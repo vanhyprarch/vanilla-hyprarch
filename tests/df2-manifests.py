@@ -1,0 +1,562 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+from __future__ import annotations
+
+import re
+import sys
+import tarfile
+import tomllib
+import unittest
+from pathlib import Path
+
+
+CHECK_REPOSITORIES = "--check-repositories" in sys.argv
+if CHECK_REPOSITORIES:
+    sys.argv.remove("--check-repositories")
+
+REPOSITORY = Path(__file__).resolve().parent.parent
+PACKAGE_MANIFEST = REPOSITORY / "packages/manifest-v1.toml"
+OWNERSHIP_MANIFEST = REPOSITORY / "deployment/ownership-v2.toml"
+SERVICE_MANIFEST = REPOSITORY / "deployment/service-policy-v1.toml"
+
+PACKAGE_ROLES = {"required", "recommended", "optional", "build", "development"}
+PACKAGE_SOURCES = {"official", "aur"}
+COMPONENT_CLASSES = {"recommended", "optional"}
+OWNERSHIP_CLASSES = {
+    "VANILLA_MANAGED",
+    "CREATE_ONCE_MACHINE",
+    "CREATE_ONCE_USER",
+    "USER_OWNED",
+    "BACKEND_OWNED",
+    "GENERATED",
+    "RUNTIME",
+    "PACKAGE_OWNED",
+    "ADOPTED_PRIVILEGED",
+    "OPTIONAL_COMPONENT_PAYLOAD",
+}
+NON_DEPLOYABLE_CLASSES = {
+    "USER_OWNED",
+    "BACKEND_OWNED",
+    "GENERATED",
+    "RUNTIME",
+    "PACKAGE_OWNED",
+    "OPTIONAL_COMPONENT_PAYLOAD",
+}
+REQUIRED_DEFAULT = {
+    "7zip",
+    "bluez",
+    "bubblewrap",
+    "curl",
+    "ddcutil",
+    "dunst",
+    "file",
+    "firefox",
+    "flatpak",
+    "foot",
+    "grim",
+    "gvfs",
+    "hypridle",
+    "hyprland",
+    "hyprlock",
+    "hyprpaper",
+    "hyprpolkitagent",
+    "hyprshutdown",
+    "imv",
+    "libxkbcommon",
+    "ly",
+    "mesa",
+    "mpv",
+    "networkmanager",
+    "noto-fonts",
+    "noto-fonts-emoji",
+    "papirus-icon-theme",
+    "pipewire",
+    "pipewire-alsa",
+    "pipewire-audio",
+    "pipewire-jack",
+    "pipewire-pulse",
+    "python",
+    "python-dbus",
+    "python-gobject",
+    "qt6-svg",
+    "quickshell",
+    "slurp",
+    "thunar",
+    "thunar-archive-plugin",
+    "ttf-dejavu",
+    "ttf-liberation",
+    "tumbler",
+    "unzip",
+    "wayland",
+    "wireplumber",
+    "wl-clipboard",
+    "xarchiver",
+    "xdg-desktop-portal",
+    "xdg-desktop-portal-gtk",
+    "xdg-desktop-portal-hyprland",
+    "xdg-user-dirs",
+    "xdg-utils",
+    "xkeyboard-config",
+    "zip",
+    "zstd",
+}
+FORBIDDEN_DIRECT_PACKAGES = {
+    "cups-filters",
+    "desktop-file-utils",
+    "gzip",
+    "i2c-tools",
+    "p7zip",
+    "polkit",
+    "tar",
+    "udisks2",
+    "xz",
+    "bzip2",
+    "zig",
+}
+
+
+def load_toml(path: Path) -> dict[str, object]:
+    with path.open("rb") as stream:
+        return tomllib.load(stream)
+
+
+class PackageManifestTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.document = load_toml(PACKAGE_MANIFEST)
+        cls.packages = cls.document["package"]
+        cls.components = cls.document["component"]
+        cls.by_name = {item["name"]: item for item in cls.packages}
+        cls.components_by_id = {item["id"]: item for item in cls.components}
+
+    def names(self, **criteria: object) -> set[str]:
+        return {
+            item["name"]
+            for item in self.packages
+            if all(item.get(key) == value for key, value in criteria.items())
+        }
+
+    def test_schema_is_minimal_and_explicit(self) -> None:
+        self.assertEqual(self.document["schema_version"], 1)
+        self.assertEqual(self.document["architecture"], "x86_64")
+        self.assertEqual(self.document["policy"]["dependency_authority"], "pacman")
+        self.assertFalse(self.document["policy"]["versions_are_pinned"])
+        self.assertEqual(len(self.by_name), len(self.packages))
+        for item in self.packages:
+            self.assertRegex(item["name"], r"^[a-z0-9][a-z0-9@._+-]*$")
+            self.assertIn(item["source"], PACKAGE_SOURCES)
+            self.assertIn(item["role"], PACKAGE_ROLES)
+            self.assertIs(type(item["default_install"]), bool)
+            self.assertIs(item["direct"], True)
+            self.assertTrue(item["owner"])
+            self.assertTrue(item["reason"])
+            if "component" in item:
+                self.assertIn(item["component"], self.components_by_id)
+
+    def test_components_are_known_and_non_recursive(self) -> None:
+        self.assertEqual(len(self.components_by_id), len(self.components))
+        self.assertEqual(
+            set(self.components_by_id),
+            {
+                "printing",
+                "network-printing",
+                "dictation",
+                "dictation-vulkan",
+                "zig-screensaver",
+            },
+        )
+        for item in self.components:
+            self.assertIn(item["classification"], COMPONENT_CLASSES)
+            self.assertIs(type(item["default_install"]), bool)
+            self.assertIs(type(item["manager_in_baseline"]), bool)
+            for requirement in item.get("requires", []):
+                self.assertIn(requirement, self.components_by_id)
+                self.assertNotEqual(requirement, item["id"])
+
+    def test_required_default_set_is_frozen(self) -> None:
+        self.assertEqual(
+            self.names(source="official", role="required", default_install=True),
+            REQUIRED_DEFAULT,
+        )
+        self.assertFalse(self.names(role="required", default_install=False))
+
+    def test_recommended_role_is_independent_from_default_policy(self) -> None:
+        self.assertEqual(
+            self.names(role="recommended", default_install=True),
+            {"bluez-utils", "pavucontrol"},
+        )
+        self.assertEqual(
+            self.names(role="recommended", default_install=False),
+            {"cups", "cups-pk-helper", "system-config-printer"},
+        )
+
+    def test_printing_is_a_non_default_component(self) -> None:
+        printing = self.components_by_id["printing"]
+        self.assertEqual(printing["classification"], "recommended")
+        self.assertFalse(printing["default_install"])
+        self.assertEqual(
+            self.names(component="printing"),
+            {"cups", "cups-pk-helper", "system-config-printer"},
+        )
+        self.assertEqual(self.names(component="network-printing"), {"avahi"})
+        for name in self.names(component="printing") | {"avahi"}:
+            self.assertFalse(self.by_name[name]["default_install"])
+
+    def test_yay_is_the_only_approved_aur_package(self) -> None:
+        self.assertEqual(self.names(source="aur"), {"yay"})
+        self.assertEqual(self.document["aur"]["approved_default"], ["yay"])
+        self.assertFalse(self.document["aur"]["build_as_root"])
+        self.assertEqual(
+            self.document["aur"]["bootstrap_official"], ["base-devel", "git"]
+        )
+        yay = self.by_name["yay"]
+        self.assertEqual(yay["role"], "required")
+        self.assertTrue(yay["default_install"])
+        self.assertEqual(
+            self.names(source="official", role="build", default_install=True),
+            {"base-devel", "git"},
+        )
+
+    def test_dictation_packages_do_not_leak_into_default_install(self) -> None:
+        self.assertEqual(self.names(component="dictation"), {"gnupg", "wtype"})
+        self.assertEqual(
+            self.names(component="dictation-vulkan"),
+            {"vulkan-icd-loader", "vulkan-intel", "vulkan-radeon"},
+        )
+        for name in self.names(component="dictation") | self.names(component="dictation-vulkan"):
+            self.assertEqual(self.by_name[name]["role"], "optional")
+            self.assertFalse(self.by_name[name]["default_install"])
+        self.assertNotIn("nvidia-utils", self.by_name)
+
+    def test_screensaver_manager_and_payload_distinction_is_explicit(self) -> None:
+        component = self.components_by_id["zig-screensaver"]
+        self.assertTrue(component["manager_in_baseline"])
+        self.assertTrue(component["external_payload"])
+        self.assertFalse(component["installed_compiler_required"])
+        self.assertNotIn("zig", self.by_name)
+
+    def test_archive_stack_and_exclusions_are_frozen(self) -> None:
+        expected = {
+            "thunar",
+            "thunar-archive-plugin",
+            "xarchiver",
+            "7zip",
+            "zip",
+            "unzip",
+            "zstd",
+            "gvfs",
+            "tumbler",
+        }
+        self.assertTrue(expected <= self.names(default_install=True))
+        self.assertTrue(FORBIDDEN_DIRECT_PACKAGES.isdisjoint(self.by_name))
+        self.assertNotIn("thunar-volman", self.by_name)
+        self.assertNotIn("gvfs-mtp", self.by_name)
+        self.assertNotIn("ffmpegthumbnailer", self.by_name)
+        self.assertNotIn("unrar", self.by_name)
+
+    def test_direct_fresh_install_application_decisions_are_present(self) -> None:
+        for name, owner in {
+            "dunst": "notifications",
+            "imv": "default-applications",
+            "mpv": "default-applications",
+            "pipewire-jack": "audio",
+        }.items():
+            item = self.by_name[name]
+            self.assertEqual(item["owner"], owner)
+            self.assertEqual(item["role"], "required")
+            self.assertTrue(item["default_install"])
+
+    @unittest.skipUnless(CHECK_REPOSITORIES, "optional local Arch database validation")
+    def test_official_names_exist_in_local_arch_databases(self) -> None:
+        database_root = Path("/var/lib/pacman/sync")
+        database_paths = sorted(database_root.glob("*.db"))
+        self.assertTrue(database_paths, "no local Arch sync databases")
+        available: set[str] = set()
+        for path in database_paths:
+            with tarfile.open(path, "r:*") as archive:
+                for member in archive.getmembers():
+                    if not member.name.endswith("/desc"):
+                        continue
+                    stream = archive.extractfile(member)
+                    self.assertIsNotNone(stream)
+                    fields = stream.read().decode("utf-8", "strict").splitlines()
+                    try:
+                        index = fields.index("%NAME%")
+                    except ValueError:
+                        continue
+                    available.add(fields[index + 1])
+        missing = self.names(source="official") - available
+        self.assertEqual(missing, set())
+
+
+class OwnershipManifestTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.document = load_toml(OWNERSHIP_MANIFEST)
+        cls.classes = {item["name"]: item for item in cls.document["ownership_class"]}
+        cls.artifacts = cls.document["artifact"]
+        cls.by_id = {item["id"]: item for item in cls.artifacts}
+
+    def test_schema_classes_and_modes_are_explicit(self) -> None:
+        self.assertEqual(self.document["schema_version"], 2)
+        self.assertEqual(self.document["installed_mode"], "regular-files")
+        self.assertEqual(self.document["development_mode"], "repository-symlinks-allowed")
+        self.assertTrue(self.document["runtime_source_independent"])
+        self.assertEqual(set(self.classes), OWNERSHIP_CLASSES)
+        self.assertEqual(len(self.by_id), len(self.artifacts))
+        self.assertEqual(
+            len({item["target"] for item in self.artifacts}), len(self.artifacts)
+        )
+        for name, policy in self.classes.items():
+            self.assertIs(type(policy["deployable"]), bool, name)
+            self.assertTrue(policy["source_policy"], name)
+            self.assertTrue(policy["install_action"], name)
+            self.assertTrue(policy["update_action"], name)
+
+    def test_artifact_mappings_are_structurally_valid(self) -> None:
+        valid_kinds = {"file", "tree", "pattern"}
+        valid_status = {"implemented", "planned"}
+        for item in self.artifacts:
+            self.assertRegex(item["id"], r"^[a-z0-9][a-z0-9-]*$")
+            self.assertIn(item["class"], self.classes)
+            self.assertIn(item["kind"], valid_kinds)
+            self.assertIn(item["status"], valid_status)
+            self.assertTrue(item["component"])
+            self.assertTrue(item["authority"])
+            self.assertIs(type(item["user_editable"]), bool)
+            self.assertIs(type(item["machine_specific"]), bool)
+            target = item["target"]
+            self.assertTrue(
+                target.startswith(("$HOME/", "${XDG_", "/etc/", "/usr/")), target
+            )
+            self.assertNotIn(";", target)
+            if "mode" in item:
+                self.assertRegex(item["mode"], r"^0[0-7]{3}$")
+            source = item.get("source")
+            if source is not None:
+                self.assertFalse(Path(source).is_absolute(), source)
+                self.assertNotIn("..", Path(source).parts)
+                source_path = REPOSITORY / source
+                self.assertTrue(source_path.exists(), source)
+                if item["kind"] == "file":
+                    self.assertTrue(source_path.is_file(), source)
+                elif item["kind"] == "tree":
+                    self.assertTrue(source_path.is_dir(), source)
+                    self.assertIn(
+                        item.get("mode_policy"),
+                        {"preserve-source", "resource-files-only"},
+                    )
+                    for relative in item.get("included", []):
+                        self.assertFalse(Path(relative).is_absolute(), relative)
+                        self.assertNotIn("..", Path(relative).parts)
+                        self.assertTrue((source_path / relative).is_file(), relative)
+            if item["kind"] == "file" and item["class"] not in {
+                "BACKEND_OWNED",
+                "PACKAGE_OWNED",
+            }:
+                self.assertIn("mode", item)
+
+    def test_class_source_and_deployment_invariants(self) -> None:
+        for item in self.artifacts:
+            ownership_class = item["class"]
+            policy = self.classes[ownership_class]
+            if ownership_class in NON_DEPLOYABLE_CLASSES:
+                self.assertFalse(policy["deployable"])
+                self.assertNotIn("source", item)
+            if ownership_class in {"GENERATED", "RUNTIME"}:
+                self.assertEqual(policy["install_action"], "never" if ownership_class == "RUNTIME" else "generate-through-backend")
+            if ownership_class == "PACKAGE_OWNED":
+                self.assertTrue(item["target"].startswith("/usr/"))
+            if item["status"] == "planned":
+                self.assertIn(ownership_class, {"CREATE_ONCE_USER", "CREATE_ONCE_MACHINE"})
+                self.assertNotIn("source", item)
+            elif policy["source_policy"] in {"required", "required-when-implemented"}:
+                self.assertIn("source", item)
+
+    def test_create_once_targets_can_never_be_replaceable(self) -> None:
+        for name in ("CREATE_ONCE_MACHINE", "CREATE_ONCE_USER"):
+            self.assertEqual(self.classes[name]["install_action"], "create-if-absent")
+            self.assertEqual(self.classes[name]["update_action"], "preserve")
+        self.assertEqual(self.by_id["machine-hyprland"]["class"], "CREATE_ONCE_MACHINE")
+        self.assertEqual(self.by_id["user-hyprland-override"]["class"], "CREATE_ONCE_USER")
+        self.assertEqual(self.by_id["mpv-config"]["class"], "CREATE_ONCE_USER")
+        self.assertEqual(self.by_id["mimeapps-config"]["class"], "CREATE_ONCE_USER")
+
+    def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
+        for item in self.artifacts:
+            if item["class"] in {"GENERATED", "RUNTIME", "PACKAGE_OWNED"}:
+                self.assertFalse(self.classes[item["class"]]["deployable"])
+                self.assertNotIn("source", item)
+        for item in self.artifacts:
+            if item["target"].startswith("/usr/lib/systemd/") or item["target"].startswith("/usr/share/wayland-sessions/"):
+                self.assertEqual(item["class"], "PACKAGE_OWNED")
+
+    def test_installed_quickshell_and_commands_do_not_depend_on_source_tree(self) -> None:
+        shell = self.by_id["quickshell-config"]
+        self.assertEqual(shell["kind"], "tree")
+        self.assertEqual(shell["class"], "VANILLA_MANAGED")
+        self.assertNotIn("Projects", shell["target"])
+        commands = [
+            item
+            for item in self.artifacts
+            if item["target"].startswith("$HOME/.local/bin/vanhyprarch-")
+            and str(item.get("source", "")).startswith("bin/")
+        ]
+        self.assertEqual(
+            {item["target"].rsplit("/", 1)[-1] for item in commands},
+            {
+                "vanhyprarch-appearance",
+                "vanhyprarch-dictation",
+                "vanhyprarch-idle",
+                "vanhyprarch-keyboard-sync",
+                "vanhyprarch-monitor",
+                "vanhyprarch-polkit-session",
+                "vanhyprarch-screensaver",
+                "vanhyprarch-screenshot",
+            },
+        )
+        for item in commands:
+            self.assertEqual(item["class"], "VANILLA_MANAGED")
+            self.assertEqual(item["mode"], "0755")
+
+    def test_monitor_installer_boundary_is_frozen(self) -> None:
+        machine = self.by_id["machine-hyprland"]
+        self.assertEqual(machine["class"], "CREATE_ONCE_MACHINE")
+        manifest_text = OWNERSHIP_MANIFEST.read_text(encoding="utf-8")
+        self.assertNotRegex(manifest_text, r"\b(?:DP|HDMI|eDP)-[0-9]+\b")
+        runtime = self.by_id["monitor-runtime"]
+        self.assertEqual(runtime["class"], "RUNTIME")
+        self.assertNotIn("source", runtime)
+
+    def test_no_personal_or_worktree_paths_exist(self) -> None:
+        for path in (PACKAGE_MANIFEST, OWNERSHIP_MANIFEST, SERVICE_MANIFEST):
+            content = path.read_text(encoding="utf-8")
+            self.assertNotIn("/home/giacomo", content)
+            self.assertNotIn("/Projects/", content)
+
+
+class ServicePolicyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.document = load_toml(SERVICE_MANIFEST)
+        cls.services = cls.document["service"]
+        cls.by_name = {item["name"]: item for item in cls.services}
+        package_document = load_toml(PACKAGE_MANIFEST)
+        cls.component_ids = {item["id"] for item in package_document["component"]}
+
+    def test_schema_and_service_records(self) -> None:
+        self.assertEqual(self.document["schema_version"], 1)
+        self.assertEqual(len(self.by_name), len(self.services))
+        for item in self.services:
+            self.assertIn(item["scope"], {"system", "user"})
+            self.assertIn(item["owner"], {"package", "vanilla", "optional-component"})
+            self.assertIs(type(item["default_install"]), bool)
+            self.assertTrue(item["policy"])
+            self.assertTrue(item["startup_owner"])
+            if "component" in item:
+                self.assertIn(item["component"], self.component_ids)
+
+    def test_required_system_service_policy(self) -> None:
+        for name in ("NetworkManager.service", "bluetooth.service", "ly@tty2.service"):
+            self.assertEqual(self.by_name[name]["policy"], "enabled")
+            self.assertTrue(self.by_name[name]["default_install"])
+        getty = self.by_name["getty@tty2.service"]
+        self.assertEqual(getty["policy"], "disabled")
+        self.assertIn("ly@tty2.service", getty["conflicts_with"])
+
+    def test_printing_services_are_component_only(self) -> None:
+        for name in ("cups.service", "cups.socket", "cups.path"):
+            item = self.by_name[name]
+            self.assertEqual(item["policy"], "component")
+            self.assertEqual(item["component"], "printing")
+            self.assertFalse(item["default_install"])
+
+    def test_package_activation_is_not_reimplemented(self) -> None:
+        for name in (
+            "pipewire.service",
+            "pipewire-pulse.service",
+            "wireplumber.service",
+        ):
+            self.assertEqual(self.by_name[name]["policy"], "package-activation")
+        for name in (
+            "xdg-desktop-portal.service",
+            "xdg-desktop-portal-hyprland.service",
+            "xdg-desktop-portal-gtk.service",
+            "dunst.service",
+        ):
+            self.assertEqual(self.by_name[name]["policy"], "dbus-activation")
+
+    def test_static_and_session_owned_units_are_never_enabled(self) -> None:
+        self.assertEqual(self.by_name["hypridle.service"]["policy"], "disabled")
+        self.assertEqual(self.by_name["hypridle.service"]["startup_owner"], "hyprland-direct")
+        self.assertEqual(self.by_name["hyprpolkitagent.service"]["policy"], "not-enabled")
+        self.assertEqual(self.by_name["vanhyprarch-keyboard-sync.service"]["policy"], "static")
+        self.assertEqual(
+            self.by_name["vanhyprarch-monitor-safe-apply.service"]["policy"],
+            "static-transaction",
+        )
+        self.assertFalse(self.by_name["vanhyprarch-voxtype.service"]["default_install"])
+
+
+class DocumentationConsistencyTests(unittest.TestCase):
+    def test_removed_flat_manifests_have_no_live_references(self) -> None:
+        forbidden = {
+            "packages/official.txt",
+            "packages/aur.txt",
+            "packages/optional-dictation-official.txt",
+        }
+        paths = [REPOSITORY / "README.md", *sorted((REPOSITORY / "docs").glob("*.md"))]
+        for path in paths:
+            content = path.read_text(encoding="utf-8")
+            for value in forbidden:
+                self.assertNotIn(value, content, path)
+
+    def test_published_monitor_hdr_is_not_described_as_pending(self) -> None:
+        paths = [REPOSITORY / "README.md", *sorted((REPOSITORY / "docs").glob("*.md"))]
+        content = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+        for stale in (
+            "current uncommitted HDR",
+            "local schema-v5 HDR candidate",
+            "HDR extension candidate",
+            "awaiting controlled acceptance",
+            "must pass its own controlled upgrade",
+        ):
+            self.assertNotIn(stale, content)
+
+    def test_df2_decisions_record_provisional_mpv_and_mime_contracts(self) -> None:
+        document = (REPOSITORY / "docs/distribution-foundation-2.md").read_text(
+            encoding="utf-8"
+        )
+        for line in (
+            "vo=gpu-next",
+            "target-colorspace-hint=auto",
+            "target-colorspace-hint-mode=source",
+            "fullscreen=yes",
+        ):
+            self.assertEqual(document.count(line), 1)
+        for desktop_id in (
+            "firefox.desktop",
+            "thunar.desktop",
+            "imv.desktop",
+            "mpv.desktop",
+        ):
+            self.assertIn(desktop_id, document)
+        self.assertIn("test this MPV baseline on an SDR-only", document)
+        self.assertIn("overwrite or automatically merge", document)
+
+    def test_df2_scope_source_and_update_boundaries_are_documented(self) -> None:
+        document = (REPOSITORY / "docs/distribution-foundation-2.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Arch Linux x86_64", document)
+        self.assertIn("fresh-install or archinstall-derived", document)
+        self.assertIn("must not depend on", document)
+        self.assertIn("future tagged release archive", document)
+        self.assertIn("never silently performs `pacman -Syu`", document)
+        self.assertIn("unsupported partial upgrade", document)
+        self.assertIn("selecting Hyprland once", document)
+
+
+if __name__ == "__main__":
+    unittest.main()

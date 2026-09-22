@@ -135,6 +135,8 @@ The deliberate defaults are:
 - Firefox for web browsing
 - Foot for the terminal
 - Thunar for file management
+- imv for image viewing
+- mpv for media playback
 - Papirus for shell icons
 
 The shell declares Papirus through its root icon-theme pragma. System-control
@@ -142,9 +144,8 @@ icons use Papirus full-color assets where appropriate; tray icons may be tinted
 with the shell accent. Missing icons should be addressed through the icon policy
 rather than by embedding arbitrary unlicensed assets.
 
-`file-roller` is a desktop convenience, not a core shell or runtime dependency.
-It is excluded from the core baseline and may be reconsidered only as part of a
-future optional or recommended package set. BlueZ remains the Bluetooth backend;
+`xarchiver` is the selected lightweight archive frontend with Thunar's archive
+plugin. `file-roller` remains excluded. BlueZ remains the Bluetooth backend;
 `blueman` is excluded because the shell owns Bluetooth UX through native
 Quickshell state and a narrow pairing agent.
 
@@ -624,12 +625,11 @@ after hardened path, ownership, entry-type, and symlink validation.
 **Status:** Accepted
 **Date:** 2026-09-18
 
-Deployment artifacts use eight explicit ownership classes: `MANAGED`,
-`MACHINE_CONFIGURATION`, `USER_CUSTOMIZATION_OVERRIDE`,
-`PERSISTENT_STATE_PREFERENCE`, `GENERATED`, `RUNTIME`,
-`OPTIONAL_COMPONENT_PAYLOAD`, and `SYSTEM_ADOPTED_MANAGED`. The version-1
-manifest records this ownership reality without specifying an installer,
-updater, deployment ledger, rollback engine, or migration framework.
+The historical version-1 manifest grew to ten descriptive ownership classes,
+including later `PERSISTENT_STATE_PROVENANCE` and `USER_CONTENT` additions.
+DF2 ownership v2 normalizes those boundaries into explicit deployability,
+install, and update semantics without implementing an installer, updater,
+deployment ledger, rollback engine, or migration framework.
 
 Hyprland loads a managed portable core, managed curated bindings, create-once
 machine configuration, and a user-owned override in that order. The managed
@@ -676,7 +676,7 @@ The synchronizer must distinguish graphical XKB changes from console-only
 changes: an explicit `localectl --no-convert` console-keymap operation must not
 be misread as a graphical-layout update. A future Vanilla keyboard UI will
 write the system source of truth instead of changing only Hyprland.
-Device-specific keyboard rules remain `MACHINE_CONFIGURATION`. The managed
+Device-specific keyboard rules remain `CREATE_ONCE_MACHINE`. The managed
 helper projects the complete graphical tuple through one validated Hyprland
 Lua runtime transaction, verifies readback, and performs one bounded rollback
 on failure. Every relevant graphical event compares fresh localed state with
@@ -692,11 +692,11 @@ seed; neither contains a global XKB fallback. See
 
 **Status:** Accepted
 **Date:** 2026-09-18
-**Implementation:** Schema-v4 backend and UI published; single-monitor runtime,
-persistence, confirmation, dismissal, and Quickshell-reload paths live-accepted.
-Optional minimal-profile materialization is published; physical acceptance on
-a genuinely fallback-managed output remains deferred. A schema-v5/protocol-v4
-HDR extension is implemented locally and awaiting controlled acceptance.
+**Implementation:** Schema-v5/protocol-v4 backend and UI published;
+single-monitor runtime, persistence, confirmation, dismissal,
+Quickshell-reload, forced-HDR, and Automatic-HDR paths live-accepted. Optional
+minimal-profile materialization is published; physical acceptance on a
+genuinely fallback-managed output remains deferred.
 
 Monitor control is per explicit output profile. Resolution/refresh is one Mode
 tuple, bitdepth is 8 or 10 bpc, forced HDR is per output, and Scale is per
@@ -916,3 +916,40 @@ before `hl.bind`. Super+K decodes the payload, rejects malformed or unknown
 versions, and fails closed for unknown capabilities. The `local-dictation`
 capability consumes the already-validated `SystemComponentsActions.installed`
 projection and performs no marker inspection, per-row process launch, or poll.
+
+## ADR-037: Normalize DF2 distribution manifests without an installer
+
+**Status:** Accepted
+**Date:** 2026-09-22
+**Implementation:** Phase 1 manifests and deterministic validation implemented;
+executor and deployment deferred
+
+Package role, default-install policy, component membership, artifact ownership,
+and service activation policy are separate machine-readable concerns. The
+versioned TOML manifests under `packages/` and `deployment/` are their canonical
+authorities. They contain intent rather than package versions or dependency
+resolution; pacman remains authoritative for dependencies.
+
+The default Alpha includes required packages, the `base-devel` and `git`
+bootstrap prerequisites, the sole approved AUR exception `yay`, and the
+recommended `pavucontrol` and `bluez-utils`. Printing is a non-default
+recommended component. Dictation and the native Zig Screensaver payload remain
+optional, while their project managers are baseline managed content.
+
+Ownership v2 makes future executor permission explicit. Vanilla-managed bytes
+may be replaced only after staging and validation. Machine and user seeds are
+create-once. User, backend, generated, runtime, package-owned, optional-payload,
+and adopted privileged state each retain separate semantics. Development may
+use repository symlinks; installed mode requires regular files and no runtime
+checkout dependency.
+
+Initial Alpha supports a documented fresh Arch Linux x86_64 or
+archinstall-derived base, not arbitrary desktop adoption. A local Git clone is
+the initial source acquisition path, but installed runtime layout remains
+compatible with future release archives. Vanilla update never silently runs a
+full Arch upgrade or an unsupported partial upgrade.
+
+Ly keeps the package-owned Hyprland session entry; selecting it once at first
+login is acceptable. The future mpv and MIME configuration files are
+create-once user-owned seeds and are not created in Phase 1. Exact seed content
+and deployment remain Phase 3 work.

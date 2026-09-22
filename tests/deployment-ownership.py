@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 REPOSITORY = Path(__file__).resolve().parent.parent
-MANIFEST_PATH = REPOSITORY / "deployment/ownership-v1.toml"
+MANIFEST_PATH = REPOSITORY / "deployment/ownership-v2.toml"
 LOADER_PATH = REPOSITORY / "home/.config/hypr/hyprland.lua"
 CORE_PATH = REPOSITORY / "home/.config/hypr/vanhyprarch/core.lua"
 BINDINGS_PATH = REPOSITORY / "home/.config/hypr/vanhyprarch/bindings.lua"
@@ -25,16 +25,16 @@ HYPRLOCK_PATH = REPOSITORY / "home/.config/hypr/hyprlock.conf"
 OWNERSHIP_DOC = REPOSITORY / "docs/deployment-ownership.md"
 
 VALID_CLASSES = {
-    "MANAGED",
-    "MACHINE_CONFIGURATION",
-    "USER_CUSTOMIZATION_OVERRIDE",
-    "PERSISTENT_STATE_PREFERENCE",
-    "PERSISTENT_STATE_PROVENANCE",
+    "VANILLA_MANAGED",
+    "CREATE_ONCE_MACHINE",
+    "CREATE_ONCE_USER",
+    "USER_OWNED",
+    "BACKEND_OWNED",
     "GENERATED",
     "RUNTIME",
-    "USER_CONTENT",
+    "PACKAGE_OWNED",
+    "ADOPTED_PRIVILEGED",
     "OPTIONAL_COMPONENT_PAYLOAD",
-    "SYSTEM_ADOPTED_MANAGED",
 }
 
 OVERRIDE_HEADER = (
@@ -58,13 +58,14 @@ class DeploymentOwnershipTests(unittest.TestCase):
         return matches[0]
 
     def test_manifest_schema_and_classes(self) -> None:
-        self.assertEqual(self.manifest["schema_version"], 1)
+        self.assertEqual(self.manifest["schema_version"], 2)
         classes = {item["class"] for item in self.artifacts}
         self.assertEqual(classes, VALID_CLASSES)
         self.assertEqual(len({item["target"] for item in self.artifacts}), len(self.artifacts))
         for item in self.artifacts:
             self.assertTrue(item["target"])
-            self.assertRegex(item["mode"], r"^0[0-7]{3}$")
+            if "mode" in item:
+                self.assertRegex(item["mode"], r"^0[0-7]{3}$")
             self.assertTrue(item["component"])
             self.assertTrue(item["authority"])
             self.assertIs(type(item["user_editable"]), bool)
@@ -74,7 +75,7 @@ class DeploymentOwnershipTests(unittest.TestCase):
         for item in self.artifacts:
             source = item.get("source")
             if source is not None:
-                self.assertTrue((REPOSITORY / source).is_file(), source)
+                self.assertTrue((REPOSITORY / source).exists(), source)
 
     def test_generated_idle_fragment_has_no_release_source(self) -> None:
         target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/vanhyprarch-idle.conf"
@@ -87,48 +88,40 @@ class DeploymentOwnershipTests(unittest.TestCase):
         preference = self.artifact_for_target(
             "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"
         )
-        self.assertEqual(preference["class"], "PERSISTENT_STATE_PREFERENCE")
+        self.assertEqual(preference["class"], "USER_OWNED")
         self.assertEqual(preference["authority"], "vanhyprarch-appearance")
         self.assertNotIn("source", preference)
 
         renderer = self.artifact_for_target(
             "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprpaper.conf"
         )
-        self.assertEqual(renderer["class"], "MANAGED")
+        self.assertEqual(renderer["class"], "VANILLA_MANAGED")
         self.assertEqual(renderer["source"], "home/.config/hypr/hyprpaper.conf")
 
         manager = self.artifact_for_target(
             "$HOME/.local/bin/vanhyprarch-appearance"
         )
-        self.assertEqual(manager["class"], "MANAGED")
+        self.assertEqual(manager["class"], "VANILLA_MANAGED")
         self.assertEqual(manager["mode"], "0755")
 
         receipt = self.artifact_for_target(
             "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json"
         )
-        self.assertEqual(receipt["class"], "PERSISTENT_STATE_PROVENANCE")
+        self.assertEqual(receipt["class"], "BACKEND_OWNED")
         self.assertEqual(receipt["authority"], "vanhyprarch-appearance")
 
         user_content = self.artifact_for_target(
-            "<XDG Pictures>/Wallpapers/{Light,Dark}/*"
+            "${XDG_PICTURES_DIR:-$HOME/Pictures}/Wallpapers/{Light,Dark}/*"
         )
-        self.assertEqual(user_content["class"], "USER_CONTENT")
+        self.assertEqual(user_content["class"], "USER_OWNED")
         self.assertEqual(user_content["authority"], "user")
         self.assertTrue(user_content["user_editable"])
 
-        asset_sources = {
-            item["source"]
-            for item in self.artifacts
-            if item["component"] == "appearance-assets" and "source" in item
-        }
-        self.assertEqual(
-            asset_sources,
-            {
-                "assets/wallpapers/NOTICE.md",
-                *(f"assets/wallpapers/Light/Wolkenstein_{number}_light.png" for number in range(1, 5)),
-                *(f"assets/wallpapers/Dark/Wolkenstein_{number}_dark.png" for number in range(1, 5)),
-            },
+        assets = self.artifact_for_target(
+            "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers"
         )
+        self.assertEqual(assets["source"], "assets/wallpapers")
+        self.assertEqual(assets["kind"], "tree")
 
     def test_override_is_header_only(self) -> None:
         self.assertEqual(OVERRIDE_SEED.read_text(encoding="utf-8"), OVERRIDE_HEADER)
@@ -140,10 +133,10 @@ class DeploymentOwnershipTests(unittest.TestCase):
         override = self.artifact_for_target(
             "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/overrides/hyprland.lua"
         )
-        self.assertEqual(machine["class"], "MACHINE_CONFIGURATION")
+        self.assertEqual(machine["class"], "CREATE_ONCE_MACHINE")
         self.assertTrue(machine["machine_specific"])
         self.assertEqual(machine["mode"], "0600")
-        self.assertEqual(override["class"], "USER_CUSTOMIZATION_OVERRIDE")
+        self.assertEqual(override["class"], "CREATE_ONCE_USER")
         self.assertFalse(override["machine_specific"])
         self.assertEqual(override["mode"], "0600")
 
@@ -316,12 +309,12 @@ io.write(table.concat(loaded, "\n"))
 
     def test_public_commands_keep_regular_user_local_targets(self) -> None:
         command_classes = {
-            "vanhyprarch-idle": "MANAGED",
-            "vanhyprarch-monitor": "MANAGED",
-            "vanhyprarch-polkit-session": "MANAGED",
-            "vanhyprarch-screenshot": "MANAGED",
-            "vanhyprarch-dictation": "MANAGED",
-            "vanhyprarch-screensaver": "MANAGED",
+            "vanhyprarch-idle": "VANILLA_MANAGED",
+            "vanhyprarch-monitor": "VANILLA_MANAGED",
+            "vanhyprarch-polkit-session": "VANILLA_MANAGED",
+            "vanhyprarch-screenshot": "VANILLA_MANAGED",
+            "vanhyprarch-dictation": "VANILLA_MANAGED",
+            "vanhyprarch-screensaver": "VANILLA_MANAGED",
         }
         for command, ownership_class in command_classes.items():
             target = f"$HOME/.local/bin/{command}"
@@ -337,7 +330,7 @@ io.write(table.concat(loaded, "\n"))
             "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/"
             "vanhyprarch-monitor-safe-apply.service"
         )
-        self.assertEqual(monitor_unit["class"], "MANAGED")
+        self.assertEqual(monitor_unit["class"], "VANILLA_MANAGED")
         self.assertEqual(
             monitor_unit["source"],
             "home/.config/systemd/user/vanhyprarch-monitor-safe-apply.service",

@@ -61,8 +61,8 @@ Matrix, Doom, and Game of Life.
 - keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update,
   Additional system components, and Power workflows with native catalogs and
   visible terminal transactions;
-- official Arch package manifests and a pinned, checksummed Zig Screensaver
-  install/adopt/reinstall/uninstall lifecycle;
+- normalized package, component, ownership, and service-policy manifests plus a
+  pinned, checksummed Zig Screensaver install/adopt/reinstall/uninstall lifecycle;
 - required, unpinned Flatpak from the official Arch repositories, with an
   idempotent bootstrap component for the required system Flathub remote;
 - optional, offline F9 push-to-talk dictation managed through Additional system
@@ -74,8 +74,10 @@ Matrix, Doom, and Game of Life.
 
 The shared automated bootstrap and optional archinstall entry point are not
 finished. Development starts from a working minimal Arch installation and the
-package manifests in [`packages/`](packages/), but tracked configuration must
-currently be reviewed and deployed manually.
+structured package manifest in [`packages/`](packages/), but tracked
+configuration must currently be reviewed and deployed manually. DF2 Phase 1
+defines package roles, deployment ownership, and future service policy without
+implementing or running an installer.
 
 The repository now separates managed portable Hyprland configuration from
 create-once machine configuration and a user-owned customization override.
@@ -87,7 +89,9 @@ must not overwrite an existing administrator configuration without review and
 rollback. See the
 [deployment ownership contract](docs/deployment-ownership.md),
 [installation strategy](docs/installation-strategy.md), and
-[system baseline](docs/system-baseline.md).
+[system baseline](docs/system-baseline.md). The accepted DF2 package and
+distribution decisions are summarized in
+[Distribution Foundation 2](docs/distribution-foundation-2.md).
 
 For development, public commands may be symlinked from `bin/` into
 `$HOME/.local/bin`. The future production bootstrap will install regular
@@ -129,9 +133,9 @@ and rollback infrastructure do not. User-owned files are preserved by
 ownership class; their Alpha interfaces may still change with release-note
 disclosure and practical migration guidance.
 
-The Appearance foundation is implemented only in an isolated candidate and
-still needs human review and controlled deployment; its visual background
-picker is future work. System keyboard synchronization and the supporting
+The Appearance foundation and visual Background Picker are repository
+implemented, with production deployment still awaiting the DF2 installer.
+System keyboard synchronization and the supporting
 direct-session lifecycle hardening are live-validated. The development machine
 has no global keyboard fallback: localed is the persistent graphical authority
 and the managed service is its sole global runtime projection into Hyprland.

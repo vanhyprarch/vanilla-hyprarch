@@ -221,8 +221,8 @@ materialization transaction and supports later replacement of `preferred`,
 replacement of Scale `auto`, and insertion of an omitted bitdepth field.
 Existing explicit-profile behavior passed controlled deployment; physical
 materialization remains deferred to a real fallback-managed environment. The
-schema-v5/protocol-v4 HDR extension must pass its own controlled upgrade and
-live acceptance boundary before it is published.
+schema-v5/protocol-v4 HDR extension subsequently passed its controlled upgrade
+and live acceptance boundary and is the published generation.
 Physical multi-monitor acceptance remains deferred; deterministic multi-output
 coverage is not presented as a real two-output hardware result.
 After every Hyprland upgrade, retest Lua monitor eval,

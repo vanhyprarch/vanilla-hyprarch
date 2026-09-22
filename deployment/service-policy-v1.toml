@@ -1,0 +1,163 @@
+schema_version = 1
+
+[[service]]
+name = "NetworkManager.service"
+scope = "system"
+owner = "package"
+policy = "enabled"
+default_install = true
+startup_owner = "systemd"
+
+[[service]]
+name = "bluetooth.service"
+scope = "system"
+owner = "package"
+policy = "enabled"
+default_install = true
+startup_owner = "systemd"
+notes = "Enable only after the adopted BlueZ configuration passes validation."
+
+[[service]]
+name = "ly@tty2.service"
+scope = "system"
+owner = "package"
+policy = "enabled"
+default_install = true
+startup_owner = "systemd"
+notes = "The user may select the package-owned Hyprland session once at first login."
+
+[[service]]
+name = "getty@tty2.service"
+scope = "system"
+owner = "package"
+policy = "disabled"
+default_install = true
+startup_owner = "systemd"
+conflicts_with = ["ly@tty2.service"]
+
+[[service]]
+name = "cups.service"
+scope = "system"
+owner = "package"
+policy = "component"
+component = "printing"
+default_install = false
+startup_owner = "systemd"
+
+[[service]]
+name = "cups.socket"
+scope = "system"
+owner = "package"
+policy = "component"
+component = "printing"
+default_install = false
+startup_owner = "systemd"
+
+[[service]]
+name = "cups.path"
+scope = "system"
+owner = "package"
+policy = "component"
+component = "printing"
+default_install = false
+startup_owner = "systemd"
+
+[[service]]
+name = "pipewire.service"
+scope = "user"
+owner = "package"
+policy = "package-activation"
+default_install = true
+startup_owner = "package-preset"
+
+[[service]]
+name = "pipewire-pulse.service"
+scope = "user"
+owner = "package"
+policy = "package-activation"
+default_install = true
+startup_owner = "package-preset"
+
+[[service]]
+name = "wireplumber.service"
+scope = "user"
+owner = "package"
+policy = "package-activation"
+default_install = true
+startup_owner = "package-preset"
+
+[[service]]
+name = "xdg-desktop-portal.service"
+scope = "user"
+owner = "package"
+policy = "dbus-activation"
+default_install = true
+startup_owner = "dbus"
+
+[[service]]
+name = "xdg-desktop-portal-hyprland.service"
+scope = "user"
+owner = "package"
+policy = "dbus-activation"
+default_install = true
+startup_owner = "dbus"
+
+[[service]]
+name = "xdg-desktop-portal-gtk.service"
+scope = "user"
+owner = "package"
+policy = "dbus-activation"
+default_install = true
+startup_owner = "dbus"
+
+[[service]]
+name = "dunst.service"
+scope = "user"
+owner = "package"
+policy = "dbus-activation"
+default_install = true
+startup_owner = "dbus"
+
+[[service]]
+name = "hypridle.service"
+scope = "user"
+owner = "package"
+policy = "disabled"
+default_install = true
+startup_owner = "hyprland-direct"
+notes = "Hyprland owns exactly one direct hypridle process through vanhyprarch-idle."
+
+[[service]]
+name = "hyprpolkitagent.service"
+scope = "user"
+owner = "package"
+policy = "not-enabled"
+default_install = true
+startup_owner = "vanhyprarch-polkit-session"
+notes = "Vanilla owns only the lifecycle helper and package-unit drop-in."
+
+[[service]]
+name = "vanhyprarch-keyboard-sync.service"
+scope = "user"
+owner = "vanilla"
+policy = "static"
+default_install = true
+startup_owner = "hyprland"
+
+[[service]]
+name = "vanhyprarch-monitor-safe-apply.service"
+scope = "user"
+owner = "vanilla"
+policy = "static-transaction"
+default_install = true
+startup_owner = "vanhyprarch-monitor"
+notes = "Never enable; it is activated only for one bounded Safe Apply transaction."
+
+[[service]]
+name = "vanhyprarch-voxtype.service"
+scope = "user"
+owner = "optional-component"
+policy = "static-component"
+component = "dictation"
+default_install = false
+startup_owner = "hyprland"

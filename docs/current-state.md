@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-21.
+Snapshot date: 2026-09-22.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -48,9 +48,12 @@ Create-once sources:
 - `seeds/home/.config/vanhyprarch/machine/hyprland.lua`
 - `seeds/home/.config/vanhyprarch/overrides/hyprland.lua`
 
-`deployment/ownership-v1.toml` records the first machine-readable ownership
-contract. The Power & Idle fragment is no longer release-owned source; it is a
-mode-0600 generated projection with no manifest `source`.
+`deployment/ownership-v2.toml` is the current machine-readable ownership
+contract; version 1 remains historical. Package roles and default-install
+policy are normalized in `packages/manifest-v1.toml`, and intended service
+activation is recorded in `deployment/service-policy-v1.toml`. None is an
+installer. The Power & Idle fragment is a mode-0600 generated projection with
+no manifest `source`.
 
 Live paths:
 
@@ -256,9 +259,10 @@ override contain no hidden global XKB fallback.
 ## Optional local dictation — IMPLEMENTED AND VALIDATED
 
 The repository contains one opt-in component under `install/dictation/`; its
-official-package deltas are `gnupg` and `wtype` in
-`packages/optional-dictation-official.txt`. Neither package nor Voxtype is in
-the normal baseline or AUR manifest. An immutable manifest pins the official
+official-package deltas are the `gnupg` and `wtype` entries assigned to the
+non-default `dictation` component in `packages/manifest-v1.toml`. Neither
+package is in the default install set, and Voxtype is not an AUR package. An
+immutable manifest pins the official
 Voxtype 1.0.1 x86_64 AVX2 CPU and Vulkan binaries. A dedicated GPG home,
 detached signature, full primary fingerprint, size, SHA-256, and exact version
 gate the component-owned versioned cache and atomic publication of the active
@@ -562,7 +566,8 @@ real-hardware validation.
 `bin/vanhyprarch-appearance` is the preference and reconciliation authority for
 Light/Dark mode, the standard host color-scheme preference, and one remembered
 wallpaper per mode. Its version-1 JSON preference is a mode-0600
-`PERSISTENT_STATE_PREFERENCE`; wallpaper names are stored relative to the
+`USER_OWNED` with `vanhyprarch-appearance` as its writing authority; wallpaper
+names are stored relative to the
 matching XDG Pictures `Wallpapers/Light` or `Wallpapers/Dark` directory. The
 global Quickshell `AppearanceController` owns shell projection and startup
 reconciliation. Each per-screen Theme button calls only that controller and
@@ -941,7 +946,8 @@ prove transaction ownership. The completed schema-v2 deployment required the
 old helper to prove its schema-v1 journal terminal and recovery-disarmed before
 controlled removal and replacement; no legacy journal was guessed or migrated.
 
-The published schema-v4 backend implements the accepted policy: Mode
+The published schema-v5 backend retains the accepted policy established by
+schema 4: Mode
 (resolution plus refresh) and bitdepth (8 or 10 bpc) are safe-confirmed; Scale
 is immediate-validated and automatically persists only after runtime readback.
 Both policies share prospective verification, atomic persistence, reload
@@ -990,7 +996,8 @@ user changes. Existing explicit-profile behavior passed controlled deployment;
 physical materialization on a genuinely fallback-managed display remains
 deferred. See [Monitor Safe Apply backend](monitor-safe-apply.md).
 
-The current uncommitted HDR candidate extends Safe Apply with per-monitor
+The published schema-v5/protocol-v4/inspect-v3 HDR implementation extends Safe
+Apply with per-monitor
 **HDR: Off / Always On** and global **Automatic HDR · All displays:
 Off / HDR / HDR (EDID)**. Forced HDR owns only `cm = "hdr"`, requires 10-bit,
 and stores the exact former non-HDR CM presence/value in an adjacent strict
@@ -999,7 +1006,22 @@ are one shared controller state across all panels. Inspection derives HDR
 eligibility from identity-bound EDID BT.2020/PQ capability and exposes policy,
 not a fabricated live HDR indicator; Hyprland 0.56.2 does not publish generic
 `inHDR()` through monitor JSON. Controlled deployment and live HDR acceptance
-remain pending.
+are complete on the development machine's HDR display; SDR-only mpv and other
+physical-hardware boundaries remain separately deferred.
+
+## Distribution Foundation 2 Phase 1 — REPOSITORY IMPLEMENTED
+
+Package role and default installation policy now have one structured authority
+in `packages/manifest-v1.toml`. Printing, network printing, dictation, and Zig
+Screensaver are named components; `yay` is the only approved default AUR
+package. Ownership v2 declares installed regular-file behavior, create-once,
+user/backend/generated/runtime/package-owned, optional-payload, and adopted
+privileged boundaries. A separate service-policy manifest records future
+activation ownership without changing systemd state.
+
+This phase contains validation and decisions only. No installer, executor,
+deployment, package transaction, service change, create-once seed publication,
+VM acceptance, or live-system adoption has been implemented.
 
 ## Known open work
 
@@ -1008,8 +1030,8 @@ remain pending.
 - Build the shared bootstrap and thin optional archinstall integration defined
   in the [installation strategy](installation-strategy.md), supporting both a
   configured first reboot and post-install use on minimal Arch.
-- Define optional/recommended packages separately from the core baseline;
-  `file-roller` is a candidate convenience, not a core requirement.
+- Build the executor that consumes the normalized package, component,
+  ownership, and service-policy manifests; Phase 1 defines policy only.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

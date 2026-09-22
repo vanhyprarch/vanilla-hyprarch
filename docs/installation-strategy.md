@@ -12,6 +12,13 @@ engine consumes those boundaries yet. The complete BlueZ `main.conf`
 replacement must still be reviewed rather than copied blindly onto another
 system.
 
+The initial Alpha support target is deliberately narrow: Arch Linux x86_64 on
+a documented fresh-install or archinstall-derived base. It does not promise
+adoption of arbitrary existing Arch desktops or other Hyprland distributions.
+The initial acquisition path may be a local Git clone, but installed runtime
+files must be regular copies with no dependency on that checkout. The same
+source/runtime separation must remain compatible with future release archives.
+
 ## One bootstrap, two entry points
 
 Vanilla HyprArch will have one reusable bootstrap implementation with two
@@ -48,9 +55,11 @@ This first-reboot experience is not implemented yet.
 
 The shared bootstrap will eventually:
 
-- install `packages/official.txt` from official Arch repositories;
-- install the explicit `yay` exception declared by `packages/aur.txt`, without
-  treating it as permission to add other AUR dependencies;
+- consume `packages/manifest-v1.toml`, installing default official packages
+  according to their explicit role and policy;
+- build and install the explicit default `yay` exception as a non-root user,
+  using the declared `base-devel` and `git` bootstrap prerequisites, without
+  treating it as permission to add other AUR packages;
 - after installing the required unpinned `flatpak` package, invoke
   `install/configure-flatpak` to establish the required system Flathub remote;
 - deploy managed home configuration without personal paths and initialize
@@ -68,7 +77,8 @@ The shared bootstrap will eventually:
   is activated only for one bounded Safe Apply transaction;
 - deploy immutable Zig Screensaver manager resources, but leave the optional
   `vanhyprarch-zig-player` payload absent until explicitly installed;
-- establish required symlinks and enable or disable documented services;
+- establish required installed files and enable or disable only the services
+  declared by `deployment/service-policy-v1.toml`;
 - deploy the minimal `system/etc/bluetooth/main.conf` before starting or
   enabling `bluetooth.service`, preserving exact rollback material if an
   existing administrator configuration would be replaced;
@@ -135,10 +145,32 @@ ones. Changing the managed starter set changes only true fresh installations.
 Existing version-1 seed receipts migrate to completed without touching user
 content.
 
-The version-1 ownership manifest is descriptive input for this future work. It
-does not imply transaction, merge, rollback, migration, or uninstall behavior.
-Those mechanisms must be designed separately rather than inferred from fields
-that the manifest does not contain.
+The version-2 ownership manifest declares deployability plus install/update
+semantics for future work. It is still policy, not an executor, transaction,
+rollback, migration, or uninstall implementation. Version 1 remains historical.
+
+## Create-once application state
+
+Phase 3 will add the accepted provisional mpv seed and a minimal MIME seed.
+Their targets are `$XDG_CONFIG_HOME/mpv/mpv.conf` and
+`$XDG_CONFIG_HOME/mimeapps.list`, both mode `0644`. A future installer may
+create either only when its target is absent. Each becomes user-owned
+immediately and is never overwritten or merged automatically. Phase 1 records
+that ownership but supplies and deploys neither seed.
+
+The package-owned Hyprland session entry remains the Ly authority. Future
+system integration enables `ly@tty2.service` and disables the conflicting
+`getty@tty2.service`; selecting Hyprland once at first login is acceptable
+Alpha behavior and does not justify a Vanilla-owned Ly configuration.
+
+## Vanilla update boundary
+
+A future Vanilla update replaces only validated Vanilla-managed content and
+preflights newly required packages. It never silently runs `pacman -Syu`, never
+performs an unsupported partial Arch upgrade, and never assumes ownership of
+the administrator's full system upgrade. If the current Arch state cannot
+safely satisfy a new package requirement, update must stop and ask the
+administrator to update Arch first.
 
 ## External player installation
 
@@ -164,9 +196,10 @@ metadata and validation change, never an unattended download of a newer tag.
 
 ## Flatpak and Flathub configuration
 
-`flatpak` is an ordinary required entry in `packages/official.txt`, without a
-version constraint. The shared bootstrap must install the currently available
-official Arch package before it invokes `install/configure-flatpak`.
+`flatpak` is an ordinary required official entry in
+`packages/manifest-v1.toml`, without a version constraint. The shared bootstrap
+must install the currently available official Arch package before it invokes
+`install/configure-flatpak`.
 
 The component uses the fixed system-scoped operation equivalent to:
 
@@ -185,8 +218,8 @@ rewrites user remotes, resets Flatpak state, or installs Flatpak applications.
 Dictation is not a responsibility of the normal baseline bootstrap. An
 explicit opt-in runs the independently deployed `vanhyprarch-dictation`
 manager, also reached through the compatibility entry point
-`install/dictation/install`. Missing `gnupg` or `wtype` package deltas from
-`packages/optional-dictation-official.txt` are offered through a visible
+`install/dictation/install`. Missing `gnupg` or `wtype` package deltas from the
+non-default `dictation` component in `packages/manifest-v1.toml` are offered through a visible
 interactive pacman transaction. The component refuses root,
 unsupported architectures, CPUs without the x86-64-v3 features required by
 the chosen AVX2 artifact, missing dependencies, symlink destinations, invalid
@@ -309,7 +342,7 @@ configuration that a user can load locally with `--config` or remotely with
 | Installation profile | `profile_config` | Use the Minimal profile so the shared bootstrap owns the desktop baseline. |
 | Kernel | `kernels` | Recommended choice or selection policy to be finalized, including hardware implications. |
 | Audio | `app_config.audio_config` | PipeWire is accepted; decide later whether the preset or bootstrap installs it, without duplicating ownership. |
-| Additional base packages | `packages` | Include only prerequisites useful before the bootstrap; `packages/official.txt` remains authoritative. |
+| Additional base packages | `packages` | Include only prerequisites useful before the bootstrap; `packages/manifest-v1.toml` remains authoritative. |
 | Timezone and locale | `timezone`, `locale_config` | No project-wide values are accepted; leave them for review unless defaults are decided later. |
 | Bootstrap hook | `custom_commands` | Invoke the shared bootstrap after base installation. |
 

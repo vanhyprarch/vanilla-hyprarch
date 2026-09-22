@@ -1,0 +1,711 @@
+schema_version = 2
+installed_mode = "regular-files"
+development_mode = "repository-symlinks-allowed"
+runtime_source_independent = true
+
+[[ownership_class]]
+name = "VANILLA_MANAGED"
+deployable = true
+source_policy = "required"
+install_action = "copy"
+update_action = "replace-after-validation"
+
+[[ownership_class]]
+name = "CREATE_ONCE_MACHINE"
+deployable = true
+source_policy = "required-when-implemented"
+install_action = "create-if-absent"
+update_action = "preserve"
+
+[[ownership_class]]
+name = "CREATE_ONCE_USER"
+deployable = true
+source_policy = "required-when-implemented"
+install_action = "create-if-absent"
+update_action = "preserve"
+
+[[ownership_class]]
+name = "USER_OWNED"
+deployable = false
+source_policy = "forbidden"
+install_action = "observe-or-seed-through-owner"
+update_action = "preserve"
+
+[[ownership_class]]
+name = "BACKEND_OWNED"
+deployable = false
+source_policy = "forbidden"
+install_action = "initialize-through-backend"
+update_action = "backend-migration-only"
+
+[[ownership_class]]
+name = "GENERATED"
+deployable = false
+source_policy = "forbidden"
+install_action = "generate-through-backend"
+update_action = "regenerate-through-backend"
+
+[[ownership_class]]
+name = "RUNTIME"
+deployable = false
+source_policy = "forbidden"
+install_action = "never"
+update_action = "never"
+
+[[ownership_class]]
+name = "PACKAGE_OWNED"
+deployable = false
+source_policy = "forbidden"
+install_action = "install-package-only"
+update_action = "package-manager"
+
+[[ownership_class]]
+name = "ADOPTED_PRIVILEGED"
+deployable = true
+source_policy = "required"
+install_action = "explicit-adoption-with-backup"
+update_action = "replace-only-if-previously-adopted"
+
+[[ownership_class]]
+name = "OPTIONAL_COMPONENT_PAYLOAD"
+deployable = false
+source_policy = "forbidden"
+install_action = "component-manager-only"
+update_action = "component-manager-only"
+
+[[artifact]]
+id = "hyprland-loader"
+source = "home/.config/hypr/hyprland.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.lua"
+class = "VANILLA_MANAGED"
+component = "hyprland"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "hyprland-managed-core"
+source = "home/.config/hypr/vanhyprarch"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/vanhyprarch"
+class = "VANILLA_MANAGED"
+component = "hyprland"
+kind = "tree"
+mode_policy = "preserve-source"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "hypridle-config"
+source = "home/.config/hypr/hypridle.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hypridle.conf"
+class = "VANILLA_MANAGED"
+component = "power-idle"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "hyprpaper-config"
+source = "home/.config/hypr/hyprpaper.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprpaper.conf"
+class = "VANILLA_MANAGED"
+component = "appearance"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "hyprlock-config"
+source = "home/.config/hypr/hyprlock.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprlock.conf"
+class = "VANILLA_MANAGED"
+component = "hyprlock"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "machine-hyprland"
+source = "seeds/home/.config/vanhyprarch/machine/hyprland.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/machine/hyprland.lua"
+class = "CREATE_ONCE_MACHINE"
+component = "hyprland"
+kind = "file"
+mode = "0600"
+authority = "user-machine"
+status = "implemented"
+user_editable = true
+machine_specific = true
+
+[[artifact]]
+id = "user-hyprland-override"
+source = "seeds/home/.config/vanhyprarch/overrides/hyprland.lua"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/overrides/hyprland.lua"
+class = "CREATE_ONCE_USER"
+component = "hyprland"
+kind = "file"
+mode = "0600"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
+id = "mpv-config"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/mpv/mpv.conf"
+class = "CREATE_ONCE_USER"
+component = "default-applications"
+kind = "file"
+mode = "0644"
+authority = "user"
+status = "planned"
+user_editable = true
+machine_specific = false
+notes = "Phase 3 supplies the accepted provisional seed; skip any existing file and never merge."
+
+[[artifact]]
+id = "mimeapps-config"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list"
+class = "CREATE_ONCE_USER"
+component = "default-applications"
+kind = "file"
+mode = "0644"
+authority = "user"
+status = "planned"
+user_editable = true
+machine_specific = false
+notes = "Phase 3 supplies a minimal seed; skip any existing user MIME configuration and never merge."
+
+[[artifact]]
+id = "quickshell-config"
+source = "home/.config/quickshell/vanhyprarch"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/vanhyprarch"
+class = "VANILLA_MANAGED"
+component = "quickshell"
+kind = "tree"
+mode_policy = "preserve-source"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "appearance-command"
+source = "bin/vanhyprarch-appearance"
+target = "$HOME/.local/bin/vanhyprarch-appearance"
+class = "VANILLA_MANAGED"
+component = "appearance"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-command"
+source = "bin/vanhyprarch-dictation"
+target = "$HOME/.local/bin/vanhyprarch-dictation"
+class = "VANILLA_MANAGED"
+component = "dictation-manager"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "idle-command"
+source = "bin/vanhyprarch-idle"
+target = "$HOME/.local/bin/vanhyprarch-idle"
+class = "VANILLA_MANAGED"
+component = "power-idle"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "keyboard-command"
+source = "bin/vanhyprarch-keyboard-sync"
+target = "$HOME/.local/bin/vanhyprarch-keyboard-sync"
+class = "VANILLA_MANAGED"
+component = "system-keyboard-synchronization"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "monitor-command"
+source = "bin/vanhyprarch-monitor"
+target = "$HOME/.local/bin/vanhyprarch-monitor"
+class = "VANILLA_MANAGED"
+component = "monitor"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "polkit-command"
+source = "bin/vanhyprarch-polkit-session"
+target = "$HOME/.local/bin/vanhyprarch-polkit-session"
+class = "VANILLA_MANAGED"
+component = "polkit-session-lifecycle"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "screensaver-command"
+source = "bin/vanhyprarch-screensaver"
+target = "$HOME/.local/bin/vanhyprarch-screensaver"
+class = "VANILLA_MANAGED"
+component = "zig-screensaver-manager"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "screenshot-command"
+source = "bin/vanhyprarch-screenshot"
+target = "$HOME/.local/bin/vanhyprarch-screenshot"
+class = "VANILLA_MANAGED"
+component = "screenshot"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "keyboard-unit"
+source = "home/.config/systemd/user/vanhyprarch-keyboard-sync.service"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/vanhyprarch-keyboard-sync.service"
+class = "VANILLA_MANAGED"
+component = "system-keyboard-synchronization"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "monitor-transaction-unit"
+source = "home/.config/systemd/user/vanhyprarch-monitor-safe-apply.service"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/vanhyprarch-monitor-safe-apply.service"
+class = "VANILLA_MANAGED"
+component = "monitor"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "polkit-drop-in"
+source = "home/.config/systemd/user/hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/hyprpolkitagent.service.d/10-vanhyprarch-session-lifecycle.conf"
+class = "VANILLA_MANAGED"
+component = "polkit-session-lifecycle"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "wallpaper-assets"
+source = "assets/wallpapers"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/wallpapers"
+class = "VANILLA_MANAGED"
+component = "appearance-assets"
+kind = "tree"
+mode_policy = "preserve-source"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "zig-screensaver-manager"
+source = "install/zig-screensaver/manager.py"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/zig-screensaver/manager.py"
+class = "VANILLA_MANAGED"
+component = "zig-screensaver-manager"
+kind = "file"
+mode = "0755"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "zig-screensaver-metadata"
+source = "install/vanhyprarch-zig-player.conf"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/zig-screensaver/vanhyprarch-zig-player.conf"
+class = "VANILLA_MANAGED"
+component = "zig-screensaver-manager"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-resources"
+source = "install/dictation"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation"
+class = "VANILLA_MANAGED"
+component = "dictation-manager"
+kind = "tree"
+mode_policy = "resource-files-only"
+included = ["binaries.toml", "config.toml", "models.toml", "vanhyprarch-voxtype.service", "voxtype-ci-signing-key.asc"]
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "power-idle-preference"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/power-idle.conf"
+class = "USER_OWNED"
+component = "power-idle"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-idle"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "appearance-preference"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"
+class = "USER_OWNED"
+component = "appearance"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-appearance"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "appearance-provenance"
+target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json"
+class = "BACKEND_OWNED"
+component = "appearance"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-appearance"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "text-size-preference"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/text-size.conf"
+class = "USER_OWNED"
+component = "text-size"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-text-size"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "bluetooth-power-preference"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/bluetooth-power.conf"
+class = "USER_OWNED"
+component = "bluetooth"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-bluetooth-power"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "launcher-state"
+target = "${XDG_STATE_HOME:-$HOME/.local/state}/quickshell/by-shell/*/launchers.json"
+class = "USER_OWNED"
+component = "quickshell"
+kind = "pattern"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
+id = "user-wallpapers"
+target = "${XDG_PICTURES_DIR:-$HOME/Pictures}/Wallpapers/{Light,Dark}/*"
+class = "USER_OWNED"
+component = "appearance-assets"
+kind = "pattern"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
+id = "user-screenshots"
+target = "${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots/*"
+class = "USER_OWNED"
+component = "screenshot"
+kind = "pattern"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
+id = "idle-generated-config"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hypr/vanhyprarch-idle.conf"
+class = "GENERATED"
+component = "power-idle"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-idle"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "idle-runtime"
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/{caffeine,idle.lock,session-start-error.log}"
+class = "RUNTIME"
+component = "power-idle"
+kind = "pattern"
+authority = "vanhyprarch-idle"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "monitor-runtime"
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/{transaction.json,transaction.lock,control.sock}"
+class = "RUNTIME"
+component = "monitor"
+kind = "pattern"
+authority = "vanhyprarch-monitor"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "appearance-runtime"
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/{appearance.lock,appearance-renderer-failure,appearance-hyprpaper.log}"
+class = "RUNTIME"
+component = "appearance"
+kind = "pattern"
+authority = "vanhyprarch-appearance"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "screensaver-runtime"
+target = "${XDG_RUNTIME_DIR}/vanhyprarch/{screensaver.state,screensaver.cursor,screensaver.lock,screensaver.log,zig-screensaver-component.lock,zig-screensaver-install.receipt}"
+class = "RUNTIME"
+component = "zig-screensaver"
+kind = "pattern"
+authority = "vanhyprarch-screensaver"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-runtime"
+target = "${XDG_RUNTIME_DIR}/{voxtype,vanhyprarch-terminal-operation-*}"
+class = "RUNTIME"
+component = "dictation"
+kind = "pattern"
+authority = "vanhyprarch-dictation"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "zig-player-binary"
+target = "$HOME/.local/bin/vanhyprarch-zig-player"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+kind = "file"
+mode = "0755"
+authority = "vanhyprarch-screensaver"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "zig-player-data"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/{licenses,doc}/vanhyprarch-zig-player/**"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+kind = "pattern"
+authority = "vanhyprarch-screensaver"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "zig-player-marker"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/components/zig-screensaver"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "zig-screensaver"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-screensaver"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-payload"
+target = "$HOME/.local/bin/voxtype"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "dictation"
+kind = "file"
+mode = "0755"
+authority = "vanhyprarch-dictation"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-config"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/voxtype/**"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "dictation"
+kind = "pattern"
+authority = "vanhyprarch-dictation"
+status = "implemented"
+user_editable = true
+machine_specific = false
+
+[[artifact]]
+id = "dictation-models-and-cache"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/voxtype/**"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "dictation"
+kind = "pattern"
+authority = "vanhyprarch-dictation"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-unit"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/vanhyprarch-voxtype.service"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "dictation"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-dictation"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "dictation-marker"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/components/dictation"
+class = "OPTIONAL_COMPONENT_PAYLOAD"
+component = "dictation"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-dictation"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "hyprland-session-entry"
+target = "/usr/share/wayland-sessions/hyprland.desktop"
+class = "PACKAGE_OWNED"
+component = "session"
+kind = "file"
+authority = "hyprland-package"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "package-user-units"
+target = "/usr/lib/systemd/user/{hypridle,hyprpolkitagent,pipewire,pipewire-pulse,wireplumber,xdg-desktop-portal,xdg-desktop-portal-gtk,xdg-desktop-portal-hyprland,dunst}.service"
+class = "PACKAGE_OWNED"
+component = "session-services"
+kind = "pattern"
+authority = "arch-packages"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "package-system-units"
+target = "/usr/lib/systemd/system/{NetworkManager,bluetooth,ly@,getty@,cups}.service"
+class = "PACKAGE_OWNED"
+component = "system-services"
+kind = "pattern"
+authority = "arch-packages"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "package-printing-activation-units"
+target = "/usr/lib/systemd/system/{cups.socket,cups.path}"
+class = "PACKAGE_OWNED"
+component = "printing"
+kind = "pattern"
+authority = "cups-package"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "bluez-main-config"
+source = "system/etc/bluetooth/main.conf"
+target = "/etc/bluetooth/main.conf"
+class = "ADOPTED_PRIVILEGED"
+component = "bluetooth"
+kind = "file"
+mode = "0644"
+authority = "administrator-adoption"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Fail closed on unknown administrator content and retain exact rollback material."

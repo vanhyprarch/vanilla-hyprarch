@@ -1,0 +1,693 @@
+schema_version = 1
+architecture = "x86_64"
+
+[policy]
+official_repositories_preferred = true
+aur_requires_explicit_approval = true
+default_install_is_explicit = true
+dependency_authority = "pacman"
+versions_are_pinned = false
+
+[aur]
+approved_default = ["yay"]
+build_as_root = false
+bootstrap_official = ["base-devel", "git"]
+
+[[component]]
+id = "printing"
+classification = "recommended"
+default_install = false
+manager_in_baseline = false
+description = "Local printing and graphical printer administration."
+
+[[component]]
+id = "network-printing"
+classification = "optional"
+default_install = false
+manager_in_baseline = false
+requires = ["printing"]
+description = "Network-printer discovery, kept separate from local printing."
+
+[[component]]
+id = "dictation"
+classification = "optional"
+default_install = false
+manager_in_baseline = true
+description = "Verified external Voxtype payload and Wayland text injection."
+
+[[component]]
+id = "zig-screensaver"
+classification = "optional"
+default_install = false
+manager_in_baseline = true
+external_payload = true
+installed_compiler_required = false
+description = "Pinned native player payload; the baseline ships only its manager."
+
+[[component]]
+id = "dictation-vulkan"
+classification = "optional"
+default_install = false
+manager_in_baseline = true
+requires = ["dictation"]
+description = "Explicit hardware-validated Vulkan dictation variant; never selected automatically."
+
+[[package]]
+name = "7zip"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "archive"
+reason = "Provides the selected 7z engine and replaces the obsolete p7zip package."
+
+[[package]]
+name = "avahi"
+source = "official"
+role = "optional"
+default_install = false
+component = "network-printing"
+direct = true
+owner = "network-printing"
+reason = "Provides network-printer discovery only when that extension is selected."
+
+[[package]]
+name = "base-devel"
+source = "official"
+role = "build"
+default_install = true
+direct = true
+owner = "aur-bootstrap"
+reason = "Provides the mandatory Arch build toolchain for non-root AUR builds."
+
+[[package]]
+name = "bluez"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "bluetooth"
+reason = "Provides the Bluetooth daemon and D-Bus API used by the shell."
+
+[[package]]
+name = "bluez-utils"
+source = "official"
+role = "recommended"
+default_install = true
+direct = true
+owner = "bluetooth"
+reason = "Provides supported Bluetooth diagnostics and recovery tools."
+
+[[package]]
+name = "bubblewrap"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "monitor"
+reason = "The Monitor backend invokes bwrap for isolated prospective verification."
+
+[[package]]
+name = "cups"
+source = "official"
+role = "recommended"
+default_install = false
+component = "printing"
+direct = true
+owner = "printing"
+reason = "Provides the printing service when the printing component is selected."
+
+[[package]]
+name = "cups-pk-helper"
+source = "official"
+role = "recommended"
+default_install = false
+component = "printing"
+direct = true
+owner = "printing"
+reason = "Provides PolicyKit-mediated printer administration."
+
+[[package]]
+name = "curl"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "optional-component-managers"
+reason = "Pinned optional-component managers invoke the curl command directly."
+
+[[package]]
+name = "ddcutil"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "monitor"
+reason = "Provides conditional DDC/CI brightness control; unsupported hardware remains a no-op."
+
+[[package]]
+name = "dunst"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "notifications"
+reason = "Makes the notification daemon an explicit fresh-install capability."
+
+[[package]]
+name = "file"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "appearance"
+reason = "The Appearance backend invokes file for content-based image validation."
+
+[[package]]
+name = "firefox"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides the deliberate default browser and launcher target."
+
+[[package]]
+name = "flatpak"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "flatpak"
+reason = "Provides the required unpinned Flatpak runtime and system Flathub integration."
+
+[[package]]
+name = "foot"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides the deliberate default terminal and binding target."
+
+[[package]]
+name = "git"
+source = "official"
+role = "build"
+default_install = true
+direct = true
+owner = "source-and-aur-bootstrap"
+reason = "Provides the initial source acquisition path and yay source dependency."
+
+[[package]]
+name = "gnupg"
+source = "official"
+role = "optional"
+default_install = false
+component = "dictation"
+direct = true
+owner = "dictation"
+reason = "Verifies the pinned Voxtype detached signature."
+
+[[package]]
+name = "grim"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "screenshot"
+reason = "Provides Wayland screenshot capture."
+
+[[package]]
+name = "gvfs"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "file-management"
+reason = "Provides Thunar trash and normal user-session volume mounting."
+
+[[package]]
+name = "hypridle"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "power-idle"
+reason = "Executes the backend-generated idle policy as one Hyprland-owned process."
+
+[[package]]
+name = "hyprland"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "session"
+reason = "Provides the compositor and direct graphical session."
+
+[[package]]
+name = "hyprlock"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "power-idle"
+reason = "Provides session locking for manual and configured automatic lock actions."
+
+[[package]]
+name = "hyprpaper"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "appearance"
+reason = "Provides the Appearance-owned wallpaper renderer."
+
+[[package]]
+name = "hyprpolkitagent"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "polkit-session-lifecycle"
+reason = "Provides the package-owned graphical PolicyKit agent."
+
+[[package]]
+name = "hyprshutdown"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "session"
+reason = "Provides graceful Hyprland logout and shutdown presentation."
+
+[[package]]
+name = "imv"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides the deliberate lightweight image viewer for fresh installations."
+
+[[package]]
+name = "libxkbcommon"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "system-keyboard-synchronization"
+reason = "The keyboard helper invokes xkbcli directly for tuple validation."
+
+[[package]]
+name = "ly"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "session"
+reason = "Provides the selected display manager for the direct Hyprland session."
+
+[[package]]
+name = "mesa"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "graphics"
+reason = "Provides hardware-neutral graphics userspace without choosing a vendor Vulkan ICD."
+
+[[package]]
+name = "mpv"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides the deliberate default media player."
+
+[[package]]
+name = "networkmanager"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "networking"
+reason = "Provides the network authority consumed by the native shell UI."
+
+[[package]]
+name = "noto-fonts"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "fonts"
+reason = "Provides the primary Latin, Italian, UI and terminal font baseline."
+
+[[package]]
+name = "noto-fonts-emoji"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "fonts"
+reason = "Provides color emoji fallback."
+
+[[package]]
+name = "papirus-icon-theme"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "shell"
+reason = "Provides the icon theme selected by the shell."
+
+[[package]]
+name = "pavucontrol"
+source = "official"
+role = "recommended"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Provides a normal graphical audio configuration and recovery tool."
+
+[[package]]
+name = "pipewire"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Provides the media server used by the shell and applications."
+
+[[package]]
+name = "pipewire-alsa"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Provides ALSA application compatibility through PipeWire."
+
+[[package]]
+name = "pipewire-audio"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Provides the core PipeWire audio modules."
+
+[[package]]
+name = "pipewire-jack"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Deliberately satisfies mpv's JACK provider requirement with PipeWire."
+
+[[package]]
+name = "pipewire-pulse"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Provides PulseAudio-compatible application support through PipeWire."
+
+[[package]]
+name = "python"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "project-helpers"
+reason = "Runs Vanilla's Python backends and validation helpers."
+
+[[package]]
+name = "python-dbus"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "bluetooth"
+reason = "Provides the D-Bus binding used by the Bluetooth pairing helper."
+
+[[package]]
+name = "python-gobject"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "desktop-integration"
+reason = "Provides Gio and GLib bindings used by managed helpers."
+
+[[package]]
+name = "qt6-svg"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "shell"
+reason = "Provides the SVG support used by Quickshell VectorImage assets."
+
+[[package]]
+name = "quickshell"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "shell"
+reason = "Provides the Vanilla desktop shell runtime."
+
+[[package]]
+name = "slurp"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "screenshot"
+reason = "Provides interactive Wayland region selection."
+
+[[package]]
+name = "system-config-printer"
+source = "official"
+role = "recommended"
+default_install = false
+component = "printing"
+direct = true
+owner = "printing"
+reason = "Provides graphical printer configuration when printing is selected."
+
+[[package]]
+name = "thunar"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "file-management"
+reason = "Provides the deliberate standalone file manager and launcher target."
+
+[[package]]
+name = "thunar-archive-plugin"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "archive"
+reason = "Adds archive create and extract actions to Thunar."
+
+[[package]]
+name = "ttf-dejavu"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "fonts"
+reason = "Provides broad common fallback and monospace compatibility."
+
+[[package]]
+name = "ttf-liberation"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "fonts"
+reason = "Provides metric-compatible document and web fallback fonts."
+
+[[package]]
+name = "tumbler"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "file-management"
+reason = "Provides normal image thumbnails in Thunar."
+
+[[package]]
+name = "unzip"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "archive"
+reason = "Provides the selected ZIP extraction engine for Xarchiver."
+
+[[package]]
+name = "wayland"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "session"
+reason = "Provides the fundamental Wayland client/runtime contract."
+
+[[package]]
+name = "vulkan-icd-loader"
+source = "official"
+role = "optional"
+default_install = false
+component = "dictation-vulkan"
+direct = true
+owner = "dictation"
+reason = "Provides the loader for an explicitly selected and validated Vulkan dictation variant."
+
+[[package]]
+name = "vulkan-intel"
+source = "official"
+role = "optional"
+default_install = false
+component = "dictation-vulkan"
+direct = true
+owner = "dictation"
+reason = "Provides the Intel Vulkan ICD only after explicit matching-hardware validation."
+
+[[package]]
+name = "vulkan-radeon"
+source = "official"
+role = "optional"
+default_install = false
+component = "dictation-vulkan"
+direct = true
+owner = "dictation"
+reason = "Provides the AMD Vulkan ICD only after explicit matching-hardware validation."
+
+[[package]]
+name = "wireplumber"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "audio"
+reason = "Provides PipeWire device and policy management."
+
+[[package]]
+name = "wl-clipboard"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "screenshot"
+reason = "Publishes captured PNG data to the Wayland clipboard."
+
+[[package]]
+name = "wtype"
+source = "official"
+role = "optional"
+default_install = false
+component = "dictation"
+direct = true
+owner = "dictation"
+reason = "Provides the configured Wayland text-injection driver for Voxtype."
+
+[[package]]
+name = "xarchiver"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "archive"
+reason = "Provides the selected lightweight GTK archive frontend."
+
+[[package]]
+name = "xdg-desktop-portal"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "desktop-portals"
+reason = "Provides the desktop portal broker required by native and Flatpak applications."
+
+[[package]]
+name = "xdg-desktop-portal-gtk"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "desktop-portals"
+reason = "Provides the file chooser and GTK fallback portal interfaces."
+
+[[package]]
+name = "xdg-desktop-portal-hyprland"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "desktop-portals"
+reason = "Provides Hyprland screen capture and sharing portal interfaces."
+
+[[package]]
+name = "xdg-user-dirs"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "desktop-integration"
+reason = "Initializes locale-aware standard user directories for a fresh account."
+
+[[package]]
+name = "xdg-utils"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides standard MIME and default-application integration tools."
+
+[[package]]
+name = "xkeyboard-config"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "system-keyboard-synchronization"
+reason = "Provides the XKB layout data validated by the keyboard helper."
+
+[[package]]
+name = "yay"
+source = "aur"
+role = "required"
+default_install = true
+direct = true
+owner = "aur-bootstrap"
+reason = "Provides the approved interactive official/AUR package workflow."
+notes = "The sole approved default AUR exception; build as a non-root user."
+
+[[package]]
+name = "zip"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "archive"
+reason = "Provides the selected ZIP creation engine for Xarchiver."
+
+[[package]]
+name = "zstd"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "archive"
+reason = "Makes the promised zstd archive capability explicit."

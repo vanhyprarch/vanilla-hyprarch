@@ -663,7 +663,8 @@ Real materialization remains deferred to a genuinely fallback-managed output.
 
 ## 2026-09-21: Monitor HDR policy extension
 
-An uncommitted schema-v5/protocol-v4/inspect-v3 candidate adds two distinct
+The schema-v5/protocol-v4/inspect-v3 work began as an uncommitted candidate and
+was subsequently published after controlled acceptance. It adds two distinct
 Safe Apply policies without claiming live HDR signal state. Per-output **HDR:
 Off / Always On** restores exact base CM intent or forces `cm = "hdr"`; global
 **Automatic HDR · All displays: Off / HDR / HDR (EDID)** maps to
@@ -674,7 +675,7 @@ The backend requires identity-bound, checksum-valid EDID evidence for BT.2020
 and PQ plus an available 10-bit path. It preserves base CM absence/value in one
 adjacent versioned marker while forced HDR is durable and uses one strict
 machine-owned block for the global renderer policy. External HDR/ICC intent and
-uncertain capability fail closed. Deterministic backend/UI acceptance precedes
+uncertain capability fail closed. Deterministic backend/UI acceptance preceded
 the controlled schema upgrade and live visual checks.
 
 ## Project maintenance contract
