@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -84,7 +85,15 @@ class FakeRunner:
         elif command == "/usr/bin/makepkg":
             result = self._makepkg(args, state, Path(cwd), user)
         elif command == "/usr/bin/bsdtar":
-            metadata = state.get("built_metadata", "pkgname = yay\npkgbase = yay\narch = x86_64\n")
+            package_name = Path(args[2]).name
+            metadata = state.get("built_metadata", state.get("built_metadata_by_file", {}).get(package_name))
+            if metadata is None:
+                if package_name.startswith("yay-debug-"):
+                    metadata = "pkgname = yay-debug\npkgbase = yay\nxdata = pkgtype=debug\narch = x86_64\n"
+                elif package_name.startswith("yay-"):
+                    metadata = "pkgname = yay\npkgbase = yay\nxdata = pkgtype=pkg\narch = x86_64\n"
+                else:
+                    metadata = "pkgname = unexpected\npkgbase = unexpected\nxdata = pkgtype=pkg\narch = x86_64\n"
             result = CommandResult(0, metadata)
         else:
             raise AssertionError(f"real/unexpected command boundary reached: {args}")
@@ -187,14 +196,14 @@ class FakeRunner:
                 f"pkgbase = yay\narch = x86_64\nmakedepends = {dependency}>=1\n"
                 f"depends = pacman\npkgname = {pkgname}\n",
             )
-        package = cwd / "yay-1.0-1-x86_64.pkg.tar.zst"
+        output_names = state.get("yay_output_files", ["yay-1.0-1-x86_64.pkg.tar.zst"])
+        outputs = [Path(value) if Path(value).is_absolute() else cwd / value for value in output_names]
         if args[1:] == ["--packagelist"]:
-            outputs = [package]
-            if state.get("yay_split_output"):
-                outputs.append(cwd / "yay-debug-1.0-1-x86_64.pkg.tar.zst")
             return CommandResult(0, "".join(f"{path}\n" for path in outputs))
         if args[1:] == ["--cleanbuild", "--clean", "--noconfirm"]:
-            package.write_bytes(b"fixture-yay-package")
+            for output in outputs:
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(b"fixture-yay-package")
             return CommandResult(0)
         raise AssertionError(f"unexpected fake makepkg argv: {args}")
 
@@ -499,6 +508,9 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertEqual(extended, ("extended", "inherited"))
 
     def test_partial_official_package_apply_resumes_without_reinstall(self) -> None:
+        state = self.fixture.state()
+        state["installed"] = sorted(set(state["installed"]) | {"go"})
+        save_json(self.fixture.runner_state, state)
         engine = self.fixture.engine()
         plan = engine.plan()
         self.assertTrue(
@@ -517,7 +529,7 @@ class IntegrationTestCase(unittest.TestCase):
             for entry in self.fixture.state()["log"][before:]
             if entry["argv"][:5] == ["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--"]
         ]
-        self.assertEqual(transactions, [["go"]])
+        self.assertEqual(transactions, [])
         self.assertFalse(engine.validate().blockers)
 
     def test_existing_valid_yay_is_preserved_without_build(self) -> None:
@@ -579,12 +591,9 @@ class IntegrationTestCase(unittest.TestCase):
             self.fixture.engine()._bootstrap_yay()
         self.assertFalse(any((self.fixture.root / "var/tmp").iterdir()))
 
-    def test_unexpected_yay_package_identity_and_split_output_are_rejected(self) -> None:
+    def test_unexpected_yay_package_identity_is_rejected(self) -> None:
         self.fixture.update(yay_pkgname="other")
         with self.assertRaisesRegex(IntegrationError, "unexpected pkgbase/package"):
-            self.fixture.engine()._bootstrap_yay()
-        self.fixture.update(yay_pkgname="yay", yay_split_output=True)
-        with self.assertRaisesRegex(IntegrationError, "exactly one"):
             self.fixture.engine()._bootstrap_yay()
 
     def test_nonofficial_yay_dependency_is_rejected(self) -> None:
@@ -593,21 +602,169 @@ class IntegrationTestCase(unittest.TestCase):
             self.fixture.engine()._bootstrap_yay()
 
     def test_built_package_metadata_must_identify_yay(self) -> None:
-        self.fixture.update(built_metadata="pkgname = other\npkgbase = yay\narch = x86_64\n")
-        with self.assertRaisesRegex(IntegrationError, "built package metadata"):
+        self.fixture.update(
+            built_metadata="pkgname = other\npkgbase = yay\nxdata = pkgtype=pkg\narch = x86_64\n"
+        )
+        with self.assertRaisesRegex(IntegrationError, "unexpected package output"):
             self.fixture.engine()._bootstrap_yay()
 
     def test_built_package_architecture_is_checked_separately(self) -> None:
-        self.fixture.update(built_metadata="pkgname = yay\npkgbase = yay\narch = any\n")
+        self.fixture.update(
+            built_metadata="pkgname = yay\npkgbase = yay\nxdata = pkgtype=pkg\narch = any\n"
+        )
         self.fixture.engine()._bootstrap_yay()
 
         incompatible = Fixture()
         try:
-            incompatible.update(built_metadata="pkgname = yay\npkgbase = yay\narch = aarch64\n")
-            with self.assertRaisesRegex(IntegrationError, "built package metadata"):
+            incompatible.update(
+                built_metadata="pkgname = yay\npkgbase = yay\nxdata = pkgtype=pkg\narch = aarch64\n"
+            )
+            with self.assertRaisesRegex(IntegrationError, "incompatible architecture"):
                 incompatible.engine()._bootstrap_yay()
         finally:
             incompatible.close()
+
+    def test_makepkg_debug_output_fixture_selects_only_primary_regardless_of_order(self) -> None:
+        fixture_directory = REPOSITORY / "tests/fixtures/yay-debug-output"
+        output_names = fixture_directory.joinpath("packagelist.txt").read_text(encoding="utf-8").splitlines()
+        metadata = {
+            output_names[0]: fixture_directory.joinpath("yay.PKGINFO").read_text(encoding="utf-8"),
+            output_names[1]: fixture_directory.joinpath("yay-debug.PKGINFO").read_text(encoding="utf-8"),
+        }
+        for names in (output_names, list(reversed(output_names))):
+            with self.subTest(order=names):
+                fixture = Fixture()
+                try:
+                    fixture.update(yay_output_files=names, built_metadata_by_file=metadata)
+                    fixture.engine()._bootstrap_yay()
+                    installs = [
+                        entry["argv"]
+                        for entry in fixture.state()["log"]
+                        if entry["argv"][0:4] == ["/usr/bin/pacman", "-U", "--noconfirm", "--"]
+                    ]
+                    self.assertEqual(len(installs), 1)
+                    self.assertEqual(Path(installs[0][4]).name, output_names[0])
+                    self.assertFalse(any((fixture.root / "var/tmp").iterdir()))
+                finally:
+                    fixture.close()
+
+    @unittest.skipUnless(shutil.which("makepkg"), "makepkg is unavailable")
+    def test_real_makepkg_packagelist_includes_debug_companion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            home.mkdir()
+            root.joinpath("PKGBUILD").write_text(
+                "pkgname=vanhyprarch-output-fixture\n"
+                "pkgver=1\n"
+                "pkgrel=1\n"
+                "arch=('x86_64')\n"
+                "options=('strip' 'debug')\n"
+                "package() { :; }\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                ["/usr/bin/makepkg", "--packagelist"],
+                cwd=root,
+                env={"HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                [Path(line).name for line in completed.stdout.splitlines()],
+                [
+                    "vanhyprarch-output-fixture-1-1-x86_64.pkg.tar.zst",
+                    "vanhyprarch-output-fixture-debug-1-1-x86_64.pkg.tar.zst",
+                ],
+            )
+
+    def test_unexpected_extra_and_duplicate_primary_outputs_fail_closed(self) -> None:
+        primary = "yay-1.0-1-x86_64.pkg.tar.zst"
+        unrelated = "unrelated-1.0-1-x86_64.pkg.tar.zst"
+        self.fixture.update(yay_output_files=[primary, unrelated])
+        with self.assertRaisesRegex(IntegrationError, "unexpected package output"):
+            self.fixture.engine()._bootstrap_yay()
+        self.assertFalse(any((self.fixture.root / "var/tmp").iterdir()))
+
+        duplicate = Fixture()
+        try:
+            second = "second-primary-1.0-1-x86_64.pkg.tar.zst"
+            primary_metadata = "pkgname = yay\npkgbase = yay\nxdata = pkgtype=pkg\narch = x86_64\n"
+            duplicate.update(
+                yay_output_files=[primary, second],
+                built_metadata_by_file={primary: primary_metadata, second: primary_metadata},
+            )
+            with self.assertRaisesRegex(IntegrationError, "exactly one primary"):
+                duplicate.engine()._bootstrap_yay()
+        finally:
+            duplicate.close()
+
+    def test_debug_without_primary_and_multiple_debug_outputs_fail_closed(self) -> None:
+        debug_name = "yay-debug-1.0-1-x86_64.pkg.tar.zst"
+        self.fixture.update(yay_output_files=[debug_name])
+        with self.assertRaisesRegex(IntegrationError, "exactly one primary"):
+            self.fixture.engine()._bootstrap_yay()
+
+        ambiguous = Fixture()
+        try:
+            primary = "yay-1.0-1-x86_64.pkg.tar.zst"
+            second_debug = "second-debug-1.0-1-x86_64.pkg.tar.zst"
+            debug_metadata = "pkgname = yay-debug\npkgbase = yay\nxdata = pkgtype=debug\narch = x86_64\n"
+            ambiguous.update(
+                yay_output_files=[primary, debug_name, second_debug],
+                built_metadata_by_file={debug_name: debug_metadata, second_debug: debug_metadata},
+            )
+            with self.assertRaisesRegex(IntegrationError, "multiple ambiguous debug"):
+                ambiguous.engine()._bootstrap_yay()
+        finally:
+            ambiguous.close()
+
+    def test_invalid_debug_metadata_and_malformed_archive_fail_closed(self) -> None:
+        primary = "yay-1.0-1-x86_64.pkg.tar.zst"
+        debug_name = "yay-debug-1.0-1-x86_64.pkg.tar.zst"
+        self.fixture.update(
+            yay_output_files=[primary, debug_name],
+            built_metadata_by_file={
+                debug_name: "pkgname = yay-debug\npkgbase = yay\nxdata = pkgtype=pkg\narch = x86_64\n"
+            },
+        )
+        with self.assertRaisesRegex(IntegrationError, "debug package output has unexpected metadata"):
+            self.fixture.engine()._bootstrap_yay()
+
+        malformed = Fixture()
+        try:
+            malformed.update(built_metadata="not a PKGINFO assignment")
+            with self.assertRaisesRegex(IntegrationError, "malformed metadata"):
+                malformed.engine()._bootstrap_yay()
+        finally:
+            malformed.close()
+
+        unreadable = Fixture()
+        try:
+            unreadable.update(fail_once="/usr/bin/bsdtar -xOf")
+            with self.assertRaisesRegex(IntegrationError, "could not inspect"):
+                unreadable.engine()._bootstrap_yay()
+        finally:
+            unreadable.close()
+
+    def test_duplicate_and_outside_output_paths_fail_before_build(self) -> None:
+        primary = "yay-1.0-1-x86_64.pkg.tar.zst"
+        self.fixture.update(yay_output_files=[primary, primary])
+        with self.assertRaisesRegex(IntegrationError, "duplicate path"):
+            self.fixture.engine()._bootstrap_yay()
+
+        outside = Fixture()
+        try:
+            outside_path = outside.base / "outside.pkg.tar.zst"
+            outside.update(yay_output_files=[str(outside_path)])
+            with self.assertRaisesRegex(IntegrationError, "outside the private build tree"):
+                outside.engine()._bootstrap_yay()
+            self.assertFalse(outside_path.exists())
+        finally:
+            outside.close()
 
     def test_bluez_package_pristine_adoption_backup_and_preserve(self) -> None:
         engine = self.fixture.engine()

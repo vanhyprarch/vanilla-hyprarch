@@ -73,6 +73,15 @@ class TargetUser:
     home: Path
 
 
+@dataclasses.dataclass(frozen=True)
+class BuiltPackage:
+    path: Path
+    pkgname: str
+    pkgbase: str
+    architecture: str
+    package_type: str
+
+
 class SubprocessRunner:
     """Run fixed argv arrays; optionally cross the privilege boundary."""
 
@@ -780,6 +789,93 @@ class SystemIntegration:
         if unavailable:
             raise IntegrationError("yay requires non-official dependencies outside the approved AUR policy: " + ", ".join(unavailable))
 
+    def _yay_output_paths(self, repository: Path, output: str) -> tuple[Path, ...]:
+        repository_root = repository.resolve()
+        paths: list[Path] = []
+        resolved_paths: set[Path] = set()
+        for line in output.splitlines():
+            value = line.strip()
+            if not value:
+                continue
+            path = Path(value)
+            if not path.is_absolute():
+                path = repository / path
+            resolved = path.resolve(strict=False)
+            if repository_root not in resolved.parents:
+                raise IntegrationError("yay package output is outside the private build tree")
+            if resolved in resolved_paths:
+                raise IntegrationError("yay package output list contains a duplicate path")
+            resolved_paths.add(resolved)
+            paths.append(path)
+        if not paths:
+            raise IntegrationError("yay build did not declare any package output")
+        return tuple(paths)
+
+    def _inspect_built_package(self, repository: Path, package: Path) -> BuiltPackage:
+        repository_root = repository.resolve()
+        resolved = package.resolve(strict=False)
+        if (
+            repository_root not in resolved.parents
+            or not package.is_file()
+            or package.is_symlink()
+        ):
+            raise IntegrationError("yay build output is missing, unsafe, or outside the private build tree")
+        metadata = self._require_success(
+            self._run(["/usr/bin/bsdtar", "-xOf", str(package), ".PKGINFO"]),
+            "could not inspect built yay package metadata",
+        )
+        values: dict[str, list[str]] = {}
+        for raw_line in metadata.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                raise IntegrationError("built yay package has malformed metadata")
+            key, value = (part.strip() for part in line.split("=", 1))
+            values.setdefault(key, []).append(value)
+
+        def one(key: str) -> str:
+            entries = values.get(key, [])
+            if len(entries) != 1 or not entries[0]:
+                raise IntegrationError(f"built yay package has invalid {key} metadata")
+            return entries[0]
+
+        extra_data = values.get("xdata", [])
+        package_types = [value.removeprefix("pkgtype=") for value in extra_data if value.startswith("pkgtype=")]
+        if not extra_data or not extra_data[0].startswith("pkgtype=") or len(package_types) != 1:
+            raise IntegrationError("built yay package has invalid pkgtype metadata")
+        architecture = one("arch")
+        if architecture not in {"x86_64", "any"}:
+            raise IntegrationError("built yay package has incompatible architecture")
+        return BuiltPackage(
+            path=package,
+            pkgname=one("pkgname"),
+            pkgbase=one("pkgbase"),
+            architecture=architecture,
+            package_type=package_types[0],
+        )
+
+    def _select_yay_package(self, repository: Path, outputs: Sequence[Path]) -> Path:
+        primary: list[BuiltPackage] = []
+        debug: list[BuiltPackage] = []
+        for output in outputs:
+            package = self._inspect_built_package(repository, output)
+            if package.pkgname == "yay":
+                if package.pkgbase != "yay" or package.package_type != "pkg":
+                    raise IntegrationError("primary yay package output has unexpected metadata")
+                primary.append(package)
+            elif package.pkgname == "yay-debug":
+                if package.pkgbase != "yay" or package.package_type != "debug":
+                    raise IntegrationError("yay debug package output has unexpected metadata")
+                debug.append(package)
+            else:
+                raise IntegrationError(f"yay build produced unexpected package output: {package.pkgname}")
+        if len(primary) != 1:
+            raise IntegrationError("yay build must produce exactly one primary yay package")
+        if len(debug) > 1:
+            raise IntegrationError("yay build produced multiple ambiguous debug packages")
+        return primary[0].path
+
     def _bootstrap_yay(self) -> None:
         installed = self._read_installed_packages()
         status = self._yay_status(installed)
@@ -822,25 +918,10 @@ class SystemIntegration:
                 result = self._run(["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--", *missing_dependencies])
                 self._require_success(result, "could not install official yay build dependencies")
             expected_output = self._require_success(self._run(["/usr/bin/makepkg", "--packagelist"], cwd=repository, user=self.target_user), "could not determine yay package output")
-            expected_paths = [Path(line.strip()) for line in expected_output.splitlines() if line.strip()]
-            if len(expected_paths) != 1:
-                raise IntegrationError("yay build must produce exactly one expected package output")
+            expected_paths = self._yay_output_paths(repository, expected_output)
             build = self._run(["/usr/bin/makepkg", "--cleanbuild", "--clean", "--noconfirm"], cwd=repository, user=self.target_user)
             self._require_success(build, "yay build failed")
-            package = expected_paths[0]
-            if not package.is_absolute():
-                package = repository / package
-            resolved_package = package.resolve()
-            if repository.resolve() not in resolved_package.parents or not package.is_file() or package.is_symlink():
-                raise IntegrationError("yay build output is missing, unsafe, or outside the private build tree")
-            metadata = self._require_success(self._run(["/usr/bin/bsdtar", "-xOf", str(package), ".PKGINFO"]), "could not inspect built yay package metadata")
-            values: dict[str, list[str]] = {}
-            for line in metadata.splitlines():
-                if " = " in line:
-                    key, value = line.split(" = ", 1)
-                    values.setdefault(key, []).append(value)
-            if values.get("pkgname") != ["yay"] or values.get("pkgbase") != ["yay"] or values.get("arch") not in (["x86_64"], ["any"]):
-                raise IntegrationError("built package metadata does not identify the expected yay package")
+            package = self._select_yay_package(repository, expected_paths)
             package_digest = _sha256(package.read_bytes())
             install = self._run(["/usr/bin/pacman", "-U", "--noconfirm", "--", str(package)])
             self._require_success(install, "could not install the verified yay package")

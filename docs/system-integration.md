@@ -106,9 +106,17 @@ target-user-owned directory and records the exact Git commit.
 official repositories, installs missing official dependencies through pacman,
 and refuses any dependency that would require another AUR package. `go` is not
 mirrored in the static Vanilla manifest. `makepkg` builds as the target user;
-the stage requires exactly one package output and verifies its `.PKGINFO`
-pkgname, pkgbase, and architecture before privileged `pacman -U` installation.
-The exact private build directory is removed afterward.
+the stage requires exactly one primary package output and verifies every
+predicted archive through its `.PKGINFO` before privileged installation. The
+primary must identify `pkgname=yay`, `pkgbase=yay`, `pkgtype=pkg`, and a
+compatible architecture. One additional `yay-debug` archive is accepted only
+when its metadata identifies the same pkgbase, `pkgtype=debug`, and a compatible
+architecture. This accommodates Arch's standard `strip` plus `debug` makepkg
+behavior without changing system or user makepkg configuration. Only the
+primary `yay` archive is passed to `pacman -U`; the auxiliary debug archive is
+not installed or added to the AUR manifest. Unexpected, duplicate, ambiguous,
+unsafe, or malformed outputs fail closed. The exact private build directory,
+including an unused debug archive, is removed afterward.
 
 The `.SRCINFO` reader keeps repeatable fields as lists and evaluates the
 selected `yay` pkgname section separately from the shared pkgbase section.
