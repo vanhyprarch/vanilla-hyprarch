@@ -20,7 +20,10 @@ its feature branch. It derives official packages and system enablement from the
 published manifests, builds the sole yay exception as an explicit non-root
 user, adopts BlueZ only after package-pristine proof and exact backup, reuses
 the system-Flathub helper, and keeps local crash recovery for BlueZ and service
-transactions. Deterministic acceptance is isolated from the development host.
+transactions. A narrow shell bootstrap installs only `python` when a fresh
+Arch base lacks the interpreter, verifies it, and immediately delegates to the
+Python stage; it does not duplicate the manifest package transaction.
+Deterministic acceptance is isolated from the development host.
 Publication remains blocked until guided destructive and reboot acceptance in
 the user's snapshotted disposable Arch x86_64 GNOME Boxes VM. See
 [DF2 system integration](system-integration.md).
@@ -46,14 +49,16 @@ support for every hardware combination.
 
 The executor may initially be run from a local Vanilla source tree obtained by
 Git clone. That acquisition path necessarily starts with `git` already
-available as a pre-bootstrap acquisition prerequisite. Once Vanilla can run,
-`git` is also part of its permanent build/bootstrap package baseline. These
-roles do not conflict: one obtains the initial source, while the other keeps
-the declared Alpha build environment complete. Installed runtime files must be
-regular copies and must not depend on Git, the checkout, its `.git` directory,
-a worktree, or its absolute source path. The same separation must permit a
-future tagged release archive that does not require Git merely to acquire the
-source, without changing runtime layout.
+available as a pre-bootstrap acquisition prerequisite. Once the source exists,
+Vanilla bootstraps `python` itself when needed and the Python system stage keeps
+both `python` and `git` in the permanent build/bootstrap package baseline.
+These roles do not conflict: Git obtains the initial source, the narrow shell
+boundary makes the manifest-driven implementation executable, and that
+implementation establishes the declared Alpha environment. Installed runtime
+files must be regular copies and must not depend on Git, the checkout, its
+`.git` directory, a worktree, or its absolute source path. The same separation
+must permit a future tagged release archive that does not require Git merely to
+acquire the source, without changing runtime layout.
 
 ## Package and component decisions
 

@@ -1,0 +1,136 @@
+#!/bin/sh
+
+set -eu
+PATH=/usr/bin:/bin
+export PATH
+
+program_name=${0##*/}
+
+usage() {
+    printf 'usage: %s {plan|apply|validate} --target-user USER\n' "$program_name" >&2
+    exit 2
+}
+
+fail() {
+    printf '%s: %s\n' "$program_name" "$1" >&2
+    exit 1
+}
+
+operation=${1-}
+case "$operation" in
+    plan|apply|validate) ;;
+    *) usage ;;
+esac
+shift
+
+target_user=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --target-user)
+            [ "$#" -ge 2 ] || usage
+            [ -z "$target_user" ] || usage
+            target_user=$2
+            shift 2
+            ;;
+        *) usage ;;
+    esac
+done
+[ -n "$target_user" ] || usage
+
+source_root=$(CDPATH= cd -- "$(/usr/bin/dirname -- "$0")/.." && pwd -P)
+system_integration=$source_root/install/system_integration.py
+[ -f "$system_integration" ] && [ ! -L "$system_integration" ] || \
+    fail "system integration entry point is missing or unsafe"
+
+# Production always uses fixed base-system paths.  The explicit test boundary
+# can reach only commands under a marked disposable root.
+if [ "${VANHYPRARCH_BOOTSTRAP_TESTING-}" = 1 ]; then
+    [ -n "${VANHYPRARCH_BOOTSTRAP_TEST_ROOT-}" ] || fail "test root is required"
+    test_root=$(CDPATH= cd -- "$VANHYPRARCH_BOOTSTRAP_TEST_ROOT" && pwd -P)
+    [ -f "$test_root/.vanhyprarch-bootstrap-test-root" ] && \
+        [ ! -L "$test_root/.vanhyprarch-bootstrap-test-root" ] || \
+        fail "test root marker is missing or unsafe"
+    test_marker=
+    IFS= read -r test_marker < "$test_root/.vanhyprarch-bootstrap-test-root" || \
+        fail "test root marker is missing"
+    [ "$test_marker" = VANHYPRARCH_BOOTSTRAP_TEST_ROOT_V1 ] || \
+        fail "test root marker is invalid"
+    command_root=$test_root/usr/bin
+    os_release=$test_root/usr/lib/os-release
+    effective_uid=${VANHYPRARCH_BOOTSTRAP_TEST_EFFECTIVE_UID-1}
+else
+    [ -z "${VANHYPRARCH_BOOTSTRAP_TEST_ROOT-}" ] || fail "test root requires test mode"
+    command_root=/usr/bin
+    os_release=/usr/lib/os-release
+    effective_uid=$(/usr/bin/id -u)
+fi
+case "$effective_uid" in
+    ''|*[!0-9]*) fail "effective uid is invalid" ;;
+esac
+
+pacman=$command_root/pacman
+uname_command=$command_root/uname
+id_command=$command_root/id
+python_command=$command_root/python
+
+[ -x "$pacman" ] || fail "pacman is required"
+[ -x "$uname_command" ] || fail "uname is required"
+[ -x "$id_command" ] || fail "id is required"
+
+[ -f "$os_release" ] && [ ! -L "$os_release" ] || \
+    fail "supported base requires Arch Linux"
+arch_identity=
+while IFS= read -r release_line || [ -n "$release_line" ]; do
+    case "$release_line" in
+        ID=arch|ID=\"arch\"|ID=\'arch\') arch_identity=arch ;;
+    esac
+done < "$os_release"
+[ "$arch_identity" = arch ] || fail "supported base requires Arch Linux"
+
+architecture=$("$uname_command" -m) || fail "could not inspect architecture"
+[ "$architecture" = x86_64 ] || fail "unsupported architecture: ${architecture:-unknown}"
+
+target_uid=$("$id_command" -u -- "$target_user") || fail "target user does not exist: $target_user"
+case "$target_uid" in
+    ''|*[!0-9]*) fail "target user has invalid uid" ;;
+esac
+[ "$target_uid" -ne 0 ] || fail "an explicit non-root target user is required"
+
+pending_upgrades=$("$pacman" -Qu) || pending_status=$?
+pending_status=${pending_status-0}
+case "$pending_status" in
+    0|1) ;;
+    *) fail "could not inspect pending upgrades from current sync databases" ;;
+esac
+[ -z "$pending_upgrades" ] || \
+    fail "pending Arch upgrades detected; administrator must complete a normal pacman -Syu first"
+
+python_installed=false
+if "$pacman" -Q -- python >/dev/null 2>&1; then
+    python_installed=true
+fi
+
+if [ "$python_installed" = false ]; then
+    "$pacman" -Sp --print-format '%n' --needed -- python >/dev/null || \
+        fail "python cannot be resolved from the current sync databases"
+fi
+
+if [ "$operation" = plan ] && [ "$python_installed" = false ]; then
+    printf '%s\n' 'python-bootstrap: package-install python'
+    printf '%s\n' 'python-bootstrap: Python system-integration plan available after bootstrap'
+    exit 0
+fi
+
+if [ "$operation" = apply ] && [ "$python_installed" = false ]; then
+    [ "$effective_uid" = 0 ] || fail "apply must run as root"
+    "$pacman" -S --needed --noconfirm -- python || fail "could not install python"
+    "$pacman" -Q -- python >/dev/null 2>&1 || fail "python package verification failed"
+fi
+
+[ "$python_installed" = true ] || [ "$operation" = apply ] || \
+    fail "python is not installed; run apply to bootstrap it"
+[ -x "$python_command" ] || fail "installed Python interpreter is unavailable"
+"$python_command" -c 'import sys' || fail "installed Python interpreter could not start"
+
+exec "$python_command" "$system_integration" "$operation" \
+    --source-root "$source_root" --target-user "$target_user"

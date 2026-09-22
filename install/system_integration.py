@@ -338,14 +338,19 @@ class SystemIntegration:
         return tuple(line.strip() for line in result.stdout.splitlines() if line.strip())
 
     def _base_preflight(self) -> tuple[set[str], tuple[str, ...]]:
-        release = self._system_path("/etc/arch-release")
+        release = self._system_path("/usr/lib/os-release")
         if not release.is_file() or release.is_symlink():
             raise IntegrationError("supported base requires Arch Linux")
         try:
             release_text = release.read_text(encoding="utf-8")
         except OSError as error:
             raise IntegrationError(f"could not read Arch release identity: {error}") from error
-        if "Arch Linux" not in release_text:
+        identity = None
+        for line in release_text.splitlines():
+            if line.startswith("ID="):
+                identity = line.removeprefix("ID=").strip().strip("\"'")
+                break
+        if identity != "arch":
             raise IntegrationError("supported base requires Arch Linux")
         architecture = self._require_success(self._run(["/usr/bin/uname", "-m"]), "could not inspect architecture").strip()
         if architecture != "x86_64":

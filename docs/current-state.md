@@ -1040,11 +1040,13 @@ Bluetooth preference, and launcher state remain safely lazy. Abrupt create,
 Appearance starter-seed, and Power & Idle initialization tests run only against
 disposable targets.
 
-The Phase 4 feature branch adds the internal manifest-driven system-integration
-stage for official packages, non-root yay bootstrap, privileged BlueZ adoption,
-system Flathub, and required system-unit enablement. Fake command runners,
-disposable filesystem roots, and abrupt child-process exits cover transaction
-recovery without mutating the development host. See
+The Phase 4 feature branch adds a narrow pre-Python shell bootstrap plus the
+internal manifest-driven system-integration stage for official packages,
+non-root yay bootstrap, privileged BlueZ adoption, system Flathub, and required
+system-unit enablement. The shell boundary provisions only `python` when a
+fresh Arch base lacks it and then delegates to the Python authority. Fake
+command runners, disposable filesystem roots, and abrupt child-process exits
+cover transaction recovery without mutating the development host. See
 [DF2 system integration](system-integration.md).
 
 Phase 4 is not accepted or publishable until the user completes the guided
@@ -1058,9 +1060,10 @@ implemented.
 
 ### PLANNED
 
-- Build the shared bootstrap and thin optional archinstall integration defined
-  in the [installation strategy](installation-strategy.md), supporting both a
-  configured first reboot and post-install use on minimal Arch.
+- Build the shared top-level orchestration and thin optional archinstall
+  integration defined in the [installation strategy](installation-strategy.md),
+  supporting both a configured first reboot and post-install use on minimal
+  Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
 - Complete the manual GNOME Boxes acceptance of the Phase 4 package, service,
   privileged, Flatpak, reboot, and Phase 2/3 composition boundaries.
 - Build the full bootstrap orchestration around the published distribution
@@ -1081,7 +1084,7 @@ implemented.
 
 ### NOT IMPLEMENTED
 
-- Shared bootstrap and optional archinstall integration
+- Shared top-level orchestration and optional archinstall integration
 - Remove Application ownership mapping
 - Vanilla HyprArch self-update; the managed-file engine is not a full system or
   package updater

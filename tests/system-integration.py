@@ -207,7 +207,10 @@ class Fixture:
         ):
             path.mkdir(parents=True, exist_ok=True)
             path.chmod(mode)
-        (self.root / "etc/arch-release").write_text("Arch Linux release\n", encoding="utf-8")
+        (self.root / "usr/lib").mkdir(parents=True, exist_ok=True)
+        (self.root / "usr/lib/os-release").write_text(
+            'NAME="Arch Linux"\nID=arch\n', encoding="utf-8"
+        )
         self.bluez_target = self.root / "etc/bluetooth/main.conf"
         self.bluez_target.write_bytes(b"package-bluez-default\n")
         self.bluez_target.chmod(0o644)
@@ -336,7 +339,7 @@ class IntegrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(IntegrationError, "unsupported architecture"):
             self.fixture.engine().plan()
         self.fixture.update(architecture="x86_64")
-        (self.fixture.root / "etc/arch-release").write_text("Other\n", encoding="utf-8")
+        (self.fixture.root / "usr/lib/os-release").write_text("ID=other\n", encoding="utf-8")
         with self.assertRaisesRegex(IntegrationError, "requires Arch Linux"):
             self.fixture.engine().plan()
 
@@ -496,7 +499,7 @@ class IntegrationTestCase(unittest.TestCase):
     def test_bluez_symlink_wrong_type_mode_and_owner_fail_closed(self) -> None:
         target = self.fixture.bluez_target
         target.unlink()
-        target.symlink_to(self.fixture.root / "etc/arch-release")
+        target.symlink_to(self.fixture.root / "usr/lib/os-release")
         self.assertEqual(self.fixture.engine()._bluez_classification().action, "bluez-conflict")
         target.unlink()
         target.mkdir()

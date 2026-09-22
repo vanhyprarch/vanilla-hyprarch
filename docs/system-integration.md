@@ -1,11 +1,43 @@
 # DF2 system integration
 
-DF2 Phase 4 adds the installer-internal `install/system_integration.py` stage.
-It consumes the package, service-policy, and ownership-v2 manifests and exposes
-`plan`, `apply`, and `validate`. It is not the final installer or a public
-session command. The feature remains pending destructive acceptance in a
-user-managed disposable Arch x86_64 VM; it must never be applied to the
-development host.
+DF2 Phase 4 adds the installer-internal `install/bootstrap` entry point and
+`install/system_integration.py` stage. The shell entry point exists only to
+cross a fresh Arch system from no Python to a verified `python` package, then
+executes the Python stage. The Python stage consumes the package,
+service-policy, and ownership-v2 manifests and exposes `plan`, `apply`, and
+`validate`. Neither layer is the final installer or a public session command.
+The feature remains pending destructive acceptance in a user-managed
+disposable Arch x86_64 VM; it must never be applied to the development host.
+
+## Pre-Python bootstrap boundary
+
+A fresh Arch Minimal installation does not necessarily contain Python, even
+though `python` is a required/default Vanilla package. `install/bootstrap`
+closes that bootstrapping cycle without becoming a second installer. It uses
+only the supported Arch base shell and fixed base-system command paths, accepts
+an explicit non-root target user, and owns exactly one possible mutation:
+
+```text
+pacman -S --needed --noconfirm -- python
+```
+
+Before that transaction it verifies `ID=arch` from `/usr/lib/os-release`,
+x86_64, pacman availability,
+the target account, an empty `pacman -Qu` result against the existing sync
+database, and read-only resolution of `python`. It never refreshes databases,
+runs `pacman -Sy`, or runs `pacman -Syu`. If upgrades are pending, the
+administrator must complete a normal full Arch upgrade first. If Python is
+already installed, this layer makes no package change. In either successful
+case it verifies both package ownership and interpreter startup before
+executing `system_integration.py` with the same operation, source root, and
+target user.
+
+An absent-Python `plan` reports only the interpreter bootstrap action because
+the manifest-driven planner cannot execute yet; it performs no writes.
+`validate` never installs the interpreter. The production `apply` path must run
+as root, while all yay build work remains exclusively in the later Python
+stage as the explicit non-root target user. The shell layer contains no package
+manifest, service, BlueZ, Flatpak, managed-file, or create-once logic.
 
 ## Privilege boundary
 
@@ -24,12 +56,12 @@ rejects every command it does not explicitly model.
 
 ## Arch and package preflight
 
-The supported base is Arch Linux x86_64. The stage reads `/etc/arch-release`,
-queries `uname -m`, verifies that pacman's installed-package database is
-usable, verifies that the existing sync databases resolve pacman itself, and
-runs `pacman -Qu` against those already-present databases. Any pending upgrade
-blocks provisioning with an instruction for the administrator to perform a
-normal full `pacman -Syu` first.
+The supported base is Arch Linux x86_64. The stage reads the package-owned
+`/usr/lib/os-release` identity, queries `uname -m`, verifies that pacman's
+installed-package database is usable, verifies that the existing sync databases
+resolve pacman itself, and runs `pacman -Qu` against those already-present
+databases. Any pending upgrade blocks provisioning with an instruction for the
+administrator to perform a normal full `pacman -Syu` first.
 
 Vanilla never runs `pacman -Sy`, never refreshes databases independently, and
 never silently runs `pacman -Syu`. Missing default official packages are
@@ -155,4 +187,5 @@ are not a substitute for real system integration. Publication remains blocked
 until the user prepares and snapshots a disposable current Arch x86_64 VM in
 GNOME Boxes and completes guided package, reboot, service, BlueZ, Flatpak, and
 integrated Phase 2/3/4 acceptance. Phase 4 is never applied to the development
-host.
+host. The manual VM must exercise `install/bootstrap` while Python is absent;
+manually installing Python would bypass the bootstrap acceptance under test.
