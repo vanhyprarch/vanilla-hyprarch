@@ -336,7 +336,7 @@ SDDM as a tty2 instance and has no continuing getty@tty2 policy.
 
 Ly was superseded before Alpha, and no released Vanilla version used it.
 There is no production Ly migration or retirement path. Fresh-install
-acceptance from the saved VM snapshot is the release gate.
+acceptance from the saved VM snapshot passed.
 
 ## Locking and idle
 

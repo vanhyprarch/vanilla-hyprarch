@@ -1054,13 +1054,12 @@ host.
 
 **Status:** Accepted
 **Date:** 2026-09-22
-**Implementation:** DF2 Phase 5 Slices 1–3; fresh-install VM acceptance remains
-the release gate
+**Implementation:** DF2 Phase 5 Slices 1–3; fresh-install VM acceptance passed
 
 Ly 1.4.1 cannot provide the accepted password-only scene without a maintained
 custom package: its username and session rows are structurally present, and
 its terminal renderer cannot display the canonical SVG as a graphical asset.
-The future baseline therefore uses SDDM's normal X11 greeter with a
+The baseline therefore uses SDDM's normal X11 greeter with a
 Vanilla-owned Qt 6 theme to launch one direct Hyprland Wayland session. UWSM,
 autologin, PAM customization, and SDDM's experimental Wayland greeter remain
 out of scope.

@@ -114,15 +114,15 @@ Global text size uses the versioned preference documented in
 [Global text size](text-size.md); a missing preference means the 12-pixel
 default without creating state.
 
-## Session startup — IMPLEMENTED, FRESH-INSTALL ACCEPTANCE PENDING
+## Session startup — IMPLEMENTED AND VM-ACCEPTED
 
 The supported display-manager path is
 `SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland Wayland`.
-Phase 5 Slices 1–3 now define the undeployed
+Phase 5 Slices 1–3 define the accepted
 [SDDM theme, session, privileged payload, and baseline](phase-5-sddm-login.md).
 Ly was superseded before Alpha and has no supported production migration
 path. UWSM remains unsupported. Fresh-install acceptance from the saved VM
-snapshot is the release gate.
+snapshot passed.
 
 Before registering its startup children, the managed portable core reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
@@ -1059,12 +1059,11 @@ The user-managed Arch Minimal GNOME Boxes VM passed the no-Python bootstrap,
 partial-state resume, full apply, preserve-only second apply, validation,
 reboot, and integrated Phase 2/3/4 acceptance. These remain distribution cores
 rather than the full installer. Optional-component lifecycle, full installer
-orchestration, first-login acceptance, and live development-host deployment
-are not implemented.
+orchestration, and live development-host deployment are not implemented.
 
-DF2 Phase 5 Slices 1–3 now provide the undeployed Vanilla SDDM theme/session
-source contract, a dedicated root-only transactional deployment backend, and
-the future SDDM package/service baseline.
+DF2 Phase 5 Slices 1–3 provide the accepted Vanilla SDDM theme/session source
+contract, a dedicated root-only transactional deployment backend, and the SDDM
+package/service baseline.
 The backend resolves and records one explicit target account, publishes the
 session before the complete theme/binding generation, stores private hash/mode/
 owner provenance below `/var/lib/vanhyprarch/sddm-login`, and recovers durable
@@ -1074,8 +1073,8 @@ independence, and every defined interruption point. Slice 3 adds the
 provenance-owned X11/theme drop-in, makes official SDDM the sole supported
 manifest baseline, and enables `sddm.service` through its normal
 display-manager alias only after payload validation. Unsupported pre-existing
-display-manager configuration fails closed. No VM authentication acceptance
-has occurred.
+display-manager configuration fails closed. Fresh-install VM acceptance passed
+the bootstrap, visual greeter, authentication, logout/login, and reboot paths.
 
 ## Known open work
 
@@ -1087,9 +1086,9 @@ has occurred.
   Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
 - Build the full bootstrap orchestration around the published distribution
   cores.
-- Complete Phase 5 fresh-install acceptance from the saved VM snapshot.
-  Slices 1–3 are repository-complete but intentionally not installed on a
-  real system yet.
+- Fix Display resolution changes when automatic scale changes during readback.
+- Prevent virtual-display re-enumeration from producing a false serial
+  mismatch. Both Display findings are deferred and did not block Phase 5.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

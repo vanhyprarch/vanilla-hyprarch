@@ -239,5 +239,6 @@ Phase 4 is never applied to the development host.
 
 The supported chain is `SDDM X11 greeter -> Vanilla theme ->
 /usr/bin/start-hyprland -> Hyprland Wayland`; UWSM remains absent and
-unsupported. Fresh-install acceptance from the saved VM snapshot has not
-occurred yet and is the release gate.
+unsupported. Fresh-install acceptance from the saved VM snapshot passed,
+including bootstrap, direct SDDM installation, authentication, logout/login,
+and reboot persistence.

@@ -1,10 +1,10 @@
 # DF2 Phase 5 SDDM login
 
-Status: **SLICES 1–3 IMPLEMENTED IN REPOSITORY; NOT DEPLOYED OR VM-ACCEPTED**
+Status: **CLOSED AND FRESH-INSTALL VM-ACCEPTED**
 
 Decision date: 2026-09-22
 
-DF2 Phase 5 supersedes Ly as the future Vanilla HyprArch display-manager
+DF2 Phase 5 supersedes Ly as the Vanilla HyprArch display-manager
 architecture. The earlier Ly investigation established that Ly 1.4.1 cannot
 remove its visible username and session rows or display the canonical vector
 logo without maintaining a patched custom package. The accepted replacement
@@ -159,12 +159,13 @@ the generic `Configuration unavailable` state and never calls `sddm.login()`.
 
 Layout dimensions derive from the shorter logical screen dimension and clamp
 the scale to `0.72` through `2.0`. Input and logo widths also have proportional
-screen bounds. Physical VM, HiDPI, 4K, and multi-monitor acceptance remains a
-later deployed-candidate requirement.
+screen bounds. HiDPI, 4K, and physical multi-monitor coverage remain later
+hardware-specific acceptance work.
 
-## Acceptance gate
+## Acceptance
 
-A full fresh installation from the saved VM snapshot is the release gate. It
-must prove direct SDDM installation, the Vanilla greeter and session, login and
-logout, reboot persistence, idempotence, and source-checkout independence.
-There is no Slice 4 Ly-retirement operation.
+A full fresh installation from the saved VM snapshot passed. It exercised the
+Python bootstrap, installed SDDM directly without Ly, rendered the accepted
+password-only Vanilla greeter, authenticated into the direct Hyprland/Wayland
+session, returned to the same greeter on logout, logged in again, and preserved
+the result across reboot. There is no Slice 4 Ly-retirement operation.
