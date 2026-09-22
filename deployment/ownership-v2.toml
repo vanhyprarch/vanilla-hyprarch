@@ -4,6 +4,7 @@ development_mode = "repository-symlinks-allowed"
 runtime_source_independent = true
 managed_deployment_provenance = "managed-deployment-provenance"
 create_once_transaction_state = "create-once-transaction-state"
+sddm_login_state = "sddm-login-state"
 
 [[initializer]]
 id = "xdg-user-directories"
@@ -32,6 +33,13 @@ name = "VANILLA_MANAGED"
 deployable = true
 source_policy = "required"
 install_action = "copy"
+update_action = "replace-after-validation"
+
+[[ownership_class]]
+name = "VANILLA_MANAGED_SYSTEM"
+deployable = true
+source_policy = "required"
+install_action = "copy-as-root"
 update_action = "replace-after-validation"
 
 [[ownership_class]]
@@ -761,6 +769,61 @@ authority = "hyprland-package"
 status = "implemented"
 user_editable = false
 machine_specific = false
+
+[[artifact]]
+id = "sddm-vanilla-theme"
+source = "system/usr/share/sddm/themes/vanhyprarch"
+target = "/usr/share/sddm/themes/vanhyprarch"
+class = "VANILLA_MANAGED_SYSTEM"
+component = "sddm-login"
+kind = "tree"
+mode_policy = "explicit"
+directory_mode = "0755"
+file_mode = "0644"
+authority = "vanhyprarch-sddm-login"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Immutable theme payload; the backend adds the generated binding to the published generation."
+
+[[artifact]]
+id = "vanhyprarch-wayland-session"
+source = "system/usr/share/wayland-sessions/vanhyprarch.desktop"
+target = "/usr/share/wayland-sessions/vanhyprarch.desktop"
+class = "VANILLA_MANAGED_SYSTEM"
+component = "sddm-login"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-sddm-login"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
+id = "sddm-target-binding"
+target = "/usr/share/sddm/themes/vanhyprarch/theme.conf.user"
+class = "GENERATED"
+component = "sddm-login"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-sddm-login"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Generated only from the canonical target account and fixed Vanilla session path; never stores credentials."
+
+[[artifact]]
+id = "sddm-login-state"
+target = "/var/lib/vanhyprarch/sddm-login"
+class = "BACKEND_OWNED"
+component = "sddm-login"
+kind = "tree"
+mode = "0700"
+authority = "vanhyprarch-sddm-login"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Root-private mode-0600 provenance, transaction intent, and lock state for privileged SDDM publication."
 
 [[artifact]]
 id = "package-user-units"

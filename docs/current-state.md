@@ -1067,6 +1067,17 @@ rather than the full installer. Optional-component lifecycle, full installer
 orchestration, first-login acceptance, and live development-host deployment
 are not implemented.
 
+DF2 Phase 5 Slices 1–2 now provide the undeployed Vanilla SDDM theme/session
+source contract and a dedicated root-only transactional deployment backend.
+The backend resolves and records one explicit target account, publishes the
+session before the complete theme/binding generation, stores private hash/mode/
+owner provenance below `/var/lib/vanhyprarch/sddm-login`, and recovers durable
+pre-commit or post-commit transactions. Disposable-root tests cover collision
+refusal, symlink parents, manual drift, source updates, idempotence, source-tree
+independence, and every defined interruption point. SDDM is not yet a baseline
+package, Ly remains the published active baseline, service policy is unchanged,
+and no VM authentication acceptance has occurred.
+
 ## Known open work
 
 ### PLANNED
@@ -1077,9 +1088,9 @@ are not implemented.
   Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
 - Build the full bootstrap orchestration around the published distribution
   cores.
-- Complete the later Phase 5 slices for privileged SDDM deployment, package and
-  service migration, safe Ly retirement, and current/fresh-VM acceptance. The
-  Slice 1 theme/session sources are intentionally not installed yet.
+- Complete the later Phase 5 slices for SDDM package/service migration, safe Ly
+  retirement, orchestration, and current/fresh-VM acceptance. Slices 1–2 are
+  repository-complete but intentionally not installed on a real system yet.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

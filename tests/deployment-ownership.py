@@ -26,6 +26,7 @@ OWNERSHIP_DOC = REPOSITORY / "docs/deployment-ownership.md"
 
 VALID_CLASSES = {
     "VANILLA_MANAGED",
+    "VANILLA_MANAGED_SYSTEM",
     "CREATE_ONCE_MACHINE",
     "CREATE_ONCE_USER",
     "USER_OWNED",
@@ -93,6 +94,54 @@ class DeploymentOwnershipTests(unittest.TestCase):
         self.assertEqual(artifact["mode"], "0600")
         self.assertFalse(artifact["user_editable"])
         self.assertNotIn("source", artifact)
+
+    def test_sddm_login_system_ownership_is_explicit_and_backend_scoped(self) -> None:
+        classes = {
+            item["name"]: item for item in self.manifest["ownership_class"]
+        }
+        self.assertEqual(
+            classes["VANILLA_MANAGED_SYSTEM"],
+            {
+                "name": "VANILLA_MANAGED_SYSTEM",
+                "deployable": True,
+                "source_policy": "required",
+                "install_action": "copy-as-root",
+                "update_action": "replace-after-validation",
+            },
+        )
+
+        theme = self.artifact_for_target(
+            "/usr/share/sddm/themes/vanhyprarch"
+        )
+        self.assertEqual(theme["class"], "VANILLA_MANAGED_SYSTEM")
+        self.assertEqual(
+            theme["source"], "system/usr/share/sddm/themes/vanhyprarch"
+        )
+        self.assertEqual(theme["directory_mode"], "0755")
+        self.assertEqual(theme["file_mode"], "0644")
+
+        session = self.artifact_for_target(
+            "/usr/share/wayland-sessions/vanhyprarch.desktop"
+        )
+        self.assertEqual(session["class"], "VANILLA_MANAGED_SYSTEM")
+        self.assertEqual(session["mode"], "0644")
+
+        binding = self.artifact_for_target(
+            "/usr/share/sddm/themes/vanhyprarch/theme.conf.user"
+        )
+        self.assertEqual(binding["class"], "GENERATED")
+        self.assertEqual(binding["authority"], "vanhyprarch-sddm-login")
+        self.assertEqual(binding["mode"], "0644")
+        self.assertTrue(binding["machine_specific"])
+        self.assertNotIn("source", binding)
+
+        state_id = self.manifest["sddm_login_state"]
+        self.assertEqual(state_id, "sddm-login-state")
+        state = next(item for item in self.artifacts if item["id"] == state_id)
+        self.assertEqual(state["target"], "/var/lib/vanhyprarch/sddm-login")
+        self.assertEqual(state["class"], "BACKEND_OWNED")
+        self.assertEqual(state["mode"], "0700")
+        self.assertEqual(state["authority"], "vanhyprarch-sddm-login")
 
     def test_phase3_initializer_contract_is_manifest_driven(self) -> None:
         hooks = {item["id"]: item for item in self.manifest["initializer"]}

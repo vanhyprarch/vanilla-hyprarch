@@ -25,6 +25,7 @@ PACKAGE_SOURCES = {"official", "aur"}
 COMPONENT_CLASSES = {"recommended", "optional"}
 OWNERSHIP_CLASSES = {
     "VANILLA_MANAGED",
+    "VANILLA_MANAGED_SYSTEM",
     "CREATE_ONCE_MACHINE",
     "CREATE_ONCE_USER",
     "USER_OWNED",
@@ -329,7 +330,10 @@ class OwnershipManifestTests(unittest.TestCase):
             self.assertIs(type(item["machine_specific"]), bool)
             target = item["target"]
             self.assertTrue(
-                target.startswith(("$HOME/", "${XDG_", "/etc/", "/usr/")), target
+                target.startswith(
+                    ("$HOME/", "${XDG_", "/etc/", "/usr/", "/var/lib/")
+                ),
+                target,
             )
             self.assertNotIn(";", target)
             if "mode" in item:
@@ -400,8 +404,15 @@ class OwnershipManifestTests(unittest.TestCase):
                 self.assertFalse(self.classes[item["class"]]["deployable"])
                 self.assertNotIn("source", item)
         for item in self.artifacts:
-            if item["target"].startswith("/usr/lib/systemd/") or item["target"].startswith("/usr/share/wayland-sessions/"):
+            if item["target"].startswith("/usr/lib/systemd/"):
                 self.assertEqual(item["class"], "PACKAGE_OWNED")
+            if item["target"].startswith("/usr/share/wayland-sessions/"):
+                expected = (
+                    "VANILLA_MANAGED_SYSTEM"
+                    if item["id"] == "vanhyprarch-wayland-session"
+                    else "PACKAGE_OWNED"
+                )
+                self.assertEqual(item["class"], expected)
 
     def test_installed_quickshell_and_commands_do_not_depend_on_source_tree(self) -> None:
         shell = self.by_id["quickshell-config"]

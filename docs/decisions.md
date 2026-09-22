@@ -1055,8 +1055,8 @@ host.
 
 **Status:** Accepted
 **Date:** 2026-09-22
-**Implementation:** DF2 Phase 5 Slice 1 source contract; deployment and
-migration remain later slices
+**Implementation:** DF2 Phase 5 Slice 1 source contract and Slice 2 privileged
+transactional deployment; package/service migration remains a later slice
 
 Ly 1.4.1 cannot provide the accepted password-only scene without a maintained
 custom package: its username and session rows are structurally present, and
@@ -1073,7 +1073,9 @@ remembered SDDM state. Session selection resolves exactly one absolute `file`
 role from SDDM's session model before calling `sddm.login`; missing or
 ambiguous configuration fails closed.
 
-Slice 1 establishes only generic theme and desktop-entry sources plus tests.
-It deliberately leaves the Phase 4 Ly package and service policy unchanged.
-The detailed contract and remaining integration boundaries are documented in
+Slice 1 establishes generic theme and desktop-entry sources. Slice 2 adds the
+root-only provenance-backed publisher and generated machine binding under the
+new `VANILLA_MANAGED_SYSTEM` ownership boundary. Both deliberately leave the
+Phase 4 Ly package and service policy unchanged. The detailed contract and
+remaining integration boundaries are documented in
 [DF2 Phase 5 SDDM login](phase-5-sddm-login.md).

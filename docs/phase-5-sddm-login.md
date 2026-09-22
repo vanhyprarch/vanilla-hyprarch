@@ -1,6 +1,6 @@
 # DF2 Phase 5 SDDM login
 
-Status: **SLICE 1 SOURCE CONTRACT IMPLEMENTED; NOT DEPLOYED**
+Status: **SLICES 1–2 IMPLEMENTED IN REPOSITORY; NOT DEPLOYED OR VM-ACCEPTED**
 
 Decision date: 2026-09-22
 
@@ -37,17 +37,66 @@ Slice 1 adds repository source contracts only:
 - deterministic Python and mocked Qt tests validate presentation,
   authentication plumbing, session resolution, and power actions.
 
-Nothing in this slice installs or deploys those files. Ly remains the
-published Phase 4 baseline until later work deliberately changes the package
-manifest, privileged deployment, and systemd service policy. Slice 1 does not
-create `theme.conf.user`, touch PAM, alter `/etc` or `/usr/share`, install SDDM,
-or change a running display manager.
+Slice 1 itself installs nothing. Ly remains the published Phase 4 baseline
+until later work deliberately changes the package manifest and systemd service
+policy. It does not touch PAM, install SDDM, or change a running display
+manager.
+
+## Slice 2 privileged deployment
+
+`install/sddm_login_integration.py` is the root-only internal
+`plan`/`apply`/`validate` owner for the Slice 1 payload. `plan` and `apply`
+require an explicit absolute `--source-root`; `validate` checks installed state
+from root-private provenance without the source tree. Every operation requires
+the explicit `--target-user` and resolves its canonical non-root account through
+NSS. The first successful deployment records that account. A later request for
+a different account fails closed; Slice 2 has no rebinding operation.
+
+The ownership manifest classifies the immutable theme and session as
+`VANILLA_MANAGED_SYSTEM`: root-owned regular Vanilla copies with directory mode
+`0755`, file mode `0644`, provenance-backed updates, and no adoption of unknown
+pre-existing content. The generated `theme.conf.user` remains `GENERATED` and
+contains exactly the canonical username and fixed Vanilla session path. Its
+owning backend is the only generator. No password, UID, home, or source path is
+stored.
+
+Root-private state lives under mode-0700
+`/var/lib/vanhyprarch/sddm-login/`. Mode-0600 provenance records the target
+binding, release digest/identity, complete artifact inventory, hashes, modes,
+and owners. A separate mode-0600 durable transaction intent records staging,
+publication, verification, commit, and cleanup. Staging containers are private
+siblings of their destinations so Linux `renameat2(RENAME_EXCHANGE)` can swap
+complete file/directory generations atomically on the target filesystem.
+
+The fixed publication order is session entry first, then the complete theme
+generation containing its generated binding. Intent is durable before either
+namespace changes. Before the provenance commit point, recovery restores the
+old proven generation; after it, recovery retains the verified candidate and
+finishes cleanup. Unknown content, symlinks, unsafe parents, wrong types,
+ownership/mode drift, a session shadow at
+`/usr/local/share/wayland-sessions/vanhyprarch.desktop`, or administrator edits
+to managed payloads are conflicts rather than overwrite authority.
+
+Typical internal invocation is:
+
+```text
+python install/sddm_login_integration.py plan \
+  --source-root /absolute/release --target-user USER
+python install/sddm_login_integration.py apply \
+  --source-root /absolute/release --target-user USER
+python install/sddm_login_integration.py validate --target-user USER
+```
+
+Slice 2 does not install SDDM, alter package or service policy, retire Ly,
+write an SDDM drop-in, modify PAM, or start/reload a display manager. Its
+deployment engine exists for later privileged orchestration and has been
+validated only against disposable filesystem roots in this slice.
 
 ## Machine binding contract
 
 The immutable `theme.conf` disables the full user model and leaves
-`targetUser` and `targetSessionFile` empty. A later privileged integration
-slice must generate SDDM's supported adjacent `theme.conf.user` override from
+`targetUser` and `targetSessionFile` empty. The Slice 2 privileged integration
+backend generates SDDM's supported adjacent `theme.conf.user` override from
 the installer-resolved target account. The generic theme contains no actual
 username, UID assumption, remembered-user dependency, or password.
 
@@ -93,8 +142,7 @@ later deployed-candidate requirement.
 
 ## Follow-on work
 
-Later slices must separately add privileged system-file ownership and
-deployment, install-specific `theme.conf.user` generation, SDDM package and
-service policy, safe Ly migration and retirement, and VM acceptance. Those
-changes must preserve the source contract established here rather than adding
+Later slices must separately add SDDM package and service policy, safe Ly
+migration and retirement, orchestration, and VM acceptance. Those changes must
+preserve the source/deployment contracts established here rather than adding
 session or user selection to the visible theme.

@@ -21,6 +21,7 @@ evidence and is not the input for future deployment work.
 | Class | Authority and update rule |
 | --- | --- |
 | `VANILLA_MANAGED` | Vanilla supplies authoritative source bytes. Installed mode copies regular files; update may replace them only after staging and validation. |
+| `VANILLA_MANAGED_SYSTEM` | Vanilla supplies an authoritative system-wide payload. Its dedicated root backend publishes root-owned regular files/directories transactionally, requires provenance before updates, and never adopts an unrelated privileged target. |
 | `CREATE_ONCE_MACHINE` | Vanilla may initialize an absent machine-owned target from a seed. Normal updates always preserve it. |
 | `CREATE_ONCE_USER` | Vanilla may initialize an absent user-owned target from a seed. Normal updates always preserve it and never merge automatically. |
 | `USER_OWNED` | User content, preferences, or durable user state. It is observed or seeded only through its documented owner and is never replaced by deployment. A backend may remain the only supported writer for a structured preference. |
@@ -48,6 +49,12 @@ The `managed-deployment-provenance` artifact is mode-0600 `BACKEND_OWNED`
 bookkeeping. It records only installed managed paths, exact modes/hashes, and
 release provenance. It is not a preference. A previous record is required
 before update may replace or remove an existing target.
+
+The separate `sddm-login-state` artifact is a mode-0700 root-private
+`BACKEND_OWNED` tree. It is authority only for the
+`VANILLA_MANAGED_SYSTEM` SDDM theme/session payload and its generated target
+binding. Its provenance and transaction files are mode `0600`; neither Phase 2
+user deployment nor Phase 4 package/service integration consumes that state.
 
 ## Create-once seeds
 
