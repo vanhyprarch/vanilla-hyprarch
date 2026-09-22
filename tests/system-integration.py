@@ -979,6 +979,9 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertNotIn("vanhyprarch-monitor-safe-apply.service", desired)
 
     def test_fresh_plan_installs_and_enables_only_baseline_display_manager(self) -> None:
+        self.assertTrue(
+            (self.fixture.root / MODULE.START_HYPRLAND_PATH.lstrip("/")).is_file()
+        )
         state = self.fixture.state()
         state["installed"].remove("sddm")
         state["services"]["sddm.service"] = "not-found"
@@ -994,6 +997,70 @@ class IntegrationTestCase(unittest.TestCase):
             if entry["argv"][:3] == ["/usr/bin/systemctl", "is-enabled", "--"]
         }
         self.assertEqual(inspected_units, set(engine.desired_system_services))
+        self.assertFalse(plan.blockers)
+        self.assertFalse(
+            any(item.subject == "runtime-prerequisite" for item in plan.items)
+        )
+
+    def test_missing_launcher_is_prospective_when_hyprland_install_is_planned(self) -> None:
+        (self.fixture.root / MODULE.START_HYPRLAND_PATH.lstrip("/")).unlink()
+        state = self.fixture.state()
+        state["installed"].remove("hyprland")
+        save_json(self.fixture.runner_state, state)
+
+        plan = self.fixture.engine().plan()
+
+        self.assertFalse(plan.blockers)
+        self.assertIn(
+            ("package-install", "hyprland"),
+            {(item.action, item.subject) for item in plan.items},
+        )
+        prospective = [
+            item
+            for item in plan.items
+            if item.action == "sddm-prerequisite-planned"
+        ]
+        self.assertEqual(len(prospective), 1)
+        self.assertEqual(prospective[0].subject, "runtime-prerequisite")
+        self.assertIn(
+            "after the planned hyprland package installation",
+            prospective[0].detail,
+        )
+
+    def test_missing_launcher_blocks_when_hyprland_install_is_not_planned(self) -> None:
+        (self.fixture.root / MODULE.START_HYPRLAND_PATH.lstrip("/")).unlink()
+
+        plan = self.fixture.engine().plan()
+
+        self.assertNotIn(
+            ("package-install", "hyprland"),
+            {(item.action, item.subject) for item in plan.items},
+        )
+        blockers = [
+            item
+            for item in plan.blockers
+            if item.action == "sddm-conflict"
+            and item.subject == "runtime-prerequisite"
+        ]
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("start-hyprland is missing", blockers[0].detail)
+
+    def test_apply_blocks_if_planned_hyprland_install_does_not_supply_launcher(self) -> None:
+        launcher = self.fixture.root / MODULE.START_HYPRLAND_PATH.lstrip("/")
+        launcher.unlink()
+        state = self.fixture.state()
+        state["installed"].remove("hyprland")
+        save_json(self.fixture.runner_state, state)
+
+        with self.assertRaisesRegex(IntegrationError, "start-hyprland is missing"):
+            self.fixture.engine().apply()
+
+        self.assertIn("hyprland", self.fixture.state()["installed"])
+        self.assertFalse(launcher.exists())
+        self.assertEqual(self.fixture.state()["services"]["sddm.service"], "disabled")
+        self.assertFalse(
+            (self.fixture.root / "usr/share/sddm/themes/vanhyprarch").exists()
+        )
 
     def test_unrelated_display_manager_alias_blocks_without_replacement(self) -> None:
         state = self.fixture.state()

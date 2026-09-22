@@ -31,6 +31,7 @@ from typing import Callable, Protocol, Sequence
 from sddm_login_integration import (
     IntegrationError as SddmLoginError,
     SddmLoginIntegration,
+    START_HYPRLAND_PATH,
     TargetUser as SddmTargetUser,
 )
 
@@ -533,11 +534,32 @@ class SystemIntegration:
         )
 
     @staticmethod
-    def _sddm_plan_items(plan) -> list[PlanItem]:
-        return [
-            PlanItem(f"sddm-{item.action}", item.subject, f"{item.target}: {item.detail}")
-            for item in plan.items
-        ]
+    def _sddm_plan_items(plan, *, hyprland_install_planned: bool) -> list[PlanItem]:
+        items: list[PlanItem] = []
+        for item in plan.items:
+            if (
+                hyprland_install_planned
+                and item.action == "conflict"
+                and item.subject == "runtime-prerequisite"
+                and item.target == START_HYPRLAND_PATH
+                and item.detail == f"{START_HYPRLAND_PATH} is missing"
+            ):
+                items.append(
+                    PlanItem(
+                        "sddm-prerequisite-planned",
+                        item.subject,
+                        f"{item.target}: after the planned hyprland package installation",
+                    )
+                )
+                continue
+            items.append(
+                PlanItem(
+                    f"sddm-{item.action}",
+                    item.subject,
+                    f"{item.target}: {item.detail}",
+                )
+            )
+        return items
 
     def _display_manager_plan(self) -> list[PlanItem]:
         try:
@@ -805,8 +827,17 @@ class SystemIntegration:
             items.append(self._flatpak_status())
         else:
             items.append(PlanItem("flathub-add", FLATHUB_NAME, "after the planned flatpak package installation"))
+        hyprland_install_planned = any(
+            item.action == "package-install" and item.subject == "hyprland"
+            for item in package_items
+        )
         try:
-            items.extend(self._sddm_plan_items(self._sddm_login(source=True).plan()))
+            items.extend(
+                self._sddm_plan_items(
+                    self._sddm_login(source=True).plan(),
+                    hyprland_install_planned=hyprland_install_planned,
+                )
+            )
         except SddmLoginError as error:
             items.append(PlanItem("sddm-conflict", "sddm-login", str(error)))
         items.extend(self._service_plan())
