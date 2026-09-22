@@ -16,8 +16,12 @@ The initial Alpha support target is deliberately narrow: Arch Linux x86_64 on
 a documented fresh-install or archinstall-derived base. It does not promise
 adoption of arbitrary existing Arch desktops or other Hyprland distributions.
 The initial acquisition path may be a local Git clone, but installed runtime
-files must be regular copies with no dependency on that checkout. The same
-source/runtime separation must remain compatible with future release archives.
+files must be regular copies with no dependency on that checkout. For this
+acquisition path, `git` is necessarily available before Vanilla starts as a
+pre-bootstrap acquisition prerequisite. Once Vanilla runs, it also keeps
+`git` in the permanent build/bootstrap package baseline. A future tagged
+release archive may remove the need for Git merely to obtain the initial
+source; the source/runtime separation must remain compatible with that path.
 
 ## One bootstrap, two entry points
 
@@ -59,7 +63,10 @@ The shared bootstrap will eventually:
   according to their explicit role and policy;
 - build and install the explicit default `yay` exception as a non-root user,
   using the declared `base-devel` and `git` bootstrap prerequisites, without
-  treating it as permission to add other AUR packages;
+  treating it as permission to add other AUR packages; the `yay` PKGBUILD,
+  `makepkg`, and package dependency mechanism remain authoritative for yay's
+  own `depends` and `makedepends`, which Vanilla does not mirror in its static
+  package manifest;
 - after installing the required unpinned `flatpak` package, invoke
   `install/configure-flatpak` to establish the required system Flathub remote;
 - deploy managed home configuration without personal paths and initialize

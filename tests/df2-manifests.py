@@ -217,6 +217,7 @@ class PackageManifestTests(unittest.TestCase):
             self.names(source="official", role="build", default_install=True),
             {"base-devel", "git"},
         )
+        self.assertNotIn("go", self.by_name)
 
     def test_dictation_packages_do_not_leak_into_default_install(self) -> None:
         self.assertEqual(self.names(component="dictation"), {"gnupg", "wtype"})
@@ -556,6 +557,29 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertIn("never silently performs `pacman -Syu`", document)
         self.assertIn("unsupported partial upgrade", document)
         self.assertIn("selecting Hyprland once", document)
+
+    def test_aur_and_git_bootstrap_boundaries_are_documented(self) -> None:
+        package_policy = (REPOSITORY / "packages/README.md").read_text(
+            encoding="utf-8"
+        )
+        df2_decisions = (
+            REPOSITORY / "docs/distribution-foundation-2.md"
+        ).read_text(encoding="utf-8")
+        installation = (REPOSITORY / "docs/installation-strategy.md").read_text(
+            encoding="utf-8"
+        )
+
+        for document in (package_policy, df2_decisions, installation):
+            self.assertIn("PKGBUILD", document)
+            self.assertIn("makepkg", document)
+            self.assertIn("does not", document)
+        self.assertIn("`go` is not a direct Vanilla", package_policy)
+        self.assertIn("declare `go` directly", df2_decisions)
+        self.assertIn("pre-bootstrap acquisition prerequisite", df2_decisions)
+        self.assertIn("permanent build/bootstrap package baseline", df2_decisions)
+        self.assertIn("pre-bootstrap acquisition prerequisite", installation)
+        self.assertIn("permanent build/bootstrap package baseline", installation)
+        self.assertRegex(installation, r"future tagged\s+release archive")
 
 
 if __name__ == "__main__":

@@ -26,10 +26,15 @@ desktops, migration from other Hyprland distributions, NVIDIA provisioning, or
 support for every hardware combination.
 
 The executor may initially be run from a local Vanilla source tree obtained by
-Git clone. Installed runtime files must be regular copies and must not depend on
-the checkout, its `.git` directory, a worktree, or its absolute source path.
-The same separation must permit a future tagged release archive without
-changing runtime layout.
+Git clone. That acquisition path necessarily starts with `git` already
+available as a pre-bootstrap acquisition prerequisite. Once Vanilla can run,
+`git` is also part of its permanent build/bootstrap package baseline. These
+roles do not conflict: one obtains the initial source, while the other keeps
+the declared Alpha build environment complete. Installed runtime files must be
+regular copies and must not depend on Git, the checkout, its `.git` directory,
+a worktree, or its absolute source path. The same separation must permit a
+future tagged release archive that does not require Git merely to acquire the
+source, without changing runtime layout.
 
 ## Package and component decisions
 
@@ -41,7 +46,12 @@ default.
 
 `yay` is the sole approved default AUR package. It must be built as an unprivileged
 user using the official `base-devel` and `git` prerequisites. Its presence does
-not authorize another AUR package.
+not authorize another AUR package. Vanilla owns that generic AUR bootstrap
+contract; the `yay` PKGBUILD remains authoritative for its own `depends` and
+`makedepends`, resolved through `makepkg` and the package dependency mechanism.
+Vanilla does not duplicate that graph or declare `go` directly merely because
+the current PKGBUILD needs it. A later PKGBUILD dependency change therefore
+does not require Vanilla to mirror it in the static package manifest.
 
 The printing component contains `cups`, `cups-pk-helper`, and
 `system-config-printer`. Network discovery is the separate `network-printing`

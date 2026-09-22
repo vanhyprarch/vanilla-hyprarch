@@ -16,6 +16,16 @@ Supported roles are `required`, `recommended`, `optional`, `build`, and
 when it happens to be pulled transitively on a particular Arch snapshot.
 Transitive-only packages do not belong in this manifest.
 
+Vanilla owns the generic AUR bootstrap contract: `base-devel` and `git` are
+installed, and AUR packages are built as an unprivileged user. Each AUR
+package's PKGBUILD owns its own `depends` and `makedepends`; `makepkg` and the
+package dependency mechanism remain authoritative for that package-specific
+graph. Vanilla therefore does not mirror the current `yay` PKGBUILD's build
+dependencies in this manifest. In particular, `go` is not a direct Vanilla
+package merely because `yay` currently uses it to build. A future PKGBUILD
+change must not require a matching static-manifest edit or a second AUR
+dependency resolver.
+
 Component records classify additive package or external-payload features.
 Component membership never implies default installation; both the component
 and each package carry an explicit policy. The Zig Screensaver manager is
