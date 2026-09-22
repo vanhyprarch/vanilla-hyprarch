@@ -1023,8 +1023,12 @@ The internal `install/managed_deploy.py` engine now consumes ownership v2 and
 implements plan/install/update/validate for the 21 `VANILLA_MANAGED` user
 artifacts. Installed mode uses regular files, explicit modes, private staging,
 atomic generation exchange, mode-0600 hash provenance, safe stale removal, and
-per-artifact rollback. Deterministic Release A/B fixtures prove idempotence,
-source-tree independence, conflict refusal, path/symlink safety, and rollback.
+per-artifact rollback. Durable transaction milestones cover staging, publish,
+provenance commit, and cleanup: pre-commit recovery restores the prior
+generation, while post-commit recovery retains the validated candidate.
+Deterministic Release A/B fixtures, including abrupt subprocess termination,
+prove idempotence, source-tree independence, conflict refusal,
+path/symlink safety, rollback, and crash recovery.
 
 This remains a deployment core rather than the full installer. No package
 transaction, system service change, create-once seed publication, privileged

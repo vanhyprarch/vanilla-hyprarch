@@ -979,3 +979,11 @@ drift, symlinks, source/destination overlap, unsupported ownership classes,
 and unsafe paths fail closed. Package operations, create-once initialization,
 service integration, privileged adoption, and optional payload lifecycles stay
 in later phases.
+
+The provenance record also carries one minimal durable transaction intent.
+Pre-commit `staging`/`prepared` recovery restores the prior generation;
+post-commit `committed`/`cleaning` recovery keeps the candidate and completes
+cleanup. This ordering distinguishes a killed Vanilla operation from manual
+drift without weakening destination checks or introducing a general journal.
+Read-only planning reports recovery as required; mutating operations recover
+before starting new work.

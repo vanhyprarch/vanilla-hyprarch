@@ -11,6 +11,8 @@ import errno
 import hashlib
 import json
 import os
+import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -25,7 +27,18 @@ from typing import Callable, Iterable
 PHASE2_CLASS = "VANILLA_MANAGED"
 STATE_SCHEMA_VERSION = 1
 SUPPORTED_MANIFEST_SCHEMA = 2
-VALID_ACTIONS = {"create", "replace", "remove", "preserve", "conflict"}
+VALID_ACTIONS = {
+    "create",
+    "replace",
+    "remove",
+    "preserve",
+    "conflict",
+    "recovery-required",
+}
+TRANSACTION_VERSION = 1
+TRANSACTION_NAME = re.compile(r"\.vanhyprarch-transaction-([0-9a-f]{32})\Z")
+TEST_FAULT_ENV = "VANHYPRARCH_DEPLOY_TEST_FAULT_AT"
+TEST_MODE_ENV = "VANHYPRARCH_DEPLOY_TESTING"
 
 
 class DeploymentError(Exception):
@@ -393,20 +406,15 @@ class DeploymentPlan:
 
     @property
     def conflicts(self) -> tuple[PlanItem, ...]:
-        return tuple(item for item in self.items if item.action == "conflict")
+        return tuple(
+            item
+            for item in self.items
+            if item.action in {"conflict", "recovery-required"}
+        )
 
     @property
     def changes(self) -> tuple[PlanItem, ...]:
         return tuple(item for item in self.items if item.action in {"create", "replace", "remove"})
-
-
-@dataclass
-class _PreparedReplacement:
-    destination: Path
-    container: Path
-    backup: Path | None
-    created: bool
-    old_snapshot: Snapshot | None
 
 
 FaultHook = Callable[[str, str], None]
@@ -446,6 +454,15 @@ class ManagedDeployment:
             except tomllib.TOMLDecodeError as error:
                 raise ManifestError(f"invalid ownership manifest: {error}") from error
         self._load_manifest()
+
+    def _fault(self, point: str, identifier: str) -> None:
+        """Run an injected test fault; abrupt exits require an explicit test guard."""
+        self.fault_hook(point, identifier)
+        if os.environ.get(TEST_MODE_ENV) != "1":
+            return
+        selected = os.environ.get(TEST_FAULT_ENV)
+        if selected in {point, f"{point}:{identifier}"}:
+            os._exit(197)
 
     def _load_manifest(self) -> None:
         if self.manifest.get("schema_version") != SUPPORTED_MANIFEST_SCHEMA:
@@ -845,6 +862,112 @@ class ManagedDeployment:
                 os.chmod(current, 0o755)
                 _fsync_directory(current.parent)
 
+    def _validate_state_record(
+        self, record: object, *, label: str
+    ) -> dict[str, object]:
+        if not isinstance(record, dict):
+            raise ConflictError(f"{label} is invalid")
+        identifier = record.get("id")
+        target = record.get("target")
+        entries = record.get("entries")
+        if not isinstance(identifier, str) or not identifier:
+            raise ConflictError(f"{label} id is invalid")
+        if not isinstance(target, str):
+            raise ConflictError(f"{label} target is invalid")
+        if record.get("kind") not in {"file", "tree"} or not isinstance(entries, list):
+            raise ConflictError(f"{label} is malformed: {identifier}")
+        if record.get("class") != PHASE2_CLASS:
+            raise ConflictError(f"{label} ownership class is invalid: {identifier}")
+        if record.get("digest") != _sha256_bytes(_canonical_bytes(tuple(entries))):
+            raise ConflictError(f"{label} digest is invalid: {identifier}")
+        self.target.resolve(target)
+        return record
+
+    def _validate_transaction(
+        self,
+        transaction: object,
+        records: dict[str, dict[str, object]],
+    ) -> dict[str, object] | None:
+        if transaction is None:
+            return None
+        if not isinstance(transaction, dict):
+            raise ConflictError("deployment transaction is invalid")
+        expected_keys = {
+            "version",
+            "id",
+            "action",
+            "artifact_id",
+            "target",
+            "kind",
+            "container",
+            "phase",
+            "prior_state_absent",
+            "prior",
+            "candidate",
+        }
+        if set(transaction) != expected_keys:
+            raise ConflictError("deployment transaction fields are invalid")
+        transaction_id = transaction.get("id")
+        container = transaction.get("container")
+        if (
+            transaction.get("version") != TRANSACTION_VERSION
+            or not isinstance(transaction_id, str)
+            or re.fullmatch(r"[0-9a-f]{32}", transaction_id) is None
+            or container != f".vanhyprarch-transaction-{transaction_id}"
+            or TRANSACTION_NAME.fullmatch(str(container)) is None
+        ):
+            raise ConflictError("deployment transaction identity is invalid")
+        action = transaction.get("action")
+        phase = transaction.get("phase")
+        artifact_id = transaction.get("artifact_id")
+        target = transaction.get("target")
+        kind = transaction.get("kind")
+        if (
+            action not in {"create", "replace", "remove"}
+            or phase not in {"staging", "prepared", "committed", "cleaning"}
+            or not isinstance(artifact_id, str)
+            or not isinstance(target, str)
+            or kind not in {"file", "tree"}
+            or not isinstance(transaction.get("prior_state_absent"), bool)
+        ):
+            raise ConflictError("deployment transaction metadata is invalid")
+        self.target.resolve(target)
+        prior_raw = transaction.get("prior")
+        candidate_raw = transaction.get("candidate")
+        prior = (
+            None
+            if prior_raw is None
+            else self._validate_state_record(prior_raw, label="transaction prior record")
+        )
+        candidate = (
+            None
+            if candidate_raw is None
+            else self._validate_state_record(
+                candidate_raw, label="transaction candidate record"
+            )
+        )
+        for record in (prior, candidate):
+            if record is not None and (
+                record.get("id") != artifact_id
+                or record.get("target") != target
+                or record.get("kind") != kind
+            ):
+                raise ConflictError("deployment transaction record identity is invalid")
+        if action == "create" and (prior is not None or candidate is None):
+            raise ConflictError("create transaction records are invalid")
+        if action == "replace" and (prior is None or candidate is None):
+            raise ConflictError("replace transaction records are invalid")
+        if action == "remove" and (prior is None or candidate is not None):
+            raise ConflictError("remove transaction records are invalid")
+        recorded = records.get(artifact_id)
+        authoritative = prior if phase in {"staging", "prepared"} else candidate
+        if authoritative is None:
+            if recorded is not None:
+                raise ConflictError("deployment transaction conflicts with provenance")
+        elif recorded != authoritative:
+            raise ConflictError("deployment transaction conflicts with provenance")
+        return transaction
+
     def _load_state(self) -> tuple[dict[str, object] | None, bytes | None]:
         self._check_target_parent(self.provenance_path, self.provenance_root)
         if not _lexists(self.provenance_path):
@@ -874,27 +997,21 @@ class ManagedDeployment:
             raise ConflictError("deployment provenance artifact list is invalid")
         seen_ids: set[str] = set()
         seen_targets: set[str] = set()
-        for record in records:
-            if not isinstance(record, dict):
-                raise ConflictError("deployment provenance artifact record is invalid")
-            identifier = record.get("id")
-            target = record.get("target")
-            entries = record.get("entries")
-            if not isinstance(identifier, str) or identifier in seen_ids:
+        normalized: dict[str, dict[str, object]] = {}
+        for raw_record in records:
+            record = self._validate_state_record(
+                raw_record, label="deployment provenance artifact record"
+            )
+            identifier = str(record["id"])
+            target = str(record["target"])
+            if identifier in seen_ids:
                 raise ConflictError("deployment provenance has duplicate artifact ids")
-            if not isinstance(target, str) or target in seen_targets:
+            if target in seen_targets:
                 raise ConflictError("deployment provenance has duplicate artifact targets")
-            if record.get("kind") not in {"file", "tree"} or not isinstance(entries, list):
-                raise ConflictError(f"deployment provenance record is malformed: {identifier}")
-            if record.get("class") != PHASE2_CLASS:
-                raise ConflictError(
-                    f"deployment provenance ownership class is invalid: {identifier}"
-                )
-            if record.get("digest") != _sha256_bytes(_canonical_bytes(tuple(entries))):
-                raise ConflictError(f"deployment provenance digest is invalid: {identifier}")
-            self.target.resolve(target)
             seen_ids.add(identifier)
             seen_targets.add(target)
+            normalized[identifier] = record
+        self._validate_transaction(state.get("transaction"), normalized)
         return state, raw
 
     @staticmethod
@@ -914,6 +1031,18 @@ class ManagedDeployment:
         state, _raw = self._load_state()
         previous = self._records(state)
         items: list[PlanItem] = []
+        if state is not None and state.get("transaction") is not None:
+            transaction = state["transaction"]
+            assert isinstance(transaction, dict)
+            items.append(
+                PlanItem(
+                    "recovery-required",
+                    str(transaction["artifact_id"]),
+                    str(transaction["target"]),
+                    f"interrupted {transaction['action']} is in {transaction['phase']} phase",
+                )
+            )
+            return DeploymentPlan(operation, tuple(items), release_digest, self.release_id)
         if operation == "update" and state is None:
             items.append(
                 PlanItem("conflict", "@provenance", self.provenance_target, "update requires prior provenance")
@@ -1016,7 +1145,9 @@ class ManagedDeployment:
         if metadata.st_uid != os.geteuid() or metadata.st_gid != os.getegid():
             raise SafetyError("Phase 2 must run as the target user; HOME ownership differs")
 
-    def _copy_regular(self, source: Path, destination: Path, mode: int) -> None:
+    def _copy_regular(
+        self, source: Path, destination: Path, mode: int, identifier: str
+    ) -> None:
         source_descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         try:
             metadata = os.fstat(source_descriptor)
@@ -1033,22 +1164,30 @@ class ManagedDeployment:
                         shutil.copyfileobj(source_stream, destination_stream, 1024 * 1024)
                         destination_stream.flush()
                         os.fchmod(destination_descriptor, mode)
+                        self._fault("before-stage-file-fsync", identifier)
                         os.fsync(destination_descriptor)
+                        self._fault("after-stage-file-fsync", identifier)
             finally:
                 os.close(destination_descriptor)
         finally:
             os.close(source_descriptor)
 
-    def _stage(self, artifact: Artifact, destination: Path, root: Path) -> tuple[Path, Path, Snapshot]:
+    def _stage(
+        self,
+        artifact: Artifact,
+        destination: Path,
+        root: Path,
+        container: Path,
+    ) -> tuple[Path, Snapshot]:
         self._ensure_parent(destination, root)
-        container = Path(tempfile.mkdtemp(prefix=".vanhyprarch-stage-", dir=destination.parent))
+        container.mkdir(mode=0o700)
         os.chmod(container, 0o700)
         payload = container / "payload"
         try:
             source = self._source_path(artifact.source, artifact.kind)
             if artifact.kind == "file":
                 assert artifact.mode is not None
-                self._copy_regular(source, payload, artifact.mode)
+                self._copy_regular(source, payload, artifact.mode, artifact.identifier)
             else:
                 assert artifact.directory_mode is not None
                 assert artifact.file_mode is not None
@@ -1068,7 +1207,9 @@ class ManagedDeployment:
                             else artifact.file_mode
                         )
                         assert mode is not None
-                        self._copy_regular(source_path, staged, mode)
+                        self._copy_regular(
+                            source_path, staged, mode, artifact.identifier
+                        )
                 for directory, child_directories, _files in os.walk(payload, topdown=False):
                     for child in child_directories:
                         os.chmod(Path(directory) / child, artifact.directory_mode)
@@ -1080,83 +1221,19 @@ class ManagedDeployment:
             if staged != desired:
                 raise ValidationError(f"staged content differs from source contract: {artifact.identifier}")
             _fsync_directory(container)
-            return container, payload, desired
-        except Exception:
-            _remove_controlled(container)
-            raise
-
-    def _prepare_replacement(
-        self,
-        artifact: Artifact,
-        destination: Path,
-        root: Path,
-        create: bool,
-        expected_desired: Snapshot,
-        expected_previous: dict[str, object] | None,
-    ) -> tuple[_PreparedReplacement, Snapshot]:
-        container, payload, desired = self._stage(artifact, destination, root)
-        backup = payload
-        old_snapshot = None
-        created = not _lexists(destination)
-        switched = False
-        try:
-            if desired != expected_desired:
-                raise ConflictError(f"source changed while planning: {artifact.identifier}")
-            if create and not created:
-                raise ConflictError(f"destination appeared during create: {destination}")
-            if not create:
-                if created:
-                    raise ConflictError(f"managed destination disappeared during update: {destination}")
-                old_snapshot = self._actual_snapshot(artifact, destination)
-                if expected_previous is None or not self._snapshot_matches_record(
-                    old_snapshot, expected_previous
-                ):
-                    raise ConflictError(
-                        f"managed destination changed while planning: {artifact.identifier}"
-                    )
-                _atomic_exchange(payload, destination)
-                switched = True
-                self.fault_hook("after-backup", artifact.identifier)
-            else:
-                os.replace(payload, destination)
-                switched = True
             _fsync_directory(destination.parent)
-            self.fault_hook("after-replace", artifact.identifier)
-            installed = self._actual_snapshot(artifact, destination)
-            self._run_validators(artifact, destination)
-            if installed != desired:
-                raise ValidationError(f"installed verification failed: {artifact.identifier}")
-            return (
-                _PreparedReplacement(destination, container, None if created else backup, created, old_snapshot),
-                desired,
-            )
+            return payload, desired
         except Exception:
-            if switched:
-                if _lexists(destination):
-                    _remove_controlled(destination)
-                if not created and _lexists(backup):
-                    os.replace(backup, destination)
-                    _fsync_directory(destination.parent)
-                    if old_snapshot is not None:
-                        restored = self._actual_snapshot(artifact, destination)
-                        if restored != old_snapshot:
-                            raise ValidationError(
-                                f"rollback verification failed: {artifact.identifier}"
-                            )
             _remove_controlled(container)
+            _fsync_directory(destination.parent)
             raise
 
-    def _prepare_removal(
-        self, identifier: str, target_text: str, record: dict[str, object]
-    ) -> _PreparedReplacement | None:
-        destination, root = self.target.resolve(target_text)
-        self._ensure_parent(destination, root)
-        if not _lexists(destination):
-            return None
-        synthetic = Artifact(
-            identifier=identifier,
+    @staticmethod
+    def _synthetic_artifact(record: dict[str, object]) -> Artifact:
+        return Artifact(
+            identifier=str(record["id"]),
             source=PurePosixPath("unused"),
-            target=target_text,
+            target=str(record["target"]),
             ownership_class=PHASE2_CLASS,
             kind=str(record["kind"]),
             mode=None,
@@ -1167,60 +1244,346 @@ class ManagedDeployment:
             included=(),
             validators=(),
         )
-        old = self._actual_snapshot(synthetic, destination)
-        if not self._snapshot_matches_record(old, record):
-            raise ConflictError(f"stale artifact changed before removal: {identifier}")
-        container = Path(tempfile.mkdtemp(prefix=".vanhyprarch-stage-", dir=destination.parent))
-        os.chmod(container, 0o700)
-        backup = container / "backup"
+
+    def _path_matches_record(
+        self, path: Path, record: dict[str, object] | None
+    ) -> bool:
+        if record is None or not _lexists(path):
+            return False
         try:
-            os.replace(destination, backup)
-            _fsync_directory(destination.parent)
-            self.fault_hook("after-backup", identifier)
-            return _PreparedReplacement(destination, container, backup, False, old)
-        except Exception:
-            if _lexists(backup):
-                os.replace(backup, destination)
+            actual = self._actual_snapshot(self._synthetic_artifact(record), path)
+        except DeploymentError:
+            return False
+        return self._snapshot_matches_record(actual, record)
+
+    def _transaction_paths(
+        self, transaction: dict[str, object]
+    ) -> tuple[Path, Path, Path]:
+        destination, root = self.target.resolve(transaction["target"])
+        self._check_target_parent(destination, root)
+        container_name = str(transaction["container"])
+        match = TRANSACTION_NAME.fullmatch(container_name)
+        if match is None or match.group(1) != transaction["id"]:
+            raise ConflictError("deployment transaction container is invalid")
+        container = destination.parent / container_name
+        if not _inside(container, root):
+            raise SafetyError("deployment transaction container escapes target root")
+        if _lexists(container):
+            metadata = os.lstat(container)
+            if (
+                stat.S_ISLNK(metadata.st_mode)
+                or not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or metadata.st_gid != os.getegid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+            ):
+                raise ConflictError("deployment transaction container is unsafe")
+        return destination, root, container
+
+    @staticmethod
+    def _container_entries(container: Path) -> set[str]:
+        if not _lexists(container):
+            return set()
+        with os.scandir(container) as entries:
+            return {entry.name for entry in entries}
+
+    def _new_transaction(
+        self,
+        *,
+        item: PlanItem,
+        artifact: Artifact | None,
+        prior: dict[str, object] | None,
+        candidate: Snapshot | None,
+        state: dict[str, object] | None,
+        state_raw: bytes | None,
+        operation: str,
+        release_digest: str,
+        records: dict[str, dict[str, object]],
+    ) -> tuple[dict[str, object], bytes]:
+        destination, root = self.target.resolve(item.target)
+        self._ensure_parent(destination, root)
+        transaction_id = secrets.token_hex(16)
+        container = destination.parent / f".vanhyprarch-transaction-{transaction_id}"
+        candidate_record = None if candidate is None else candidate.record()
+        if item.action == "create":
+            if _lexists(destination):
+                raise ConflictError(f"destination appeared during create: {destination}")
+            assert artifact is not None and candidate is not None
+        elif item.action == "replace":
+            assert artifact is not None and prior is not None and candidate is not None
+            if not self._path_matches_record(destination, prior):
+                raise ConflictError(
+                    f"managed destination changed while planning: {artifact.identifier}"
+                )
+        else:
+            assert item.action == "remove" and prior is not None
+            if not self._path_matches_record(destination, prior):
+                raise ConflictError(
+                    f"stale artifact changed before removal: {item.identifier}"
+                )
+
+        transaction: dict[str, object] = {
+            "version": TRANSACTION_VERSION,
+            "id": transaction_id,
+            "action": item.action,
+            "artifact_id": item.identifier,
+            "target": item.target,
+            "kind": str((prior or candidate_record)["kind"]),
+            "container": container.name,
+            "phase": "staging",
+            "prior_state_absent": state is None,
+            "prior": prior,
+            "candidate": candidate_record,
+        }
+        if state is None:
+            intent = self._state_document(
+                operation=operation,
+                status="partial",
+                release_digest=release_digest,
+                records=records,
+                transaction=transaction,
+            )
+        else:
+            intent = dict(state)
+            intent["transaction"] = transaction
+        self._atomic_state_write(
+            intent, state_raw, item.identifier, milestone="intent"
+        )
+        try:
+            intent_raw = self.provenance_path.read_bytes()
+            if item.action == "create":
+                _payload, staged = self._stage(
+                    artifact, destination, root, container
+                )
+                if staged != candidate:
+                    raise ConflictError(
+                        f"source changed while planning: {artifact.identifier}"
+                    )
+            elif item.action == "replace":
+                _payload, staged = self._stage(
+                    artifact, destination, root, container
+                )
+                if staged != candidate or not self._path_matches_record(destination, prior):
+                    raise ConflictError(
+                        f"source or destination changed while staging: {artifact.identifier}"
+                    )
+            else:
+                container.mkdir(mode=0o700)
+                os.chmod(container, 0o700)
+                _fsync_directory(container)
                 _fsync_directory(destination.parent)
-            _remove_controlled(container)
+            prepared = dict(transaction)
+            prepared["phase"] = "prepared"
+            intent = dict(intent)
+            intent["transaction"] = prepared
+            self._atomic_state_write(
+                intent, intent_raw, item.identifier, milestone="intent-ready"
+            )
+            return prepared, self.provenance_path.read_bytes()
+        except Exception:
+            self._recover_incomplete()
             raise
 
-    def _rollback_prepared(self, prepared: _PreparedReplacement | None, artifact: Artifact | None) -> None:
-        if prepared is None:
-            return
-        if _lexists(prepared.destination):
-            _remove_controlled(prepared.destination)
-        if prepared.backup is not None and _lexists(prepared.backup):
-            os.replace(prepared.backup, prepared.destination)
-            _fsync_directory(prepared.destination.parent)
-            if prepared.old_snapshot is not None:
-                verifier = artifact or Artifact(
-                    identifier=prepared.old_snapshot.identifier,
-                    source=PurePosixPath("unused"),
-                    target=prepared.old_snapshot.target,
-                    ownership_class=PHASE2_CLASS,
-                    kind=prepared.old_snapshot.kind,
-                    mode=None,
-                    directory_mode=None,
-                    file_mode=None,
-                    executable_mode=None,
-                    executable=(),
-                    included=(),
-                    validators=(),
-                )
-                restored = self._actual_snapshot(verifier, prepared.destination)
-                if restored != prepared.old_snapshot:
-                    raise ValidationError(
-                        f"rollback verification failed: {prepared.old_snapshot.identifier}"
-                    )
-        _remove_controlled(prepared.container)
+    def _publish_transaction(
+        self, transaction: dict[str, object], artifact: Artifact | None
+    ) -> None:
+        destination, _root, container = self._transaction_paths(transaction)
+        action = str(transaction["action"])
+        identifier = str(transaction["artifact_id"])
+        payload = container / ("backup" if action == "remove" else "payload")
+        prior = transaction.get("prior")
+        candidate = transaction.get("candidate")
+        expected_entries = set() if action == "remove" else {"payload"}
+        if self._container_entries(container) != expected_entries:
+            raise ConflictError("prepared deployment transaction content changed")
+        if action == "create":
+            if _lexists(destination) or not isinstance(
+                candidate, dict
+            ) or not self._path_matches_record(payload, candidate):
+                raise ConflictError("prepared create state changed before publish")
+        elif action == "replace":
+            if (
+                not isinstance(prior, dict)
+                or not isinstance(candidate, dict)
+                or not self._path_matches_record(destination, prior)
+                or not self._path_matches_record(payload, candidate)
+            ):
+                raise ConflictError("prepared replacement state changed before publish")
+        elif not isinstance(prior, dict) or not self._path_matches_record(
+            destination, prior
+        ):
+            raise ConflictError("prepared removal state changed before publish")
+        self._fault("before-publish", identifier)
+        if action == "create":
+            os.replace(payload, destination)
+        elif action == "replace":
+            _atomic_exchange(payload, destination)
+            self._fault("after-backup", identifier)
+        else:
+            os.replace(destination, payload)
+            self._fault("after-backup", identifier)
+        self._fault("after-publish", identifier)
+        self._fault("before-publish-container-fsync", identifier)
+        _fsync_directory(container)
+        self._fault("after-publish-container-fsync", identifier)
+        self._fault("before-publish-parent-fsync", identifier)
+        _fsync_directory(destination.parent)
+        self._fault("after-publish-parent-fsync", identifier)
+        if action == "remove":
+            if _lexists(destination):
+                raise ValidationError(f"stale artifact removal failed: {identifier}")
+        else:
+            assert isinstance(candidate, dict) and artifact is not None
+            if not self._path_matches_record(destination, candidate):
+                raise ValidationError(f"installed verification failed: {identifier}")
+            self._run_validators(artifact, destination)
+        self._fault("after-replace", identifier)
+        self._fault("after-publish-verify", identifier)
 
-    def _finish_prepared(self, prepared: _PreparedReplacement | None) -> None:
-        if prepared is None:
+    def _cleanup_committed_transaction(
+        self, transaction: dict[str, object]
+    ) -> None:
+        destination, _root, container = self._transaction_paths(transaction)
+        action = str(transaction["action"])
+        identifier = str(transaction["artifact_id"])
+        prior = transaction.get("prior")
+        candidate = transaction.get("candidate")
+        if action == "remove":
+            if _lexists(destination):
+                raise ConflictError(
+                    f"committed removal target reappeared: {identifier}"
+                )
+        elif not isinstance(candidate, dict) or not self._path_matches_record(
+            destination, candidate
+        ):
+            raise ConflictError(
+                f"committed deployment target drifted: {identifier}"
+            )
+        expected_entry = "backup" if action == "remove" else "payload"
+        entries = self._container_entries(container)
+        if entries - {expected_entry}:
+            raise ConflictError("deployment transaction container has unknown content")
+        rollback = container / expected_entry
+        if _lexists(rollback):
+            if action == "create" or not isinstance(prior, dict):
+                raise ConflictError("deployment transaction rollback material is unexpected")
+            if transaction["phase"] == "committed" and not self._path_matches_record(
+                rollback, prior
+            ):
+                raise ConflictError("deployment transaction rollback material drifted")
+            if transaction["phase"] == "cleaning":
+                self._validate_transaction_container_tree(container)
+        self._fault("before-cleanup", identifier)
+        if _lexists(rollback):
+            _remove_controlled(rollback)
+        self._fault("during-cleanup", identifier)
+        if _lexists(container):
+            _remove_controlled(container)
+        _fsync_directory(destination.parent)
+        self._fault("after-cleanup", identifier)
+
+    def _validate_transaction_container_tree(self, container: Path) -> None:
+        if not _lexists(container):
             return
-        if prepared.backup is not None and _lexists(prepared.backup):
-            _remove_controlled(prepared.backup)
-        _remove_controlled(prepared.container)
+        for directory, child_directories, files in os.walk(
+            container, topdown=True, followlinks=False
+        ):
+            for name in child_directories + files:
+                path = Path(directory) / name
+                metadata = os.lstat(path)
+                if (
+                    stat.S_ISLNK(metadata.st_mode)
+                    or not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode))
+                    or metadata.st_uid != os.geteuid()
+                    or metadata.st_gid != os.getegid()
+                ):
+                    raise ConflictError(
+                        "deployment transaction staging content is unsafe"
+                    )
+
+    def _restore_staging_transaction(
+        self, transaction: dict[str, object]
+    ) -> None:
+        destination, _root, container = self._transaction_paths(transaction)
+        action = str(transaction["action"])
+        identifier = str(transaction["artifact_id"])
+        prior = transaction.get("prior")
+        if action == "create":
+            if _lexists(destination):
+                raise ConflictError(
+                    f"destination changed during interrupted staging: {identifier}"
+                )
+        elif not isinstance(prior, dict) or not self._path_matches_record(
+            destination, prior
+        ):
+            raise ConflictError(
+                f"managed destination changed during interrupted staging: {identifier}"
+            )
+        self._validate_transaction_container_tree(container)
+        if _lexists(container):
+            _remove_controlled(container)
+            _fsync_directory(destination.parent)
+
+    def _restore_prepared_transaction(
+        self, transaction: dict[str, object]
+    ) -> None:
+        destination, _root, container = self._transaction_paths(transaction)
+        action = str(transaction["action"])
+        identifier = str(transaction["artifact_id"])
+        prior = transaction.get("prior")
+        candidate = transaction.get("candidate")
+        expected_entry = "backup" if action == "remove" else "payload"
+        entries = self._container_entries(container)
+        if entries - {expected_entry}:
+            raise ConflictError("deployment transaction container has unknown content")
+        rollback = container / expected_entry
+
+        if action == "create":
+            assert isinstance(candidate, dict)
+            if not _lexists(destination) and (
+                not _lexists(rollback)
+                or self._path_matches_record(rollback, candidate)
+            ):
+                pass
+            elif self._path_matches_record(destination, candidate) and not _lexists(rollback):
+                _remove_controlled(destination)
+                _fsync_directory(destination.parent)
+            else:
+                raise ConflictError(
+                    f"interrupted create no longer matches transaction evidence: {identifier}"
+                )
+        elif action == "replace":
+            assert isinstance(prior, dict) and isinstance(candidate, dict)
+            if self._path_matches_record(destination, prior) and (
+                not _lexists(rollback)
+                or self._path_matches_record(rollback, candidate)
+            ):
+                pass
+            elif self._path_matches_record(
+                destination, candidate
+            ) and self._path_matches_record(rollback, prior):
+                _atomic_exchange(rollback, destination)
+                _fsync_directory(container)
+                _fsync_directory(destination.parent)
+            else:
+                raise ConflictError(
+                    f"interrupted replacement no longer matches transaction evidence: {identifier}"
+                )
+        else:
+            assert isinstance(prior, dict)
+            if self._path_matches_record(destination, prior) and not _lexists(rollback):
+                pass
+            elif not _lexists(destination) and self._path_matches_record(rollback, prior):
+                os.replace(rollback, destination)
+                _fsync_directory(container)
+                _fsync_directory(destination.parent)
+            else:
+                raise ConflictError(
+                    f"interrupted removal no longer matches transaction evidence: {identifier}"
+                )
+        if _lexists(container):
+            _remove_controlled(container)
+        _fsync_directory(destination.parent)
 
     def _state_document(
         self,
@@ -1229,8 +1592,9 @@ class ManagedDeployment:
         status: str,
         release_digest: str,
         records: dict[str, dict[str, object]],
+        transaction: dict[str, object] | None = None,
     ) -> dict[str, object]:
-        return {
+        document: dict[str, object] = {
             "schema_version": STATE_SCHEMA_VERSION,
             "ownership_manifest_schema": SUPPORTED_MANIFEST_SCHEMA,
             "status": status,
@@ -1239,8 +1603,18 @@ class ManagedDeployment:
             "release_digest": release_digest,
             "artifacts": [records[name] for name in sorted(records)],
         }
+        if transaction is not None:
+            document["transaction"] = transaction
+        return document
 
-    def _atomic_state_write(self, document: dict[str, object], old_raw: bytes | None, identifier: str) -> None:
+    def _atomic_state_write(
+        self,
+        document: dict[str, object],
+        old_raw: bytes | None,
+        identifier: str,
+        *,
+        milestone: str = "provenance",
+    ) -> None:
         self._ensure_parent(self.provenance_path, self.provenance_root)
         new_raw = json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False).encode("utf-8") + b"\n"
         if old_raw == new_raw:
@@ -1254,13 +1628,18 @@ class ManagedDeployment:
             with os.fdopen(descriptor, "wb", closefd=False) as stream:
                 stream.write(new_raw)
                 stream.flush()
+                self._fault(f"before-{milestone}-state-file-fsync", identifier)
                 os.fsync(descriptor)
+                self._fault(f"after-{milestone}-state-file-fsync", identifier)
             os.close(descriptor)
             descriptor = -1
-            self.fault_hook("before-state-write", identifier)
+            self._fault("before-state-write", identifier)
             os.replace(temporary, self.provenance_path)
+            self._fault(f"after-{milestone}-state-publish", identifier)
+            self._fault(f"before-{milestone}-state-directory-fsync", identifier)
             _fsync_directory(self.provenance_path.parent)
-            self.fault_hook("after-state-replace", identifier)
+            self._fault(f"after-{milestone}-state-directory-fsync", identifier)
+            self._fault("after-state-replace", identifier)
             if self.provenance_path.read_bytes() != new_raw:
                 raise ValidationError("deployment provenance readback failed")
             metadata = os.lstat(self.provenance_path)
@@ -1304,8 +1683,73 @@ class ManagedDeployment:
             if _lexists(temporary):
                 temporary.unlink()
 
+    @staticmethod
+    def _without_transaction(state: dict[str, object]) -> dict[str, object]:
+        document = dict(state)
+        document.pop("transaction", None)
+        return document
+
+    def _mark_transaction_cleaning(
+        self,
+        state: dict[str, object],
+        state_raw: bytes,
+        transaction: dict[str, object],
+    ) -> tuple[dict[str, object], bytes, dict[str, object]]:
+        cleaning = dict(transaction)
+        cleaning["phase"] = "cleaning"
+        document = dict(state)
+        document["transaction"] = cleaning
+        self._atomic_state_write(
+            document,
+            state_raw,
+            str(transaction["artifact_id"]),
+            milestone="cleanup-intent",
+        )
+        return document, self.provenance_path.read_bytes(), cleaning
+
+    def _recover_incomplete(self) -> bool:
+        state, state_raw = self._load_state()
+        if state is None or state.get("transaction") is None:
+            return False
+        transaction = self._validate_transaction(
+            state["transaction"], self._records(state)
+        )
+        assert transaction is not None and state_raw is not None
+        if transaction["phase"] == "staging":
+            self._restore_staging_transaction(transaction)
+        elif transaction["phase"] == "prepared":
+            self._restore_prepared_transaction(transaction)
+        if transaction["phase"] in {"staging", "prepared"}:
+            if transaction["prior_state_absent"]:
+                metadata = os.lstat(self.provenance_path)
+                if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                    raise ConflictError("prepared provenance became unsafe during recovery")
+                self.provenance_path.unlink()
+                _fsync_directory(self.provenance_path.parent)
+            else:
+                self._atomic_state_write(
+                    self._without_transaction(state),
+                    state_raw,
+                    str(transaction["artifact_id"]),
+                    milestone="recovery",
+                )
+        else:
+            if transaction["phase"] == "committed":
+                state, state_raw, transaction = self._mark_transaction_cleaning(
+                    state, state_raw, transaction
+                )
+            self._cleanup_committed_transaction(transaction)
+            self._atomic_state_write(
+                self._without_transaction(state),
+                state_raw,
+                str(transaction["artifact_id"]),
+                milestone="recovery",
+            )
+        return True
+
     def apply(self, operation: str) -> DeploymentPlan:
         self._ensure_home_identity()
+        self._recover_incomplete()
         plan = self.plan(operation)
         if plan.conflicts:
             raise ConflictError("; ".join(item.line() for item in plan.conflicts))
@@ -1316,26 +1760,11 @@ class ManagedDeployment:
             raise ConflictError("source changed after planning")
         actionable = list(plan.changes)
         for index, item in enumerate(actionable):
-            old_state_raw = state_raw
-            prepared: _PreparedReplacement | None = None
             artifact: Artifact | None = self.artifacts_by_id.get(item.identifier)
-            try:
-                if item.action in {"create", "replace"}:
-                    assert artifact is not None
-                    destination, root = self.target.resolve(artifact.target)
-                    prepared, installed_snapshot = self._prepare_replacement(
-                        artifact,
-                        destination,
-                        root,
-                        item.action == "create",
-                        desired_snapshots[item.identifier],
-                        records.get(item.identifier),
-                    )
-                    records[item.identifier] = installed_snapshot.record()
-                elif item.action == "remove":
-                    prior = records[item.identifier]
-                    prepared = self._prepare_removal(item.identifier, item.target, prior)
-                    records.pop(item.identifier)
+            prior = records.get(item.identifier)
+            destination, _root = self.target.resolve(item.target)
+            if item.action == "remove" and not _lexists(destination):
+                records.pop(item.identifier)
                 remaining = index + 1 < len(actionable)
                 document = self._state_document(
                     operation=operation,
@@ -1343,11 +1772,62 @@ class ManagedDeployment:
                     release_digest=plan.release_digest,
                     records=records,
                 )
-                self._atomic_state_write(document, old_state_raw, item.identifier)
+                self._atomic_state_write(
+                    document, state_raw, item.identifier, milestone="provenance"
+                )
+                state, state_raw = self._load_state()
+                continue
+            candidate = desired_snapshots.get(item.identifier)
+            transaction: dict[str, object] | None = None
+            try:
+                transaction, state_raw = self._new_transaction(
+                    item=item,
+                    artifact=artifact,
+                    prior=prior,
+                    candidate=candidate,
+                    state=state,
+                    state_raw=state_raw,
+                    operation=operation,
+                    release_digest=plan.release_digest,
+                    records=records,
+                )
+                self._publish_transaction(transaction, artifact)
+                if item.action == "remove":
+                    records.pop(item.identifier)
+                else:
+                    assert candidate is not None
+                    records[item.identifier] = candidate.record()
+                remaining = index + 1 < len(actionable)
+                committed_transaction = dict(transaction)
+                committed_transaction["phase"] = "committed"
+                document = self._state_document(
+                    operation=operation,
+                    status="partial" if remaining else "complete",
+                    release_digest=plan.release_digest,
+                    records=records,
+                    transaction=committed_transaction,
+                )
+                self._atomic_state_write(
+                    document, state_raw, item.identifier, milestone="provenance"
+                )
+                transaction = committed_transaction
                 state_raw = self.provenance_path.read_bytes()
-                self._finish_prepared(prepared)
+                self._fault("after-provenance-commit", item.identifier)
+                document, state_raw, transaction = self._mark_transaction_cleaning(
+                    document, state_raw, transaction
+                )
+                self._fault("after-cleanup-intent", item.identifier)
+                self._cleanup_committed_transaction(transaction)
+                final_document = self._without_transaction(document)
+                self._atomic_state_write(
+                    final_document, state_raw, item.identifier, milestone="finalize"
+                )
+                state, state_raw = self._load_state()
             except Exception:
-                self._rollback_prepared(prepared, artifact)
+                if transaction is not None:
+                    self._recover_incomplete()
+                    state, state_raw = self._load_state()
+                    records = self._records(state)
                 raise
 
         if not actionable:
@@ -1357,7 +1837,9 @@ class ManagedDeployment:
                 release_digest=plan.release_digest,
                 records=records,
             )
-            self._atomic_state_write(document, state_raw, "@provenance")
+            self._atomic_state_write(
+                document, state_raw, "@provenance", milestone="provenance"
+            )
         if set(records) != set(desired_snapshots):
             raise ValidationError("completed deployment has an incomplete artifact inventory")
         for identifier, expected in desired_snapshots.items():
@@ -1373,6 +1855,8 @@ class ManagedDeployment:
         state, _raw = self._load_state()
         if state is None:
             raise ValidationError("no managed deployment provenance exists")
+        if state.get("transaction") is not None:
+            raise ValidationError("managed deployment recovery is required")
         if state.get("status") != "complete":
             raise ValidationError("managed deployment is incomplete")
         if require_current_release and state.get("release_digest") != release_digest:

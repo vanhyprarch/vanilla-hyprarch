@@ -205,6 +205,80 @@ class Fixture:
             fault_hook=fault_hook,
         )
 
+    def write_minimal_release(
+        self,
+        name: str,
+        artifacts: list[str],
+        files: dict[str, str],
+    ) -> Path:
+        root = self.root / name
+        self._write(
+            root,
+            "deployment/ownership-v2.toml",
+            manifest_text(artifacts),
+            0o644,
+        )
+        for relative, content in files.items():
+            self._write(root, relative, content)
+        return root
+
+    def cli(
+        self,
+        release: Path,
+        release_id: str,
+        command: str,
+        *,
+        operation: str | None = None,
+        fault: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = [
+            sys.executable,
+            os.fspath(MODULE_PATH),
+            "--source-root",
+            os.fspath(release),
+            "--release-id",
+            release_id,
+            "--home",
+            os.fspath(self.target.home),
+            "--xdg-config-home",
+            os.fspath(self.target.config),
+            "--xdg-data-home",
+            os.fspath(self.target.data),
+            "--xdg-state-home",
+            os.fspath(self.target.state),
+            command,
+        ]
+        if operation is not None:
+            arguments.append(operation)
+        environment = os.environ.copy()
+        if fault is not None:
+            environment[DEPLOY.TEST_MODE_ENV] = "1"
+            environment[DEPLOY.TEST_FAULT_ENV] = fault
+        else:
+            environment.pop(DEPLOY.TEST_MODE_ENV, None)
+            environment.pop(DEPLOY.TEST_FAULT_ENV, None)
+        return subprocess.run(
+            arguments,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+    def target_snapshot(self) -> tuple[tuple[str, str, int, bytes], ...]:
+        target_root = self.root / "target"
+        result: list[tuple[str, str, int, bytes]] = []
+        for path in sorted(target_root.rglob("*")):
+            metadata = os.lstat(path)
+            relative = os.fspath(path.relative_to(target_root))
+            if stat.S_ISDIR(metadata.st_mode):
+                result.append((relative, "directory", stat.S_IMODE(metadata.st_mode), b""))
+            elif stat.S_ISREG(metadata.st_mode):
+                result.append((relative, "file", stat.S_IMODE(metadata.st_mode), path.read_bytes()))
+            elif stat.S_ISLNK(metadata.st_mode):
+                result.append((relative, "symlink", stat.S_IMODE(metadata.st_mode), os.fsencode(os.readlink(path))))
+        return tuple(result)
+
     @property
     def provenance(self) -> Path:
         return self.target.state / "vanhyprarch/managed-deployment-v1.json"
@@ -564,6 +638,10 @@ class UpdateTests(FixtureTestCase):
         with self.assertRaises(DEPLOY.ConflictError):
             self.fixture.engine(self.fixture.release_b, "B").plan("update")
 
+        self.fixture.provenance.write_text('{"schema_version":', encoding="utf-8")
+        with self.assertRaises(DEPLOY.ConflictError):
+            self.fixture.engine(self.fixture.release_b, "B").plan("update")
+
         self.fixture.cleanup()
         self.fixture = Fixture()
         outside = self.fixture.root / "outside-state.json"
@@ -641,35 +719,33 @@ class RollbackTests(FixtureTestCase):
         self.fixture.engine(self.fixture.release_a, "A").apply("install")
         target = self.fixture.target.config / "fixture/changed.txt"
         old = target.read_bytes()
-        state_before_failure: list[bytes] = []
 
         def fail(point: str, identifier: str) -> None:
             if point == "after-replace" and identifier == "changed":
-                state_before_failure.append(self.fixture.provenance.read_bytes())
                 raise DEPLOY.ValidationError("fixture installed validation failure")
 
         with self.assertRaises(DEPLOY.ValidationError):
             self.fixture.engine(self.fixture.release_b, "B", fail).apply("update")
         self.assertEqual(target.read_bytes(), old)
-        self.assertEqual(self.fixture.provenance.read_bytes(), state_before_failure[0])
+        state = json.loads(self.fixture.provenance.read_text(encoding="utf-8"))
+        self.assertNotIn("transaction", state)
+        self.assertEqual(state["status"], "partial")
 
     def test_complete_tree_rolls_back_after_interrupted_switch(self) -> None:
         self.fixture.engine(self.fixture.release_a, "A").apply("install")
         tree = self.fixture.target.data / "fixture/tree"
         before = {path.relative_to(tree): path.read_bytes() for path in tree.rglob("*") if path.is_file()}
-        state_before_failure: list[bytes] = []
 
         def fail(point: str, identifier: str) -> None:
             if point == "after-backup" and identifier == "tree":
-                state_before_failure.append(self.fixture.provenance.read_bytes())
                 raise OSError("fixture interrupted tree switch")
 
         with self.assertRaises(OSError):
             self.fixture.engine(self.fixture.release_b, "B", fail).apply("update")
         after = {path.relative_to(tree): path.read_bytes() for path in tree.rglob("*") if path.is_file()}
         self.assertEqual(after, before)
-        self.assertEqual(self.fixture.provenance.read_bytes(), state_before_failure[0])
         partial = json.loads(self.fixture.provenance.read_text(encoding="utf-8"))
+        self.assertNotIn("transaction", partial)
         self.assertEqual(partial["status"], "partial")
         self.assertEqual(partial["operation"], "update")
         self.fixture.engine(self.fixture.release_b, "B").apply("update")
@@ -731,6 +807,298 @@ class RollbackTests(FixtureTestCase):
         self.assertFalse(self.fixture.target.config.exists())
 
 
+class CrashConsistencyTests(FixtureTestCase):
+    def _reset(self) -> None:
+        self.fixture.cleanup()
+        self.fixture = Fixture()
+
+    def _replacement_pair(self, *, tree: bool = False) -> tuple[Path, Path, Path]:
+        if tree:
+            table = artifact_table(
+                "subject",
+                "payload/tree",
+                "${XDG_DATA_HOME:-$HOME/.local/share}/crash/tree",
+                kind="tree",
+            )
+            release_a = self.fixture.write_minimal_release(
+                "crash-a",
+                [table],
+                {
+                    "payload/tree/keep.txt": "same\n",
+                    "payload/tree/change.txt": "old\n",
+                    "payload/tree/removed.txt": "old member\n",
+                },
+            )
+            release_b = self.fixture.write_minimal_release(
+                "crash-b",
+                [table],
+                {
+                    "payload/tree/keep.txt": "same\n",
+                    "payload/tree/change.txt": "new\n",
+                    "payload/tree/added.txt": "new member\n",
+                },
+            )
+            target = self.fixture.target.data / "crash/tree"
+        else:
+            table = artifact_table(
+                "subject",
+                "payload/subject.txt",
+                "${XDG_CONFIG_HOME:-$HOME/.config}/crash/subject.txt",
+            )
+            release_a = self.fixture.write_minimal_release(
+                "crash-a", [table], {"payload/subject.txt": "old\n"}
+            )
+            release_b = self.fixture.write_minimal_release(
+                "crash-b", [table], {"payload/subject.txt": "new\n"}
+            )
+            target = self.fixture.target.config / "crash/subject.txt"
+        self.fixture.engine(release_a, "A").apply("install")
+        return release_a, release_b, target
+
+    def _creation_pair(self) -> tuple[Path, Path, Path]:
+        release_a = self.fixture.write_minimal_release("create-a", [], {})
+        table = artifact_table(
+            "subject",
+            "payload/subject.txt",
+            "${XDG_CONFIG_HOME:-$HOME/.config}/crash/subject.txt",
+        )
+        release_b = self.fixture.write_minimal_release(
+            "create-b", [table], {"payload/subject.txt": "new\n"}
+        )
+        self.fixture.engine(release_a, "A").apply("install")
+        return release_a, release_b, self.fixture.target.config / "crash/subject.txt"
+
+    def _removal_pair(self) -> tuple[Path, Path, Path]:
+        table = artifact_table(
+            "subject",
+            "payload/subject.txt",
+            "${XDG_CONFIG_HOME:-$HOME/.config}/crash/subject.txt",
+        )
+        release_a = self.fixture.write_minimal_release(
+            "remove-a", [table], {"payload/subject.txt": "old\n"}
+        )
+        release_b = self.fixture.write_minimal_release("remove-b", [], {})
+        self.fixture.engine(release_a, "A").apply("install")
+        return release_a, release_b, self.fixture.target.config / "crash/subject.txt"
+
+    def _assert_clean_recovery(self) -> bytes:
+        state_bytes = self.fixture.provenance.read_bytes()
+        state = json.loads(state_bytes.decode("utf-8"))
+        self.assertNotIn("transaction", state)
+        self.assertEqual(
+            list((self.fixture.root / "target").rglob(".vanhyprarch-transaction-*")),
+            [],
+        )
+        return state_bytes
+
+    def _crash(self, release: Path, point: str) -> None:
+        result = self.fixture.cli(
+            release,
+            "B",
+            "update",
+            fault=f"{point}:subject",
+        )
+        self.assertEqual(result.returncode, 197, result.stderr)
+
+    def test_replacement_windows_r1_through_r5_recover_idempotently(self) -> None:
+        precommit = (
+            "after-intent-state-publish",
+            "after-stage-file-fsync",
+            "after-intent-ready-state-publish",
+            "before-publish",
+            "after-publish",
+            "after-publish-verify",
+        )
+        postcommit = (
+            "after-provenance-state-publish",
+            "after-provenance-commit",
+            "after-cleanup-intent",
+            "during-cleanup",
+            "after-cleanup",
+        )
+        for point in precommit + postcommit:
+            with self.subTest(point=point):
+                self._reset()
+                release_a, release_b, target = self._replacement_pair()
+                self._crash(release_b, point)
+                state = json.loads(self.fixture.provenance.read_text(encoding="utf-8"))
+                self.assertIn("transaction", state)
+                recovery_release = release_a if point in precommit else release_b
+                recovery_id = "A" if point in precommit else "B"
+                recovery_command = "install" if point in precommit else "update"
+                first = self.fixture.cli(recovery_release, recovery_id, recovery_command)
+                self.assertEqual(first.returncode, 0, first.stderr)
+                expected = b"old\n" if point in precommit else b"new\n"
+                self.assertEqual(target.read_bytes(), expected)
+                ledger = self._assert_clean_recovery()
+                second = self.fixture.cli(recovery_release, recovery_id, recovery_command)
+                self.assertEqual(second.returncode, 0, second.stderr)
+                self.assertEqual(self.fixture.provenance.read_bytes(), ledger)
+
+    def test_create_windows_n1_through_n3_recover_idempotently(self) -> None:
+        cases = (
+            ("before-publish", False),
+            ("after-publish", False),
+            ("after-provenance-commit", True),
+        )
+        for point, committed in cases:
+            with self.subTest(point=point):
+                self._reset()
+                release_a, release_b, target = self._creation_pair()
+                self._crash(release_b, point)
+                recovery_release = release_b if committed else release_a
+                recovery_id = "B" if committed else "A"
+                command = "update" if committed else "install"
+                first = self.fixture.cli(recovery_release, recovery_id, command)
+                self.assertEqual(first.returncode, 0, first.stderr)
+                self.assertEqual(target.exists(), committed)
+                ledger = self._assert_clean_recovery()
+                second = self.fixture.cli(recovery_release, recovery_id, command)
+                self.assertEqual(second.returncode, 0, second.stderr)
+                self.assertEqual(self.fixture.provenance.read_bytes(), ledger)
+
+    def test_stale_removal_windows_s1_through_s3_recover_idempotently(self) -> None:
+        cases = (
+            ("before-publish", False),
+            ("after-publish", False),
+            ("after-provenance-commit", True),
+        )
+        for point, committed in cases:
+            with self.subTest(point=point):
+                self._reset()
+                release_a, release_b, target = self._removal_pair()
+                self._crash(release_b, point)
+                recovery_release = release_b if committed else release_a
+                recovery_id = "B" if committed else "A"
+                command = "update" if committed else "install"
+                first = self.fixture.cli(recovery_release, recovery_id, command)
+                self.assertEqual(first.returncode, 0, first.stderr)
+                self.assertEqual(target.exists(), not committed)
+                if not committed:
+                    self.assertEqual(target.read_bytes(), b"old\n")
+                ledger = self._assert_clean_recovery()
+                second = self.fixture.cli(recovery_release, recovery_id, command)
+                self.assertEqual(second.returncode, 0, second.stderr)
+                self.assertEqual(self.fixture.provenance.read_bytes(), ledger)
+
+    def test_tree_exchange_is_always_one_complete_generation(self) -> None:
+        for point, committed in (
+            ("after-publish", False),
+            ("after-publish-verify", False),
+            ("after-provenance-commit", True),
+        ):
+            with self.subTest(point=point):
+                self._reset()
+                release_a, release_b, tree = self._replacement_pair(tree=True)
+                self._crash(release_b, point)
+                visible = {path.name: path.read_text(encoding="utf-8") for path in tree.iterdir()}
+                self.assertIn(
+                    visible,
+                    (
+                        {"keep.txt": "same\n", "change.txt": "old\n", "removed.txt": "old member\n"},
+                        {"keep.txt": "same\n", "change.txt": "new\n", "added.txt": "new member\n"},
+                    ),
+                )
+                source = release_b if committed else release_a
+                release_id = "B" if committed else "A"
+                command = "update" if committed else "install"
+                result = self.fixture.cli(source, release_id, command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected_member = "added.txt" if committed else "removed.txt"
+                absent_member = "removed.txt" if committed else "added.txt"
+                self.assertTrue((tree / expected_member).exists())
+                self.assertFalse((tree / absent_member).exists())
+                self._assert_clean_recovery()
+
+    def test_tree_cleanup_resumes_from_a_partially_removed_rollback(self) -> None:
+        _release_a, release_b, tree = self._replacement_pair(tree=True)
+        self._crash(release_b, "after-cleanup-intent")
+        state = json.loads(self.fixture.provenance.read_text(encoding="utf-8"))
+        transaction = state["transaction"]
+        self.assertEqual(transaction["phase"], "cleaning")
+        rollback = tree.parent / transaction["container"] / "payload"
+        (rollback / "removed.txt").unlink()
+        result = self.fixture.cli(release_b, "B", "update")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((tree / "change.txt").read_text(encoding="utf-8"), "new\n")
+        self.assertTrue((tree / "added.txt").exists())
+        self.assertFalse((tree / "removed.txt").exists())
+        self._assert_clean_recovery()
+
+    def test_plan_and_validate_report_interruption_without_writes(self) -> None:
+        _release_a, release_b, _target = self._replacement_pair()
+        self._crash(release_b, "after-publish")
+        before = self.fixture.target_snapshot()
+        plan = self.fixture.cli(release_b, "B", "plan", operation="update")
+        self.assertEqual(plan.returncode, 2)
+        self.assertIn("recovery-required\tsubject", plan.stdout)
+        self.assertEqual(self.fixture.target_snapshot(), before)
+        validate = self.fixture.cli(release_b, "B", "validate")
+        self.assertEqual(validate.returncode, 2)
+        self.assertIn("recovery is required", validate.stderr)
+        self.assertEqual(self.fixture.target_snapshot(), before)
+
+    def test_manual_drift_during_interruption_remains_a_conflict(self) -> None:
+        release_a, release_b, target = self._replacement_pair()
+        self._crash(release_b, "after-publish")
+        target.write_text("manual\n", encoding="utf-8")
+        result = self.fixture.cli(release_a, "A", "install")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no longer matches transaction evidence", result.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8"), "manual\n")
+        self.assertIn(
+            "transaction",
+            json.loads(self.fixture.provenance.read_text(encoding="utf-8")),
+        )
+
+    def test_unknown_content_inside_tree_during_interruption_conflicts(self) -> None:
+        release_a, release_b, tree = self._replacement_pair(tree=True)
+        self._crash(release_b, "after-publish")
+        (tree / "manual.txt").write_text("manual\n", encoding="utf-8")
+        result = self.fixture.cli(release_a, "A", "install")
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue((tree / "manual.txt").exists())
+
+    def test_fsync_failures_never_report_success_and_recover_old_state(self) -> None:
+        points = (
+            "before-stage-file-fsync",
+            "before-publish-parent-fsync",
+            "before-provenance-state-file-fsync",
+            "before-provenance-state-directory-fsync",
+        )
+        for point in points:
+            with self.subTest(point=point):
+                self._reset()
+                release_a, release_b, target = self._replacement_pair()
+                ledger_a = self.fixture.provenance.read_bytes()
+
+                def fail(selected: str, identifier: str) -> None:
+                    if selected == point and identifier == "subject":
+                        raise OSError(f"injected {point}")
+
+                with self.assertRaises(OSError):
+                    self.fixture.engine(release_b, "B", fail).apply("update")
+                self.assertEqual(target.read_bytes(), b"old\n")
+                self.assertEqual(self.fixture.provenance.read_bytes(), ledger_a)
+                self._assert_clean_recovery()
+
+    def test_unrecorded_lookalike_cleanup_targets_are_preserved(self) -> None:
+        _release_a, release_b, target = self._replacement_pair()
+        state_lookalike = self.fixture.provenance.parent / ".vanhyprarch-state-user"
+        state_lookalike.write_text("user\n", encoding="utf-8")
+        transaction_lookalike = target.parent / (
+            ".vanhyprarch-transaction-" + "f" * 32
+        )
+        transaction_lookalike.mkdir(mode=0o700)
+        (transaction_lookalike / "user.txt").write_text("user\n", encoding="utf-8")
+        self.fixture.engine(release_b, "B").apply("update")
+        self.assertEqual(state_lookalike.read_text(encoding="utf-8"), "user\n")
+        self.assertEqual(
+            (transaction_lookalike / "user.txt").read_text(encoding="utf-8"),
+            "user\n",
+        )
+
+
 class DocumentationAndBoundaryTests(unittest.TestCase):
     def test_phase2_documentation_records_scope_and_safety(self) -> None:
         document = (REPOSITORY / "docs/managed-file-deployment.md").read_text(
@@ -741,6 +1109,10 @@ class DocumentationAndBoundaryTests(unittest.TestCase):
             "plan/install/update/validate",
             "renameat2(RENAME_EXCHANGE)",
             "partial` ledger",
+            "`recovery-required`",
+            "`staging` and `prepared`",
+            "`committed` and `cleaning`",
+            "`os._exit`",
             "does not call `chown`",
             "does not invoke pacman, yay, sudo, systemctl",
             "does not create machine or override",

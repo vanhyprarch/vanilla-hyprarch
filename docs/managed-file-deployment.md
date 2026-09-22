@@ -78,7 +78,11 @@ tab-separated records are deterministic:
 ACTION<TAB>ARTIFACT_ID<TAB>DECLARATIVE_TARGET<TAB>REASON
 ```
 
-Actions are `create`, `replace`, `remove`, `preserve`, or `conflict`.
+Actions are `create`, `replace`, `remove`, `preserve`, `conflict`, or
+`recovery-required`. The last action is read-only evidence that a prior
+deployment stopped at a durable transaction milestone. `plan` never performs
+that recovery. `validate` likewise reports the incomplete transaction without
+mutating it; `install` and `update` recover it before planning any new work.
 
 `install` expects absent managed targets. An existing destination without
 valid Vanilla provenance is a conflict even when its bytes happen to match.
@@ -124,11 +128,15 @@ user directories are not remoded.
 
 ## Staging and replacement
 
-Every artifact is copied into a private mode-0700 staging directory beside its
-destination. Copying uses regular-file descriptors without following source
-symlinks. The manifest supplies final modes; checkout modes and the caller's
-umask are not copied into installed content. Files and directory generations
-are fsynced before publication.
+Before staging begins, the ledger durably records a per-artifact `staging`
+intent with a random 128-bit operation ID, declarative target, operation kind,
+old and candidate snapshots, and the exact private mode-0700 container name.
+This makes even an interrupted partial staging tree attributable without
+cleaning name-prefix lookalikes. Copying uses regular-file descriptors without
+following source symlinks. The manifest supplies final modes; checkout modes
+and the caller's umask are not copied into installed content. Files and
+directory generations, the staging directory, and its parent are fsynced
+before the intent advances to `prepared`.
 
 New artifacts publish through same-directory `os.replace`. Updates use
 Linux `renameat2(RENAME_EXCHANGE)` to exchange the complete staged generation
@@ -139,8 +147,11 @@ closed.
 
 The exchanged old generation remains private rollback material until final
 byte, type, mode, owner, validator, and provenance verification succeeds.
-Parent directories and the provenance directory are fsynced after atomic
-publication.
+Because publication moves names between the private container and destination
+parent, both containing directories are fsynced. Provenance then advances to
+`committed`. A durable `cleaning` milestone precedes recursive rollback-tree
+deletion, so a crash partway through cleanup can resume without treating the
+partially removed private generation as drift.
 
 ## Provenance
 
@@ -152,30 +163,67 @@ is `BACKEND_OWNED` by `vanhyprarch-managed-deploy`. It contains only:
 - complete or resumable-partial deployment status;
 - optional caller-supplied release identity and deterministic release digest;
 - managed artifact IDs, `VANILLA_MANAGED` class, and declarative targets;
-- artifact kinds, exact modes, deterministic entry lists, and SHA-256 hashes.
+- artifact kinds, exact modes, deterministic entry lists, and SHA-256 hashes;
+- at most one active managed-file transaction with its operation ID, phase,
+  old/candidate records, and exact private rollback-container identity.
 
 It contains no preferences, machine choices, Monitor state, Appearance state,
 Power & Idle state, runtime state, or package state. Declarative targets, not
-resolved machine-specific absolute paths, are stored. The record is written
-atomically and read back before rollback material is discarded.
+resolved machine-specific absolute paths, are stored. Each ledger transition
+uses a private mode-0600 temporary file, complete write, file fsync, atomic
+replacement, provenance-directory fsync, mode verification, and byte-for-byte
+readback. A malformed or truncated ledger fails closed; the engine never
+reconstructs ambiguous provenance from installed bytes.
 
 This ledger is the minimum evidence needed to distinguish an installed
 Vanilla artifact from unknown pre-existing user content and to remove stale
 managed artifacts safely. Hashes are not the only boundary: class, path,
 type, mode, UID/GID, and symlink checks are also required.
 
-## Rollback and interruption
+## Rollback, crash recovery, and durability order
 
 Rollback is local to one artifact plus the provenance transition describing
-that artifact. Failure after an exchange restores the exact prior file or
-complete tree and verifies the restoration. Failure while creating a new
-artifact removes only the newly published artifact. Failure while committing
-provenance restores its exact prior bytes or removes a newly created record.
+that artifact. The durable order is:
+
+1. record `staging` intent;
+2. write and fsync candidate bytes and staging namespaces;
+3. record `prepared` intent;
+4. atomically publish/exchange/remove and fsync both containing directories;
+5. verify the installed candidate or removal;
+6. atomically commit new artifact provenance as `committed`;
+7. record `cleaning`, delete only the recorded rollback container, fsync its
+   parent, then clear the transaction record.
+
+`staging` and `prepared` are pre-provenance states: recovery restores or keeps
+the prior generation and clears the intent. `committed` and `cleaning` are
+post-provenance states: recovery retains and revalidates the candidate, then
+finishes cleanup. Create and stale-removal operations use the same rule. A
+prepared file or complete-tree exchange is accepted only when destination and
+rollback paths exactly match the recorded old/candidate pair. Any other state
+is manual drift and remains a conflict.
+
+Exception rollback uses the same recovery path, but the repository suite also
+kills subprocesses with `os._exit` at namespace, verification, provenance, and
+cleanup boundaries so Python exception handlers and `finally` blocks cannot
+mask crash defects. Recovery is idempotent: a second invocation produces no
+filesystem or ledger change.
+
+Automatic cleanup is restricted to the exact random container named by the
+active ledger transaction. Unrecorded staging-like directories and ledger-temp
+lookalikes are never removed by prefix scanning. A recorded container with an
+unsafe type, owner, mode, symlink, special file, unexpected top-level member,
+or inconsistent pre-cleanup snapshot fails closed.
 
 Earlier unrelated artifacts that completed successfully remain committed and
 are described by a `partial` ledger. Repeating the same operation and release
 resumes from that evidence. Phase 2 intentionally does not implement a global
 machine transaction.
+
+These guarantees assume a local Linux filesystem that correctly implements
+`renameat2(RENAME_EXCHANGE)`, atomic rename, and successful file/directory
+`fsync`. Unsupported exchange semantics and reported fsync failures fail
+closed. The application cannot guarantee durability against storage hardware
+that falsely reports completed barriers.
 
 ## Validation split
 
