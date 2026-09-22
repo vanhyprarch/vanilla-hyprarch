@@ -1,0 +1,14 @@
+[SddmGreeterTheme]
+Name=Vanilla HyprArch
+Description=Minimal single-user login theme for Vanilla HyprArch
+Type=sddm-theme
+Author=Vanilla HyprArch contributors
+Copyright=Copyright (C) Vanilla HyprArch contributors
+License=GPL-2.0-only
+Version=1.0
+MainScript=Main.qml
+ConfigFile=theme.conf
+QtVersion=6
+Theme-Id=vanhyprarch
+Theme-API=2.0
+Website=https://github.com/vanhyprarch/vanilla-hyprarch

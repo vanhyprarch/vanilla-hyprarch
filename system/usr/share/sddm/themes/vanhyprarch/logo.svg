@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1000 1000"
+     preserveAspectRatio="xMidYMid meet"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">Vanilla HyprArch logo</title>
+  <desc id="desc">Four exact circles sharing one common lower-right tangency point at 45 degrees.</desc>
+  <!--
+    Analytic construction:
+      Common tangent point T = (853.553390593274, 853.553390593274)
+      For each circle with radius r:
+        cx = T_x - r / sqrt(2)
+        cy = T_y - r / sqrt(2)
+      Hence:
+        T_x = cx + r / sqrt(2)
+        T_y = cy + r / sqrt(2)
+      for every circle.
+
+    No width or height attributes are set: sizing is controlled entirely by CSS/HTML,
+    while viewBox preserves the exact geometry at any rendered size.
+  -->
+  <g id="vanilla-hyprarch-mark">
+    <circle id="outer" cx="500.000000000000" cy="500.000000000000" r="500.000000000000" fill="#FCDA02"/>
+    <circle id="mid-orange" cx="567.788749270776" cy="567.788749270776" r="404.132231404959" fill="#F17902"/>
+    <circle id="mid-rust" cx="665.381172789911" cy="665.381172789911" r="266.115702479339" fill="#BE5015"/>
+    <circle id="inner-brown" cx="741.935708604323" cy="741.935708604323" r="157.851239669421" fill="#6D3523"/>
+  </g>
+</svg>

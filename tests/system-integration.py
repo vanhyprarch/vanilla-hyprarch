@@ -38,6 +38,16 @@ def save_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
 
 
+def runner_home_path_is_authorized(value: str, *, source_root: Path, target_home: Path) -> bool:
+    """Allow the resolved source and target roots, never an unrelated HOME."""
+    if not value.startswith("/home/"):
+        return True
+
+    candidate = Path(os.path.normpath(value))
+    allowed_roots = (source_root, target_home)
+    return any(candidate == root or root in candidate.parents for root in allowed_roots)
+
+
 class FakeRunner:
     """Persistent fake command boundary; no real integration command escapes."""
 
@@ -1105,7 +1115,33 @@ class IntegrationTestCase(unittest.TestCase):
         for entry in self.fixture.state()["log"]:
             self.assertIsInstance(entry["argv"], list)
             self.assertNotIn("shell=True", entry["argv"])
-            self.assertTrue(all(not value.startswith("/home/") or value.startswith("/home/tester") for value in entry["argv"]))
+            self.assertTrue(all(
+                runner_home_path_is_authorized(
+                    value,
+                    source_root=REPOSITORY,
+                    target_home=self.fixture.user.home,
+                )
+                for value in entry["argv"]
+            ))
+
+    def test_runner_path_guard_distinguishes_source_from_unrelated_home(self) -> None:
+        source_root = Path("/home/tester/project")
+        target_home = Path("/home/vanilla")
+        self.assertTrue(runner_home_path_is_authorized(
+            "/home/tester/project/install/configure-flatpak",
+            source_root=source_root,
+            target_home=target_home,
+        ))
+        self.assertTrue(runner_home_path_is_authorized(
+            "/home/vanilla/.cache/yay",
+            source_root=source_root,
+            target_home=target_home,
+        ))
+        self.assertFalse(runner_home_path_is_authorized(
+            "/home/unrelated/.config/vanhyprarch",
+            source_root=source_root,
+            target_home=target_home,
+        ))
 
     def test_manifest_command_injection_name_is_rejected(self) -> None:
         copied = self.fixture.base / "source"

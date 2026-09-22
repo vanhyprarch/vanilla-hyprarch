@@ -1050,3 +1050,30 @@ changes only manifest-declared system-unit enablement and neither starts units
 nor touches user-unit state. Destructive acceptance belongs only in a
 user-created, snapshotted disposable Arch x86_64 VM, never the development
 host.
+
+## ADR-041: Use an explicit single-user SDDM theme for first login
+
+**Status:** Accepted
+**Date:** 2026-09-22
+**Implementation:** DF2 Phase 5 Slice 1 source contract; deployment and
+migration remain later slices
+
+Ly 1.4.1 cannot provide the accepted password-only scene without a maintained
+custom package: its username and session rows are structurally present, and
+its terminal renderer cannot display the canonical SVG as a graphical asset.
+The future baseline therefore uses SDDM's normal X11 greeter with a
+Vanilla-owned Qt 6 theme to launch one direct Hyprland Wayland session. UWSM,
+autologin, PAM customization, and SDDM's experimental Wayland greeter remain
+out of scope.
+
+The v1 theme receives an installer-resolved target username and exact Vanilla
+session desktop-file path through SDDM's adjacent user theme configuration.
+It never renders the username or a session chooser and does not depend on
+remembered SDDM state. Session selection resolves exactly one absolute `file`
+role from SDDM's session model before calling `sddm.login`; missing or
+ambiguous configuration fails closed.
+
+Slice 1 establishes only generic theme and desktop-entry sources plus tests.
+It deliberately leaves the Phase 4 Ly package and service policy unchanged.
+The detailed contract and remaining integration boundaries are documented in
+[DF2 Phase 5 SDDM login](phase-5-sddm-login.md).

@@ -118,7 +118,16 @@ default without creating state.
 
 The graphical session remains the direct
 `Ly -> /usr/bin/start-hyprland -> Hyprland` path. UWSM is not part of the
-Vanilla HyprArch architecture.
+Vanilla HyprArch architecture. This describes the current published and
+deployed Phase 4 baseline.
+
+The accepted future display-manager path is now
+`SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland Wayland`.
+Phase 5 Slice 1 adds only the undeployed
+[SDDM theme and session source contract](phase-5-sddm-login.md). Package,
+privileged deployment, service migration, Ly retirement, and VM acceptance are
+not implemented yet, so this source milestone does not change the current boot
+or login path.
 
 Before registering its startup children, the managed portable core reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes
@@ -1068,9 +1077,9 @@ are not implemented.
   Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
 - Build the full bootstrap orchestration around the published distribution
   cores.
-- In Phase 5, make Ly present only the supported direct Hyprland session; the
-  package-exposed UWSM session is unsupported and must be hidden without
-  adopting UWSM or unsafely modifying package-owned files.
+- Complete the later Phase 5 slices for privileged SDDM deployment, package and
+  service migration, safe Ly retirement, and current/fresh-VM acceptance. The
+  Slice 1 theme/session sources are intentionally not installed yet.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.
