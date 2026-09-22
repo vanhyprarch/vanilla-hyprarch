@@ -180,8 +180,9 @@ workspace navigation and the special scratchpad remain available.
 **Status:** Superseded by ADR-041
 **Date:** 2026-09-08
 
-Ly is the selected display manager and runs through `ly@tty2.service` on tty2.
-The competing getty on tty2 is disabled. Ly's validator is `ly-dm`.
+Before Alpha, Ly was selected to run through `ly@tty2.service` on tty2, with
+the competing getty disabled. This design was never released and was
+superseded by ADR-041.
 
 The display manager is session infrastructure; its animation implementation is
 not itself a user-session screensaver.
@@ -1074,8 +1075,7 @@ ambiguous configuration fails closed.
 Slice 1 establishes generic theme and desktop-entry sources. Slice 2 adds the
 root-only provenance-backed publisher and generated machine binding under the
 new `VANILLA_MANAGED_SYSTEM` ownership boundary. Slice 3 extends that payload
-to the X11/theme drop-in and makes SDDM the sole package/service baseline. Ly
-was superseded before Alpha, so no production Ly migration or retirement path
-exists. Unsupported pre-existing display-manager state fails closed.
+to the X11/theme drop-in and makes SDDM the sole package/service baseline.
+Unsupported pre-existing display-manager state fails closed.
 The detailed contract and remaining integration boundaries are documented in
 [DF2 Phase 5 SDDM login](phase-5-sddm-login.md).

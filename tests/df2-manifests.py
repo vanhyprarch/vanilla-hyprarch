@@ -586,7 +586,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertIn("never silently performs `pacman -Syu`", document)
         self.assertIn("unsupported partial upgrade", document)
         self.assertIn("Official `sddm` is required", document)
-        self.assertIn("no production Ly migration exists", document)
+        self.assertIn("SDDM is the sole supported display manager", document)
 
     def test_aur_and_git_bootstrap_boundaries_are_documented(self) -> None:
         package_policy = (REPOSITORY / "packages/README.md").read_text(

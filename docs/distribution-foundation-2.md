@@ -139,8 +139,8 @@ other standards-defined XDG locations also prevents seeding.
 Official `sddm` is required. Phase 5 system integration deploys and validates
 the Vanilla password-only theme, direct Wayland session entry, generated target
 binding, and X11-greeter drop-in before enabling normal `sddm.service`
-display-manager semantics. Ly was superseded before Alpha; fresh systems have
-no Ly or tty2/getty-specific policy, and no production Ly migration exists.
+display-manager semantics. SDDM is the sole supported display manager; fresh
+systems have no tty2/getty-specific display-manager policy.
 
 NetworkManager and Bluetooth are required enabled system services. Printing
 activation occurs only with the printing component. PipeWire/WirePlumber use

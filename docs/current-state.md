@@ -120,9 +120,8 @@ The supported display-manager path is
 `SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland Wayland`.
 Phase 5 Slices 1–3 define the accepted
 [SDDM theme, session, privileged payload, and baseline](phase-5-sddm-login.md).
-Ly was superseded before Alpha and has no supported production migration
-path. UWSM remains unsupported. Fresh-install acceptance from the saved VM
-snapshot passed.
+SDDM is the sole supported display manager. UWSM remains unsupported.
+Fresh-install acceptance from the saved VM snapshot passed.
 
 Before registering its startup children, the managed portable core reads
 `HOME` and the inherited `PATH`, validates that `HOME` is non-empty, removes

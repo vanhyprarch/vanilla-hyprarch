@@ -182,11 +182,10 @@ Phase 5 Slice 3 defines the supported default-system policy as:
 - enable `bluetooth.service`;
 - enable normal `sddm.service` display-manager semantics.
 
-Ly was superseded before Alpha and has no production migration path. Fresh
-systems never receive Ly or a special tty2/getty policy. An unsupported
-pre-existing display-manager alias is a blocker. Integration changes
-enablement only; it does not start, stop, restart, or reload display-manager
-units.
+Fresh systems receive no special tty2/getty display-manager policy. An
+unsupported pre-existing display-manager alias is a blocker. Integration
+changes enablement only; it does not start, stop, restart, or reload
+display-manager units.
 Package/D-Bus-activated user services and every static Vanilla user unit are
 observed only through the manifest and never passed to systemctl.
 

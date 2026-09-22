@@ -13,7 +13,7 @@ Hyprland, Quickshell, systemd, BlueZ, or other upstream projects.
 The graphical session is direct:
 
 ```text
-Ly -> /usr/bin/start-hyprland -> Hyprland
+SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland/Wayland
 ```
 
 UWSM is not part of the architecture. Hyprland owns the session and starts the

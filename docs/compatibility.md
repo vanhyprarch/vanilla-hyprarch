@@ -293,8 +293,9 @@ in `ExecReload` and supplies `$MAINPID` for the service main process; the
 shell-free `/usr/bin/kill -HUP $MAINPID` form remains the smallest exact signal
 delivery for this service.
 
-Final live validation removed the private machine fallback. A fresh Ly login
-exposed Hyprland's built-in `us` tuple, then one preflighted transaction
+Historical pre-Alpha direct-session validation removed the private machine
+fallback. That fresh login exposed Hyprland's built-in `us` tuple, then one
+preflighted transaction
 projected localed's `it / pc105 / "" / terminate:ctrl_alt_bksp` state and
 verified exact readback. Completion was observed approximately 123 ms after the
 new IPC socket became available, with immediate human Italian input passing;
@@ -322,9 +323,8 @@ upstream
 service uses `Restart=on-failure`. Vanilla neither edits nor copies that unit.
 The upstream target integration was
 [added for sessions that start Hyprland as a systemd service](https://github.com/hyprwm/hyprpolkitagent/pull/3);
-Vanilla instead uses direct
-`Ly -> start-hyprland -> Hyprland`, where `graphical-session.target` remains
-inactive.
+Vanilla instead uses the direct `/usr/bin/start-hyprland -> Hyprland` session,
+where `graphical-session.target` remains inactive.
 
 During the 2026-09-20 cold logout, the old agent first lost Wayland and exited
 255. The package restart then repeatedly reached Qt without a display, aborted
@@ -395,8 +395,9 @@ target; do not carry both lifecycle owners.
 
 **Affected components:** Hyprland 0.56.2-3 with Aquamarine 0.15.0 and 0.15.1-1
 
-Repeated local Hyprland coredumps from 2026-09-09 through 2026-09-20 occurred only
-while Ly sessions were closing. Every dump has SIGSEGV at
+Repeated local Hyprland coredumps from 2026-09-09 through 2026-09-20 occurred
+only during pre-Alpha logout testing with the now-superseded Ly greeter. Every
+dump has SIGSEGV at
 `CDRMBackend::flushAsyncCommitEvents()`, followed by `cancelAsyncOutput()`,
 `SDRMConnector::disconnect()`, and the DRM backend destructor. The logout still
 completed, and no active-session occurrence has been observed.
@@ -543,10 +544,10 @@ for every write.
 
 The upstream service assumes graphical-session enablement and may include an
 optional ydotool dependency. That does not match the direct
-`Ly -> start-hyprland -> Hyprland` session, so Vanilla owns a smaller unit with
-only PipeWire ordering, a fixed `%h/.local/bin/voxtype -q daemon` command, and
-restart-on-failure. It has no `[Install]` section. Hyprland conditionally starts
-it from the exact component marker.
+`/usr/bin/start-hyprland -> Hyprland` session, so Vanilla owns a smaller unit
+with only PipeWire ordering, a fixed `%h/.local/bin/voxtype -q daemon` command,
+and restart-on-failure. It has no `[Install]` section. Hyprland conditionally
+starts it from the exact component marker.
 
 The built-in hotkey remains disabled. This avoids Voxtype's evdev/input-group
 boundary, including reported failures when group membership changes; F9 press

@@ -22,7 +22,7 @@ layout lists, and positional empty variants.
 
 The static `vanhyprarch-keyboard-sync.service` is restarted by the managed
 `hyprland.start` callback. Restarting rather than enabling the unit keeps the
-direct `Ly -> start-hyprland -> Hyprland` session as lifecycle owner. The
+direct `/usr/bin/start-hyprland -> Hyprland` session as lifecycle owner. The
 callback invokes `vanhyprarch-keyboard-sync session-start` in the new
 compositor environment. That one-shot first uses an exact argument vector to
 import only `HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY`, and `DISPLAY`
@@ -39,10 +39,11 @@ correct but does not order completion before Vanilla's `hyprland.start`
 callback. The explicit narrow import above closes that fresh-session startup
 race without introducing UWSM or importing the full child environment.
 
-The supported lifecycle covers a normal fresh login from Ly, a Hyprland config
-reload, and a keyboard-sync service restart. Vanilla does not expose a clean
-user-requested same-login Hyprland restart. `start-hyprland` crash/safe-mode
-recovery remains upstream behavior and is not a release gate for this feature.
+The supported lifecycle covers a normal fresh login through SDDM, a Hyprland
+config reload, and a keyboard-sync service restart. Vanilla does not expose a
+clean user-requested same-login Hyprland restart. `start-hyprland`
+crash/safe-mode recovery remains upstream behavior and is not a release gate
+for this feature.
 
 The helper uses one long-lived Gio connection to the system bus for all
 localed transport. It subscribes directly to
@@ -149,9 +150,10 @@ uses the unit.
 
 ## Validated deployment and migration
 
-Controlled live tests covered daemon startup, real graphical localed changes,
-console-only isolation, repeated localed owner reincarnation, config-reload
-reconciliation without a feedback loop, service restart, and fresh Ly login.
+Controlled pre-Alpha live tests covered daemon startup, real graphical localed
+changes, console-only isolation, repeated localed owner reincarnation,
+config-reload reconciliation without a feedback loop, service restart, and a
+cold direct-session login.
 The transitional private Italian machine block was removed after those tests;
 the create-once seed, live machine file, and user override now contain no
 global XKB preference.

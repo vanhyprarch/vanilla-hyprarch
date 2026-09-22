@@ -328,15 +328,12 @@ icon theme and uses it for project UI controls.
 
 ## Display manager
 
-The package baseline selects official `sddm`; `ly` is absent from clean
-installation plans. SDDM uses its supported X11 greeter, the Vanilla-owned
-password-only theme, and the direct Vanilla Wayland session. Normal
+The package baseline selects official `sddm` as the sole supported display
+manager. SDDM uses its supported X11 greeter, the Vanilla-owned password-only
+theme, and the direct Vanilla Wayland session. Normal
 `sddm.service` enablement owns `display-manager.service`; Vanilla does not model
 SDDM as a tty2 instance and has no continuing getty@tty2 policy.
-
-Ly was superseded before Alpha, and no released Vanilla version used it.
-There is no production Ly migration or retirement path. Fresh-install
-acceptance from the saved VM snapshot passed.
+Fresh-install acceptance from the saved VM snapshot passed.
 
 ## Locking and idle
 

@@ -659,7 +659,6 @@ SddmLoginIntegration(
         for forbidden in (
             "pacman",
             "systemctl",
-            "ly@tty2",
             "/etc/pam.d",
             "display-manager.service",
             "subprocess.run",

@@ -91,11 +91,9 @@ publisher and provenance boundary to the Vanilla SDDM drop-in.
 
 ## Slice 3 baseline
 
-The manifest requires official `sddm` directly and does not list `ly`; Qt and
-Xorg dependencies remain pacman-owned transitive dependencies.
-The service manifest enables only normal `sddm.service` display-manager
-semantics. It contains no continuing `ly@tty2.service` or
-`getty@tty2.service` policy.
+The manifest requires official `sddm` directly; Qt and Xorg dependencies remain
+pacman-owned transitive dependencies. The service manifest enables only normal
+`sddm.service` display-manager semantics and contains no tty2-specific policy.
 
 The managed `/etc/sddm.conf.d/10-vanhyprarch.conf` explicitly keeps the
 greeter on X11, selects `vanhyprarch`, disables avatar lookup, and disables
@@ -109,9 +107,7 @@ then enables `sddm.service`, which owns the standard
 already be `graphical.target`; a deliberate non-graphical administrator choice
 is a blocker, not a mutation.
 
-SDDM is the only supported baseline. Ly was superseded before Alpha, and no
-released Vanilla version used it, so there is no production Ly migration,
-rollback, or retirement operation. An unsupported pre-existing
+SDDM is the only supported baseline. An unsupported pre-existing
 display-manager alias fails closed rather than being migrated.
 
 ## Machine binding contract
@@ -165,7 +161,7 @@ hardware-specific acceptance work.
 ## Acceptance
 
 A full fresh installation from the saved VM snapshot passed. It exercised the
-Python bootstrap, installed SDDM directly without Ly, rendered the accepted
-password-only Vanilla greeter, authenticated into the direct Hyprland/Wayland
-session, returned to the same greeter on logout, logged in again, and preserved
-the result across reboot. There is no Slice 4 Ly-retirement operation.
+Python bootstrap, installed SDDM directly as the sole display manager, rendered
+the accepted password-only Vanilla greeter, authenticated into the direct
+Hyprland/Wayland session, returned to the same greeter on logout, logged in
+again, and preserved the result across reboot.

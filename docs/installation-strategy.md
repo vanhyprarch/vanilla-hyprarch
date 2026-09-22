@@ -192,9 +192,8 @@ The future graphical-login authority is the Vanilla-owned SDDM theme and
 `vanhyprarch.desktop` session. System integration deploys and validates that
 payload before enabling normal `sddm.service`; it does not start or restart a
 display manager during installation. SDDM is the only supported baseline;
-fresh systems have no Ly or tty2-specific policy. Because no released Vanilla
-version used Ly, system integration provides no Ly migration path and rejects
-unsupported pre-existing display-manager configuration.
+fresh systems have no tty2-specific display-manager policy. System integration
+rejects unsupported pre-existing display-manager configuration.
 
 ## Vanilla update boundary
 
