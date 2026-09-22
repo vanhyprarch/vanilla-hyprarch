@@ -6,8 +6,9 @@ cross a fresh Arch system from no Python to a verified `python` package. A
 separate invocation then executes the Python stage. The Python stage consumes
 the package, service-policy, and ownership-v2 manifests and exposes `plan`,
 `apply`, and `validate`. Neither layer is the final installer or a public session command.
-The feature remains pending destructive acceptance in a user-managed
-disposable Arch x86_64 VM; it must never be applied to the development host.
+The feature has completed one real apply in a user-managed disposable Arch
+x86_64 VM; post-apply idempotence and reboot acceptance remain pending. It must
+never be applied to the development host.
 
 ## Pre-Python bootstrap boundary
 
@@ -34,19 +35,24 @@ mutation boundaries:
 
 ```text
 source acquired
-  -> bootstrap plan
-  -> bootstrap-python
-  -> bootstrap plan (complete Phase 4 plan)
+  -> ./install/bootstrap plan --target-user USER
+     (preliminary; non-root allowed while Python is absent)
+  -> sudo ./install/bootstrap bootstrap-python --target-user USER
+  -> sudo ./install/bootstrap plan --target-user USER
+     (complete authoritative Phase 4 plan; read-only)
   -> human review
-  -> bootstrap apply
+  -> sudo ./install/bootstrap apply --target-user USER
+  -> sudo ./install/bootstrap validate --target-user USER
 ```
 
 With Python absent, `bootstrap-python` requires root, installs and verifies only
 the interpreter, prints the required next planning step, and exits successfully
 without entering Python system integration. A no-Python `apply` refuses with a
-Python-bootstrap-required error. Once Python is present, `plan`, `apply`, and
-`validate` verify the interpreter and execute `system_integration.py` with the
-same operation, source root, and target user. Repeating `bootstrap-python`
+Python-bootstrap-required error. Once Python is present, the complete `plan`,
+`apply`, and `validate` operations require root, verify the interpreter, and
+execute `system_integration.py` with the same operation, source root, and target
+user. A system that already has Python therefore starts with
+`sudo ./install/bootstrap plan --target-user USER`. Repeating `bootstrap-python`
 preserves the verified interpreter without another package transaction and
 still does not delegate.
 
@@ -60,14 +66,19 @@ managed-file, or create-once logic.
 
 ## Privilege boundary
 
-Production `apply` runs as root and requires an explicit existing non-root
-target username. Root owns pacman transactions, adopted system configuration,
-the system Flatpak remote, root provenance, and system-unit enablement. The
-fixed AUR clone and every Git/makepkg inspection/build command cross one narrow
-boundary through `runuser` and execute as the target user. The target cannot be
-root, its HOME must be a real owned non-group/world-writable directory, and the
-private build directory is created unpredictably beneath safe root-owned
-`/var/tmp`. No manifest or user string is evaluated by a shell.
+Production `plan`, `apply`, and `validate` run as root and require an explicit
+existing non-root target username. Plan and validate remain strictly read-only,
+but root is required to interpret the private adoption provenance, backups, and
+recovery state under `/var/lib/vanhyprarch` authoritatively. A non-root full
+plan or validation fails before emitting partial semantic results; private
+state is not made world-readable or mirrored into HOME. Root also owns pacman
+transactions, adopted system configuration, the system Flatpak remote, and
+system-unit enablement. The fixed AUR clone and every Git/makepkg
+inspection/build command cross one narrow boundary through `runuser` and
+execute as the target user. The target cannot be root, its HOME must be a real
+owned non-group/world-writable directory, and the private build directory is
+created unpredictably beneath safe root-owned `/var/tmp`. No manifest or user
+string is evaluated by a shell.
 
 The production CLI has no alternate-system-root switch. Tests inject a command
 runner, account resolver, and disposable filesystem root; their fake boundary

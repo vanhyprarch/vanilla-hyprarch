@@ -237,17 +237,43 @@ class PythonBootstrapTests(unittest.TestCase):
             any("system_integration.py><apply>" in line for line in fixture.commands())
         )
 
-    def test_present_python_plan_and_validate_delegate(self) -> None:
+    def test_present_python_non_root_apply_refuses_before_delegation(self) -> None:
+        fixture = self.fixture(python_installed=True)
+        result = fixture.run("apply", effective_uid=1000)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("full system-integration apply requires root privileges", result.stderr)
+        self.assertFalse(any("system_integration.py" in line for line in fixture.commands()))
+        self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
+
+    def test_present_python_root_plan_and_validate_delegate(self) -> None:
         for operation in ("plan", "validate"):
             with self.subTest(operation=operation):
                 fixture = self.fixture(python_installed=True)
-                result = fixture.run(operation, effective_uid=1000)
+                result = fixture.run(operation)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(
                     any(
                         f"system_integration.py><{operation}>" in line
                         for line in fixture.commands()
                     )
+                )
+                self.assertFalse(
+                    any(line.startswith("pacman<-S>") for line in fixture.commands())
+                )
+
+    def test_present_python_non_root_plan_and_validate_refuse_before_delegation(self) -> None:
+        for operation in ("plan", "validate"):
+            with self.subTest(operation=operation):
+                fixture = self.fixture(python_installed=True)
+                result = fixture.run(operation, effective_uid=1000)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    f"full system-integration {operation} requires root privileges; rerun with sudo",
+                    result.stderr,
+                )
+                self.assertNotIn("bluez-conflict", result.stdout)
+                self.assertFalse(
+                    any("system_integration.py" in line for line in fixture.commands())
                 )
                 self.assertFalse(
                     any(line.startswith("pacman<-S>") for line in fixture.commands())
@@ -382,7 +408,7 @@ class PythonBootstrapTests(unittest.TestCase):
             any("system_integration.py" in line for line in after_bootstrap)
         )
 
-        complete_plan = fixture.run("plan", effective_uid=1000)
+        complete_plan = fixture.run("plan")
         self.assertEqual(complete_plan.returncode, 0, complete_plan.stderr)
         self.assertTrue(
             any(

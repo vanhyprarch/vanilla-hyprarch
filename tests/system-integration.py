@@ -550,7 +550,7 @@ class IntegrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(IntegrationError, "does not exist"):
             self.fixture.engine(target="missing")
 
-    def test_apply_requires_root_but_plan_does_not(self) -> None:
+    def test_full_plan_apply_and_validate_require_root(self) -> None:
         def resolve(_name: str) -> TargetUser:
             return self.fixture.user
         engine = SystemIntegration(
@@ -563,9 +563,13 @@ class IntegrationTestCase(unittest.TestCase):
             root_identity=(os.getuid(), os.getgid()),
             testing=True,
         )
-        engine.plan()
-        with self.assertRaisesRegex(IntegrationError, "must run as root"):
-            engine.apply()
+        for operation in (engine.plan, engine.apply, engine.validate):
+            with self.subTest(operation=operation.__name__), self.assertRaisesRegex(
+                IntegrationError, "requires root privileges"
+            ):
+                operation()
+        self.assertEqual(self.fixture.state()["log"], [])
+        self.assertFalse((self.fixture.root / MODULE.STATE_DIRECTORY.lstrip("/")).exists())
 
     def test_subprocess_runner_uses_runuser_argv_without_shell(self) -> None:
         completed = mock.Mock(returncode=0, stdout="", stderr="")
@@ -1047,6 +1051,40 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertEqual(first_bluez, self.fixture.bluez_target.read_bytes())
         self.assertFalse(any(entry["argv"][1:2] in (["-S"], ["-U"]) for entry in second_log))
         self.assertFalse(any(entry["argv"][1] in {"enable", "disable"} for entry in second_log if entry["argv"][0] == "/usr/bin/systemctl"))
+
+    def test_completed_vm_state_has_authoritative_preserve_only_root_plan(self) -> None:
+        engine = self.fixture.adopt_everything()
+        plan = engine.plan()
+        self.assertFalse(plan.blockers)
+        self.assertFalse(plan.changes)
+        self.assertTrue(plan.items)
+        self.assertTrue(all(item.action.endswith("-preserve") for item in plan.items))
+        self.assertIn(("aur-preserve", "yay"), {(item.action, item.subject) for item in plan.items})
+        self.assertEqual(
+            [item.action for item in plan.items if item.action == "bluez-preserve"],
+            ["bluez-preserve"],
+        )
+        self.assertIn(("flathub-preserve", "flathub"), {(item.action, item.subject) for item in plan.items})
+        service_items = [item for item in plan.items if item.action == "service-preserve"]
+        self.assertEqual(
+            {item.subject for item in service_items},
+            set(engine.desired_system_services),
+        )
+
+    def test_root_system_state_stays_private_without_home_mirror(self) -> None:
+        self.fixture.adopt_everything()
+        state_directory = self.fixture.root / MODULE.STATE_DIRECTORY.lstrip("/")
+        state_file = self.fixture.root / MODULE.STATE_FILE.lstrip("/")
+        backup = self.fixture.root / MODULE.BLUEZ_BACKUP.lstrip("/")
+        self.assertEqual(stat.S_IMODE(state_directory.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(state_file.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(backup.parent.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(backup.stat().st_mode), 0o600)
+        home = self.fixture.root / "home/tester"
+        self.assertEqual(
+            [path for path in home.rglob("*") if "system-integration" in path.name],
+            [],
+        )
 
     def test_validate_rejects_missing_package_and_service_drift(self) -> None:
         engine = self.fixture.adopt_everything()

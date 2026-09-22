@@ -150,5 +150,8 @@ if [ "$operation" = bootstrap-python ]; then
     exit 0
 fi
 
+[ "$effective_uid" = 0 ] || \
+    fail "full system-integration $operation requires root privileges; rerun with sudo"
+
 exec "$python_command" "$system_integration" "$operation" \
     --source-root "$source_root" --target-user "$target_user"

@@ -644,6 +644,7 @@ class SystemIntegration:
         return PlanItem("flathub-preserve", FLATHUB_NAME, FLATHUB_URL)
 
     def plan(self) -> SystemPlan:
+        self._require_root_integration("plan")
         transaction = self._read_transaction()
         if transaction is not None:
             return SystemPlan((PlanItem("recovery-required", transaction["kind"], transaction.get("phase", "unknown")),))
@@ -663,9 +664,11 @@ class SystemIntegration:
             items.append(PlanItem("prerequisite-block", "phase4-apply", "package provisioning is blocked until administrator-managed full upgrade"))
         return SystemPlan(tuple(items))
 
-    def _require_root_apply(self) -> None:
+    def _require_root_integration(self, operation: str) -> None:
         if self.effective_uid != 0:
-            raise IntegrationError("Phase 4 apply must run as root with an explicit non-root target user")
+            raise IntegrationError(
+                f"full system-integration {operation} requires root privileges; rerun with sudo"
+            )
 
     def _install_official_packages(self, installed: set[str]) -> None:
         missing = [name for name in self.official_default_packages if name not in installed]
@@ -1198,7 +1201,7 @@ class SystemIntegration:
             raise IntegrationError("Flathub remote was not established exactly")
 
     def apply(self) -> SystemPlan:
-        self._require_root_apply()
+        self._require_root_integration("apply")
         with self._mutation_lock():
             self.recover()
             installed, pending = self._base_preflight()
@@ -1213,6 +1216,7 @@ class SystemIntegration:
             return self.plan()
 
     def validate(self) -> SystemPlan:
+        self._require_root_integration("validate")
         transaction = self._read_transaction()
         if transaction is not None:
             raise IntegrationError(f"incomplete {transaction['kind']} transaction requires recovery")
