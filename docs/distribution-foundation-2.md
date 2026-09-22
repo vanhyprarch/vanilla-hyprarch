@@ -1,6 +1,6 @@
 # Distribution Foundation 2
 
-## Phase 1 through Phase 3 status
+## Phase 1 through Phase 4 status
 
 Phase 1 normalizes package, component, service, and deployment ownership policy.
 Phase 2 adds the reusable user-space deployment core for `VANILLA_MANAGED`
@@ -14,6 +14,16 @@ privileged adoption, service mutation, first-login action,
 optional-component lifecycle, or doctor command. See
 [Managed-file deployment](managed-file-deployment.md) and
 [Create-once initialization](create-once-initialization.md).
+
+Phase 4 implements the separate installer-internal system-integration stage on
+its feature branch. It derives official packages and system enablement from the
+published manifests, builds the sole yay exception as an explicit non-root
+user, adopts BlueZ only after package-pristine proof and exact backup, reuses
+the system-Flathub helper, and keeps local crash recovery for BlueZ and service
+transactions. Deterministic acceptance is isolated from the development host.
+Publication remains blocked until guided destructive and reboot acceptance in
+the user's snapshotted disposable Arch x86_64 GNOME Boxes VM. See
+[DF2 system integration](system-integration.md).
 
 The machine-readable authorities introduced by this phase are:
 
@@ -120,7 +130,7 @@ other standards-defined XDG locations also prevents seeding.
 
 ## Display manager and services
 
-`ly` is required. Future system integration enables `ly@tty2.service` and
+`ly` is required. Phase 4 system integration enables `ly@tty2.service` and
 disables conflicting `getty@tty2.service`. The package-owned Hyprland session
 entry remains authoritative, and selecting Hyprland once on the first Ly login
 is acceptable Alpha behavior. Vanilla does not own a Ly configuration merely
@@ -133,8 +143,9 @@ package activation, and portals and dunst use package/D-Bus activation.
 the Monitor transaction unit are never independently enabled. Hyprland remains
 the owner of one direct hypridle process.
 
-The service manifest records future policy only. Phase 1 changes no systemd
-state.
+The service manifest is the Phase 4 system-stage authority. Phase 4 changes
+enablement only after packages and adopted configuration are ready; it neither
+starts services nor manipulates user units. VM acceptance remains pending.
 
 ## Monitor installation boundary
 
@@ -155,6 +166,7 @@ unsupported partial upgrade. When the Arch state is unsuitable for a required
 package change, update must fail clearly and ask the administrator to update
 Arch first.
 
-Exact full-installer package/update behavior remains deferred. The Phase 2
-executor updates only proven `VANILLA_MANAGED` user files and never performs a
-package transaction.
+The Phase 4 system stage provisions a fresh/current supported base but does not
+turn Vanilla update into a distribution updater. It blocks on pending upgrades,
+never refreshes pacman databases independently, and never runs a full upgrade.
+The Phase 2 executor still updates only proven `VANILLA_MANAGED` user files.

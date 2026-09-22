@@ -1017,3 +1017,35 @@ The mpv and MIME seeds become user-owned immediately. MIME seeding is also
 suppressed by existing user configuration in any standards-defined XDG user
 location. Package installation, system services, privileged adoption, optional
 components, and complete installer orchestration remain later phases.
+
+## ADR-040: Integrate the fresh Arch system through explicit root and user boundaries
+
+**Status:** Accepted
+**Date:** 2026-09-22
+**Implementation:** DF2 Phase 4 feature branch; deterministic acceptance
+complete, disposable GNOME Boxes VM acceptance required before publication
+
+The installer-internal system stage consumes the package, service, and
+ownership manifests and exposes plan, apply, and validate without becoming the
+full installer. Production apply runs as root with one explicit non-root target
+user. Official package, adopted `/etc`, system Flatpak, and systemd enablement
+operations stay privileged; the approved yay Git/makepkg path always runs as
+that target user through a fixed argument-vector privilege drop.
+
+Arch sync databases are never refreshed independently. Pending upgrades from
+the current database block provisioning and defer the full `pacman -Syu` to the
+administrator. Pacman owns package transactions and PKGBUILD metadata owns
+yay-specific dependency discovery; no Vanilla package rollback or recursive
+AUR resolver is introduced.
+
+BlueZ adoption requires pacman-native proof of an unmodified package backup
+file, an exact private root backup, and durable provenance. Unknown
+administrator content fails closed. Service changes have their own prior-state
+transaction and recovery; packages, BlueZ, Flatpak, and services deliberately
+do not share a fictitious global rollback.
+
+The existing Flatpak helper remains the system-Flathub mutation owner. Phase 4
+changes only manifest-declared system-unit enablement and neither starts units
+nor touches user-unit state. Destructive acceptance belongs only in a
+user-created, snapshotted disposable Arch x86_64 VM, never the development
+host.

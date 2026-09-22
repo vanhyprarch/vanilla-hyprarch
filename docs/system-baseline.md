@@ -246,8 +246,9 @@ inferring a choice from transient adapter state.
 For the validated BlueZ 5.87 baseline this is a complete `main.conf`
 replacement, because BlueZ does not load a `main.conf.d` drop-in directory.
 Users must not copy it blindly over an existing customized administrator file.
-The future bootstrap must validate the target, preserve exact rollback
-material, and fail closed rather than overwrite unknown configuration.
+The Phase 4 system stage now validates package-pristine state through pacman,
+preserves exact private rollback material, and fails closed rather than
+overwrite unknown configuration. Disposable-VM acceptance remains required.
 
 ## Desktop portals and authorization
 

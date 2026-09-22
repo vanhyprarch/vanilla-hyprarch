@@ -543,8 +543,9 @@ The tracked minimal BlueZ configuration is a complete `main.conf` replacement
 that sets `[Policy] AutoEnable=false`; BlueZ 5.87 does not provide a
 `main.conf.d` drop-in mechanism. It is deployed on the development machine, but
 current users must not copy it blindly over an existing customized file. The
-future bootstrap must validate and preserve administrator configuration for
-rollback before installing the project file ahead of the first session.
+Phase 4 feature stage validates pacman's package-pristine evidence and
+preserves exact administrator rollback material before installing the project
+file; destructive VM acceptance remains pending.
 
 Synthetic validation covers static QML, controller state, fail-closed agent
 callbacks, power-preference behavior, and an isolated
@@ -1009,7 +1010,7 @@ not a fabricated live HDR indicator; Hyprland 0.56.2 does not publish generic
 are complete on the development machine's HDR display; SDR-only mpv and other
 physical-hardware boundaries remain separately deferred.
 
-## Distribution Foundation 2 Phases 1–3 — DEPLOYMENT AND INITIALIZATION CORES IMPLEMENTED
+## Distribution Foundation 2 Phases 1–4 — SYSTEM INTEGRATION PENDING MANUAL VM ACCEPTANCE
 
 Package role and default installation policy now have one structured authority
 in `packages/manifest-v1.toml`. Printing, network printing, dictation, and Zig
@@ -1039,10 +1040,19 @@ Bluetooth preference, and launcher state remain safely lazy. Abrupt create,
 Appearance starter-seed, and Power & Idle initialization tests run only against
 disposable targets.
 
-These remain distribution cores rather than the full installer. No package
-transaction, system service change, privileged
-adoption, optional-component lifecycle, VM acceptance, or live-system
-deployment has been implemented.
+The Phase 4 feature branch adds the internal manifest-driven system-integration
+stage for official packages, non-root yay bootstrap, privileged BlueZ adoption,
+system Flathub, and required system-unit enablement. Fake command runners,
+disposable filesystem roots, and abrupt child-process exits cover transaction
+recovery without mutating the development host. See
+[DF2 system integration](system-integration.md).
+
+Phase 4 is not accepted or publishable until the user completes the guided
+destructive run and reboot in a user-managed, snapshotted disposable Arch
+x86_64 VM in GNOME Boxes. These remain distribution cores rather than the full
+installer. Optional-component lifecycle, full installer orchestration,
+first-login acceptance, and live development-host deployment are not
+implemented.
 
 ## Known open work
 
@@ -1051,9 +1061,10 @@ deployment has been implemented.
 - Build the shared bootstrap and thin optional archinstall integration defined
   in the [installation strategy](installation-strategy.md), supporting both a
   configured first reboot and post-install use on minimal Arch.
-- Build the full bootstrap around the managed-file and create-once cores,
-  including separately authorized package, service, privileged, and validation
-  phases.
+- Complete the manual GNOME Boxes acceptance of the Phase 4 package, service,
+  privileged, Flatpak, reboot, and Phase 2/3 composition boundaries.
+- Build the full bootstrap orchestration around the published distribution
+  cores after Phase 4 acceptance.
 - Physically accept explicit opt-in monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
   seed and must not materialize connected displays automatically.

@@ -865,14 +865,15 @@ Vanilla HyprArch supplies a minimal BlueZ `main.conf` with `AutoEnable=false`
 and restores Bluetooth through native Quickshell adapters. A missing user
 preference means the in-memory first-run default ON; only explicit panel actions
 write the versioned preference. BlueZ 5.87 reads one `main.conf`, not a
-configuration drop-in directory, so the future bootstrap must deploy the
-tracked complete minimal file and preserve an existing administrator file for
-rollback. On the development machine, manual reboot tests confirmed saved OFF
+configuration drop-in directory, so the Phase 4 system stage deploys the
+tracked complete minimal file only after package-pristine proof and preserves
+the administrator file for rollback. Disposable-VM acceptance remains pending.
+On the development machine, manual reboot tests confirmed saved OFF
 restores OFF and saved ON restores ON, with discovery inactive in both cases.
 Retest the file-loading and `AutoEnable` behavior after a BlueZ upgrade.
 
-Until that bootstrap exists, users must not copy the tracked file blindly over
-an existing customized BlueZ configuration.
+Users must not copy the tracked file blindly over an existing customized BlueZ
+configuration; unknown state remains a Phase 4 conflict.
 
 ## Shortcut description metadata transport
 
