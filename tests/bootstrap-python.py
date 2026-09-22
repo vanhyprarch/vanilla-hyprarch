@@ -216,30 +216,53 @@ class PythonBootstrapTests(unittest.TestCase):
         self.addCleanup(value.close)
         return value
 
-    def test_absent_python_apply_installs_only_python_and_delegates(self) -> None:
+    def test_python_bootstrap_installs_only_python_and_stops(self) -> None:
         fixture = self.fixture()
-        result = fixture.run("apply")
+        result = fixture.run("bootstrap-python")
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = fixture.commands()
         installs = [line for line in commands if line.startswith("pacman<-S>")]
         self.assertEqual(installs, ["pacman<-S><--needed><--noconfirm><--><python>"])
         self.assertTrue((fixture.root / "installed-python").exists())
-        self.assertTrue(any("system_integration.py><apply>" in line for line in commands))
+        self.assertFalse(any("system_integration.py" in line for line in commands))
         self.assertFalse(any("systemctl" in line or "flatpak" in line or "yay" in line for line in commands))
+        self.assertIn("run plan", result.stdout)
 
-    def test_present_python_is_preserved_without_package_transaction(self) -> None:
+    def test_present_python_apply_delegates_without_package_transaction(self) -> None:
         fixture = self.fixture(python_installed=True)
         result = fixture.run("apply")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
+        self.assertTrue(
+            any("system_integration.py><apply>" in line for line in fixture.commands())
+        )
 
-    def test_repeated_apply_is_idempotent(self) -> None:
+    def test_present_python_plan_and_validate_delegate(self) -> None:
+        for operation in ("plan", "validate"):
+            with self.subTest(operation=operation):
+                fixture = self.fixture(python_installed=True)
+                result = fixture.run(operation, effective_uid=1000)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(
+                    any(
+                        f"system_integration.py><{operation}>" in line
+                        for line in fixture.commands()
+                    )
+                )
+                self.assertFalse(
+                    any(line.startswith("pacman<-S>") for line in fixture.commands())
+                )
+
+    def test_repeated_python_bootstrap_is_idempotent_and_never_delegates(self) -> None:
         fixture = self.fixture()
-        first = fixture.run("apply")
-        second = fixture.run("apply")
+        first = fixture.run("bootstrap-python")
+        second = fixture.run("bootstrap-python", effective_uid=1000)
         self.assertEqual((first.returncode, second.returncode), (0, 0))
         installs = [line for line in fixture.commands() if line.startswith("pacman<-S>")]
         self.assertEqual(len(installs), 1)
+        self.assertFalse(
+            any("system_integration.py" in line for line in fixture.commands())
+        )
 
     def test_plan_is_read_only_when_python_is_absent(self) -> None:
         fixture = self.fixture()
@@ -256,10 +279,20 @@ class PythonBootstrapTests(unittest.TestCase):
         self.assertIn("python is not installed", result.stderr)
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
 
+    def test_absent_python_full_apply_refuses_without_mutation(self) -> None:
+        fixture = self.fixture()
+        result = fixture.run("apply")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Python bootstrap required before full apply", result.stderr)
+        self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
+        self.assertFalse(
+            any("system_integration.py" in line for line in fixture.commands())
+        )
+
     def test_pending_upgrades_block_without_mutation(self) -> None:
         fixture = self.fixture()
         (fixture.root / "pending").write_text("linux 1 -> 2\n", encoding="utf-8")
-        result = fixture.run("apply")
+        result = fixture.run("bootstrap-python")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("pacman -Syu", result.stderr)
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
@@ -267,7 +300,7 @@ class PythonBootstrapTests(unittest.TestCase):
     def test_unresolvable_python_blocks_without_mutation(self) -> None:
         fixture = self.fixture()
         (fixture.root / "resolvable").write_text("no\n", encoding="utf-8")
-        result = fixture.run("apply")
+        result = fixture.run("bootstrap-python")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("cannot be resolved", result.stderr)
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
@@ -275,7 +308,7 @@ class PythonBootstrapTests(unittest.TestCase):
     def test_pacman_failure_propagates_without_delegation(self) -> None:
         fixture = self.fixture()
         (fixture.root / "pacman-failure").touch()
-        result = fixture.run("apply")
+        result = fixture.run("bootstrap-python")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("could not install python", result.stderr)
         self.assertFalse(any("system_integration.py" in line for line in fixture.commands()))
@@ -283,7 +316,7 @@ class PythonBootstrapTests(unittest.TestCase):
     def test_interpreter_verification_failure_blocks_delegation(self) -> None:
         fixture = self.fixture()
         (fixture.root / "interpreter-failure").touch()
-        result = fixture.run("apply")
+        result = fixture.run("bootstrap-python")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("could not start", result.stderr)
         delegated = [line for line in fixture.commands() if "system_integration.py" in line]
@@ -292,43 +325,80 @@ class PythonBootstrapTests(unittest.TestCase):
     def test_wrong_os_and_architecture_block(self) -> None:
         fixture = self.fixture()
         (fixture.root / "usr/lib/os-release").write_text("ID=other\n", encoding="utf-8")
-        wrong_os = fixture.run("apply")
+        wrong_os = fixture.run("bootstrap-python")
         self.assertNotEqual(wrong_os.returncode, 0)
         self.assertIn("requires Arch Linux", wrong_os.stderr)
 
         (fixture.root / "usr/lib/os-release").write_text("ID=arch\n", encoding="utf-8")
         (fixture.root / "architecture").write_text("aarch64\n", encoding="utf-8")
-        wrong_arch = fixture.run("apply")
+        wrong_arch = fixture.run("bootstrap-python")
         self.assertNotEqual(wrong_arch.returncode, 0)
         self.assertIn("unsupported architecture", wrong_arch.stderr)
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
 
     def test_root_or_untrusted_target_argument_is_rejected_without_shell_execution(self) -> None:
         fixture = self.fixture()
-        root = fixture.run("apply", target_user="root")
+        root = fixture.run("bootstrap-python", target_user="root")
         self.assertNotEqual(root.returncode, 0)
         self.assertIn("non-root target user", root.stderr)
 
         marker = fixture.root / "argument-was-executed"
         hostile = f"tester;touch {marker}"
-        rejected = fixture.run("apply", target_user=hostile)
+        rejected = fixture.run("bootstrap-python", target_user=hostile)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertFalse(marker.exists())
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
 
-    def test_apply_requires_root_before_install(self) -> None:
+    def test_python_bootstrap_requires_root_before_install(self) -> None:
         fixture = self.fixture()
-        result = fixture.run("apply", effective_uid=1000)
+        result = fixture.run("bootstrap-python", effective_uid=1000)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("apply must run as root", result.stderr)
+        self.assertIn("bootstrap-python must run as root", result.stderr)
         self.assertFalse(any(line.startswith("pacman<-S>") for line in fixture.commands()))
 
     def test_no_database_refresh_or_full_upgrade_command_exists(self) -> None:
         fixture = self.fixture()
-        result = fixture.run("apply")
+        result = fixture.run("bootstrap-python")
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = fixture.commands()
         self.assertFalse(any("<-Sy>" in line or "<-Syu>" in line for line in commands))
+
+    def test_two_mutation_boundaries_are_separate(self) -> None:
+        fixture = self.fixture()
+
+        preliminary_plan = fixture.run("plan", effective_uid=1000)
+        self.assertEqual(preliminary_plan.returncode, 0, preliminary_plan.stderr)
+        self.assertIn("package-install python", preliminary_plan.stdout)
+        self.assertFalse((fixture.root / "installed-python").exists())
+
+        python_bootstrap = fixture.run("bootstrap-python")
+        self.assertEqual(python_bootstrap.returncode, 0, python_bootstrap.stderr)
+        after_bootstrap = list(fixture.commands())
+        self.assertEqual(
+            len([line for line in after_bootstrap if line.startswith("pacman<-S>")]),
+            1,
+        )
+        self.assertFalse(
+            any("system_integration.py" in line for line in after_bootstrap)
+        )
+
+        complete_plan = fixture.run("plan", effective_uid=1000)
+        self.assertEqual(complete_plan.returncode, 0, complete_plan.stderr)
+        self.assertTrue(
+            any(
+                "system_integration.py><plan>" in line
+                for line in fixture.commands()[len(after_bootstrap) :]
+            )
+        )
+
+        before_apply = len(fixture.commands())
+        full_apply = fixture.run("apply")
+        self.assertEqual(full_apply.returncode, 0, full_apply.stderr)
+        apply_commands = fixture.commands()[before_apply:]
+        self.assertTrue(
+            any("system_integration.py><apply>" in line for line in apply_commands)
+        )
+        self.assertFalse(any(line.startswith("pacman<-S>") for line in apply_commands))
 
     def test_shell_and_python_use_the_same_arch_identity_contract(self) -> None:
         fixture = self.fixture()

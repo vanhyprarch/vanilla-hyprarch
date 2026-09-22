@@ -23,9 +23,10 @@ files must be regular copies with no dependency on that checkout. For this
 acquisition path, `git` is necessarily available before the source tree exists
 as a pre-bootstrap acquisition prerequisite. Once the source exists,
 `install/bootstrap` uses the Arch base shell to provision and verify only
-Python when it is absent, then delegates to the manifest-driven Python system
-integration stage. That stage keeps both `python` and `git` in the
-permanent build/bootstrap package baseline. Python is not a manual
+Python when it is absent and stops. A new read-only invocation then delegates
+to the manifest-driven Python plan; only a later, separately approved apply may
+enter the system-integration mutation. That stage keeps both `python` and `git`
+in the permanent build/bootstrap package baseline. Python is not a manual
 prerequisite. A future tagged release archive may remove the need for Git
 merely to obtain the initial source; the source/runtime separation must remain
 compatible with that path.
@@ -114,8 +115,10 @@ The shared bootstrap will eventually:
 
 The narrow pre-Python portion is already implemented as `install/bootstrap`.
 It performs only Arch/x86_64/current-database preflight and, when needed, the
-single `python` package transaction before executing Phase 4. Full orchestration
-of the existing Phase 2, Phase 3, and Phase 4 cores remains future work.
+single `python` package transaction before stopping. The operator must then run
+and review the complete Python-backed plan before a separate full apply. Full
+orchestration of the existing Phase 2, Phase 3, and Phase 4 cores remains
+future work.
 
 For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and

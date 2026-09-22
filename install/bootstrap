@@ -7,7 +7,7 @@ export PATH
 program_name=${0##*/}
 
 usage() {
-    printf 'usage: %s {plan|apply|validate} --target-user USER\n' "$program_name" >&2
+    printf 'usage: %s {plan|bootstrap-python|apply|validate} --target-user USER\n' "$program_name" >&2
     exit 2
 }
 
@@ -18,7 +18,7 @@ fail() {
 
 operation=${1-}
 case "$operation" in
-    plan|apply|validate) ;;
+    plan|bootstrap-python|apply|validate) ;;
     *) usage ;;
 esac
 shift
@@ -115,22 +115,40 @@ if [ "$python_installed" = false ]; then
         fail "python cannot be resolved from the current sync databases"
 fi
 
-if [ "$operation" = plan ] && [ "$python_installed" = false ]; then
-    printf '%s\n' 'python-bootstrap: package-install python'
-    printf '%s\n' 'python-bootstrap: Python system-integration plan available after bootstrap'
-    exit 0
+if [ "$python_installed" = false ]; then
+    case "$operation" in
+        plan)
+            printf '%s\n' 'python-bootstrap: package-install python'
+            printf '%s\n' 'python-bootstrap: Python system-integration plan available after bootstrap'
+            exit 0
+            ;;
+        bootstrap-python)
+            [ "$effective_uid" = 0 ] || fail "bootstrap-python must run as root"
+            "$pacman" -S --needed --noconfirm -- python || fail "could not install python"
+            "$pacman" -Q -- python >/dev/null 2>&1 || fail "python package verification failed"
+            [ -x "$python_command" ] || fail "installed Python interpreter is unavailable"
+            "$python_command" -c 'import sys' || fail "installed Python interpreter could not start"
+            printf '%s\n' 'python-bootstrap: installed and verified python'
+            printf '%s\n' 'python-bootstrap: run plan and review it before full apply'
+            exit 0
+            ;;
+        apply)
+            fail "Python bootstrap required before full apply; run bootstrap-python, then plan"
+            ;;
+        validate)
+            fail "python is not installed; run bootstrap-python before validate"
+            ;;
+    esac
 fi
 
-if [ "$operation" = apply ] && [ "$python_installed" = false ]; then
-    [ "$effective_uid" = 0 ] || fail "apply must run as root"
-    "$pacman" -S --needed --noconfirm -- python || fail "could not install python"
-    "$pacman" -Q -- python >/dev/null 2>&1 || fail "python package verification failed"
-fi
-
-[ "$python_installed" = true ] || [ "$operation" = apply ] || \
-    fail "python is not installed; run apply to bootstrap it"
 [ -x "$python_command" ] || fail "installed Python interpreter is unavailable"
 "$python_command" -c 'import sys' || fail "installed Python interpreter could not start"
+
+if [ "$operation" = bootstrap-python ]; then
+    printf '%s\n' 'python-bootstrap: preserve installed python'
+    printf '%s\n' 'python-bootstrap: run plan and review it before full apply'
+    exit 0
+fi
 
 exec "$python_command" "$system_integration" "$operation" \
     --source-root "$source_root" --target-user "$target_user"

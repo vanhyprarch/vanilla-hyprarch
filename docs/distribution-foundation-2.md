@@ -21,8 +21,9 @@ published manifests, builds the sole yay exception as an explicit non-root
 user, adopts BlueZ only after package-pristine proof and exact backup, reuses
 the system-Flathub helper, and keeps local crash recovery for BlueZ and service
 transactions. A narrow shell bootstrap installs only `python` when a fresh
-Arch base lacks the interpreter, verifies it, and immediately delegates to the
-Python stage; it does not duplicate the manifest package transaction.
+Arch base lacks the interpreter, verifies it, and stops. A later plan invocation
+delegates to the Python stage for human review before a separately approved
+full apply; the shell does not duplicate the manifest package transaction.
 Deterministic acceptance is isolated from the development host.
 Publication remains blocked until guided destructive and reboot acceptance in
 the user's snapshotted disposable Arch x86_64 GNOME Boxes VM. See

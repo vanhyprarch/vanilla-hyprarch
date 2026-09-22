@@ -2,10 +2,10 @@
 
 DF2 Phase 4 adds the installer-internal `install/bootstrap` entry point and
 `install/system_integration.py` stage. The shell entry point exists only to
-cross a fresh Arch system from no Python to a verified `python` package, then
-executes the Python stage. The Python stage consumes the package,
-service-policy, and ownership-v2 manifests and exposes `plan`, `apply`, and
-`validate`. Neither layer is the final installer or a public session command.
+cross a fresh Arch system from no Python to a verified `python` package. A
+separate invocation then executes the Python stage. The Python stage consumes
+the package, service-policy, and ownership-v2 manifests and exposes `plan`,
+`apply`, and `validate`. Neither layer is the final installer or a public session command.
 The feature remains pending destructive acceptance in a user-managed
 disposable Arch x86_64 VM; it must never be applied to the development host.
 
@@ -27,17 +27,36 @@ the target account, an empty `pacman -Qu` result against the existing sync
 database, and read-only resolution of `python`. It never refreshes databases,
 runs `pacman -Sy`, or runs `pacman -Syu`. If upgrades are pending, the
 administrator must complete a normal full Arch upgrade first. If Python is
-already installed, this layer makes no package change. In either successful
-case it verifies both package ownership and interpreter startup before
-executing `system_integration.py` with the same operation, source root, and
-target user.
+already installed, this layer makes no package change.
+
+The first-install sequence deliberately contains two separately approved
+mutation boundaries:
+
+```text
+source acquired
+  -> bootstrap plan
+  -> bootstrap-python
+  -> bootstrap plan (complete Phase 4 plan)
+  -> human review
+  -> bootstrap apply
+```
+
+With Python absent, `bootstrap-python` requires root, installs and verifies only
+the interpreter, prints the required next planning step, and exits successfully
+without entering Python system integration. A no-Python `apply` refuses with a
+Python-bootstrap-required error. Once Python is present, `plan`, `apply`, and
+`validate` verify the interpreter and execute `system_integration.py` with the
+same operation, source root, and target user. Repeating `bootstrap-python`
+preserves the verified interpreter without another package transaction and
+still does not delegate.
 
 An absent-Python `plan` reports only the interpreter bootstrap action because
 the manifest-driven planner cannot execute yet; it performs no writes.
-`validate` never installs the interpreter. The production `apply` path must run
-as root, while all yay build work remains exclusively in the later Python
-stage as the explicit non-root target user. The shell layer contains no package
-manifest, service, BlueZ, Flatpak, managed-file, or create-once logic.
+`validate` never installs the interpreter. The production `bootstrap-python`
+mutation and later Python `apply` path require root, while all yay build work
+remains exclusively in the Python stage as the explicit non-root target user.
+The shell layer contains no package manifest, service, BlueZ, Flatpak,
+managed-file, or create-once logic.
 
 ## Privilege boundary
 

@@ -1044,10 +1044,11 @@ The Phase 4 feature branch adds a narrow pre-Python shell bootstrap plus the
 internal manifest-driven system-integration stage for official packages,
 non-root yay bootstrap, privileged BlueZ adoption, system Flathub, and required
 system-unit enablement. The shell boundary provisions only `python` when a
-fresh Arch base lacks it and then delegates to the Python authority. Fake
-command runners, disposable filesystem roots, and abrupt child-process exits
-cover transaction recovery without mutating the development host. See
-[DF2 system integration](system-integration.md).
+fresh Arch base lacks it, verifies it, and stops. Only a subsequent invocation
+can expose the complete Python plan, and a further explicit invocation owns the
+full apply. Fake command runners, disposable filesystem roots, and abrupt
+child-process exits cover transaction recovery without mutating the development
+host. See [DF2 system integration](system-integration.md).
 
 Phase 4 is not accepted or publishable until the user completes the guided
 destructive run and reboot in a user-managed, snapshotted disposable Arch
