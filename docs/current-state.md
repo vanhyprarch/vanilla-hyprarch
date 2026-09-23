@@ -519,8 +519,20 @@ pending.
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent.
 
-The Bluetooth pairing agent is one global Quickshell-supervised Python child.
-It implements only BlueZ `org.bluez.Agent1`, becomes the default
+Bluetooth availability is determined before pairing-agent startup by a cheap
+local check for a numeric `hci*` controller under `/sys/class/bluetooth`. The
+global controller repeats that check every five seconds for simple hotplug
+recovery. With no controller the dock item has zero size and is hidden, its
+panel cannot be opened, and no pairing agent or discovery is started. This is
+normal unavailable-hardware state, not a BlueZ error; `bluetooth.service`
+remains untouched. A present but powered-off controller keeps the normal
+visible Bluetooth Off UI, while a present controller whose BlueZ path fails
+continues to expose the existing error state. The check does not invoke BlueZ
+or `bluetoothctl`.
+
+When hardware is present, the Bluetooth pairing agent is one global
+Quickshell-supervised Python child. It implements only BlueZ
+`org.bluez.Agent1`, becomes the default
 `KeyboardDisplay` agent, and uses versioned newline-delimited JSON over its
 private stdin/stdout pipes. The per-screen Bluetooth panels remain inside the
 validated screen `Variants`; incoming prompts are routed to the focused or
@@ -551,8 +563,10 @@ preserves exact administrator rollback material before installing the project
 file. A fresh Arch Minimal disposable VM passed adoption, preserve-only second
 apply, validation, and reboot with the provenance remaining root-private.
 
-Synthetic validation covers static QML, controller state, fail-closed agent
-callbacks, power-preference behavior, and an isolated
+Synthetic validation covers controller-presence detection without BlueZ
+activation, dock visibility, agent suppression for absent hardware, retained
+hardware-present failure reporting, static QML, controller state, fail-closed
+agent callbacks, power-preference behavior, and an isolated
 register/default/unregister lifecycle without changing real adapter power or
 starting discovery. This is not counted as hardware validation.
 

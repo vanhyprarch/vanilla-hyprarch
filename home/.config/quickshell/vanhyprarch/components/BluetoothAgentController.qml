@@ -8,7 +8,7 @@ Scope {
     id: root
 
     readonly property int protocolVersion: 1
-    property string state: "starting"
+    property string state: "unavailable"
     property string errorMessage: ""
     property var currentPrompt: null
     property bool promptResponsePending: false
@@ -31,8 +31,11 @@ Scope {
     property int pairIntentSequence: 0
     property bool sessionInvalidating: false
     property bool agentAutostart: true
+    property bool hardwareAvailable: false
+    property bool hardwareStopPending: false
 
     readonly property bool ready: state === "ready"
+    readonly property bool agentRunning: agentProcess.running
     readonly property bool promptActive: currentPrompt !== null
     readonly property bool displayPrompt: promptActive
         && (currentPrompt.kind === "displayPinCode"
@@ -590,10 +593,57 @@ Scope {
         root.actionError = message
     }
 
-    Component.onCompleted: {
-        if (root.agentAutostart)
+    function reconcileAgent(): void {
+        if (!root.hardwareAvailable) {
+            restartTimer.stop()
+            root.state = "unavailable"
+            root.errorMessage = ""
+            root.actionError = ""
+            const device = root.pairIntentDevice
+            if (device && device.pairing)
+                device.cancelPair()
+            if (root.promptActive)
+                root.clearPrompt(root.currentPrompt.id)
+            root.clearPairIntent("")
+            if (agentProcess.running && !root.hardwareStopPending) {
+                root.hardwareStopPending = true
+                agentProcess.signal(15)
+            }
+            return
+        }
+        if (root.agentAutostart && !agentProcess.running
+                && !root.hardwareStopPending) {
+            root.state = "starting"
+            root.errorMessage = ""
             agentProcess.running = true
+        }
     }
+
+    function finishAgentExit(): void {
+        const device = root.pairIntentDevice
+        if (device && device.pairing)
+            device.cancelPair()
+        root.clearPairIntent(root.hardwareAvailable
+            ? "Pairing agent session ended" : "")
+        if (root.promptActive)
+            root.clearPrompt(root.currentPrompt.id)
+        root.sessionInvalidating = false
+
+        if (root.hardwareStopPending || !root.hardwareAvailable) {
+            root.hardwareStopPending = false
+            root.state = "unavailable"
+            root.errorMessage = ""
+            Qt.callLater(root.reconcileAgent)
+            return
+        }
+
+        root.state = "error"
+        root.errorMessage = "Pairing agent unavailable"
+        if (root.agentAutostart)
+            restartTimer.restart()
+    }
+
+    Component.onCompleted: root.reconcileAgent()
 
     Component.onDestruction: {
         const device = root.pairIntentDevice
@@ -603,6 +653,8 @@ Scope {
         if (agentProcess.running)
             agentProcess.signal(15)
     }
+
+    onHardwareAvailableChanged: root.reconcileAgent()
 
     Connections {
         target: root.pairIntentDevice
@@ -673,7 +725,8 @@ Scope {
         interval: 5000
         repeat: false
         onTriggered: {
-            if (root.agentAutostart && !agentProcess.running) {
+            if (root.agentAutostart && root.hardwareAvailable
+                    && !agentProcess.running && !root.hardwareStopPending) {
                 root.state = "starting"
                 root.errorMessage = ""
                 agentProcess.running = true
@@ -708,18 +761,6 @@ Scope {
             root.errorMessage = ""
         }
 
-        onExited: {
-            const device = root.pairIntentDevice
-            if (device && device.pairing)
-                device.cancelPair()
-            root.clearPairIntent("Pairing agent session ended")
-            root.state = "error"
-            root.errorMessage = "Pairing agent unavailable"
-            if (root.promptActive)
-                root.clearPrompt(root.currentPrompt.id)
-            root.sessionInvalidating = false
-            if (root.agentAutostart)
-                restartTimer.restart()
-        }
+        onExited: root.finishAgentExit()
     }
 }

@@ -12,6 +12,7 @@ Item {
     required property string screenName
     required property var targetScreen
     required property var focusCoordinator
+    required property bool hardwareAvailable
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
     readonly property int iconSize: root.metrics.dockSystemIconSize
 
@@ -19,8 +20,9 @@ Item {
     readonly property bool adapterEnabled: adapter
         && adapter.state === BluetoothAdapterState.Enabled && adapter.enabled
 
-    implicitWidth: buttonSize
-    implicitHeight: buttonSize
+    visible: root.hardwareAvailable
+    implicitWidth: visible ? buttonSize : 0
+    implicitHeight: visible ? buttonSize : 0
     width: implicitWidth
     height: implicitHeight
 
@@ -41,6 +43,11 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.focusCoordinator.toggleDockWindow(bluetoothPanel)
+    }
+
+    onHardwareAvailableChanged: {
+        if (!root.hardwareAvailable)
+            bluetoothPanel.requestedVisible = false
     }
 
     BluetoothPanel {

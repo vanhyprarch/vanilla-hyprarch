@@ -100,8 +100,13 @@ ShellRoot {
         }
     }
 
+    BluetoothHardwareController {
+        id: bluetoothHardwareController
+    }
+
     BluetoothAgentController {
         id: bluetoothAgentController
+        hardwareAvailable: bluetoothHardwareController.hardwareAvailable
     }
 
     BluetoothPowerController {
@@ -330,6 +335,7 @@ ShellRoot {
             screenName: screenScope.modelData.name
             targetScreen: screenScope.modelData
             focusCoordinator: overlayFocusCoordinator
+            hardwareAvailable: bluetoothHardwareController.hardwareAvailable
 
             anchors {
                 bottom: dockNetwork.top

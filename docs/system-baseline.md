@@ -231,13 +231,20 @@ The Bluetooth baseline is:
 - `python-dbus`
 - `python-gobject`
 
-`bluetooth.service` is enabled and active. The shell uses native
+`bluetooth.service` is enabled. It may normally remain inactive when no
+Bluetooth controller exists; Vanilla does not start, stop, disable, or report
+an error for that hardware-absent state. The shell first checks locally for a
+numeric `hci*` entry under `/sys/class/bluetooth`; without one it hides the
+Bluetooth dock item and does not start its pairing agent or discovery. A
+present controller, including one that is powered off, continues through the
+normal native Bluetooth path. The shell uses native
 `Quickshell.Bluetooth` objects for adapter power, discovery, device state,
 pairing, connections, removal, and trust. A small Python/dbus-python/PyGObject
 child implements only the complete BlueZ pairing-agent callbacks missing from
 Quickshell 0.3.1. It is supervised by the main shell and is not a permanent
-service. `bluetoothctl` polling and prompt parsing are not used. `blueman` and
-other complete Bluetooth GUIs remain excluded.
+service. The local hardware check repeats every five seconds to notice simple
+controller hotplug. `bluetoothctl` polling and prompt parsing are not used.
+`blueman` and other complete Bluetooth GUIs remain excluded.
 
 The tracked `system/etc/bluetooth/main.conf` sets only
 `[Policy] AutoEnable=false`; other BlueZ behavior uses upstream defaults. The

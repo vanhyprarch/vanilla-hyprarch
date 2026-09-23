@@ -863,6 +863,17 @@ removed when the installed native module provides equivalent complete pairing
 callbacks and explicit user-response methods without losing the current
 fail-closed lifecycle.
 
+On a hardware-less system, native adapter absence alone does not distinguish a
+normal missing controller from a genuine BlueZ failure, and starting the
+pairing helper produces misleading agent errors. Vanilla therefore gates the
+helper and dock affordance on a local numeric `hci*` entry under
+`/sys/class/bluetooth`, refreshed every five seconds for simple hotplug. This
+check does not activate BlueZ or run `bluetoothctl`. Controller presence still
+enters the native path regardless of powered state, so a powered-off adapter
+remains visible and an actual BlueZ failure is not reclassified as absent
+hardware. Retest the gate if Linux changes the sysfs Bluetooth-controller
+class naming contract or Quickshell gains an equally local availability API.
+
 Manual testing confirmed panel-owned discovery start/stop, Android-phone
 discovery, and successful outgoing pairing through the shell. Persistent device
 profiles, Forget/re-pair, incoming requests, the complete PIN/passkey and

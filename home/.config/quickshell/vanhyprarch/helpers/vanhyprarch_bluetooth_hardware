@@ -1,0 +1,37 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+set -u
+
+program_name=${0##*/}
+
+fail()
+{
+    printf '%s: %s\n' "$program_name" "$*" >&2
+    exit 1
+}
+
+[ "${1-}" = status ] && [ "$#" -le 2 ] ||
+    fail 'usage: status [SYSFS_BLUETOOTH_PATH]'
+
+bluetooth_path=${2-/sys/class/bluetooth}
+case $bluetooth_path in
+    /*) ;;
+    *) fail 'sysfs Bluetooth path must be absolute' ;;
+esac
+
+available=false
+if [ -d "$bluetooth_path" ]; then
+    for controller_path in "$bluetooth_path"/hci*; do
+        [ -e "$controller_path" ] || continue
+        controller_name=${controller_path##*/}
+        controller_number=${controller_name#hci}
+        case $controller_number in
+            ''|*[!0-9]*) continue ;;
+        esac
+        available=true
+        break
+    done
+fi
+
+printf 'version=1\navailable=%s\n' "$available"

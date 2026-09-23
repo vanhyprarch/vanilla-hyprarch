@@ -52,9 +52,20 @@ ShellRoot {
             throw new Error(message)
     }
 
+    BluetoothHardwareController {
+        id: hardwareController
+        refreshAutostart: false
+    }
+
     BluetoothAgentController {
         id: controller
         agentAutostart: false
+        hardwareAvailable: hardwareController.hardwareAvailable
+    }
+
+    BluetoothAgentController {
+        id: absentHardwareController
+        hardwareAvailable: false
     }
 
     BluetoothPowerController {
@@ -67,6 +78,24 @@ ShellRoot {
         running: true
         repeat: false
         onTriggered: {
+            root.check(hardwareController.parseStatus(
+                "version=1\navailable=false\n") === false,
+                "absent hardware status parsing failed")
+            root.check(hardwareController.parseStatus(
+                "version=1\navailable=true\n") === true,
+                "present hardware status parsing failed")
+            hardwareController.finishCheck(0,
+                "version=1\navailable=false\n")
+            root.check(hardwareController.availabilityKnown
+                    && !hardwareController.hardwareAvailable,
+                "no-controller state was not published")
+            root.check(!absentHardwareController.agentRunning,
+                "pairing agent started without Bluetooth hardware")
+            root.check(absentHardwareController.state === "unavailable"
+                    && absentHardwareController.errorMessage === ""
+                    && absentHardwareController.actionError === "",
+                "absent hardware produced a pairing-agent error")
+
             root.check(powerController.parseStatus("version=1\npower=on\n") === "on",
                 "power preference parsing failed")
             let invalidPowerStatusAccepted = false
@@ -96,6 +125,22 @@ ShellRoot {
                 "missing preference did not enable an available adapter")
             root.check(!root.blockedAdapter.enabled,
                 "missing preference changed a blocked adapter")
+
+            hardwareController.finishCheck(0,
+                "version=1\navailable=true\n")
+            controller.state = "starting"
+            controller.finishAgentExit()
+            root.check(controller.state === "error"
+                    && controller.errorMessage === "Pairing agent unavailable",
+                "BlueZ failure with hardware was hidden as hardware absence")
+            hardwareController.finishCheck(0,
+                "version=1\navailable=false\n")
+            controller.finishAgentExit()
+            root.check(controller.state === "unavailable"
+                    && controller.errorMessage === ""
+                    && controller.actionError === "",
+                "hardware absence retained a pairing-agent error")
+
             powerController.finishOperation("set", "off", 1, "")
             root.check(powerController.preference === "unset",
                 "failed persistence changed the saved preference")

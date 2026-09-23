@@ -5,9 +5,12 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 helper=$repository_dir/home/.config/quickshell/vanhyprarch/helpers/vanhyprarch_bluetooth_agent.py
+hardware_helper=$repository_dir/home/.config/quickshell/vanhyprarch/helpers/vanhyprarch_bluetooth_hardware
 power_test=$script_dir/vanhyprarch-bluetooth-power.sh
 template=$script_dir/bluetooth-controller.qml
 lifecycle_test=$script_dir/vanhyprarch-bluetooth-lifecycle.py
+bluetooth_component=$repository_dir/home/.config/quickshell/vanhyprarch/components/Bluetooth.qml
+bluetooth_panel=$repository_dir/home/.config/quickshell/vanhyprarch/components/BluetoothPanel.qml
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/vanhyprarch-bluetooth-test.XXXXXX")
 
 cleanup()
@@ -28,6 +31,54 @@ fail()
 command -v python >/dev/null 2>&1 || fail 'python is unavailable'
 command -v qs >/dev/null 2>&1 || fail 'Quickshell is unavailable'
 
+fake_sysfs=$test_dir/sys/class/bluetooth
+fake_bin=$test_dir/bin
+bluetoothctl_marker=$test_dir/bluetoothctl-called
+mkdir -p "$fake_sysfs" "$fake_bin"
+cat > "$fake_bin/bluetoothctl" <<EOF
+#!/bin/sh
+: > "$bluetoothctl_marker"
+exit 99
+EOF
+chmod 755 "$fake_bin/bluetoothctl"
+
+hardware_status=$(PATH=$fake_bin:$PATH /bin/sh "$hardware_helper" status \
+    "$test_dir/sys/class/missing")
+[ "$hardware_status" = 'version=1
+available=false' ] || fail 'missing Bluetooth sysfs path was not unavailable'
+hardware_status=$(PATH=$fake_bin:$PATH /bin/sh "$hardware_helper" status \
+    "$fake_sysfs")
+[ "$hardware_status" = 'version=1
+available=false' ] || fail 'empty Bluetooth sysfs path was not unavailable'
+mkdir "$fake_sysfs/hci-not-a-controller"
+hardware_status=$(PATH=$fake_bin:$PATH /bin/sh "$hardware_helper" status \
+    "$fake_sysfs")
+[ "$hardware_status" = 'version=1
+available=false' ] || fail 'non-numeric hci entry was accepted as a controller'
+mkdir "$fake_sysfs/hci0"
+hardware_status=$(PATH=$fake_bin:$PATH /bin/sh "$hardware_helper" status \
+    "$fake_sysfs")
+[ "$hardware_status" = 'version=1
+available=true' ] || fail 'hci controller was not available'
+[ ! -e "$bluetoothctl_marker" ] ||
+    fail 'hardware detection invoked bluetoothctl'
+rm -r "$fake_sysfs/hci0" "$fake_sysfs/hci-not-a-controller"
+printf '%s\n' 'vanhyprarch Bluetooth hardware self-check passed (no BlueZ activation)'
+
+grep -Fq 'visible: root.hardwareAvailable' "$bluetooth_component" ||
+    fail 'Bluetooth dock icon is not gated by hardware availability'
+grep -Fq 'implicitWidth: visible ? buttonSize : 0' "$bluetooth_component" ||
+    fail 'unavailable Bluetooth dock icon still reserves width'
+grep -Fq 'implicitHeight: visible ? buttonSize : 0' "$bluetooth_component" ||
+    fail 'unavailable Bluetooth dock icon still reserves height'
+grep -Fq 'opacity: root.adapterEnabled ? 1.0 : 0.45' "$bluetooth_component" ||
+    fail 'Bluetooth powered-off icon state changed'
+grep -Fq 'const candidate = root.visible && root.adapterEnabled' "$bluetooth_panel" ||
+    fail 'Bluetooth discovery is not gated by a visible enabled panel'
+grep -Fq ': "Bluetooth is off")' "$bluetooth_panel" ||
+    fail 'Bluetooth powered-off panel state changed'
+printf '%s\n' 'vanhyprarch Bluetooth dock availability self-check passed'
+
 PYTHONPYCACHEPREFIX=$test_dir/pycache python -m py_compile "$helper"
 agent_log=$test_dir/agent-self-check.log
 if ! python "$helper" --check > "$agent_log" 2>&1; then
@@ -44,6 +95,8 @@ components_uri=components
 sed "s|@COMPONENTS_URI@|$components_uri|" "$template" > "$test_dir/shell.qml"
 ln -s "$repository_dir/home/.config/quickshell/vanhyprarch/components" \
     "$test_dir/components"
+ln -s "$repository_dir/home/.config/quickshell/vanhyprarch/helpers" \
+    "$test_dir/helpers"
 install -d -m 0700 "$test_dir/runtime"
 
 qml_log=$test_dir/quickshell.log
