@@ -233,8 +233,15 @@ Scope {
                     || item.bitdepth_choices.indexOf(pending.bitdepth) >= 0
                 const hdrValid = ["off", "always-on"].indexOf(
                     pending.hdr_mode) >= 0
-                if (modeValid && bitdepthValid && hdrValid)
-                    preserved[item.connector] = Object.assign({}, pending)
+                if (modeValid && bitdepthValid && hdrValid) {
+                    const resolutionPending = pending.width !== item.current_mode.width
+                        || pending.height !== item.current_mode.height
+                    preserved[item.connector] = Object.assign({}, pending,
+                        resolutionPending ? ({}) : {
+                            scale_millionths: item.scale_millionths,
+                            scale_automatic: item.scale_automatic
+                        })
+                }
             }
             const preserveAutomatic = !root.resetPendingOnNextInspect
                 && [0, 1, 2].indexOf(root.pendingAutomaticHdr) >= 0
@@ -276,6 +283,8 @@ Scope {
             width: current.current_mode.width,
             height: current.current_mode.height,
             refresh_millihz: current.current_mode.refresh_millihz,
+            scale_millionths: current.scale_millionths,
+            scale_automatic: current.scale_automatic,
             bitdepth: current.effective_bitdepth,
             hdr_mode: current.hdr.mode
         }
@@ -345,8 +354,14 @@ Scope {
                 ? output.current_mode.refresh_millihz
                 : refreshes[refreshes.length - 1]
         const copy = Object.assign({}, root.pendingByConnector)
+        const resolutionChanged = width !== output.current_mode.width
+            || height !== output.current_mode.height
         copy[connector] = Object.assign({}, pending, {
-            width: width, height: height, refresh_millihz: refresh
+            width: width,
+            height: height,
+            refresh_millihz: refresh,
+            scale_millionths: output.scale_millionths,
+            scale_automatic: resolutionChanged ? true : output.scale_automatic
         })
         root.pendingByConnector = copy
         root.pendingRevision++
@@ -450,6 +465,42 @@ Scope {
         root.setPendingAutomaticHdr(options[index])
     }
 
+    function scalePresetRatio(scaleText: string): var {
+        switch (scaleText) {
+        case "1.00": return { numerator: 1, denominator: 1 }
+        case "1.25": return { numerator: 5, denominator: 4 }
+        case "1.50": return { numerator: 3, denominator: 2 }
+        case "2.00": return { numerator: 2, denominator: 1 }
+        default: return null
+        }
+    }
+
+    function scalePresetCompatibleForDimensions(width: int, height: int,
+            scaleText: string): bool {
+        const ratio = root.scalePresetRatio(scaleText)
+        return Number.isInteger(width) && width > 0
+            && Number.isInteger(height) && height > 0
+            && ratio !== null
+            && (width * ratio.denominator) % ratio.numerator === 0
+            && (height * ratio.denominator) % ratio.numerator === 0
+    }
+
+    function scalePresetCompatible(connector: string, scaleText: string): bool {
+        root.pendingRevision
+        const pending = root.pendingFor(connector)
+        return pending !== null && root.scalePresetCompatibleForDimensions(
+            pending.width, pending.height, scaleText)
+    }
+
+    function resolutionChangePending(connector: string): bool {
+        root.pendingRevision
+        const output = root.outputFor(connector)
+        const pending = root.pendingFor(connector)
+        return output !== null && pending !== null
+            && (pending.width !== output.current_mode.width
+                || pending.height !== output.current_mode.height)
+    }
+
     function validationMessage(connector: string): string {
         const pending = root.pendingFor(connector)
         if (pending !== null && pending.hdr_mode === "always-on"
@@ -493,12 +544,16 @@ Scope {
         if (root.validationMessage(connector) !== "")
             return false
         const command = [root.backendCommand, "apply", "--connector", connector]
+        const resolutionChanged = pending.width !== output.current_mode.width
+            || pending.height !== output.current_mode.height
         if (pending.width !== output.current_mode.width
                 || pending.height !== output.current_mode.height
                 || pending.refresh_millihz !== output.current_mode.refresh_millihz) {
             command.push("--width", String(pending.width), "--height",
                 String(pending.height), "--refresh",
                 root.refreshArgument(pending.refresh_millihz))
+            if (resolutionChanged)
+                command.push("--scale", "auto")
         }
         if (pending.bitdepth !== output.effective_bitdepth)
             command.push("--bitdepth", String(pending.bitdepth))
@@ -512,6 +567,10 @@ Scope {
     function requestScale(connector: string, scaleText: string): bool {
         const output = root.outputFor(connector)
         if (output === null || (!output.editable && !output.materializable))
+            return false
+        if (root.resolutionChangePending(connector))
+            return false
+        if (!root.scalePresetCompatible(connector, scaleText))
             return false
         return root.startAction([root.backendCommand, "scale", "--connector",
             connector, "--scale", scaleText], "scale")
@@ -548,7 +607,7 @@ Scope {
 
     function parseControlResponse(output: string): var {
         const value = JSON.parse(String(output || ""))
-        if (value === null || typeof value !== "object" || value.version !== 4
+        if (value === null || typeof value !== "object" || value.version !== 5
                 || typeof value.ok !== "boolean")
             throw new Error("invalid monitor control response")
         if (!value.ok)
@@ -567,6 +626,7 @@ Scope {
                 || (value.scale_millionths !== null
                     && (!Number.isInteger(value.scale_millionths)
                         || value.scale_millionths <= 0))
+                || typeof value.scale_automatic !== "boolean"
                 || (value.hdr_mode !== null
                     && ["off", "always-on"].indexOf(value.hdr_mode) < 0)
                 || (value.automatic_hdr !== null
@@ -575,18 +635,23 @@ Scope {
         const mode = value.mode === null ? null : root.validateMode(value.mode)
         if (policy === "safe-confirmed") {
             if (value.scale_millionths !== null
+                    || (value.scale_automatic && mode === null)
                     || (mode === null && value.bitdepth === null
+                        && value.scale_millionths === null
+                        && !value.scale_automatic
                         && value.hdr_mode === null
                         && value.automatic_hdr === null))
                 throw new Error("invalid Safe Apply candidate")
         } else if (policy === "immediate-scale") {
             if (mode !== null || value.bitdepth !== null
                     || value.scale_millionths === null
+                    || value.scale_automatic
                     || value.hdr_mode !== null || value.automatic_hdr !== null)
                 throw new Error("invalid immediate Scale candidate")
         } else if (policy === "materialize-profile") {
             if (mode !== null || value.bitdepth !== null
                     || value.scale_millionths !== null
+                    || value.scale_automatic
                     || value.hdr_mode !== null || value.automatic_hdr !== null)
                 throw new Error("invalid materialization candidate")
         } else {
@@ -597,6 +662,7 @@ Scope {
             mode: mode,
             bitdepth: value.bitdepth,
             scale_millionths: value.scale_millionths,
+            scale_automatic: value.scale_automatic,
             hdr_mode: value.hdr_mode,
             automatic_hdr: value.automatic_hdr
         }
@@ -705,6 +771,10 @@ Scope {
         }
         if (candidate.bitdepth !== null)
             parts.push("Color Depth: " + candidate.bitdepth + "-bit")
+        if (candidate.scale_automatic)
+            parts.push("Scale: Auto")
+        else if (candidate.scale_millionths !== null)
+            parts.push("Scale: " + candidate.scale_millionths / 1000000 + "×")
         if (candidate.hdr_mode !== null)
             parts.push("Forced HDR: " + (candidate.hdr_mode === "always-on"
                 ? "On" : "Off"))

@@ -42,6 +42,7 @@ ShellRoot {
             },
             bitdepth: null,
             scale_millionths: null,
+            scale_automatic: true,
             hdr_mode: null,
             automatic_hdr: null
         })
@@ -169,6 +170,18 @@ ShellRoot {
             require(revertButton.width + 0.5 >= Math.max(revertLabel.implicitWidth,
                     keepLabel.implicitWidth) + visualMetrics.rowSidePadding * 2,
                 "button labels do not have deliberate horizontal padding")
+            require(monitorController.confirmationDescription()
+                    === "2560×1440 · 59.95 Hz · Scale: Auto",
+                "combined Resolution and Scale confirmation is incomplete")
+            const automaticOnePointSix = {
+                scale_millionths: 1600000, scale_automatic: true
+            }
+            require(scaleTestPanel.scaleTextFor(automaticOnePointSix) === "1.6×",
+                "automatic Scale did not display a 1.6 effective value")
+            for (const preset of [1, 1.25, 1.5, 2])
+                require(!scaleTestPanel.scaleMatchesOutput(
+                    automaticOnePointSix, preset),
+                    "automatic 1.6 Scale selected a Vanilla preset")
             const automaticArbitrary = {
                 scale_millionths: 1333333, scale_automatic: true
             }
@@ -186,6 +199,11 @@ ShellRoot {
             for (const preset of [1, 1.25, 1.5, 2])
                 require(!scaleTestPanel.scaleMatchesOutput(automaticPreset, preset),
                     "automatic preset-valued Scale selected a Vanilla preset")
+            require(monitorController.scalePresetCompatibleForDimensions(
+                        2560, 1080, "1.25")
+                    && !monitorController.scalePresetCompatibleForDimensions(
+                        2560, 1080, "1.50"),
+                "automatic Scale changed normal resolution compatibility")
             const explicitPreset = {
                 scale_millionths: 1250000, scale_automatic: false
             }
@@ -201,6 +219,7 @@ ShellRoot {
                 },
                 bitdepth: 10,
                 scale_millionths: null,
+                scale_automatic: false,
                 hdr_mode: "always-on",
                 automatic_hdr: 0
             })

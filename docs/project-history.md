@@ -678,6 +678,21 @@ machine-owned block for the global renderer policy. External HDR/ICC intent and
 uncertain capability fail closed. Deterministic backend/UI acceptance preceded
 the controlled schema upgrade and live visual checks.
 
+## 2026-09-23: Resolution-owned automatic Scale transition
+
+VM acceptance showed that preserving an explicit numeric Scale across a Mode
+change could either make the requested Mode impossible or leave an impractical
+logical desktop. The repository's schema-v6/protocol-v5 follow-up therefore
+places Mode and configured Scale `auto` in one safe-confirmed transaction for
+every deliberate Resolution change. Scale controls lock with that draft;
+cancelling it restores the applied ownership and value, while confirmation
+keeps `auto`, shows Hyprland's effective numeric value, and unlocks the four
+manual presets without selecting one. Manual compatible presets retain their
+immediate-validated path and exact logical-pixel compatibility gate. Focused
+backend and offscreen Monitor tests cover combined apply, persistence, atomic
+rollback, draft cancellation, effective automatic readback, and the absence of
+a second Scale transaction; renewed deployment acceptance remains pending.
+
 ## Project maintenance contract
 
 A concise root `AGENTS.md` now directs future coding agents to the appropriate

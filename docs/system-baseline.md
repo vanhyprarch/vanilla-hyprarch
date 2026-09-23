@@ -133,6 +133,10 @@ service. The published schema-v5/protocol-v4 generation is the accepted
 single-monitor runtime; any future journal schema requires its own controlled
 deployment boundary and must never replace a backend that owns nonterminal
 recovery material.
+The repository now contains the fixture-tested schema-v6/protocol-v5 successor
+for atomic Mode plus configured Scale `auto` changes. It remains outside the
+accepted live baseline until that same controlled deployment boundary is
+completed.
 It will deploy immutable dictation metadata under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`, then invoke the
 Zig Screensaver manager resources under the corresponding
@@ -390,6 +394,10 @@ explicit-confirmation window, makes Scale an immediate validated persistence
 operation, and includes automatic first-change profile materialization. Its real UI
 and single-monitor runtime/persistence paths are live-accepted; real fallback
 materialization and physical multi-monitor acceptance remain deferred.
+The repository's schema-v6/protocol-v5 successor additionally makes an
+explicit Resolution change reset numeric Scale to 1 inside the same
+confirmation transaction, while preserving configured Scale `auto`; it is not
+yet part of the live-accepted baseline.
 
 ## Screenshots
 

@@ -12,13 +12,20 @@ reconstructed the overlay, and still rolled back at that deadline. The earlier
 temporary Scale exercise validated the rollback engine at lower risk; it does
 not define the final Scale UX.
 
+The repository's schema-v6/protocol-v5 follow-up adds one safe-confirmed
+combination: an explicit Resolution change also owns configured Scale `auto`.
+This lets Hyprland choose the new effective numeric Scale while preserving one
+atomic apply/confirm/rollback boundary. This generation is fixture-tested and
+has not yet replaced the published schema-v5/protocol-v4 deployment.
+
 The published HDR extension advances the journal to schema 5, control protocol
 4, and inspection schema 3. The final policy has two transaction classes:
 
-- **safe-confirmed:** resolution/refresh as one mode tuple, bit depth (8 or 10
-  bpc), forced per-monitor HDR, global Automatic HDR policy, or any valid
-  combination. These changes are temporary until explicit confirmation and
-  automatically roll back after approximately ten seconds.
+- **safe-confirmed:** resolution/refresh as one mode tuple, configured Scale
+  `auto` paired with an explicit Resolution change, bit depth (8 or 10 bpc),
+  forced per-monitor HDR, global Automatic HDR policy, or any valid combination.
+  These changes are temporary until explicit confirmation and automatically
+  roll back after approximately ten seconds.
 - **immediate-validated:** per-output scale. It is applied, authoritatively
   read back, prospectively verified, and persisted immediately. Any technical
   failure restores the previous durable bytes and runtime scale; there is no
@@ -116,7 +123,9 @@ physical identity rather than JSON order or numeric monitor ID. It rejects
 physical-identity changes, added or removed outputs, protected-field drift,
 changes to another output's owned fields, or a result with no usable output.
 Generated monitor calls contain only their owned fields: `output` plus `mode`,
-`bitdepth`, `cm`, a valid combination, or `scale`. Global Automatic HDR uses a
+`bitdepth`, `cm`, a valid combination, or `scale`. A Resolution change from an
+explicit numeric Scale owns `mode` and `scale = 1` in that one call; a
+configured Scale `auto` leaves `scale` absent. Global Automatic HDR uses a
 separate `hl.config({ render = { cm_auto_hdr = ... } })` runtime mutation in
 the same transaction authority. Neither path writes position, transform,
 mirror, ICC, VRR, enablement, reserved area, or another monitor-rule field.
@@ -148,7 +157,8 @@ Timeout during apply enters rollback; timeout during rollback leaves
 `rollback-failed` recovery-armed for one later bounded retry.
 
 Primary rollback sends another connector-specific `hl.monitor()` containing
-only the safety-critical fields the candidate changed, or the prior Scale for
+only the safety-critical fields the candidate changed, including the prior
+Mode and Scale together for the new combined candidate, or the prior Scale for
 an immediate operation, followed by full-topology readback. A normal
 rollback does not reload the complete Hyprland configuration. If the bound
 instance vanished, no command is sent to another instance. If the connector
@@ -195,8 +205,10 @@ rollback path. The service is independent of Quickshell lifetime.
 
 The small newline-delimited JSON socket protocol supports `begin`, `scale`,
 `status`, `confirm`, and `revert` requests. `begin` carries an
-optional mode tuple, bitdepth, forced-HDR policy, and global Automatic HDR
-value, with at least one required. `scale` carries only connector and scale and completes its
+optional mode tuple, its optional paired configured Scale `auto`, bitdepth,
+forced-HDR policy, and global Automatic HDR value, with at least one required. Safe Apply
+rejects Scale without Mode and any safe-confirmed Scale other than `auto`. `scale`
+carries only connector and scale and completes its
 persistence transaction in one request. When either mutation encounters a
 supported fallback-only output, the authority first performs its internal
 persistence-only materialization transaction. Quickshell is only a short-lived client of this protocol. Its
@@ -377,8 +389,10 @@ live-accepted. Fixture and isolated verifier coverage remain prerequisites for
 future changes to these paths.
 
 Journal schemas are strict and never reinterpret older recovery material. The
-schema-5 HDR candidate intentionally rejects schema 4, just as each prior
-generation rejected its predecessor. A backend upgrade must never
+schema-5 HDR generation intentionally rejects schema 4, just as each prior
+generation rejected its predecessor. Schema 6 likewise rejects schema 5
+because safe-confirmed candidates may now own paired Mode and Scale rollback
+material. A backend upgrade must never
 cross a nonterminal or recovery-required transaction from an older schema. The
 old deployed helper must first prove that its journal is terminal and
 recovery-disarmed, its lock is unheld, and no control listener exists. Only then
@@ -401,7 +415,12 @@ One global `MonitorController` coalesces read-only inspection, sends Safe Apply
 or immediate Scale requests, reconciles status, and refreshes Quickshell's
 monitor projection after terminal operations. Mode/refresh and bitdepth are
 pending input state until one Apply action; they never masquerade as confirmed
-state. Scale invokes the immediate backend path and opens no confirmation.
+state. Manual Scale selection invokes the immediate backend path and opens no
+confirmation. A Resolution change changes the draft Scale to configured `auto`,
+locks Scale controls, and carries Mode plus `auto` in that same safe-confirmed
+request. Cancelling the Resolution draft restores the applied Scale ownership;
+confirmation keeps `auto`, unlocks Scale, and shows Hyprland's effective numeric
+readback with no preset selected.
 
 The confirmation surface is instantiated per screen within the existing
 `Variants { model: Quickshell.screens }` structure and uses `CenteredOverlay`

@@ -39,10 +39,29 @@ class MonitorPanelPolicyTests(unittest.TestCase):
         )
         self.assertIn('connector, "--scale", scaleText]', self.controller)
 
+    def test_scale_presets_use_resolution_compatibility_for_ui_and_requests(self) -> None:
+        self.assertIn("function scalePresetCompatibleForDimensions", self.controller)
+        self.assertIn("(width * ratio.denominator) % ratio.numerator === 0", self.controller)
+        self.assertIn("(height * ratio.denominator) % ratio.numerator === 0", self.controller)
+        self.assertIn(
+            "if (!root.scalePresetCompatible(connector, scaleText))",
+            self.controller,
+        )
+        self.assertIn(
+            "enabled: root.scaleControlsEditable",
+            self.panel,
+        )
+        self.assertIn(
+            "opacity: root.scaleControlsEditable && compatible ? 1.0",
+            self.panel,
+        )
+
     def test_final_policy_boundaries_are_explicit(self) -> None:
         self.assertIn('"safe-apply"', self.controller)
         self.assertIn('"immediate-scale"', self.controller)
-        self.assertNotIn('command.push("--scale"', self.controller)
+        self.assertIn('command.push("--scale", "auto")', self.controller)
+        self.assertIn("function resolutionChangePending", self.controller)
+        self.assertIn("readonly property bool scaleControlsEditable", self.panel)
         self.assertIn("textSizeController.requestSize(requested)", self.panel)
         self.assertIn('["ddcutil", "setvcp", "10"', self.panel)
 
@@ -57,6 +76,7 @@ class MonitorPanelPolicyTests(unittest.TestCase):
     def test_pending_safe_fields_form_one_combined_request(self) -> None:
         self.assertIn("function requestSafeApply(connector: string)", self.controller)
         self.assertIn('command.push("--width"', self.controller)
+        self.assertIn('command.push("--scale", "auto")', self.controller)
         self.assertIn('command.push("--bitdepth"', self.controller)
         self.assertIn("function hasSafeChanges(connector: string)", self.controller)
         self.assertIn('? "Applying…" : "Apply display changes"', self.panel)

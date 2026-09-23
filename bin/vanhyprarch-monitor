@@ -4,7 +4,8 @@
 """Backend authority for validated Hyprland monitor transactions.
 
 Mode, bitdepth, forced HDR, and global Automatic HDR use explicit-confirmation
-Safe Apply; Scale persists immediately after validation. Transaction,
+Safe Apply; a Mode change includes configured Scale auto. Explicit numeric
+Scale changes persist immediately after validation. Transaction,
 readback, rollback, journal,
 prospective-verifier, and persistence primitives remain independently testable
 so the UI can remain a later client.
@@ -33,8 +34,8 @@ from typing import Callable, Mapping, Protocol, Sequence
 import uuid
 
 
-SCHEMA_VERSION = 5
-PROTOCOL_VERSION = 4
+SCHEMA_VERSION = 6
+PROTOCOL_VERSION = 5
 INSPECT_VERSION = 3
 HYPRCTL = "/usr/bin/hyprctl"
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -621,6 +622,7 @@ class Candidate:
     scale_millionths: int | None
     hdr_mode: str | None = None
     automatic_hdr: int | None = None
+    scale_automatic: bool = False
 
     @classmethod
     def safe(
@@ -631,6 +633,7 @@ class Candidate:
         height: int | None = None,
         refresh: object | None = None,
         bitdepth: int | None = None,
+        scale: object | None = None,
         hdr_mode: str | None = None,
         automatic_hdr: int | None = None,
     ) -> "Candidate":
@@ -649,6 +652,13 @@ class Candidate:
             mode = None
         if bitdepth is not None and (type(bitdepth) is not int or bitdepth not in BITDEPTH_FORMATS):
             raise ValidationError("candidate bitdepth must be 8 or 10")
+        scale_automatic = False
+        if scale is not None:
+            scale_automatic = scale == "auto"
+            if mode is None or not scale_automatic:
+                raise ValidationError(
+                    "safe-confirmed Scale must be auto and accompany Mode"
+                )
         if hdr_mode is not None and hdr_mode not in HDR_MODES:
             raise ValidationError("candidate HDR mode must be off or always-on")
         if automatic_hdr is not None and (
@@ -667,6 +677,7 @@ class Candidate:
             None,
             hdr_mode,
             automatic_hdr,
+            scale_automatic,
         )
 
     @classmethod
@@ -870,9 +881,8 @@ def inspection_payload(
                 },
                 "available_modes": modes,
                 "scale_millionths": state.scale_millionths,
-                "scale_automatic": (
-                    profile is not None and profile.scale_value == '"auto"'
-                ),
+                "scale_automatic": profile is not None
+                    and profile_scale_is_automatic(machine_content, profile),
                 "effective_bitdepth": state.effective_bitdepth,
                 "bitdepth_choices": bitdepth_choices,
                 "effective": {
@@ -989,6 +999,8 @@ def monitor_eval_source(candidate: Candidate, *, cm_value: str | None = None) ->
     if candidate.scale_millionths is not None:
         scale = Decimal(candidate.scale_millionths) / 1_000_000
         fields.append(f"scale = {format(scale.normalize(), 'f')}")
+    elif candidate.scale_automatic:
+        fields.append('scale = "auto"')
     if cm_value is not None:
         if cm_value not in NON_HDR_CM_PRESETS and cm_value != "hdr":
             raise ValidationError("runtime CM value is unsupported")
@@ -1549,6 +1561,29 @@ def require_explicit_profile(content: bytes, connector: str) -> MachineProfile:
     return matches[0]
 
 
+def profile_scale_is_automatic(content: bytes, profile: MachineProfile) -> bool:
+    value = profile.scale_value
+    if value == '"auto"':
+        return True
+    if value is not None and NUMBER_RE.fullmatch(value):
+        return False
+    if value is None or IDENTIFIER_RE.fullmatch(value) is None:
+        raise ValidationError("explicit profile scale is not readable")
+    text = content.decode("utf-8")
+    references = re.findall(
+        rf"(?m)^[ \t]*scale[ \t]*=[ \t]*{re.escape(value)}[ \t]*,?[ \t]*$",
+        text,
+    )
+    assignment = re.compile(
+        rf"(?m)^[ \t]*local[ \t]+{re.escape(value)}[ \t]*=[ \t]*"
+        r'(?P<value>[0-9]+(?:\.[0-9]+)?|"auto")[ \t]*$'
+    )
+    matches = list(assignment.finditer(text))
+    if len(references) != 1 or len(matches) != 1:
+        raise ValidationError("profile scale variable is shared or ambiguous")
+    return matches[0].group("value") == '"auto"'
+
+
 def reject_superseding_override(content: bytes, connector: str) -> None:
     profiles, _ = parse_machine_profiles(content)
     if any(profile.connector.startswith("desc:") for profile in profiles):
@@ -1954,14 +1989,14 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
         new_body = _insert_bitdepth(new_body, candidate.bitdepth)
     if candidate.hdr_mode is not None:
         new_body = _rewrite_hdr_intent(new_body, candidate.hdr_mode)
-    if candidate.scale_millionths is None:
+    if candidate.scale_millionths is None and not candidate.scale_automatic:
         return (
             text[: profile.block_start]
             + new_body
             + text[profile.block_end :]
         ).encode("utf-8")
     scale_value, scale_match = _field(new_body, "scale")
-    scale_text = format(
+    scale_text = '"auto"' if candidate.scale_automatic else format(
         (Decimal(candidate.scale_millionths) / 1_000_000).normalize(), "f"
     )
     if NUMBER_RE.fullmatch(scale_value) or scale_value == '"auto"':
@@ -1979,7 +2014,7 @@ def rewrite_existing_profile(content: bytes, candidate: Candidate) -> bytes:
             raise PersistenceError("profile scale variable is shared or ambiguous")
         assignment = re.compile(
             rf"(?m)^(?P<prefix>[ \t]*local[ \t]+{re.escape(scale_value)}[ \t]*=[ \t]*)"
-            r"(?P<value>[0-9]+(?:\.[0-9]+)?)(?P<suffix>[ \t]*)$"
+            r'(?P<value>[0-9]+(?:\.[0-9]+)?|"auto")(?P<suffix>[ \t]*)$'
         )
         matches = list(assignment.finditer(text))
         if len(matches) != 1:
@@ -2589,7 +2624,7 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raw["candidate"],
         {
             "policy", "connector", "mode", "bitdepth", "scale_millionths",
-            "hdr_mode", "automatic_hdr",
+            "hdr_mode", "automatic_hdr", "scale_automatic",
         },
         "journal.candidate",
     )
@@ -2601,6 +2636,8 @@ def journal_from_dict(value: object) -> TransactionJournal:
         raise JournalError("journal.candidate.bitdepth has the wrong type")
     if candidate_raw["scale_millionths"] is not None and type(candidate_raw["scale_millionths"]) is not int:
         raise JournalError("journal.candidate.scale_millionths has the wrong type")
+    if type(candidate_raw["scale_automatic"]) is not bool:
+        raise JournalError("journal.candidate.scale_automatic has the wrong type")
     if candidate_raw["hdr_mode"] is not None and candidate_raw["hdr_mode"] not in HDR_MODES:
         raise JournalError("journal.candidate HDR mode is invalid")
     if candidate_raw["automatic_hdr"] is not None and (
@@ -2644,6 +2681,7 @@ def journal_from_dict(value: object) -> TransactionJournal:
             candidate_raw["scale_millionths"],
             candidate_raw["hdr_mode"],
             candidate_raw["automatic_hdr"],
+            candidate_raw["scale_automatic"],
         ),
         raw["bitdepth_intent"],
         raw["cm_intent"],
@@ -2663,13 +2701,19 @@ def journal_from_dict(value: object) -> TransactionJournal:
     if CONNECTOR_RE.fullmatch(journal.candidate.connector) is None:
         raise JournalError("journal candidate connector is invalid")
     if journal.candidate.policy == SAFE_CONFIRMED_POLICY:
-        if journal.candidate.scale_millionths is not None or (
+        if (
             journal.candidate.mode is None
             and journal.candidate.bitdepth is None
+            and journal.candidate.scale_millionths is None
+            and not journal.candidate.scale_automatic
             and journal.candidate.hdr_mode is None
             and journal.candidate.automatic_hdr is None
         ):
             raise JournalError("safe-confirmed journal candidate is invalid")
+        if journal.candidate.scale_millionths is not None:
+            raise JournalError("safe-confirmed journal Scale is invalid")
+        if journal.candidate.scale_automatic and journal.candidate.mode is None:
+            raise JournalError("safe-confirmed automatic Scale lacks Mode")
         if journal.candidate.bitdepth is not None and journal.candidate.bitdepth not in BITDEPTH_FORMATS:
             raise JournalError("journal candidate bitdepth is invalid")
         if journal.candidate.bitdepth is not None and journal.bitdepth_intent is None:
@@ -2684,6 +2728,7 @@ def journal_from_dict(value: object) -> TransactionJournal:
             journal.candidate.mode is not None
             or journal.candidate.bitdepth is not None
             or journal.candidate.scale_millionths is None
+            or journal.candidate.scale_automatic
             or journal.candidate.hdr_mode is not None
             or journal.candidate.automatic_hdr is not None
         ):
@@ -2700,6 +2745,7 @@ def journal_from_dict(value: object) -> TransactionJournal:
             journal.candidate.mode is not None
             or journal.candidate.bitdepth is not None
             or journal.candidate.scale_millionths is not None
+            or journal.candidate.scale_automatic
             or journal.candidate.hdr_mode is not None
             or journal.candidate.automatic_hdr is not None
         ):
@@ -3074,10 +3120,12 @@ class TransactionAuthority:
         candidate = journal.candidate
         if candidate.scale_millionths is not None:
             return False
+        if candidate.scale_automatic:
+            return True
         profile = require_explicit_profile(
             journal.machine_file.content, candidate.connector
         )
-        return profile.scale_value == '"auto"'
+        return profile_scale_is_automatic(journal.machine_file.content, profile)
 
     @staticmethod
     def _candidate_has_monitor_mutation(candidate: Candidate) -> bool:
@@ -3088,6 +3136,7 @@ class TransactionAuthority:
                 candidate.bitdepth,
                 candidate.scale_millionths,
                 candidate.hdr_mode,
+                True if candidate.scale_automatic else None,
             )
         )
 
@@ -3114,18 +3163,30 @@ class TransactionAuthority:
             bitdepth = journal.bitdepth_intent
             if bitdepth is None:
                 raise RollbackError("snapshot requested bitdepth cannot be restored")
+        previous_scale_automatic = False
+        rollback_scale = None
+        if journal.candidate.scale_automatic:
+            profile = require_explicit_profile(
+                journal.machine_file.content, journal.candidate.connector
+            )
+            previous_scale_automatic = profile_scale_is_automatic(
+                journal.machine_file.content, profile
+            )
+            if not previous_scale_automatic:
+                rollback_scale = original.scale_millionths
         return Candidate(
             SAFE_CONFIRMED_POLICY,
             original.connector,
             original.mode if journal.candidate.mode is not None else None,
             bitdepth,
-            None,
+            rollback_scale,
             (
                 ("always-on" if journal.forced_hdr else "off")
                 if journal.candidate.hdr_mode is not None else None
             ),
             journal.automatic_hdr_intent
             if journal.candidate.automatic_hdr is not None else None,
+            previous_scale_automatic,
         )
 
     def begin(self, candidate: Candidate, signature: str) -> TransactionJournal:
@@ -3640,6 +3701,7 @@ def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
             },
             "bitdepth": candidate.bitdepth,
             "scale_millionths": candidate.scale_millionths,
+            "scale_automatic": candidate.scale_automatic,
             "hdr_mode": candidate.hdr_mode,
             "automatic_hdr": candidate.automatic_hdr,
         },
@@ -3692,7 +3754,7 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
     elif command == "begin":
         candidate_raw = _strict_object(
             raw["candidate"],
-            {"connector", "mode", "bitdepth", "hdr_mode", "automatic_hdr"},
+            {"connector", "mode", "bitdepth", "scale", "hdr_mode", "automatic_hdr"},
             "candidate",
         )
         mode_raw = candidate_raw["mode"]
@@ -3711,6 +3773,7 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
                 height=mode_fields["height"],
                 refresh=mode_fields["refresh"],
                 bitdepth=candidate_raw["bitdepth"],
+                scale=candidate_raw["scale"],
                 hdr_mode=candidate_raw["hdr_mode"],
                 automatic_hdr=candidate_raw["automatic_hdr"],
             ),
@@ -3890,6 +3953,7 @@ def client_command(arguments: argparse.Namespace) -> int:
                     "connector": arguments.connector,
                     "mode": mode,
                     "bitdepth": arguments.bitdepth,
+                    "scale": arguments.scale,
                     "hdr_mode": arguments.hdr,
                     "automatic_hdr": arguments.automatic_hdr,
                 },
@@ -3941,13 +4005,14 @@ def argument_parser() -> argparse.ArgumentParser:
         "inspect", help="read normalized monitor capabilities without mutation"
     )
     apply_parser = subparsers.add_parser(
-        "apply", help="request one confirmed Mode/bitdepth/HDR candidate"
+        "apply", help="request one confirmed Mode/Scale/bitdepth/HDR candidate"
     )
     apply_parser.add_argument("--connector", required=True)
     apply_parser.add_argument("--width", type=int)
     apply_parser.add_argument("--height", type=int)
     apply_parser.add_argument("--refresh")
     apply_parser.add_argument("--bitdepth", type=int, choices=(8, 10))
+    apply_parser.add_argument("--scale")
     apply_parser.add_argument("--hdr", choices=tuple(sorted(HDR_MODES)))
     apply_parser.add_argument("--automatic-hdr", type=int, choices=(0, 1, 2))
     scale_parser = subparsers.add_parser("scale", help="apply and persist validated scale immediately")

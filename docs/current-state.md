@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-22.
+Snapshot date: 2026-09-23.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -964,6 +964,17 @@ explicit Mode Revert, and an immediate Scale 1.25→1.50→1.25 durable round
 trip. Every persistence round trip restored the known-good machine
 configuration exactly.
 
+The repository's schema-v6/protocol-v5 follow-up makes one deliberate
+exception to Scale's otherwise immediate policy. When a user changes Mode from
+the applied Resolution to a different Resolution, the same safe-confirmed
+candidate owns the new Mode and configured Scale `auto`. Scale controls remain
+locked while that Resolution
+draft or transaction is pending. Hyprland recalculates the effective numeric
+Scale, while manual compatible preset selection after confirmation remains the
+separate immediate-validated path. Cancelling a draft or rolling back restores
+the prior Scale ownership and value. This follow-up is fixture-tested but
+awaits renewed controlled deployment and VM acceptance.
+
 The deployed UI adds a read-only `inspect` projection, one global
 `MonitorController`, pending Mode/bitdepth controls, immediate Scale routing,
 and a per-screen confirmation surface using the shared centered-overlay focus
@@ -1009,8 +1020,11 @@ Forced HDR is Off, and carries the strict Vanilla-owned
 Scale may be recalculated by Hyprland during another monitor change without
 being mistaken for failed readback, while explicit Scale remains strict. The
 panel displays that effective value without selecting a Vanilla preset until
-the user explicitly chooses one. Global Text Size still uses the helper-owned
-missing-preference default of 12 pixels.
+the user explicitly chooses one. Each visible Vanilla Scale preset is enabled
+only when exact rational division of both selected resolution dimensions
+produces integer logical dimensions; incompatible presets remain visible and
+cannot start an immediate Scale transaction. Global Text Size still uses the
+helper-owned missing-preference default of 12 pixels.
 
 The published schema-v5/protocol-v4/inspect-v3 HDR implementation extends Safe
 Apply with per-monitor

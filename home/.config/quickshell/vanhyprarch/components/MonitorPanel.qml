@@ -46,6 +46,8 @@ DockPopup {
         && (root.inspectedOutput.editable || root.inspectedOutput.materializable)
         && root.monitorControllerReady
         && !root.monitorController.mutationsBlocked
+    readonly property bool scaleControlsEditable: root.displayEditable
+        && !root.monitorController.resolutionChangePending(root.connectorName)
 
     Component.onCompleted: {
         root.componentReady = true
@@ -386,7 +388,7 @@ DockPopup {
     }
 
     function scaleMatches(preset: real): bool {
-        return root.scaleMatchesOutput(root.inspectedOutput, preset)
+        return root.scaleMatchesOutput(root.pendingState, preset)
     }
 
     function requestScalePreset(preset: string) {
@@ -398,7 +400,7 @@ DockPopup {
             console.warn("Monitor scale update requires a screen-mapped output profile")
             return
         }
-        if (!root.displayEditable || root.scaleMatches(Number(preset)))
+        if (!root.scaleControlsEditable || root.scaleMatches(Number(preset)))
             return
         if (root.monitorControllerReady)
             root.monitorController.requestScale(root.connectorName, preset)
@@ -906,6 +908,9 @@ DockPopup {
                         required property string modelData
                         readonly property string preset: modelData
                         readonly property bool selected: root.scaleMatches(Number(preset))
+                        readonly property bool compatible: root.monitorControllerReady
+                            && root.monitorController.scalePresetCompatible(
+                                root.connectorName, preset)
 
                         width: (scalePresetsRow.width
                             - scalePresetsRow.spacing * (root.scalePresets.length - 1))
@@ -915,7 +920,7 @@ DockPopup {
                         color: selected ? root.theme.activeFill
                             : (presetMouse.containsMouse
                                 ? root.theme.hoverFill : root.theme.normalFill)
-                        opacity: root.displayEditable ? 1.0
+                        opacity: root.scaleControlsEditable && compatible ? 1.0
                             : root.metrics.disabledInteractiveOpacity
 
                         Text {
@@ -934,7 +939,8 @@ DockPopup {
                             id: presetMouse
 
                             anchors.fill: parent
-                            enabled: root.displayEditable
+                            enabled: root.scaleControlsEditable
+                                && scalePresetButton.compatible
                             hoverEnabled: true
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: root.requestScalePreset(scalePresetButton.preset)

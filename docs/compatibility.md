@@ -231,6 +231,10 @@ Existing explicit-profile behavior passed controlled deployment; physical
 materialization remains deferred to a real fallback-managed environment. The
 schema-v5/protocol-v4 HDR extension subsequently passed its controlled upgrade
 and live acceptance boundary and is the published generation.
+The repository's fixture-tested schema-v6/protocol-v5 successor lets one
+safe-confirmed candidate own Mode plus configured Scale `auto`. It must replace
+schema 5 only after the existing journal is terminal and recovery-disarmed;
+renewed runtime and VM acceptance remain pending. Inspection stays at schema 3.
 Physical multi-monitor acceptance remains deferred; deterministic multi-output
 coverage is not presented as a real two-output hardware result.
 After every Hyprland upgrade, retest Lua monitor eval,

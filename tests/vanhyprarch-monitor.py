@@ -1088,6 +1088,35 @@ class MonitorBackendTests(unittest.TestCase):
         with self.assertRaises(monitor.JournalError):
             monitor.handle_control(authority, request)
 
+    def test_apply_client_carries_automatic_scale_in_begin_candidate(self) -> None:
+        arguments = monitor.argument_parser().parse_args([
+            "apply", "--connector", "DP-1", "--width", "2560",
+            "--height", "1080", "--refresh", "60", "--scale", "auto",
+        ])
+        response = {
+            "version": monitor.PROTOCOL_VERSION,
+            "ok": True,
+            "status": {"state": "idle"},
+        }
+        with (
+            mock.patch.object(monitor, "run_command", return_value=OK),
+            mock.patch.object(monitor, "send_control", return_value=response) as send,
+            mock.patch.dict(
+                monitor.os.environ,
+                {"HYPRLAND_INSTANCE_SIGNATURE": "fixture_123"},
+                clear=False,
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(monitor.client_command(arguments), 0)
+        request = send.call_args.args[0]
+        self.assertEqual(request["command"], "begin")
+        self.assertEqual(request["candidate"]["scale"], "auto")
+        self.assertEqual(
+            request["candidate"]["mode"],
+            {"width": 2560, "height": 1080, "refresh": "60"},
+        )
+
     def test_explicit_materialization_protocol_is_not_public(self) -> None:
         request = {
             "version": monitor.PROTOCOL_VERSION,
@@ -1134,7 +1163,7 @@ class MonitorBackendTests(unittest.TestCase):
                 with self.assertRaises(monitor.JournalError):
                     self.store.read()
 
-    def test_terminal_older_journal_is_not_reinterpreted_by_v5(self) -> None:
+    def test_terminal_older_journal_is_not_reinterpreted_by_v6(self) -> None:
         _, _, journal = self.begin_success()
         legacy = monitor.journal_to_dict(
             replace(
@@ -1145,7 +1174,7 @@ class MonitorBackendTests(unittest.TestCase):
                 recovery_required=False,
             )
         )
-        legacy["schema_version"] = 4
+        legacy["schema_version"] = 5
         self.store.journal_path.write_text(json.dumps(legacy))
         self.store.journal_path.chmod(0o600)
         authority, runner = self.authority([])
@@ -1237,6 +1266,12 @@ class MonitorBackendTests(unittest.TestCase):
                 ),
                 {"output", "mode", "bitdepth"},
             ),
+            (
+                monitor.Candidate.safe(
+                    "DP-1", width=1920, height=1080, refresh="60", scale="auto"
+                ),
+                {"output", "mode", "scale"},
+            ),
         )
         for candidate, expected in cases:
             with self.subTest(candidate=candidate):
@@ -1245,7 +1280,16 @@ class MonitorBackendTests(unittest.TestCase):
                     re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=", source)
                 )
                 self.assertEqual(fields, expected)
-                self.assertNotIn("scale =", source)
+                if "scale" not in expected:
+                    self.assertNotIn("scale =", source)
+
+    def test_safe_automatic_scale_requires_mode(self) -> None:
+        with self.assertRaisesRegex(monitor.ValidationError, "accompany Mode"):
+            monitor.Candidate.safe("DP-1", scale="auto")
+        with self.assertRaisesRegex(monitor.ValidationError, "must be auto"):
+            monitor.Candidate.safe(
+                "DP-1", width=1920, height=1080, refresh="60", scale="1"
+            )
 
     def test_bitdepth_only_apply_and_timeout_restore_effective_depth(self) -> None:
         baseline = effective_output(8)
@@ -1438,6 +1482,68 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertIn("vanhyprarchMonitorScale = 1.25", after)
         self.assertIn('cm = "auto"', after)
 
+    def test_mode_and_automatic_scale_are_one_confirmed_transaction(self) -> None:
+        candidate = monitor.Candidate.safe(
+            "DP-1", width=1920, height=1080, refresh="60.00", scale="auto"
+        )
+        baseline = output(scale=1.5)
+        applied = output(width=1920, height=1080, refresh=60.0, scale=1.6)
+        self.machine.write_bytes(
+            machine_configuration().replace(
+                b"vanhyprarchMonitorScale = 1.25",
+                b"vanhyprarchMonitorScale = 1.5",
+            )
+        )
+        authority, runner = self.authority(
+            [[baseline], OK, [applied]],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        journal = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(journal.state, "temporary-active", journal.failure)
+        evals = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertEqual(len(evals), 1)
+        self.assertIn('mode = "1920x1080@60"', evals[0])
+        self.assertIn('scale = "auto"', evals[0])
+        runner.responses.extend([[applied], [applied]])
+        committed = authority.confirm(journal.transaction_id)
+        self.assertEqual(committed.state, "committed", committed.failure)
+        after = self.machine.read_text()
+        self.assertIn('mode = "1920x1080@60"', after)
+        self.assertIn('vanhyprarchMonitorScale = "auto"', after)
+        inspected = monitor.inspection_payload(
+            monitor.parse_monitor_payload([applied]),
+            self.machine.read_bytes(),
+            b"",
+            self.instance.signature,
+        )["outputs"][0]
+        self.assertTrue(inspected["scale_automatic"])
+        self.assertEqual(inspected["scale_millionths"], 1_600_000)
+
+    def test_mode_and_automatic_scale_timeout_restores_both_owned_fields(self) -> None:
+        candidate = monitor.Candidate.safe(
+            "DP-1", width=1920, height=1080, refresh="60.00", scale="auto"
+        )
+        baseline = output(scale=1.5)
+        applied = output(width=1920, height=1080, refresh=60.0, scale=1.6)
+        self.machine.write_bytes(
+            machine_configuration().replace(
+                b"vanhyprarchMonitorScale = 1.25",
+                b"vanhyprarchMonitorScale = 1.5",
+            )
+        )
+        authority, runner = self.authority([[baseline], OK, [applied]])
+        journal = authority.begin(candidate, self.instance.signature)
+        runner.responses.extend([[applied], OK, [baseline]])
+        self.clock.advance(11)
+        reverted = authority.status()
+        self.assertEqual(reverted.state, "reverted", reverted.failure)
+        evals = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertEqual(len(evals), 2)
+        self.assertIn('scale = "auto"', evals[0])
+        self.assertIn('mode = "2560x1440@59.95"', evals[-1])
+        self.assertIn("scale = 1.5", evals[-1])
+        self.assertEqual(self.machine.read_bytes(), journal.machine_file.content)
+
     def test_immediate_scale_applies_reads_back_and_persists_without_deadline(self) -> None:
         candidate = monitor.Candidate.scale("DP-1", "1.50")
         applied = output(scale=1.5)
@@ -1621,7 +1727,10 @@ class MonitorBackendTests(unittest.TestCase):
         ])
         journal = authority.begin(self.candidate, self.instance.signature)
         self.assertEqual(journal.state, "temporary-active", journal.failure)
-        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 1)
+        self.assertIsNone(journal.candidate.scale_millionths)
+        evals = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertEqual(len(evals), 1)
+        self.assertNotIn("scale =", evals[0])
 
     def test_explicit_scale_change_from_automatic_remains_strict(self) -> None:
         self.machine.write_bytes(

@@ -47,8 +47,11 @@ ShellRoot {
                 unavailable_reason: null,
                 current_mode: { width: 3840, height: 2160, refresh_millihz: 60000 },
                 available_modes: [
+                    { width: 800, height: 600, refresh_millihz: 60000 },
                     { width: 1920, height: 1080, refresh_millihz: 59940 },
                     { width: 1920, height: 1080, refresh_millihz: 60000 },
+                    { width: 1366, height: 768, refresh_millihz: 60000 },
+                    { width: 2560, height: 1080, refresh_millihz: 60000 },
                     { width: 2560, height: 1440, refresh_millihz: 59950 },
                     { width: 3840, height: 2160, refresh_millihz: 60000 }
                 ],
@@ -125,14 +128,34 @@ ShellRoot {
         })
     }
 
+    function inspectionWithScale(scaleMillionths: int, scaleAutomatic: bool): string {
+        const value = JSON.parse(inspection(false))
+        value.outputs[0].scale_millionths = scaleMillionths
+        value.outputs[0].scale_automatic = scaleAutomatic
+        return JSON.stringify(value)
+    }
+
+    function inspectionState(width: int, height: int, scaleMillionths: int,
+            scaleAutomatic: bool): string {
+        const value = JSON.parse(inspection(false))
+        value.outputs[0].current_mode = {
+            width: width, height: height, refresh_millihz: 60000
+        }
+        value.outputs[0].scale_millionths = scaleMillionths
+        value.outputs[0].scale_automatic = scaleAutomatic
+        return JSON.stringify(value)
+    }
+
     function response(state, sequence, transactionId, candidate, remaining): string {
+        const normalizedCandidate = Object.assign({ scale_automatic: false },
+            candidate)
         return JSON.stringify({
-            version: 4,
+            version: 5,
             ok: true,
             status: {
                 transaction_id: transactionId,
                 policy: "safe-confirmed",
-                candidate: candidate,
+                candidate: normalizedCandidate,
                 state: state,
                 sequence: sequence,
                 deadline_monotonic: remaining === null ? null : 500,
@@ -145,13 +168,15 @@ ShellRoot {
 
     function failedResponse(state: string, sequence: int, transactionId: string,
             candidate: var, failure: string, recoveryRequired: bool): string {
+        const normalizedCandidate = Object.assign({ scale_automatic: false },
+            candidate)
         return JSON.stringify({
-            version: 4,
+            version: 5,
             ok: true,
             status: {
                 transaction_id: transactionId,
                 policy: "safe-confirmed",
-                candidate: candidate,
+                candidate: normalizedCandidate,
                 state: state,
                 sequence: sequence,
                 deadline_monotonic: null,
@@ -194,10 +219,123 @@ ShellRoot {
                 && controller.lastRequestedCommand.join(" ")
                     === "vanhyprarch-monitor scale --connector DP-2 --scale 1.50",
             "fallback Scale did not enter the normal immediate path")
-        check(controller.resolutionOptions("DP-1").length === 3,
+        check(controller.resolutionOptions("DP-1").length === 6,
             "resolution catalogue was not deduplicated by resolution")
         check(controller.refreshOptions("DP-1", 1920, 1080).length === 2,
             "refreshes were not filtered by resolution")
+
+        check(controller.setPendingResolution("DP-1", 2560, 1080),
+            "2560x1080 compatibility fixture was rejected")
+        check(controller.scalePresetCompatible("DP-1", "1.00")
+                && controller.scalePresetCompatible("DP-1", "1.25")
+                && !controller.scalePresetCompatible("DP-1", "1.50")
+                && controller.scalePresetCompatible("DP-1", "2.00"),
+            "2560x1080 exposed the wrong Scale presets")
+        const commandBeforeIncompatibleScale = controller.lastRequestedCommand.join(" ")
+        check(!controller.requestScale("DP-1", "1.50")
+                && controller.lastRequestedCommand.join(" ")
+                    === commandBeforeIncompatibleScale,
+            "2560x1080 Scale 1.5 reached the backend action path")
+
+        check(controller.setPendingResolution("DP-1", 3840, 2160),
+            "3840x2160 compatibility fixture was rejected")
+        check(["1.00", "1.25", "1.50", "2.00"].every(scale =>
+                controller.scalePresetCompatible("DP-1", scale)),
+            "3840x2160 did not enable every Vanilla Scale preset")
+
+        check(controller.setPendingResolution("DP-1", 1366, 768),
+            "1366x768 compatibility fixture was rejected")
+        check(controller.scalePresetCompatible("DP-1", "1.00")
+                && !controller.scalePresetCompatible("DP-1", "1.25")
+                && !controller.scalePresetCompatible("DP-1", "1.50")
+                && controller.scalePresetCompatible("DP-1", "2.00"),
+            "1366x768 exposed the wrong Scale presets")
+        controller.resetPending("DP-1")
+
+        const explicitOnePointFive = controllerComponent.createObject(root)
+        check(explicitOnePointFive !== null
+                && explicitOnePointFive.acceptInspectionJson(
+                    inspectionWithScale(1500000, false), false)
+                && explicitOnePointFive.setPendingResolution("DP-1", 2560, 1080),
+            "explicit 1.5 Resolution draft was rejected")
+        check(explicitOnePointFive.pendingFor("DP-1").scale_automatic
+                && explicitOnePointFive.resolutionChangePending("DP-1")
+                && !explicitOnePointFive.requestScale("DP-1", "1.25"),
+            "Resolution draft did not switch to auto and lock Scale")
+        check(explicitOnePointFive.requestSafeApply("DP-1"),
+            "explicit 1.5 Resolution change was rejected")
+        check(explicitOnePointFive.lastRequestedCommand.join(" ")
+                === "vanhyprarch-monitor apply --connector DP-1 --width 2560 --height 1080 --refresh 60 --scale auto"
+                && explicitOnePointFive.lastRequestedKind === "safe-apply"
+                && explicitOnePointFive.lastRequestedCommand.filter(
+                    part => part === "--scale").length === 1,
+            "Resolution and auto Scale were not one Safe Apply request")
+
+        const autoCandidate = {
+            connector: "DP-1",
+            mode: { width: 2560, height: 1080, refresh_millihz: 60000 },
+            bitdepth: null,
+            scale_millionths: null,
+            scale_automatic: true,
+            hdr_mode: null,
+            automatic_hdr: null
+        }
+        check(explicitOnePointFive.acceptStatusJson(response("temporary-active", 2,
+                "transaction-auto", autoCandidate, 8.2), false)
+                && explicitOnePointFive.confirmationActive
+                && explicitOnePointFive.pendingFor("DP-1").scale_automatic
+                && !explicitOnePointFive.requestScale("DP-1", "1.25"),
+            "Scale unlocked during automatic Resolution confirmation")
+        check(explicitOnePointFive.acceptStatusJson(response("committed", 4,
+                "transaction-auto", autoCandidate, null), false)
+                && explicitOnePointFive.acceptInspectionJson(
+                    inspectionState(2560, 1080, 1600000, true), false),
+            "confirmed automatic Resolution state was rejected")
+        check(!explicitOnePointFive.resolutionChangePending("DP-1")
+                && explicitOnePointFive.pendingFor("DP-1").scale_automatic
+                && explicitOnePointFive.pendingFor("DP-1").scale_millionths
+                    === 1600000,
+            "confirmed auto Scale did not unlock with effective readback")
+        check(explicitOnePointFive.requestScale("DP-1", "1.25")
+                && explicitOnePointFive.lastRequestedCommand.join(" ")
+                    === "vanhyprarch-monitor scale --connector DP-1 --scale 1.25"
+                && explicitOnePointFive.acceptInspectionJson(
+                    inspectionState(2560, 1080, 1250000, false), false)
+                && !explicitOnePointFive.pendingFor("DP-1").scale_automatic
+                && explicitOnePointFive.pendingFor("DP-1").scale_millionths
+                    === 1250000,
+            "compatible explicit Scale did not replace confirmed auto ownership")
+        explicitOnePointFive.destroy()
+
+        const cancelledResolution = controllerComponent.createObject(root)
+        check(cancelledResolution !== null
+                && cancelledResolution.acceptInspectionJson(
+                    inspectionWithScale(1500000, false), false)
+                && cancelledResolution.setPendingResolution("DP-1", 2560, 1080)
+                && cancelledResolution.pendingFor("DP-1").scale_automatic
+                && cancelledResolution.setPendingResolution("DP-1", 3840, 2160)
+                && !cancelledResolution.resolutionChangePending("DP-1")
+                && !cancelledResolution.pendingFor("DP-1").scale_automatic
+                && cancelledResolution.pendingFor("DP-1").scale_millionths
+                    === 1500000,
+            "cancelled Resolution draft did not restore explicit Scale")
+        cancelledResolution.destroy()
+
+        const discardedScale = controllerComponent.createObject(root)
+        check(discardedScale !== null
+                && discardedScale.acceptInspectionJson(
+                    inspectionWithScale(1500000, false), false),
+            "pending Scale precedence fixture was rejected")
+        const scaleDraft = discardedScale.pendingFor("DP-1")
+        scaleDraft.scale_millionths = 1250000
+        scaleDraft.scale_automatic = false
+        check(discardedScale.setPendingResolution("DP-1", 2560, 1080)
+                && discardedScale.pendingFor("DP-1").scale_automatic
+                && discardedScale.pendingFor("DP-1").scale_millionths
+                    === 1500000
+                && discardedScale.resolutionChangePending("DP-1"),
+            "Resolution did not discard a pending manual Scale draft")
+        discardedScale.destroy()
 
         check(controller.setPendingResolution("DP-1", 1920, 1080),
             "pending resolution was rejected")
@@ -210,10 +348,10 @@ ShellRoot {
         check(controller.lastRequestedKind === "safe-apply",
             "combined request used the wrong policy")
         check(controller.lastRequestedCommand.join(" ")
-                === "vanhyprarch-monitor apply --connector DP-1 --width 1920 --height 1080 --refresh 60 --bitdepth 8",
+                === "vanhyprarch-monitor apply --connector DP-1 --width 1920 --height 1080 --refresh 60 --scale auto --bitdepth 8",
             "combined request did not contain exactly changed Mode and bitdepth")
-        check(controller.lastRequestedCommand.indexOf("--scale") < 0,
-            "Safe Apply request included Scale")
+        check(controller.lastRequestedCommand.indexOf("--scale") >= 0,
+            "automatic Scale transition was absent from the Resolution transaction")
         check(controller.outputFor("DP-1").current_mode.width === 3840
                 && controller.outputFor("DP-1").effective_bitdepth === 10,
             "pending request optimistically replaced authoritative current state")

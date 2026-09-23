@@ -697,7 +697,10 @@ seed; neither contains a global XKB fallback. See
 **Implementation:** Schema-v5/protocol-v4 backend and UI published;
 single-monitor runtime, persistence, confirmation, dismissal,
 Quickshell-reload, forced-HDR, and Automatic-HDR paths live-accepted. Optional
-minimal-profile materialization is published; physical acceptance on a
+minimal-profile materialization is published. The repository's
+schema-v6/protocol-v5 follow-up couples explicit Resolution changes to
+configured Scale `auto` inside the same confirmed transaction; renewed
+deployment acceptance is pending. Physical acceptance on a
 genuinely fallback-managed output remains deferred.
 
 Monitor control is per explicit output profile. Resolution/refresh is one Mode
@@ -714,7 +717,10 @@ Safety-critical Mode, bitdepth, forced-HDR, and Automatic-HDR changes follow one
 Application failure or confirmation timeout automatically restores the
 known-good runtime configuration. An unconfirmed safe candidate is never
 persisted. Any valid combination of Mode, bitdepth, per-monitor HDR, and global
-Automatic HDR is one transaction and one confirmation overlay.
+Automatic HDR is one transaction and one confirmation overlay. A user-selected
+Resolution also owns configured Scale `auto` in that transaction. The Scale
+draft and controls remain locked until the Resolution draft is cancelled or the
+transaction is resolved; cancellation and rollback restore prior ownership.
 
 **HDR Off** means restore the exact base non-HDR CM intent, not force sRGB or
 disable global Automatic HDR. **Always On** forces `cm = "hdr"` and requires
@@ -726,11 +732,11 @@ unmanaged. The separate global Off/HDR/HDR (EDID) choice maps to
 `render:cm_auto_hdr` 0/1/2. UI state represents policy only: Hyprland 0.56.2
 does not expose authoritative generic live `inHDR()` state.
 
-Scale instead follows immediate validation: validate, apply runtime Scale,
-authoritatively read it back, prospectively verify and atomically persist only
-Scale, reconcile reload, then verify again. Any technical failure restores the
-previous durable bytes and runtime Scale. Scale has no human confirmation
-dialog or confirmation deadline.
+Manual Scale selection instead follows immediate validation: validate, apply
+runtime Scale, authoritatively read it back, prospectively verify and atomically
+persist only Scale, reconcile reload, then verify again. Any technical failure
+restores the previous durable bytes and runtime Scale. Scale has no human
+confirmation dialog or confirmation deadline.
 
 Normal rollback uses connector-specific runtime `hl.monitor()` restoration of
 only the fields owned by that operation followed by authoritative full-topology
@@ -743,7 +749,8 @@ small normalized backend inspection contract, while each panel selects its
 connector with `Hyprland.monitorFor(screen)`. Mode, bitdepth, forced HDR, and
 the one controller-global Automatic HDR value are pending input until one
 combined Apply request; Scale invokes its separate
-immediate operation. The controller reconstructs an active confirmation from
+immediate operation except for the Resolution-owned automatic transition
+described above. The controller reconstructs an active confirmation from
 backend status after shell reload. Its countdown never owns expiry. The
 per-screen confirmation surface uses the shared centered-overlay/focus
 architecture, prefers the transaction target screen, and falls back to another
