@@ -14,7 +14,6 @@ Item {
     required property var focusCoordinator
     required property bool hardwareAvailable
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
-    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool adapterEnabled: adapter
@@ -26,15 +25,11 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    Image {
+    SystemIcon {
         anchors.centerIn: parent
-        width: root.iconSize
-        height: root.iconSize
-        source: Quickshell.iconPath("preferences-system-bluetooth")
-        sourceSize: Qt.size(root.iconSize, root.iconSize)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
+        iconName: "bluetooth"
+        theme: root.theme
+        metrics: root.metrics
         opacity: root.adapterEnabled ? 1.0 : 0.45
     }
 

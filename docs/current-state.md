@@ -516,6 +516,18 @@ Bluetooth, and System tray.
 Manual pointer and visual validation of the two new dock affordances remains
 pending.
 
+Theme, Info/Shortcuts, Power & Idle, Display, Audio, Network, and Bluetooth use
+one original Vanilla-owned structural icon set under
+`assets/system-icons/`. Every semantic state has one scale-independent SVG
+with a `0 0 24 24` view box. One shared renderer fixes the logical icon size
+at the existing 20 pixels and recolors the monochrome source through the
+existing Power/menu icon's `theme.accent` foreground using Qt's icon-image
+color property, so light and dark appearances remain coherent without
+preserving the source artwork's dark luminance or selecting different artwork
+at another monitor scale.
+Application, picker, tray, and content icons remain theme-resolved; Papirus is
+still the shell's icon-theme baseline for those external icons.
+
 Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
 Hibernate is deliberately absent.
 

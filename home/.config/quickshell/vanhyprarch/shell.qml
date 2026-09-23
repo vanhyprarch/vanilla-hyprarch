@@ -245,6 +245,7 @@ ShellRoot {
         ThemeToggle {
             id: dockThemeToggle
             controller: appearanceController
+            theme: shellTheme
             metrics: visualMetrics
 
             anchors {

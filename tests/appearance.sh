@@ -40,6 +40,8 @@ fi
 config_dir=$runtime_dir/config
 mkdir -m 0700 -p -- "$config_dir"
 ln -s "$components_dir" "$config_dir/components"
+ln -s "$repository_dir/home/.config/quickshell/vanhyprarch/assets" \
+    "$config_dir/assets"
 ln -s "$test_dir/appearance-controller.qml" "$config_dir/shell.qml"
 log=$runtime_dir/quickshell.log
 if ! env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen \

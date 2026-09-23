@@ -1,13 +1,12 @@
 import QtQuick
-import Quickshell
 
 Item {
     id: root
 
     required property var controller
+    required property var theme
     required property var metrics
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
-    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize
@@ -19,17 +18,11 @@ Item {
             root.controller.toggleMode()
     }
 
-    Image {
+    SystemIcon {
         anchors.centerIn: parent
-        width: root.iconSize
-        height: root.iconSize
-        source: Quickshell.iconPath(root.controller.darkMode
-            ? "weather-clear-night"
-            : "weather-clear")
-        sourceSize: Qt.size(root.iconSize, root.iconSize)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
+        iconName: root.controller.darkMode ? "theme-dark" : "theme-light"
+        theme: root.theme
+        metrics: root.metrics
     }
 
     MouseArea {

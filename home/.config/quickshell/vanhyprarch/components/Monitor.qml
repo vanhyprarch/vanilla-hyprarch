@@ -11,22 +11,17 @@ Item {
     required property var targetScreen
     required property var focusCoordinator
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
-    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize
     width: implicitWidth
     height: implicitHeight
 
-    Image {
+    SystemIcon {
         anchors.centerIn: parent
-        width: root.iconSize
-        height: root.iconSize
-        source: Quickshell.iconPath("preferences-desktop-display")
-        sourceSize: Qt.size(root.iconSize, root.iconSize)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
+        iconName: "display"
+        theme: root.theme
+        metrics: root.metrics
     }
 
     MouseArea {

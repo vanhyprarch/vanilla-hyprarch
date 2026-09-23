@@ -30,6 +30,7 @@ ShellRoot {
     ThemeToggle {
         id: toggle
         controller: toggleFixture
+        theme: theme
         metrics: metrics
     }
 
@@ -75,6 +76,9 @@ ShellRoot {
                 "desired dark mode was not consumed")
             root.check(theme.darkMode,
                 "Appearance authority did not apply the Vanilla dark palette")
+            root.check(theme.accent === theme.text
+                    && (theme.accent.r + theme.accent.g + theme.accent.b) / 3 > 0.8,
+                "dark system-icon foreground does not match dock Power")
             root.check(controller.effectiveShellMode === "dark",
                 "effective Vanilla theme was not exposed")
             root.check(controller.effectiveHostMode === "light"
@@ -133,6 +137,9 @@ ShellRoot {
             controller.applyStatus(controller.parseStatus(lightReady), false)
             root.check(controller.mode === "light" && !theme.darkMode,
                 "Appearance authority did not restore the Vanilla light palette")
+            root.check(theme.accent === theme.text
+                    && (theme.accent.r + theme.accent.g + theme.accent.b) / 3 < 0.4,
+                "light system-icon foreground does not match dock Power")
             root.check(controller.currentWallpaper === ""
                     && controller.lightDirectory.endsWith("/Wallpapers/Light")
                     && controller.darkDirectory.endsWith("/Wallpapers/Dark"),

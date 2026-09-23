@@ -10,7 +10,6 @@ Item {
     required property var targetScreen
     required property var focusCoordinator
     readonly property int buttonSize: root.metrics.dockSystemControlTarget
-    readonly property int iconSize: root.metrics.dockSystemIconSize
 
     readonly property bool backendAvailable:
         Networking.backend === NetworkBackendType.NetworkManager
@@ -89,15 +88,11 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    Image {
+    SystemIcon {
         anchors.centerIn: parent
-        width: root.iconSize
-        height: root.iconSize
-        source: Quickshell.iconPath(root.iconName)
-        sourceSize: Qt.size(root.iconSize, root.iconSize)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
+        iconName: root.iconName
+        theme: root.theme
+        metrics: root.metrics
     }
 
     MouseArea {

@@ -837,6 +837,27 @@ Retest after any Hyprland change to `InputManager::processMouseDownNormal`,
 hit testing, and after any Quickshell or Qt Wayland change to focus-grab or
 cursor handling.
 
+## Qt Quick structural SVG color boundary
+
+**Affected component:** Qt 6.11.2 with Quickshell 0.3.1
+
+`MultiEffect.colorization` preserves source luminance rather than applying an
+exact semantic foreground. The canonical system SVG geometry uses black source
+artwork, so VM visual acceptance showed that effect leaving the new dock icons
+dark and unreadable in Dark Mode even when its colorization input was the
+correct theme token.
+
+The shared `SystemIcon` renderer instead uses the installed
+`QtQuick.Controls.impl.IconImage` color property with the exact
+`theme.accent` token already used directly by the dock Power/menu glyph. The
+scope is limited to Vanilla's structural SVGs. An offscreen pixel fixture
+checks opaque Dark and Light output against the authoritative theme values;
+application and content icon-theme rendering remains separate.
+
+Retest the rendered foreground and the internal icon-image import after a Qt
+upgrade. Replace this boundary when a supported public Qt or Quickshell image
+API provides the same exact monochrome recoloring without luminance retention.
+
 ## Quickshell Bluetooth pairing-agent boundary
 
 **Affected component:** Quickshell 0.3.1 with BlueZ 5.87
