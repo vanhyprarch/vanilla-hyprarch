@@ -152,7 +152,7 @@ class SddmThemeContractTests(unittest.TestCase):
         self.assertIn("interactive: root.primaryScreenActive", main)
         self.assertIn("Math.max(0.72, Math.min(2.0", scene)
         self.assertIn("Math.round(parent.width * 0.72)", scene)
-        self.assertIn("Math.round(parent.width * 0.25)", scene)
+        self.assertIn("Math.round(root.width * 0.25)", scene)
 
     def test_session_entry_is_exact_direct_wayland_contract(self) -> None:
         desktop = read_ini(SESSION)

@@ -11,6 +11,7 @@ FocusScope {
     required property string configurationError
     readonly property real scaleFactor: Math.max(0.72, Math.min(2.0,
         Math.min(width, height) / 1080.0))
+    readonly property real compositionFactor: 0.6
     readonly property alias passwordInput: passwordInput
     readonly property alias shutdownLabel: shutdownLabel
     readonly property alias rebootLabel: rebootLabel
@@ -111,75 +112,88 @@ FocusScope {
         }
     }
 
-    Image {
-        id: vanillaLogo
+    Item {
+        id: loginBlock
 
-        objectName: "vanillaLogo"
-        anchors.top: parent.top
-        anchors.topMargin: Math.max(Math.round(80 * root.scaleFactor),
-            Math.round(parent.height * 0.14))
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(Math.round(180 * root.scaleFactor),
-            Math.round(parent.width * 0.25))
-        height: width
-        source: Qt.resolvedUrl("logo.svg")
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
-    }
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2 - Math.round(24 * root.scaleFactor)
+        width: Math.round(Math.min(Math.round(420 * root.scaleFactor),
+            Math.round(parent.width * 0.72)) * root.compositionFactor)
+        height: passwordFrame.y + passwordFrame.height
 
-    Rectangle {
-        id: passwordFrame
+        Image {
+            id: vanillaLogo
 
-        objectName: "passwordFrame"
-        anchors.top: vanillaLogo.bottom
-        anchors.topMargin: Math.round(48 * root.scaleFactor)
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(Math.round(420 * root.scaleFactor),
-            Math.round(parent.width * 0.72))
-        height: Math.round(46 * root.scaleFactor)
-        radius: 0
-        color: "#000000"
-        border.width: Math.max(1, Math.round(root.scaleFactor))
-        border.color: root.authenticationError !== "" ? "#BE5015"
-            : passwordInput.activeFocus ? "#FCDA02" : "#595959"
+            objectName: "vanillaLogo"
+            anchors.top: parent.top
+            x: (parent.width - width) / 2
+            width: Math.round(Math.min(Math.round(180 * root.scaleFactor),
+                Math.round(root.width * 0.25)) * root.compositionFactor)
+            height: width
+            source: Qt.resolvedUrl("logo.svg")
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            mipmap: true
+        }
 
-        TextInput {
-            id: passwordInput
+        Rectangle {
+            id: passwordFrame
 
-            objectName: "passwordInput"
-            anchors.fill: parent
-            anchors.leftMargin: Math.round(12 * root.scaleFactor)
-            anchors.rightMargin: Math.round(12 * root.scaleFactor)
-            color: "#F2F2F2"
-            selectionColor: "#6D3523"
-            selectedTextColor: "#FFFFFF"
-            font.pixelSize: Math.round(17 * root.scaleFactor)
-            verticalAlignment: TextInput.AlignVCenter
-            echoMode: TextInput.Password
-            inputMethodHints: Qt.ImhHiddenText | Qt.ImhSensitiveData
-                | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-            enabled: root.interactive && root.configurationError === ""
-                && !root.submissionLocked
-            focus: root.interactive
-            activeFocusOnTab: true
-            cursorVisible: activeFocus
-            clip: true
+            objectName: "passwordFrame"
+            anchors.top: vanillaLogo.bottom
+            anchors.topMargin: Math.round(Math.round(48 * root.scaleFactor)
+                * root.compositionFactor)
+            x: (parent.width - width) / 2
+            width: parent.width
+            height: Math.round(Math.round(46 * root.scaleFactor)
+                * root.compositionFactor)
+            radius: 0
+            color: "#000000"
+            border.width: Math.max(1, Math.round(root.scaleFactor
+                * root.compositionFactor))
+            border.color: root.authenticationError !== "" ? "#BE5015"
+                : passwordInput.activeFocus ? "#FCDA02" : "#595959"
 
-            onTextChanged: {
-                if (root.authenticationError !== "")
-                    root.authenticationError = ""
+            TextInput {
+                id: passwordInput
+
+                objectName: "passwordInput"
+                anchors.fill: parent
+                anchors.leftMargin: Math.round(Math.round(12 * root.scaleFactor)
+                    * root.compositionFactor)
+                anchors.rightMargin: Math.round(Math.round(12 * root.scaleFactor)
+                    * root.compositionFactor)
+                color: "#F2F2F2"
+                selectionColor: "#6D3523"
+                selectedTextColor: "#FFFFFF"
+                font.pixelSize: Math.round(Math.round(17 * root.scaleFactor)
+                    * root.compositionFactor)
+                verticalAlignment: TextInput.AlignVCenter
+                echoMode: TextInput.Password
+                inputMethodHints: Qt.ImhHiddenText | Qt.ImhSensitiveData
+                    | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+                enabled: root.interactive && root.configurationError === ""
+                    && !root.submissionLocked
+                focus: root.interactive
+                activeFocusOnTab: true
+                cursorVisible: activeFocus
+                clip: true
+
+                onTextChanged: {
+                    if (root.authenticationError !== "")
+                        root.authenticationError = ""
+                }
+                Keys.priority: Keys.BeforeItem
+                Keys.onReturnPressed: event => {
+                    root.submit()
+                    event.accepted = true
+                }
+                Keys.onEnterPressed: event => {
+                    root.submit()
+                    event.accepted = true
+                }
+                Keys.onPressed: event => root.handleKey(event)
             }
-            Keys.priority: Keys.BeforeItem
-            Keys.onReturnPressed: event => {
-                root.submit()
-                event.accepted = true
-            }
-            Keys.onEnterPressed: event => {
-                root.submit()
-                event.accepted = true
-            }
-            Keys.onPressed: event => root.handleKey(event)
         }
     }
 
@@ -187,7 +201,7 @@ FocusScope {
         id: errorLabel
 
         objectName: "errorLabel"
-        anchors.top: passwordFrame.bottom
+        anchors.top: loginBlock.bottom
         anchors.topMargin: Math.round(10 * root.scaleFactor)
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.configurationError !== ""

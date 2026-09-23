@@ -248,6 +248,61 @@ Item {
             verify(!main.loginScene.passwordInput.activeFocus)
         }
 
+        function test_scaled_logo_and_password_block_uses_offset_center() {
+            addVanillaSession()
+            const main = createMain()
+            const scene = main.loginScene
+            const logo = scene.logo
+            const frame = scene.passwordInput.parent
+            const input = scene.passwordInput
+            let errorLabel = null
+            for (const child of scene.children) {
+                if (child.objectName === "errorLabel")
+                    errorLabel = child
+            }
+            verify(errorLabel !== null)
+            compare(scene.compositionFactor, 0.6)
+
+            for (const size of [[1920, 1080], [1024, 768]]) {
+                main.width = size[0]
+                main.height = size[1]
+                const scale = scene.scaleFactor
+                const designLogo = Math.min(Math.round(180 * scale),
+                    Math.round(scene.width * 0.25))
+                const designFrame = Math.min(Math.round(420 * scale),
+                    Math.round(scene.width * 0.72))
+                compare(logo.width, Math.round(designLogo * 0.6))
+                compare(logo.height, Math.round(designLogo * 0.6))
+                compare(frame.width, Math.round(designFrame * 0.6))
+                compare(frame.height, Math.round(Math.round(46 * scale) * 0.6))
+                compare(input.font.pixelSize,
+                    Math.round(Math.round(17 * scale) * 0.6))
+                compare(input.anchors.leftMargin,
+                    Math.round(Math.round(12 * scale) * 0.6))
+                compare(input.anchors.rightMargin,
+                    Math.round(Math.round(12 * scale) * 0.6))
+                compare(frame.border.width,
+                    Math.max(1, Math.round(scale * 0.6)))
+                const logoTop = logo.mapToItem(scene, 0, 0)
+                const frameTop = frame.mapToItem(scene, 0, 0)
+                verify(Math.abs(logoTop.x + logo.width / 2 - scene.width / 2) < 0.01)
+                verify(Math.abs(frameTop.x + frame.width / 2 - scene.width / 2) < 0.01,
+                    `frame center ${frameTop.x + frame.width / 2}, expected ${scene.width / 2}`)
+                compare(frameTop.y - logoTop.y - logo.height,
+                    Math.round(Math.round(48 * scale) * 0.6))
+                const blockCenter = (logoTop.y + frameTop.y + frame.height) / 2
+                const expectedCenter = scene.height / 2 - Math.round(24 * scale)
+                verify(Math.abs(blockCenter - expectedCenter) < 0.01,
+                    `block center ${blockCenter}, expected ${expectedCenter}`)
+
+                scene.authenticationError = "Authentication failed"
+                compare(errorLabel.visible, true)
+                compare(logo.mapToItem(scene, 0, 0).y, logoTop.y)
+                compare(frame.mapToItem(scene, 0, 0).y, frameTop.y)
+                scene.authenticationError = ""
+            }
+        }
+
         function test_layout_scales_with_bounds() {
             addVanillaSession()
             const main = createMain()
