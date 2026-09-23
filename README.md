@@ -1,7 +1,7 @@
 # Vanilla HyprArch
 
-> **Status: Alpha / Work in progress.** The repository is currently for
-> development and testing; it is not yet a copy-and-run installer payload.
+> **Status: Alpha / Work in progress.** The one-command installer is intended
+> for development and fresh-VM testing, not production-stable use.
 
 Vanilla HyprArch is a small, incremental desktop configuration layer for a
 standard Arch Linux installation. Its philosophy is **Arch vanilla + Hyprland
@@ -73,20 +73,33 @@ Matrix, Doom, and Game of Life.
 
 ## Installation status
 
-The shared automated bootstrap and optional archinstall entry point are not
-finished. Development starts from a working minimal Arch installation and the
-structured package manifest in [`packages/`](packages/), but tracked
-configuration still requires the unfinished full bootstrap. DF2 Phase 1
-defines package roles, deployment ownership, and future service policy. Phase 2
-implements only the reusable `VANILLA_MANAGED` user-file deployment core; it
-does not provision packages, initialize create-once state, change services, or
-perform privileged integration.
+The shared post-install bootstrap is implemented for the narrow Alpha target:
+a fresh Arch Minimal x86_64 installation with Internet access, a normal user,
+sudo, and pacman. Run this development command as that normal user:
+
+```bash
+sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/main/install.sh)
+```
+
+It resolves `main` to an exact commit, downloads that commit's source archive,
+and delegates package/system integration, managed deployment, create-once
+initialization, SDDM integration, and validation to their existing
+authoritative stages. `install.sh --yes` suppresses the single confirmation.
+`VANHYPRARCH_REF=<tag-or-commit>` selects another simple ref. Published
+releases must use a pinned tag in both the raw script URL and
+`VANHYPRARCH_REF`, rather than moving `main`.
+Reruns select managed `install` or `update` through the deployment authority's
+provenance-aware `reconcile` operation; create-once content remains no-clobber.
+
+The optional archinstall entry point is not implemented. The installer does
+not select hardware-specific drivers, disk layout, locale, or other base Arch
+choices.
 
 The repository now separates managed portable Hyprland configuration from
 create-once machine configuration and a user-owned customization override.
 The controlled live migration has placed that split architecture on the
-current development machine. This was a reviewed development-machine
-migration, not a production installer or the final distribution mechanism.
+current development machine. That migration remains separate from the
+fresh-install Alpha bootstrap.
 The tracked BlueZ `main.conf` is also a complete system-file replacement and
 must not overwrite an existing administrator configuration without review and
 rollback. See the
@@ -100,8 +113,8 @@ distribution decisions are summarized in
 For development, public commands may be symlinked from `bin/` into
 `$HOME/.local/bin`. The managed-file core can install regular executables and
 complete configuration trees atomically into an isolated installed target
-without retaining a Git-checkout dependency. The future production bootstrap
-will call that core as one step in the larger installation lifecycle.
+without retaining a source-checkout dependency. The public Alpha bootstrap
+calls that core as one step in the larger installation lifecycle.
 
 Dictation is a separate opt-in component, not part of the baseline. Its
 installer, dependencies, exact verification chain, runtime activation, and

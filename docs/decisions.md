@@ -534,8 +534,8 @@ Public Vanilla HyprArch session commands use stable `vanhyprarch-*` names and
 are deployed as regular executables under `$HOME/.local/bin`. Hyprland prepends
 that directory exactly once to the inherited graphical-session `PATH` before
 starting session children. Development deployments may use symlinks; the
-future production bootstrap must install commands atomically without depending
-on a Git checkout.
+installed-mode deployment used by the public bootstrap installs commands
+atomically without depending on its temporary source tree.
 
 This child-environment policy is distinct from Hyprland's own inherited process
 environment. Controlled reboot evidence showed that Hyprland's `/proc` PATH can
@@ -1088,3 +1088,31 @@ to the X11/theme drop-in and makes SDDM the sole package/service baseline.
 Unsupported pre-existing display-manager state fails closed.
 The detailed contract and remaining integration boundaries are documented in
 [DF2 Phase 5 SDDM login](phase-5-sddm-login.md).
+
+## ADR-042: Keep public installation a thin exact-source orchestrator
+
+**Status:** Accepted
+**Date:** 2026-09-23
+**Implementation:** repository-root `install.sh`; focused mocked orchestration tests
+
+The public post-install entry point runs as the normal target user and acquires
+an exact-commit GitHub source archive with curl, so a fresh Arch Minimal system
+does not need Git merely to obtain Vanilla. The moving `main` ref is permitted
+only for Alpha development; release instructions must use a pinned tag. The
+wrapper reports the requested ref, resolved commit, and archive digest, then
+removes its private temporary source after completion.
+
+The wrapper contains no package, artifact, service, create-once, SDDM, yay,
+BlueZ, or Flatpak inventory. It delegates in dependency order to the existing
+pre-Python bootstrap, privileged system integration, non-root managed
+deployment, and create-once initializer. One confirmation authorizes the
+complete plan/apply chain; `--yes` suppresses only that prompt. Success requires
+the authoritative managed, create-once, and privileged system validations,
+with SDDM validation retained inside the system contract. Reboot is never
+automatic.
+
+Managed deployment exposes the `reconcile` boundary used by the wrapper:
+absence of provenance selects fresh `install`, valid complete provenance
+selects `update`, and partial provenance retains its recorded operation. The
+shell never parses or guesses provenance, while malformed or drifted ownership
+continues to fail closed in the Python authority.

@@ -127,6 +127,7 @@ class Fixture:
             self.root / "python-template",
             """
             #!/bin/sh
+            [ "${PYTHONDONTWRITEBYTECODE-}" = 1 ] || exit 44
             printf 'python' >> "$BOOTSTRAP_FIXTURE_LOG"
             for argument in "$@"; do printf '<%s>' "$argument" >> "$BOOTSTRAP_FIXTURE_LOG"; done
             printf '\n' >> "$BOOTSTRAP_FIXTURE_LOG"

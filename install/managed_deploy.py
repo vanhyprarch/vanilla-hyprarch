@@ -1140,6 +1140,23 @@ class ManagedDeployment:
                     )
         return DeploymentPlan(operation, tuple(items), release_digest, self.release_id)
 
+    def reconcile_operation(self) -> str:
+        """Select the provenance-compatible install or update operation."""
+        state, _raw = self._load_state()
+        if state is None:
+            return "install"
+        if state.get("status") == "partial":
+            operation = state.get("operation")
+            if operation not in {"install", "update"}:
+                raise ConflictError(
+                    "partial deployment has no resumable install/update operation"
+                )
+            return str(operation)
+        return "update"
+
+    def plan_reconciled(self) -> DeploymentPlan:
+        return self.plan(self.reconcile_operation())
+
     def _ensure_home_identity(self) -> None:
         if os.geteuid() == 0:
             raise SafetyError("Phase 2 user deployment must not run as root")
@@ -1856,6 +1873,11 @@ class ManagedDeployment:
                 raise ValidationError(f"final deployment verification failed: {identifier}")
         return plan
 
+    def apply_reconciled(self) -> DeploymentPlan:
+        self._ensure_home_identity()
+        self._recover_incomplete()
+        return self.apply(self.reconcile_operation())
+
     def validate_installed(self, *, require_current_release: bool = True) -> int:
         desired, release_digest = self._desired()
         state, _raw = self._load_state()
@@ -1907,9 +1929,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--xdg-state-home")
     subparsers = parser.add_subparsers(dest="command", required=True)
     plan = subparsers.add_parser("plan", help="print a zero-write deployment plan")
-    plan.add_argument("operation", choices=("install", "update"))
+    plan.add_argument("operation", choices=("install", "update", "reconcile"))
     subparsers.add_parser("install", help="install into clean managed targets")
     subparsers.add_parser("update", help="update a proven managed deployment")
+    subparsers.add_parser(
+        "reconcile", help="install fresh or update according to managed provenance"
+    )
     subparsers.add_parser("validate", help="validate installed managed files")
     return parser
 
@@ -1924,12 +1949,21 @@ def main(argv: Iterable[str] | None = None) -> int:
             release_id=arguments.release_id,
         )
         if arguments.command == "plan":
-            plan = deployment.plan(arguments.operation)
+            plan = (
+                deployment.plan_reconciled()
+                if arguments.operation == "reconcile"
+                else deployment.plan(arguments.operation)
+            )
             for item in plan.items:
                 print(item.line())
             return 2 if plan.conflicts else 0
         if arguments.command in {"install", "update"}:
             plan = deployment.apply(arguments.command)
+            for item in plan.items:
+                print(item.line())
+            return 0
+        if arguments.command == "reconcile":
+            plan = deployment.apply_reconciled()
             for item in plan.items:
                 print(item.line())
             return 0

@@ -2,8 +2,8 @@
 
 DF2 Phase 2 implements the installed-mode deployment core for user-space
 artifacts classified as `VANILLA_MANAGED` in
-`deployment/ownership-v2.toml`. It is a reusable part of the future bootstrap,
-not the complete installer.
+`deployment/ownership-v2.toml`. It is the managed-file authority used by the
+public bootstrap, not the complete installer.
 
 ## Boundary
 
@@ -12,7 +12,8 @@ library. It is intentionally not installed as a public session command. It
 does not invoke pacman, yay, sudo, systemctl, a user manager, a package
 service, or a live desktop process.
 
-Its complete Phase 2 command surface is `plan/install/update/validate`.
+Its complete Phase 2 command surface is
+`plan/install/update/reconcile/validate`.
 
 The engine actively refuses an explicitly requested artifact outside
 `VANILLA_MANAGED`. It never deploys create-once, user-owned, backend-owned,
@@ -63,10 +64,11 @@ python install/managed_deploy.py \
   [--xdg-config-home PATH] \
   [--xdg-data-home PATH] \
   [--xdg-state-home PATH] \
-  plan install|update
+  plan install|update|reconcile
 
 python install/managed_deploy.py [same options] install
 python install/managed_deploy.py [same options] update
+python install/managed_deploy.py [same options] reconcile
 python install/managed_deploy.py [same options] validate
 ```
 
@@ -96,6 +98,14 @@ managed artifacts, and removes an artifact absent from the new manifest only
 when its previous target and exact content are still proven by provenance.
 Missing or modified managed content fails closed instead of adopting or
 overwriting it.
+
+`reconcile` is the public bootstrap's provenance-aware operation selector. No
+provenance selects `install`; complete valid provenance selects `update`; and
+partial provenance selects only its recorded `install` or `update` operation
+so recovery cannot change operation or release. Malformed, unsafe, unsupported,
+or conflicting provenance fails through the same authoritative loader before
+selection. `plan reconcile` performs the same read-only selection and then
+uses the selected operation's ordinary planner.
 
 `validate` verifies the provenance schema and mode, complete artifact
 inventory, regular-file/directory types, current-user ownership, exact modes,

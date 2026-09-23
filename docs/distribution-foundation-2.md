@@ -48,18 +48,16 @@ of that known base. Alpha does not promise adoption of arbitrary existing Arch
 desktops, migration from other Hyprland distributions, NVIDIA provisioning, or
 support for every hardware combination.
 
-The executor may initially be run from a local Vanilla source tree obtained by
-Git clone. That acquisition path necessarily starts with `git` already
-available as a pre-bootstrap acquisition prerequisite. Once the source exists,
+The public executor acquires an exact-commit GitHub source archive with curl,
+so `git` is not an acquisition prerequisite. Once the source exists,
 Vanilla bootstraps `python` itself when needed and the Python system stage keeps
 both `python` and `git` in the permanent build/bootstrap package baseline.
-These roles do not conflict: Git obtains the initial source, the narrow shell
-boundary makes the manifest-driven implementation executable, and that
-implementation establishes the declared Alpha environment. Installed runtime
-files must be regular copies and must not depend on Git, the checkout, its
-`.git` directory, a worktree, or its absolute source path. The same separation
-must permit a future tagged release archive that does not require Git merely to
-acquire the source, without changing runtime layout.
+These roles do not conflict: the narrow shell boundary makes the
+manifest-driven implementation executable, while system integration needs Git
+for the approved non-root yay build. Installed runtime files are regular copies
+and do not depend on Git, the extracted source, a worktree, or its absolute
+source path. The same separation supports both the development `main` archive
+and future pinned tag archives without changing runtime layout.
 
 ## Package and component decisions
 

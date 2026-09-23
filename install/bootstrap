@@ -3,6 +3,8 @@
 set -eu
 PATH=/usr/bin:/bin
 export PATH
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
 
 program_name=${0##*/}
 

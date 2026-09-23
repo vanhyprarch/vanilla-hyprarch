@@ -2,44 +2,41 @@
 
 This document is the canonical plan for making Vanilla HyprArch reproducible.
 The pinned Zig Screensaver component manager is implemented; the historical
-`install-zig-player` command is only a compatibility wrapper. DF2 now has
-separate managed-file, create-once, and accepted system-integration stages, but
-no shared top-level project bootstrap or archinstall preset exists yet.
+`install-zig-player` command is only a compatibility wrapper. DF2 has separate
+managed-file, create-once, accepted system-integration, and SDDM stages. The
+repository-root `install.sh` now provides their thin shared post-install orchestration;
+the optional archinstall entry point does not exist yet.
 
-The current repository is therefore a development and testing source tree, not
-a copy-and-run installation payload. Its Hyprland files now express portable
-managed, create-once machine, and user-override ownership. The Phase 2
-managed-file core consumes only the managed user-file boundary; the complete
-bootstrap and every other ownership lifecycle remain unfinished. The complete
-BlueZ `main.conf` replacement must still be reviewed rather than copied blindly
-onto another system.
+The current repository remains an Alpha development and testing source. Its
+Hyprland files express portable managed, create-once machine, and user-override
+ownership. The public wrapper does not duplicate those lifecycles: each
+existing stage retains its own manifests, provenance, conflict handling, and
+validation. Privileged BlueZ replacement remains limited to the system stage's
+package-pristine adoption and exact rollback contract.
 
 The initial Alpha support target is deliberately narrow: Arch Linux x86_64 on
 a documented fresh-install or archinstall-derived base. It does not promise
 adoption of arbitrary existing Arch desktops or other Hyprland distributions.
-The initial acquisition path may be a local Git clone, but installed runtime
-files must be regular copies with no dependency on that checkout. For this
-acquisition path, `git` is necessarily available before the source tree exists
-as a pre-bootstrap acquisition prerequisite. Once the source exists,
-`install/bootstrap` uses the Arch base shell to provision and verify only
-Python when it is absent and stops. A new read-only invocation then delegates
-to the manifest-driven Python plan; only a later, separately approved apply may
-enter the system-integration mutation. That stage keeps both `python` and `git`
-in the permanent build/bootstrap package baseline. Python is not a manual
-prerequisite. A future tagged release archive may remove the need for Git
-merely to obtain the initial source; the source/runtime separation must remain
-compatible with that path.
+The public acquisition path uses curl to resolve the requested GitHub ref to
+an exact commit and extracts that commit's source archive in a private
+temporary directory. Git is therefore not required merely to obtain Vanilla,
+although the system stage keeps `git` in the permanent build/bootstrap package
+baseline for its approved yay build. Installed runtime files are regular
+copies with no dependency on the temporary source. `install/bootstrap` still
+uses only the Arch base shell to provision and verify Python when absent, then
+stops before the Python-backed system stage. Python is not a manual
+prerequisite.
 
 ## One bootstrap, two entry points
 
-Vanilla HyprArch will have one reusable bootstrap implementation with two
-supported callers:
+Vanilla HyprArch has one reusable post-install bootstrap implementation. Two
+callers remain the architectural target:
 
 1. **Archinstall-time:** an optional Vanilla HyprArch configuration helps the
    user install base Arch, then invokes the shared bootstrap inside the target
    system before the first reboot.
-2. **Post-install:** the same bootstrap runs independently on a fresh minimal
-   Arch installation with working Internet access.
+2. **Post-install:** the implemented `install.sh` runs independently on a fresh
+   minimal Arch installation with working Internet access.
 
 Archinstall is an integration layer, not the implementation of Vanilla
 HyprArch. It may collect and pass installation context, but it must not contain
@@ -60,11 +57,50 @@ Official Arch ISO
   -> first reboot into a working Vanilla HyprArch session
 ```
 
-This first-reboot experience is not implemented yet.
+The archinstall-time first-reboot integration is not implemented yet.
+
+## Public development bootstrap
+
+Run the Alpha development path as the normal target user, never root:
+
+```bash
+sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/main/install.sh)
+```
+
+The wrapper defaults to repository `vanhyprarch/vanilla-hyprarch` and ref
+`main`. `VANHYPRARCH_REF=<tag-or-commit>` overrides the simple ref. It displays
+the requested ref, resolved commit SHA, and downloaded archive SHA-256. Release
+instructions must fetch `install.sh` from a pinned tag and set that same tag as
+`VANHYPRARCH_REF`; moving `main` is development-only.
+
+The exact orchestrated sequence is:
+
+```text
+host/user/sudo validation
+  -> resolve ref and acquire exact-commit archive
+  -> install/bootstrap plan (only when Python is absent)
+  -> one user confirmation
+  -> sudo install/bootstrap bootstrap-python (only when absent)
+  -> sudo install/bootstrap plan
+  -> sudo install/bootstrap apply
+  -> managed_deploy.py plan reconcile
+  -> managed_deploy.py reconcile
+  -> create_once.py plan
+  -> create_once.py initialize
+  -> managed_deploy.py validate
+  -> create_once.py validate
+  -> sudo install/bootstrap validate
+```
+
+The final privileged validation includes SDDM login payload validation. A
+failure or ownership conflict stops immediately and success is printed only
+after all three validation calls pass. `--yes` suppresses the one installer
+confirmation without weakening preflight or validation. Reboot is never
+automatic.
 
 ## Bootstrap responsibilities
 
-The shared bootstrap will eventually:
+The shared bootstrap and its delegated stages:
 
 - consume `packages/manifest-v1.toml`, installing default official packages
   according to their explicit role and policy;
@@ -112,12 +148,13 @@ The shared bootstrap will eventually:
 - respect dependency ordering and migrations, remain idempotent where
   practical, fail closed on invalid state, and run post-install validation.
 
-The narrow pre-Python portion is already implemented as `install/bootstrap`.
+The narrow pre-Python portion remains implemented as `install/bootstrap`.
 It performs only Arch/x86_64/current-database preflight and, when needed, the
-single `python` package transaction before stopping. The operator must then run
-and review the complete Python-backed plan before a separate full apply. Full
-orchestration of the existing Phase 2, Phase 3, and Phase 4 cores remains
-future work.
+single `python` package transaction before stopping. The public wrapper invokes
+its preliminary plan when required, obtains one installation approval,
+performs the Python transition, then calls each authoritative plan immediately
+before its corresponding apply. This dependency order is required because
+create-once owner hooks resolve commands installed by the managed stage.
 
 For every integrated feature, its package source, files, commands, services,
 deployment, startup ownership, defaults, dependencies, migration behavior, and
@@ -429,11 +466,10 @@ the idempotent system-Flathub configuration component, the managed-file and
 create-once cores, the narrow pre-Python bootstrap, and the internal Phase 4
 system-integration stage. Phase 4 passed guided destructive/reboot and
 integrated Phase 2/3/4 acceptance in the user's disposable GNOME Boxes VM.
-Future work may add the shared top-level orchestration, a small
-archinstall integration and recommended configuration or template, and
-first-login validation. Exact filenames for those remaining pieces are
-intentionally not selected until the bootstrap interface and current
-archinstall schema are designed.
+The shared top-level post-install orchestration is `install.sh`. Future work
+may add a small archinstall integration and recommended configuration or
+template. Exact filenames for that remaining integration are intentionally not
+selected until the current archinstall schema is designed.
 
 Unresolved installation choices are the recommended bootloader, filesystem,
 layout policy, kernel policy, any project-wide timezone or locale defaults,

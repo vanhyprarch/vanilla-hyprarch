@@ -60,11 +60,13 @@ minimal Arch starting system rather than a desktop-package delta.
 
 ## Installation reproducibility
 
-One future bootstrap will consume this baseline, the package manifests, and
-tracked configuration. It must support both an archinstall-time entry point and
-independent execution after a fresh minimal Arch installation. The shared
-bootstrap does not exist yet. Its responsibilities, public-preset boundaries,
-and unresolved choices are maintained in the canonical
+The repository-root `install.sh` consumes this baseline indirectly through the existing
+manifest-driven stages and supports independent execution after a fresh minimal
+Arch installation. It acquires an exact-commit source archive, bootstraps
+Python through the existing base-shell boundary, and leaves installed runtime
+files independent of that temporary source. The optional archinstall-time
+entry point remains future work. Responsibilities, public-preset boundaries,
+and unresolved base-system choices are maintained in the canonical
 [installation strategy](installation-strategy.md).
 
 ## Graphical and shell stack

@@ -1135,9 +1135,10 @@ host. See [DF2 system integration](system-integration.md).
 
 The user-managed Arch Minimal GNOME Boxes VM passed the no-Python bootstrap,
 partial-state resume, full apply, preserve-only second apply, validation,
-reboot, and integrated Phase 2/3/4 acceptance. These remain distribution cores
-rather than the full installer. Optional-component lifecycle, full installer
-orchestration, and live development-host deployment are not implemented.
+reboot, and integrated Phase 2/3/4 acceptance. The repository-root `install.sh` now
+orchestrates these distribution cores with Phase 5 SDDM integration for the
+post-install Alpha path. Optional-component installation remains separate and
+live development-host deployment is not part of this path.
 
 DF2 Phase 5 Slices 1–3 provide the accepted Vanilla SDDM theme/session source
 contract, a dedicated root-only transactional deployment backend, and the SDDM
@@ -1154,16 +1155,26 @@ display-manager alias only after payload validation. Unsupported pre-existing
 display-manager configuration fails closed. Fresh-install VM acceptance passed
 the bootstrap, visual greeter, authentication, logout/login, and reboot paths.
 
+The public post-install bootstrap runs as the target user, validates Arch,
+HOME, XDG runtime ownership, and sudo, resolves a requested GitHub ref to an
+exact commit, and extracts that commit's archive in a private temporary
+directory. It delegates in dependency order to the existing Python bootstrap,
+system integration, managed deployment, and create-once stages. Success
+requires managed, create-once, and system validation; system validation
+includes SDDM login payload validation. Installed runtime content remains
+independent of the downloaded source. `main` is explicitly the Alpha
+development default; releases must use a pinned tag.
+Managed reruns use the deployment authority's `reconcile` operation: absent
+provenance selects `install`, complete provenance selects `update`, and invalid
+or drifted provenance still fails closed.
+
 ## Known open work
 
 ### PLANNED
 
-- Build the shared top-level orchestration and thin optional archinstall
-  integration defined in the [installation strategy](installation-strategy.md),
-  supporting both a configured first reboot and post-install use on minimal
-  Arch. The narrow pre-Python Phase 4 bootstrap is already implemented.
-- Build the full bootstrap orchestration around the published distribution
-  cores.
+- Build the thin optional archinstall integration defined in the
+  [installation strategy](installation-strategy.md), reusing the implemented
+  post-install bootstrap for a configured first reboot.
 - Fix Display resolution changes when automatic scale changes during readback.
 - Prevent virtual-display re-enumeration from producing a false serial
   mismatch. Both Display findings are deferred and did not block Phase 5.
@@ -1183,7 +1194,7 @@ the bootstrap, visual greeter, authentication, logout/login, and reboot paths.
 
 ### NOT IMPLEMENTED
 
-- Shared top-level orchestration and optional archinstall integration
+- Optional archinstall integration
 - Remove Application ownership mapping
 - Vanilla HyprArch self-update; the managed-file engine is not a full system or
   package updater
