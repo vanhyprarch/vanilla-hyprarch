@@ -167,7 +167,12 @@ The published materialization generation uses journal schema 4, control
 protocol 3, and inspection schema 2. The HDR candidate deliberately advances
 these to schema 5, protocol 4, and inspection schema 3 because it adds CM base
 intent, global renderer intent, new runtime mutations, and recovery data. Old
-journals are never reinterpreted. The private
+journals are never reinterpreted.
+The Display gate removal leaves all three schemas unchanged: the obsolete
+public `materialize` request is gone, while `begin` and `scale` invoke the same
+internal transaction automatically when needed.
+
+The private
 `${XDG_RUNTIME_DIR}/vanhyprarch/monitor-safe-apply/` directory holds one atomic
 `transaction.json`, one advisory `transaction.lock`, and one `control.sock`.
 Directory and file ownership and permissions are validated; the journal and
@@ -189,12 +194,12 @@ transactions need no action; every other readable state takes one bounded
 rollback path. The service is independent of Quickshell lifetime.
 
 The small newline-delimited JSON socket protocol supports `begin`, `scale`,
-`materialize`, `status`, `confirm`, and `revert` requests. `begin` carries an
+`status`, `confirm`, and `revert` requests. `begin` carries an
 optional mode tuple, bitdepth, forced-HDR policy, and global Automatic HDR
 value, with at least one required. `scale` carries only connector and scale and completes its
-persistence transaction in one request. `materialize` carries only a connector
-and exact instance signature; it has no confirmation deadline or runtime
-monitor call. Quickshell is only a short-lived client of this protocol. Its
+persistence transaction in one request. When either mutation encounters a
+supported fallback-only output, the authority first performs its internal
+persistence-only materialization transaction. Quickshell is only a short-lived client of this protocol. Its
 processes do not own or cancel the independently supervised transaction.
 
 The separate `inspect` command is a versioned, read-only UI projection. It
@@ -241,14 +246,16 @@ than misclassifying its own targeted rollback as external persistence.
 The user override is never used as Vanilla-owned storage; an external machine
 or override owner for `cm_auto_hdr` makes mutation unavailable.
 
-## Optional minimal-profile materialization
+## Automatic first-change profile materialization
 
 A fallback-managed display is already a valid Hyprland configuration. Vanilla
 does not create a connector profile during installation, session start,
-hotplug, inspection, or panel open. Advanced per-monitor controls remain
-unavailable until the user explicitly chooses **Enable advanced display
-settings**; Brightness and Text Size remain available through their independent
-owners.
+hotplug, inspection, or panel open. Read-only inspection projects its live Mode,
+Scale, effective bit depth, HDR policy, and validated capabilities immediately.
+Ordinary controls are available without a preliminary opt-in. The first actual
+Mode, refresh, Scale, bitdepth, forced-HDR, or Automatic HDR mutation request
+materializes the connector profile before continuing through the existing
+Safe Apply or immediate Scale path.
 
 Materialization is a dedicated persistence-only transaction. It binds the
 exact compositor, connector and meaningful physical identity, snapshots the
@@ -270,9 +277,8 @@ original machine bytes, reconciles the reload, and verifies the original
 topology; no runtime correction hides a mismatch.
 
 Normal eligibility requires meaningful make/model and a unique non-empty
-serial. Because materialization is always an explicit user request, a
-serial-less output is also eligible only when meaningful make/model/description
-form a unique identity in the current topology. Weak or ambiguous identity,
+serial. A serial-less output is eligible only when meaningful
+make/model/description form a unique identity in the current topology. Weak or ambiguous identity,
 inactive output, unsupported fallback syntax, a description-addressed rule, an
 override conflict, hotplug, compositor replacement, or an external file edit
 fails closed. One output is materialized per transaction while the complete
@@ -284,9 +290,10 @@ The persistence foundation locates exactly one existing explicit connector
 profile, preserves unrelated bytes and comments, replaces only the fields
 owned by that candidate (mode, bitdepth, or scale), rejects machine/override
 hash races, and atomically replaces the machine file with preserved mode and
-ownership. A materialized `mode = "preferred"` and `scale = "auto"` are valid
-replaceable sources: the first actual user edit specializes only its owned
-value. Omitted bitdepth is the known Hyprland default requested intent of 8;
+ownership. A materialized `mode = "preferred"` and either the public Scale 1
+or an existing supported `scale = "auto"` are valid replaceable sources: the
+first actual user edit specializes only its owned value. Omitted bitdepth is the
+known Hyprland default requested intent of 8;
 the first bitdepth edit inserts exactly one simple field after Scale. A combined
 Mode-plus-bitdepth edit replaces Mode and inserts bitdepth in one atomic
 candidate. Materialization itself does none of those specializations.
@@ -381,11 +388,12 @@ runtime state. Future schema changes require the same explicit upgrade protocol
 or a separately reviewed migration; they must not guess compatibility.
 
 The public machine seed remains exactly one portable fallback with
-`preferred`/`auto`/`auto`. It is valid indefinitely and is never a settings
-write target. The optional materialization transaction clones that supported
-block only after explicit consent, and subsequent edits target only the cloned
-connector rule. Existing explicit profiles are an idempotent no-op and are
-never normalized or rewritten by materialization.
+`preferred`/`auto`/`1`. It is valid indefinitely and is never a settings write
+target. A real user mutation automatically runs the materialization transaction,
+and subsequent edits target only the cloned connector rule. Existing explicit
+profiles are an idempotent no-op and are never normalized or rewritten by
+materialization. Existing supported `scale = "auto"` profiles remain readable
+and replaceable.
 
 ## Deployed UI integration and acceptance boundary
 
@@ -417,6 +425,6 @@ Physical multi-monitor acceptance is deferred until appropriate hardware is
 available. The architecture and deterministic suite cover multiple outputs,
 per-screen connector mapping, output-order independence, identity changes, and
 protected-topology failures; no physical multi-monitor success is claimed.
-Optional materialization is repository-implemented and deterministically
-covered, but controlled deployment and fresh-install acceptance remain later
-work. DDC/CI Brightness and global Text Size remain deliberately separate.
+Automatic first-change materialization is repository-implemented and
+deterministically covered, but physical fallback-managed acceptance remains
+later work. DDC/CI Brightness and global Text Size remain deliberately separate.

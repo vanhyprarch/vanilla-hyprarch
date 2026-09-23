@@ -127,10 +127,10 @@ machine behavior alone is not complete integration.
 The bootstrap installs only the create-once portable monitor fallback. A display
 working through that rule is already correctly configured; installation,
 session start, and hotplug must not convert it into a connector-specific
-profile. Advanced per-monitor editing is opt-in. After explicit consent, DF2
-may invoke the Monitor backend's dedicated **Enable advanced display settings**
-operation, which clones the supported fallback and changes only its selector.
-DF2 must not implement another monitor parser, persister, or automatic
+profile. Opening Display remains read-only. A normal user display mutation may
+invoke the Monitor backend, which automatically clones the supported fallback
+and changes only its selector before continuing through the established apply
+path. DF2 must not implement another monitor parser, persister, or
 materialization policy.
 
 The bootstrap must create `$HOME/.local/bin` as a user-owned directory when

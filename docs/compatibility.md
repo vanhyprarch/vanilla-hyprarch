@@ -123,11 +123,12 @@ override-superseded machine profiles before it writes a journal state that
 permits `eval`. Sending every protected field is intentionally not used as a
 substitute for this invariant.
 
-The optional materialization path establishes the exact rule without a runtime
-overlay. For one explicitly selected output it clones a supported fallback Lua
+The automatic first-change materialization path establishes the exact rule
+without a runtime overlay. For the output named by a real mutation request it
+clones a supported fallback Lua
 block and changes only `output = ""` to the connector, then reloads and requires
 complete topology equality. The public fallback's `preferred` Mode, automatic
-position, automatic Scale, and omitted bitdepth/color intent therefore survive
+position, Scale 1, and omitted bitdepth/color intent therefore survive
 unchanged. Once that exact rule is loaded, the same 0.56.2 copy-and-overlay path
 safely preserves its other fields for later Mode-only, Scale-only, or
 bitdepth-only runtime calls. Retest both the no-copy fallback behavior and the
@@ -216,9 +217,9 @@ completed single-monitor live acceptance for Mode and bitdepth timeout,
 Revert/Keep persistence, immediate Scale persistence, dismissal semantics, and
 Quickshell reload during an armed transaction. The UI uses normalized read-only
 backend inspection instead of interpreting this version-specific JSON in QML.
-The published schema-v4/protocol-v3 generation adds the persistence-only
-materialization transaction and supports later replacement of `preferred`,
-replacement of Scale `auto`, and insertion of an omitted bitdepth field.
+The published schema-v4/protocol-v3 generation added the persistence-only
+materialization transaction and supports replacement of `preferred`, Scale 1
+or an existing Scale `auto`, and insertion of an omitted bitdepth field.
 Existing explicit-profile behavior passed controlled deployment; physical
 materialization remains deferred to a real fallback-managed environment. The
 schema-v5/protocol-v4 HDR extension subsequently passed its controlled upgrade

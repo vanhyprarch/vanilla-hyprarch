@@ -32,7 +32,7 @@ ShellRoot {
             version: 3,
             instance_signature: "fixture_123",
             automatic_hdr: {
-                value: 1, label: "hdr", explicit: false, scope: "global",
+                value: 0, label: "off", explicit: true, scope: "global",
                 available: true, unavailable_reason: null
             },
             outputs: [{
@@ -100,22 +100,21 @@ ShellRoot {
                     ? "explicit-editable" : "fallback-only",
                 materializable: !(fallbackEditable || false),
                 materialization_reason: null,
-                unavailable_reason: fallbackEditable ? null
-                    : "Enable advanced display settings to manage this output.",
+                unavailable_reason: null,
                 current_mode: { width: 1920, height: 1080, refresh_millihz: 60000 },
                 available_modes: [
                     { width: 1920, height: 1080, refresh_millihz: 60000 }
                 ],
                 scale_millionths: 1000000,
                 effective_bitdepth: 8,
-                bitdepth_choices: fallbackEditable ? [8, 10] : [],
+                bitdepth_choices: [8, 10],
                 effective: {
                     current_format: "XRGB8888",
                     color_management_preset: "srgb"
                 },
                 hdr: {
-                    capability: "unknown", available: false,
-                    unavailable_reason: "Advanced display settings are unavailable.",
+                    capability: "supported", available: true,
+                    unavailable_reason: null,
                     mode: "off", base_cm: { present: false, value: "srgb" },
                     effective_live: "unknown"
                 }
@@ -137,29 +136,6 @@ ShellRoot {
                 remaining_seconds: remaining,
                 failure: null,
                 recovery_required: state !== "reverted" && state !== "committed"
-            }
-        })
-    }
-
-    function materializationResponse(state: string, sequence: int,
-            failure: var): string {
-        return JSON.stringify({
-            version: 4,
-            ok: true,
-            status: {
-                transaction_id: "materialize-transaction",
-                policy: "materialize-profile",
-                candidate: {
-                    connector: "DP-2", mode: null, bitdepth: null,
-                    scale_millionths: null, hdr_mode: null,
-                    automatic_hdr: null
-                },
-                state: state,
-                sequence: sequence,
-                deadline_monotonic: null,
-                remaining_seconds: null,
-                failure: failure,
-                recovery_required: state === "preparing"
             }
         })
     }
@@ -191,55 +167,30 @@ ShellRoot {
         check(controller.outputFor("DP-1").hdr.mode === "off"
                 && controller.outputFor("DP-1").hdr.available,
             "per-monitor HDR policy did not map to Off")
-        check(controller.automaticHdrValue === 1
-                && controller.pendingAutomaticHdr === 1
-                && !controller.automaticHdrExplicit,
-            "global Automatic HDR default did not map to HDR")
+        check(controller.automaticHdrValue === 0
+                && controller.pendingAutomaticHdr === 0
+                && controller.automaticHdrExplicit,
+            "global Automatic HDR default did not map to Off")
         check(controller.outputFor("HDMI-A-1").current_mode === null
                 && controller.ensurePending("HDMI-A-1") === null,
             "inactive output invalidated the normalized inspection model")
         check(controller.outputFor("DP-2").profile_state === "fallback-only"
                 && controller.outputFor("DP-2").materializable
-                && !controller.outputFor("DP-2").editable,
-            "fallback-only output did not retain materialization state")
-        check(controller.requestMaterialize("DP-2"),
-            "eligible materialization request was rejected")
+                && !controller.outputFor("DP-2").editable
+                && controller.pendingFor("DP-2") !== null,
+            "fallback-only output did not publish readable live state")
+        check(controller.setPendingBitdepth("DP-2", 10)
+                && controller.requestSafeApply("DP-2"),
+            "fallback-only output rejected an ordinary display change")
         check(controller.lastRequestedCommand.join(" ")
-                === "vanhyprarch-monitor materialize --connector DP-2"
-                && controller.lastRequestedKind === "materialize",
-            "materialization did not use the dedicated backend operation")
-        check(!controller.confirmationActive,
-            "materialization opened Safe Apply confirmation")
-        check(!controller.requestSafeApply("DP-2")
-                && !controller.requestScale("DP-2", "1.50"),
-            "fallback-only output accepted an advanced mutation")
-        check(controller.acceptStatusJson(materializationResponse(
-                "preparing", 0, null), true)
-                && controller.transactionInFlight
-                && controller.mutationsBlocked
-                && !controller.confirmationActive,
-            "materialization did not hold a non-confirming busy state")
-        check(controller.acceptStatusJson(materializationResponse(
-                "reverted", 1, "fixture materialization failure"), true)
-                && !controller.confirmationActive
-                && !controller.outputFor("DP-2").editable,
-            "failed materialization enabled advanced controls")
-        check(controller.acceptInspectionJson(inspection(false), true)
-                && controller.outputFor("DP-2").materializable,
-            "failed materialization did not remain retryable")
-        check(controller.acceptStatusJson(JSON.stringify({
-                version: 4, ok: true, status: { state: "idle" }
-            }), true),
-            "controller did not clear failed materialization status")
-        check(controller.acceptStatusJson(materializationResponse(
-                "committed", 4, null), true)
-                && !controller.confirmationActive
-                && controller.resetPendingOnNextInspect,
-            "materialization terminal state did not request authoritative refresh")
-        check(controller.acceptInspectionJson(inspection(true), false)
-                && controller.outputFor("DP-2").editable
-                && !controller.outputFor("DP-2").materializable,
-            "successful materialization did not enable advanced controls")
+                === "vanhyprarch-monitor apply --connector DP-2 --bitdepth 10"
+                && controller.lastRequestedKind === "safe-apply",
+            "fallback change did not enter the normal Safe Apply path")
+        controller.resetPending("DP-2")
+        check(controller.requestScale("DP-2", "1.50")
+                && controller.lastRequestedCommand.join(" ")
+                    === "vanhyprarch-monitor scale --connector DP-2 --scale 1.50",
+            "fallback Scale did not enter the normal immediate path")
         check(controller.resolutionOptions("DP-1").length === 3,
             "resolution catalogue was not deduplicated by resolution")
         check(controller.refreshOptions("DP-1", 1920, 1080).length === 2,
@@ -282,7 +233,7 @@ ShellRoot {
                 === "vanhyprarch-monitor apply --connector DP-1 --hdr always-on --automatic-hdr 2",
             "combined HDR/global request did not remain one exact Safe Apply")
         check(controller.outputFor("DP-1").hdr.mode === "off"
-                && controller.automaticHdrValue === 1,
+                && controller.automaticHdrValue === 0,
             "pending HDR request optimistically changed authoritative state")
 
         controller.resetPending("DP-1")

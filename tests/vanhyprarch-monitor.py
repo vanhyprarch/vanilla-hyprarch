@@ -577,7 +577,8 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertFalse(states["DP-1"]["editable"])
         self.assertEqual(states["DP-1"]["profile_state"], "fallback-only")
         self.assertTrue(states["DP-1"]["materializable"])
-        self.assertIn("Enable advanced", states["DP-1"]["unavailable_reason"])
+        self.assertIsNone(states["DP-1"]["unavailable_reason"])
+        self.assertEqual(states["DP-1"]["bitdepth_choices"], [8, 10])
         self.assertFalse(states["HDMI-A-1"]["editable"])
         self.assertEqual(states["HDMI-A-1"]["profile_state"], "inactive")
         self.assertFalse(states["HDMI-A-1"]["materializable"])
@@ -691,6 +692,48 @@ class MonitorBackendTests(unittest.TestCase):
                 monitor.getoption_argv(self.instance.signature, "render:cm_enabled"),
             ],
         )
+        self.assertTrue(all("eval" not in call for call in runner.calls))
+
+    def test_fallback_inspection_is_read_only_and_publishes_live_controls(self) -> None:
+        original = fallback_configuration()
+        self.machine.write_bytes(original)
+        runner = QueueRunner([
+            [output()],
+            option_result("render:cm_auto_hdr", integer=0, explicit=True),
+            option_result("render:cm_enabled", boolean=True),
+        ])
+        environment = {
+            "HOME": str(self.root / "home"),
+            "XDG_CONFIG_HOME": str(self.config),
+            "XDG_RUNTIME_DIR": str(self.runtime),
+            "HYPRLAND_INSTANCE_SIGNATURE": self.instance.signature,
+        }
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            self.assertEqual(
+                monitor.inspect_command(
+                    environment,
+                    runner,
+                    self.provider,
+                    self.paths,
+                    lambda state: hdr_edid(
+                        model=state.identity.model,
+                        serial=state.identity.serial,
+                    ),
+                ),
+                0,
+            )
+        inspected = json.loads(stream.getvalue())["outputs"][0]
+        self.assertFalse(inspected["editable"])
+        self.assertTrue(inspected["materializable"])
+        self.assertEqual(inspected["current_mode"], {
+            "width": 2560, "height": 1440, "refresh_millihz": 59950,
+        })
+        self.assertEqual(inspected["scale_millionths"], 1_250_000)
+        self.assertEqual(inspected["bitdepth_choices"], [8, 10])
+        self.assertTrue(inspected["hdr"]["available"])
+        self.assertEqual(self.machine.read_bytes(), original)
+        self.assertFalse(self.store.journal_path.exists())
         self.assertTrue(all("eval" not in call for call in runner.calls))
 
     def test_v0562_serial_contract_is_strict(self) -> None:
@@ -1043,18 +1086,15 @@ class MonitorBackendTests(unittest.TestCase):
         with self.assertRaises(monitor.JournalError):
             monitor.handle_control(authority, request)
 
-    def test_materialization_protocol_is_strict_and_separate(self) -> None:
+    def test_explicit_materialization_protocol_is_not_public(self) -> None:
         request = {
             "version": monitor.PROTOCOL_VERSION,
             "command": "materialize",
             "connector": "DP-1",
             "signature": self.instance.signature,
         }
-        self.assertEqual(monitor.protocol_request(request), ("materialize", request))
-        with self.assertRaisesRegex(monitor.ValidationError, "unknown fields"):
-            monitor.protocol_request({**request, "candidate": None})
-        with self.assertRaisesRegex(monitor.ValidationError, "version"):
-            monitor.protocol_request({**request, "version": monitor.PROTOCOL_VERSION - 1})
+        with self.assertRaisesRegex(monitor.ValidationError, "unknown control"):
+            monitor.protocol_request(request)
 
     def test_journal_is_strict_versioned_atomic_and_private(self) -> None:
         _, _, journal = self.begin_success()
@@ -1516,21 +1556,24 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertIn("ddcutil", panel)
         self.assertIn("textSizeController", panel)
 
-    def test_catch_all_only_profile_cannot_reach_runtime_apply(self) -> None:
-        self.machine.write_bytes(
-            b'''hl.monitor({
-    output = "",
-    mode = "preferred",
-    position = "auto",
-    scale = "auto",
-})
-'''
-        )
+    def test_first_fallback_change_materializes_then_uses_safe_apply(self) -> None:
+        self.machine.write_bytes(fallback_configuration())
         self.machine.chmod(0o600)
-        authority, runner = self.authority([[output()]])
-        with self.assertRaisesRegex(monitor.ValidationError, "existing explicit"):
-            authority.begin(self.candidate, self.instance.signature)
-        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 0)
+        authority, runner = self.authority(
+            [
+                [output()],
+                [output()], [output()], [output()],
+                [output()], OK, [candidate_output()],
+            ],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        temporary = authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(temporary.state, "temporary-active", temporary.failure)
+        self.assertEqual(temporary.candidate.policy, monitor.SAFE_CONFIRMED_POLICY)
+        self.assertEqual(self.machine.read_bytes().count(b'output = "DP-1"'), 1)
+        evals = [call[-1] for call in runner.calls if "eval" in call]
+        self.assertEqual(len(evals), 1)
+        self.assertIn('mode = "1920x1080@60"', evals[0])
 
     def test_desc_only_profile_cannot_reach_runtime_apply(self) -> None:
         self.machine.write_bytes(
@@ -1539,7 +1582,7 @@ class MonitorBackendTests(unittest.TestCase):
             )
         )
         self.machine.chmod(0o600)
-        authority, runner = self.authority([[output()]])
+        authority, runner = self.authority([[output()], [output()]])
         with self.assertRaisesRegex(monitor.ValidationError, "description-addressed"):
             authority.begin(self.candidate, self.instance.signature)
         self.assertEqual(len([call for call in runner.calls if "eval" in call]), 0)
@@ -2598,11 +2641,20 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
             explicit.body,
         )
         self.assertEqual(explicit.mode_value, '"preferred"')
-        self.assertEqual(explicit.scale_value, '"auto"')
+        self.assertEqual(explicit.scale_value, "1")
         self.assertEqual(materialized.count(b'position = "auto"'), 2)
         self.assertIsNone(explicit.bitdepth_value)
         self.assertIsNone(explicit.cm_value)
         self.assertIsNone(explicit.icc_value)
+        self.assertEqual(monitor.profile_hdr_intent(explicit).mode, "off")
+        self.assertEqual(
+            monitor.automatic_hdr_config_intent(
+                seed,
+                b"-- user override\n",
+                monitor.AutomaticHdrRuntime(0, True),
+            ),
+            monitor.AutomaticHdrRuntime(0, True),
+        )
 
     def test_minimal_profile_specializes_only_fields_the_user_changes(self) -> None:
         materialized = monitor.clone_fallback_profile(

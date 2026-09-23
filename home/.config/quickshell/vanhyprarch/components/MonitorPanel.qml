@@ -43,10 +43,8 @@ DockPopup {
             : "No display"
     }
     readonly property bool displayEditable: root.inspectedOutput !== null
-        && root.inspectedOutput.editable && root.monitorControllerReady
-        && !root.monitorController.mutationsBlocked
-    readonly property bool canMaterialize: root.inspectedOutput !== null
-        && root.inspectedOutput.materializable && root.monitorControllerReady
+        && (root.inspectedOutput.editable || root.inspectedOutput.materializable)
+        && root.monitorControllerReady
         && !root.monitorController.mutationsBlocked
 
     Component.onCompleted: {
@@ -838,51 +836,6 @@ DockPopup {
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: root.monitorController.requestSafeApply(
-                        root.connectorName)
-                }
-            }
-
-            Text {
-                visible: root.inspectedOutput !== null
-                    && root.inspectedOutput.materializable
-                width: parent.width
-                text: "Creates a device-specific profile so Vanilla can safely manage "
-                    + "display settings. Your current display settings should not change."
-                color: root.theme.textMuted
-                font.pixelSize: root.metrics.captionFontSize
-                wrapMode: Text.WordWrap
-            }
-
-            Rectangle {
-                visible: root.inspectedOutput !== null
-                    && root.inspectedOutput.materializable
-                width: parent.width
-                height: visible ? root.metrics.compactControlHeight : 0
-                radius: root.metrics.rowRadius
-                color: enableAdvancedMouse.pressed ? root.theme.pressedFill
-                    : enableAdvancedMouse.containsMouse ? root.theme.hoverFill
-                        : root.theme.activeFill
-                opacity: enableAdvancedMouse.enabled ? 1
-                    : root.metrics.disabledInteractiveOpacity
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.monitorControllerReady
-                        && root.monitorController.operationBusy
-                        && root.monitorController.lastRequestedKind === "materialize"
-                        ? "Enabling…" : "Enable advanced display settings"
-                    color: root.textColor
-                    font.pixelSize: root.metrics.bodyFontSize
-                    font.weight: Font.DemiBold
-                }
-
-                MouseArea {
-                    id: enableAdvancedMouse
-                    anchors.fill: parent
-                    enabled: root.canMaterialize
-                    hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.monitorController.requestMaterialize(
                         root.connectorName)
                 }
             }

@@ -638,15 +638,16 @@ entrypoint resolves `XDG_CONFIG_HOME` with a `$HOME/.config` fallback and uses
 Hyprland 0.56.2's intentional absolute-path `require()` support. Monitor,
 connector, mode, scale, bit depth, color management, keyboard layout, and
 device-specific rules do not belong in the managed core. The machine seed has
-a portable catch-all rule with preferred mode, automatic position, and
-automatic scale. That fallback exposes no Monitor panel write field. The
+a portable catch-all rule with preferred mode, automatic position, and Scale 1.
+That fallback exposes no Monitor panel write field. The
 controlled live migration established one narrowly documented Scale field in a
 specific explicit output profile. The repository Monitor UI now submits Scale
 to the transaction backend so runtime readback, prospective validation,
-persistence, reload, and technical rollback remain one operation. It contains
-no fallback machine-file writer. The backend fails closed instead of creating
-or guessing a profile; neither policy edits the catch-all rule or exposes a
-general multi-monitor schema during Alpha. The deployed UI and backend have
+persistence, reload, and technical rollback remain one operation. The backend
+never edits the fallback block; on the first real change it may clone a
+strictly supported fallback into an identity-validated connector profile.
+Neither policy guesses a profile or exposes a general multi-monitor schema
+during Alpha. The deployed UI and backend have
 completed controlled single-monitor live acceptance; physical multi-monitor
 acceptance remains a separate hardware-dependent boundary.
 
@@ -753,9 +754,9 @@ remaining deadline; it neither cancels nor extends the transaction.
 
 Monitor runtime transactions require an existing unambiguous explicit connector
 profile in machine configuration. The portable fallback remains a valid
-Hyprland configuration and Vanilla leaves it untouched unless the user
-explicitly chooses **Enable advanced display settings**. That action is a
-dedicated persistence-only transaction: it clones one supported fallback block,
+Hyprland configuration and inspection exposes its authoritative live state
+without writing it. On the first actual display mutation, the backend first runs
+a dedicated persistence-only transaction: it clones one supported fallback block,
 changes only its empty output selector to the connector, verifies complete
 pre/post topology equality, and uses the existing prospective-validation,
 atomic-persistence, reload and recovery engine. It does not call
@@ -763,13 +764,14 @@ atomic-persistence, reload and recovery engine. It does not call
 or normalize an existing explicit profile.
 
 For the public fallback, the explicit clone retains `preferred` Mode,
-automatic position, automatic Scale, and omitted bitdepth/color fields.
-Subsequent Mode or Scale edits replace only their automatic value; the first
+automatic position, Scale 1, and omitted bitdepth/color fields. Subsequent Mode
+or Scale edits replace only their fallback value; the first
 bitdepth preference inserts only that field. Installation, session start,
 hotplug, inspection, and panel open never materialize automatically. DF2 may
-offer the same backend operation only after explicit consent and must not grow
-a second monitor parser or persister. Brightness and Text Size are not routed
-through this backend.
+send normal mutation requests through the same backend and must not grow a
+second monitor parser or persister. Existing `scale = "auto"` state remains a
+supported read/replace source. Brightness and Text Size are not routed through
+this backend.
 
 Single-monitor acceptance is complete. Physical multi-monitor behavior remains
 architecturally covered and fixture-tested but has not been accepted with two

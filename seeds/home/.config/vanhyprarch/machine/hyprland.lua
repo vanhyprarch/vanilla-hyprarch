@@ -8,5 +8,12 @@ hl.monitor({
     output = "",
     mode = "preferred",
     position = "auto",
-    scale = "auto",
+    scale = 1,
+})
+
+-- Vanilla HyprArch Monitor automatic HDR policy v1
+hl.config({
+    render = {
+        cm_auto_hdr = 0,
+    },
 })

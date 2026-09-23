@@ -220,7 +220,7 @@ Scope {
             for (const item of parsed) {
                 const pending = previous[item.connector]
                 if (pending === undefined || item.current_mode === null
-                        || !item.editable)
+                        || (!item.editable && !item.materializable))
                     continue
                 const modeValid = item.available_modes.some(mode =>
                     mode.width === pending.width
@@ -483,7 +483,8 @@ Scope {
     function requestSafeApply(connector: string): bool {
         const output = root.outputFor(connector)
         const pending = root.ensurePending(connector)
-        if (output === null || pending === null || !output.editable
+        if (output === null || pending === null
+                || (!output.editable && !output.materializable)
                 || !root.hasSafeChanges(connector))
             return false
         if (root.validationMessage(connector) !== "")
@@ -507,18 +508,10 @@ Scope {
 
     function requestScale(connector: string, scaleText: string): bool {
         const output = root.outputFor(connector)
-        if (output === null || !output.editable)
+        if (output === null || (!output.editable && !output.materializable))
             return false
         return root.startAction([root.backendCommand, "scale", "--connector",
             connector, "--scale", scaleText], "scale")
-    }
-
-    function requestMaterialize(connector: string): bool {
-        const output = root.outputFor(connector)
-        if (output === null || output.editable || !output.materializable)
-            return false
-        return root.startAction([root.backendCommand, "materialize", "--connector",
-            connector], "materialize")
     }
 
     function requestConfirm(): bool {
@@ -870,9 +863,7 @@ Scope {
             if (lastExitCode !== 0 || !root.acceptStatusJson(outputText, true)) {
                 root.statusTransportError = false
                 root.errorMessage = root.conciseError(errorText,
-                    kind === "materialize"
-                    ? "Could not enable advanced display settings."
-                    : "Display update failed.")
+                    "Display update failed.")
             }
             root.actionFinished()
         }

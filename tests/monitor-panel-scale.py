@@ -46,6 +46,14 @@ class MonitorPanelPolicyTests(unittest.TestCase):
         self.assertIn("textSizeController.requestSize(requested)", self.panel)
         self.assertIn('["ddcutil", "setvcp", "10"', self.panel)
 
+    def test_fallback_outputs_have_no_advanced_settings_gate(self) -> None:
+        self.assertNotIn("Enable advanced display settings", self.panel)
+        self.assertNotIn("requestMaterialize", self.controller)
+        self.assertIn(
+            "(root.inspectedOutput.editable || root.inspectedOutput.materializable)",
+            self.panel,
+        )
+
     def test_pending_safe_fields_form_one_combined_request(self) -> None:
         self.assertIn("function requestSafeApply(connector: string)", self.controller)
         self.assertIn('command.push("--width"', self.controller)

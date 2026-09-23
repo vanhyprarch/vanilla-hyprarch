@@ -364,21 +364,20 @@ drivers are hardware-specific installation concerns.
 
 The repository Hyprland entrypoint now loads managed core, managed bindings,
 machine configuration, and user override layers. The managed files and public
-machine seed contain no development-machine connector, mode, scale, color, or
+machine seed contain no development-machine connector, mode, color, or
 keyboard choices. The seed's portable catch-all monitor rule uses preferred
-mode, automatic position, and automatic scale; it is machine-owned but is not a
+mode, automatic position, and the product-default Scale 1; it is machine-owned but is not a
 Monitor panel write target. The live ownership migration uses
 `vanhyprarchMonitorScale` only in the development machine's explicit output
 profile. Each Monitor panel maps its own `ShellScreen` through
 `Hyprland.monitorFor(screen)` and consumes the backend's normalized read-only
-inspection. The backend fails closed unless one unambiguous explicit connector
-profile exists in the machine-owned file; it cannot edit the fallback rule or
-managed Hyprland files. An undeployed repository follow-up allows the user to
-opt in to advanced display management by cloning the supported fallback for one
-connector while preserving `preferred`/`auto`/`auto` intent and verifying a
-complete observational no-op. Neither bootstrap nor session startup performs
-that operation automatically. No general multi-monitor schema is promised
-during Alpha.
+inspection. Before runtime mutation the backend requires one unambiguous
+explicit connector profile in the machine-owned file and never edits the
+fallback rule itself. For a supported fallback-only output, a real user change
+automatically clones the fallback for that connector while preserving
+`preferred`/`auto`/`1` intent and verifying a complete observational no-op.
+Neither bootstrap, session startup, nor panel opening performs that operation.
+No general multi-monitor schema is promised during Alpha.
 
 The managed `vanhyprarch-monitor` Python command and static, non-enabled
 `vanhyprarch-monitor-safe-apply.service` use baseline Python, systemd,
@@ -388,7 +387,7 @@ by `RuntimeMaxSec=90s`, and invokes an idempotent recovery entry point through
 state. The published schema-v5/protocol-v4/inspect-v3 engine gives Mode,
 bitdepth, forced HDR, and global Automatic HDR an
 explicit-confirmation window, makes Scale an immediate validated persistence
-operation, and includes explicit opt-in profile materialization. Its real UI
+operation, and includes automatic first-change profile materialization. Its real UI
 and single-monitor runtime/persistence paths are live-accepted; real fallback
 materialization and physical multi-monitor acceptance remain deferred.
 

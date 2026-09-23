@@ -29,12 +29,14 @@ grep -Fq '[root.backendCommand, "inspect"]' "$controller" \
     || fail 'controller has no read-only inspection client'
 grep -Fq '[root.backendCommand, "scale", "--connector"' "$controller" \
     || fail 'Scale does not use the immediate backend path'
-grep -Fq '[root.backendCommand, "materialize", "--connector"' "$controller" \
-    || fail 'advanced display enablement lacks a dedicated backend operation'
-grep -Fq 'Enable advanced display settings' "$panel" \
-    || fail 'fallback-managed output lacks explicit advanced-settings action'
-grep -Fq 'Your current display settings should not change.' "$panel" \
-    || fail 'materialization copy implies the working display needs initialization'
+if grep -Fq 'Enable advanced display settings' "$panel"; then
+    fail 'obsolete advanced-settings gate remains visible'
+fi
+if grep -Fq 'requestMaterialize' "$controller"; then
+    fail 'obsolete explicit materialization action remains in the controller'
+fi
+grep -Fq '(root.inspectedOutput.editable || root.inspectedOutput.materializable)' \
+    "$panel" || fail 'fallback-managed output does not expose ordinary controls'
 grep -Fq 'label: "Forced HDR"' "$panel" \
     || fail 'per-monitor HDR policy row is missing'
 grep -Fq 'label: "Automatic HDR"' "$panel" \

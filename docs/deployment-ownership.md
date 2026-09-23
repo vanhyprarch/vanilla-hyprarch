@@ -72,22 +72,22 @@ replaceable state; it conveys no ongoing ownership of created bytes.
 
 The Hyprland machine seed contains one portable catch-all monitor rule. Any
 output without a more specific machine rule uses its preferred mode, automatic
-position, and automatic scale. This fallback is machine-owned and is not a
+position, and Scale 1. This fallback is machine-owned and is not a
 Monitor panel write target. It is a valid configuration indefinitely and is
 never materialized by installation, session start, hotplug, inspection, or
 panel open.
 
 The integrated Monitor panel writes no configuration itself. Its backend may,
-only after the explicit **Enable advanced display settings** action, clone one
-supported fallback block into a connector-specific rule while changing only
-the empty output selector. That persistence-only transaction preserves the
-fallback and its `preferred`/`auto`/`auto` intent, proves complete topology
+only when the user requests a real display change, clone one supported fallback
+block into a connector-specific rule while changing only the empty output
+selector. That persistence-only transaction preserves the fallback and its
+`preferred`/`auto`/`1` intent, proves complete topology
 equality, and rolls back exact bytes on failure. Later Mode, Scale, or bitdepth
 edits specialize only their owned field in that explicit rule. The public seed
-contains no connector, fixed mode or scale, keyboard layout, bit depth, color
-profile, device rule, or UI-owned scale field. No general multi-monitor schema
-is promised during Alpha. The override seed contains only its administrative
-header.
+contains no connector, fixed mode, keyboard layout, bit depth, forced HDR,
+color profile, device rule, or UI-owned scale field. Its separate strict owned
+renderer block sets Automatic HDR Off. No general multi-monitor schema is
+promised during Alpha. The override seed contains only its administrative header.
 
 Monitor transaction journals are versioned same-boot recovery material, not
 managed deployment payloads. Never replace `vanhyprarch-monitor` while an

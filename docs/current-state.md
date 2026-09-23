@@ -987,19 +987,26 @@ outputs were not simultaneously available; this is an untested hardware
 boundary, not a known failure. Deterministic tests cover multi-output ordering,
 identity, protected-topology, and target-screen semantics.
 
-The published schema-4/protocol-3 generation also implements optional
-minimal-intent profile materialization for a fallback-managed output. The
+The published schema-4/protocol-3 generation also implements minimal-intent
+profile materialization for a fallback-managed output. The
 fallback remains a valid working configuration and Vanilla does not materialize
-it during installation, session start, hotplug, inspection, or panel open. Only
-the explicit **Enable advanced display settings** action clones a supported
-fallback rule for one connector, preserving `preferred` Mode, automatic
-position, automatic Scale, and omitted optional fields. It uses the existing
+it during installation, session start, hotplug, inspection, or panel open.
+Inspection exposes the authoritative live state immediately; the first real
+display mutation automatically clones a supported fallback rule for one
+connector, preserving `preferred` Mode, automatic position, Scale 1, and
+omitted optional fields. It uses the existing
 prospective verification, atomic persistence, reload reconciliation, complete
 topology equality, and recovery engine without `hl.monitor()`, a confirmation
 deadline, or runtime correction. Subsequent edits specialize only the field the
 user changes. Existing explicit-profile behavior passed controlled deployment;
 physical materialization on a genuinely fallback-managed display remains
 deferred. See [Monitor Safe Apply backend](monitor-safe-apply.md).
+
+Fresh create-once machine state uses Scale 1, omits forced-HDR `cm` intent so
+Forced HDR is Off, and carries the strict Vanilla-owned
+`render:cm_auto_hdr = 0` block so Automatic HDR is Off. Existing supported
+`scale = "auto"` state remains readable and replaceable. Global Text Size still
+uses the helper-owned missing-preference default of 12 pixels.
 
 The published schema-v5/protocol-v4/inspect-v3 HDR implementation extends Safe
 Apply with per-monitor
@@ -1088,9 +1095,9 @@ the bootstrap, visual greeter, authentication, logout/login, and reboot paths.
 - Fix Display resolution changes when automatic scale changes during readback.
 - Prevent virtual-display re-enumeration from producing a false serial
   mismatch. Both Display findings are deferred and did not block Phase 5.
-- Physically accept explicit opt-in monitor-profile materialization on a
+- Physically accept automatic first-change monitor-profile materialization on a
   genuinely fallback-managed display. DF2 must retain the create-once fallback
-  seed and must not materialize connected displays automatically.
+  seed and must not materialize connected displays merely from opening Display.
 - Perform physical multi-monitor acceptance when two suitable outputs are
   simultaneously available; deterministic multi-output coverage already
   exists and no failure is currently known.

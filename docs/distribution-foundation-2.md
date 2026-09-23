@@ -158,8 +158,8 @@ behavior passed disposable-VM acceptance.
 
 The create-once machine seed contains the portable fallback rule. Installation,
 session startup, hotplug, inspection, or panel opening never materializes a
-connector profile. Only the existing Monitor backend may perform explicit
-advanced-settings materialization. Connector profiles, Forced HDR base-CM
+connector profile. Only the existing Monitor backend may perform automatic
+first-change materialization. Connector profiles, Forced HDR base-CM
 metadata, and Automatic HDR policy remain machine-owned. Safe Apply remains a
 static transaction unit. No distribution manifest or future executor may grow
 a second Monitor parser.

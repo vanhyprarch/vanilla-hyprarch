@@ -746,6 +746,7 @@ def inspection_payload(
             "base_cm": {"present": False, "value": "srgb"},
             "effective_live": "unknown",
         }
+        profile: MachineProfile | None = None
         if not state.usable:
             profile_state = "inactive"
             unavailable_reason = "Output is inactive or unusable."
@@ -756,47 +757,8 @@ def inspection_payload(
                 profile = validate_explicit_profile_editability(
                     machine_content, state
                 )
-                bitdepth_intent = profile_bitdepth_intent(profile)
-                hdr_intent = profile_hdr_intent(profile)
                 editable = True
                 profile_state = "explicit-editable"
-                if (
-                    bitdepth_intent in BITDEPTH_FORMATS
-                    and state.effective_bitdepth is not None
-                ):
-                    bitdepth_choices = sorted(BITDEPTH_FORMATS)
-                hdr_reason: str | None = None
-                capability = HdrCapability(
-                    "unknown", False, "HDR capability could not be established.", False, False
-                )
-                try:
-                    if not cm_enabled:
-                        raise ValidationError("Hyprland color management is disabled.")
-                    _, icc_intent = profile_color_intent(profile)
-                    if icc_intent:
-                        raise ValidationError("An ICC profile owns this output's color state.")
-                    if edid_reader is None:
-                        raise ValidationError("HDR capability could not be established.")
-                    capability = evaluate_hdr_capability(
-                        state, profile, edid_reader(state)
-                    )
-                    if not capability.available:
-                        raise ValidationError(capability.reason or "HDR is unsupported.")
-                    if 10 not in bitdepth_choices:
-                        raise ValidationError("A validated 10-bit path is unavailable.")
-                except MonitorError as error:
-                    hdr_reason = str(error)
-                hdr_projection = {
-                    "capability": capability.state,
-                    "available": hdr_reason is None,
-                    "unavailable_reason": hdr_reason,
-                    "mode": hdr_intent.mode,
-                    "base_cm": {
-                        "present": hdr_intent.base_present,
-                        "value": hdr_intent.base_value,
-                    },
-                    "effective_live": "unknown",
-                }
             except MonitorError as explicit_error:
                 if isinstance(explicit_error, OverrideConflict):
                     profile_state = "override-conflict"
@@ -804,7 +766,7 @@ def inspection_payload(
                     materialization_reason = str(explicit_error)
                 else:
                     try:
-                        validate_materialization_eligibility(
+                        _, profile = validate_materialization_eligibility(
                             topology,
                             state.connector,
                             machine_content,
@@ -813,9 +775,6 @@ def inspection_payload(
                         )
                         profile_state = "fallback-only"
                         materializable = True
-                        unavailable_reason = (
-                            "Enable advanced display settings to manage this output."
-                        )
                     except OverrideConflict as error:
                         profile_state = "override-conflict"
                         unavailable_reason = str(error)
@@ -836,6 +795,47 @@ def inspection_payload(
                             else str(error)
                         )
                         materialization_reason = str(error)
+
+        if profile is not None:
+            bitdepth_intent = profile_bitdepth_intent(profile)
+            hdr_intent = profile_hdr_intent(profile)
+            if (
+                bitdepth_intent in BITDEPTH_FORMATS
+                and state.effective_bitdepth is not None
+            ):
+                bitdepth_choices = sorted(BITDEPTH_FORMATS)
+            hdr_reason: str | None = None
+            capability = HdrCapability(
+                "unknown", False, "HDR capability could not be established.", False, False
+            )
+            try:
+                if not cm_enabled:
+                    raise ValidationError("Hyprland color management is disabled.")
+                _, icc_intent = profile_color_intent(profile)
+                if icc_intent:
+                    raise ValidationError("An ICC profile owns this output's color state.")
+                if edid_reader is None:
+                    raise ValidationError("HDR capability could not be established.")
+                capability = evaluate_hdr_capability(
+                    state, profile, edid_reader(state)
+                )
+                if not capability.available:
+                    raise ValidationError(capability.reason or "HDR is unsupported.")
+                if 10 not in bitdepth_choices:
+                    raise ValidationError("A validated 10-bit path is unavailable.")
+            except MonitorError as error:
+                hdr_reason = str(error)
+            hdr_projection = {
+                "capability": capability.state,
+                "available": hdr_reason is None,
+                "unavailable_reason": hdr_reason,
+                "mode": hdr_intent.mode,
+                "base_cm": {
+                    "present": hdr_intent.base_present,
+                    "value": hdr_intent.base_value,
+                },
+                "effective_live": "unknown",
+            }
 
         modes = [
             {
@@ -3120,6 +3120,21 @@ class TransactionAuthority:
         target = validate_candidate(candidate, topology)
         machine = snapshot_file(self.config_paths.machine)
         override = snapshot_file(self.config_paths.override)
+        if not has_explicit_profile(machine.content, candidate.connector):
+            materialized = self.materialize(candidate.connector, signature)
+            if materialized is None or materialized.state != "committed":
+                reason = None if materialized is None else materialized.failure
+                raise PersistenceError(
+                    reason or "connector profile materialization did not commit"
+                )
+            instance = self.instance_provider.current(signature)
+            client = HyprlandClient(
+                signature, instance, self.instance_provider, self.runner, self.clock
+            )
+            topology = client.read_topology()
+            target = validate_candidate(candidate, topology)
+            machine = snapshot_file(self.config_paths.machine)
+            override = snapshot_file(self.config_paths.override)
         profile = require_explicit_profile(machine.content, candidate.connector)
         reject_superseding_override(override.content, candidate.connector)
         rewrite_existing_profile(machine.content, candidate)
@@ -3577,8 +3592,6 @@ def protocol_request(value: object) -> tuple[str, dict[str, object]]:
         expected = {"version", "command", "transaction_id"}
     elif command in {"begin", "scale"}:
         expected = {"version", "command", "candidate", "signature"}
-    elif command == "materialize":
-        expected = {"version", "command", "connector", "signature"}
     else:
         raise ValidationError("unknown control command")
     if set(value) != expected:
@@ -3691,8 +3704,6 @@ def handle_control(authority: TransactionAuthority, request: object) -> dict[str
             Candidate.scale(candidate_raw["connector"], candidate_raw["scale"]),
             raw["signature"],
         )
-    elif command == "materialize":
-        journal = authority.materialize(raw["connector"], raw["signature"])
     elif command == "confirm":
         journal = authority.confirm(raw["transaction_id"])
     else:
@@ -3755,7 +3766,7 @@ def serve() -> int:
                         response = handle_control(authority, request)
                         if (
                             isinstance(request, dict)
-                            and request.get("command") in {"begin", "scale", "materialize"}
+                            and request.get("command") in {"begin", "scale"}
                             and response.get("ok") is True
                         ):
                             status = response.get("status")
@@ -3768,15 +3779,7 @@ def serve() -> int:
                     connection.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
                     if (
                         isinstance(request, dict)
-                        and request.get("command") == "materialize"
-                        and response.get("ok") is True
-                        and isinstance(response.get("status"), dict)
-                        and response["status"].get("state") == "idle"
-                    ):
-                        return 0
-                    if (
-                        isinstance(request, dict)
-                        and request.get("command") in {"begin", "scale", "materialize"}
+                        and request.get("command") in {"begin", "scale"}
                         and response.get("ok") is False
                     ):
                         return 1
@@ -3847,7 +3850,7 @@ def local_status_response(*, require_safe_terminal: bool = False) -> dict[str, o
 
 
 def client_command(arguments: argparse.Namespace) -> int:
-    if arguments.action in {"apply", "scale", "materialize"}:
+    if arguments.action in {"apply", "scale"}:
         result = run_command([SYSTEMCTL, "--user", "start", SERVICE_NAME])
         if result.returncode != 0:
             raise MonitorError(result.stderr.strip() or "could not start monitor authority")
@@ -3880,13 +3883,6 @@ def client_command(arguments: argparse.Namespace) -> int:
                     "connector": arguments.connector,
                     "scale": arguments.scale,
                 },
-            }
-        else:
-            request = {
-                "version": PROTOCOL_VERSION,
-                "command": "materialize",
-                "signature": os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", ""),
-                "connector": arguments.connector,
             }
         deadline = time.monotonic() + 3.0
         while True:
@@ -3937,11 +3933,6 @@ def argument_parser() -> argparse.ArgumentParser:
     scale_parser = subparsers.add_parser("scale", help="apply and persist validated scale immediately")
     scale_parser.add_argument("--connector", required=True)
     scale_parser.add_argument("--scale", required=True)
-    materialize_parser = subparsers.add_parser(
-        "materialize",
-        help="enable advanced display settings without changing effective state",
-    )
-    materialize_parser.add_argument("--connector", required=True)
     for action in ("confirm", "revert"):
         action_parser = subparsers.add_parser(action)
         action_parser.add_argument("transaction_id")
