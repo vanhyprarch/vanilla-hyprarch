@@ -2,15 +2,41 @@ import QtQuick
 
 QtObject {
     // One global controller supplies the user preference. Screen-bound
-    // instances additionally compact shell-owned geometry when the logical
-    // viewport cannot hold the normal layout. Typography always follows the
-    // preference and is never rewritten by responsive layout.
+    // instances size dock structure from physical density, then compact it
+    // when the logical viewport cannot hold the normal layout. Typography
+    // follows the preference and is not rewritten by either layout layer.
     property int fontBaseSize: 12
     property int viewportWidth: 0
     property int viewportHeight: 0
+    property real physicalPixelDensity: 0
     readonly property int fontReferenceSize: 12
     readonly property real fontScale: Math.max(1 / fontReferenceSize,
         fontBaseSize / fontReferenceSize)
+    // 11 mm preserves the approved 56-unit dock at 3840x2160, scale 1.25
+    // on the measured host. No host density or mode is embedded here.
+    readonly property real dockWidthMillimeters: 11
+    readonly property int dockDesignWidth: 56
+    readonly property real minimumPhysicalShellScale: 0.25
+    readonly property real maximumPhysicalShellScale: 2
+    readonly property real physicalShellScale: {
+        const density = physicalPixelDensity
+        if (!Number.isFinite(density) || density <= 0
+                || viewportWidth <= 0 || viewportHeight <= 0)
+            return 1
+
+        // Qt's physical DPI is in device-independent units. Inferring the
+        // monitor dimensions catches missing or clearly broken EDID data.
+        const widthMm = viewportWidth / density
+        const heightMm = viewportHeight / density
+        if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm)
+                || widthMm < 100 || widthMm > 3000
+                || heightMm < 60 || heightMm > 2000)
+            return 1
+
+        return Math.max(minimumPhysicalShellScale,
+            Math.min(maximumPhysicalShellScale,
+                dockWidthMillimeters * density / dockDesignWidth))
+    }
     readonly property int normalShellMinimumWidth: 960
     readonly property int normalShellMinimumHeight: 720
     readonly property real minimumShellFitFactor: 0.75
@@ -32,8 +58,12 @@ QtObject {
     }
 
     function fitted(baseValue: real, minimumValue: real): int {
-        return Math.max(minimumValue,
-            Math.round(baseValue * shellFitFactor))
+        return Math.max(1, Math.round(minimumValue * physicalShellScale),
+            Math.round(baseValue * physicalShellScale * shellFitFactor))
+    }
+
+    function physical(baseValue: real): int {
+        return Math.max(1, Math.round(baseValue * physicalShellScale))
     }
 
     function dockTopRegionHeight(desiredHeight: real): int {
@@ -55,7 +85,7 @@ QtObject {
     }
 
     // Dock geometry.
-    readonly property int dockWidth: fitted(56, 48)
+    readonly property int dockWidth: fitted(dockDesignWidth, 48)
     readonly property int dockLauncherTarget: fitted(40, 32)
     readonly property int dockSystemControlTarget: fitted(36, 28)
     readonly property int dockPowerButtonTarget: fitted(40, 32)
@@ -75,6 +105,17 @@ QtObject {
     readonly property int dockTrayTarget: fitted(32, 24)
     readonly property int dockTrayIconSize: fitted(22, 17)
     readonly property int dockTrayGap: fitted(2, 1)
+    readonly property int dockPowerGlyphSize: fitted(24, 18)
+    readonly property int dockAddGlyphSize: fitted(24, 18)
+    readonly property int dockPowerGlyphHorizontalOffset: physical(1)
+    readonly property int dockPowerGlyphVerticalOffset: physical(4)
+    readonly property int dockLauncherMarkerWidth: physical(6)
+    readonly property int dockLauncherMarkerHeight: physical(8)
+    readonly property int dockLauncherMarkerFontSize: physical(8)
+    readonly property int dockLauncherMarkerOverlap: physical(1)
+    readonly property int dockLauncherDragIndicatorWidth: physical(24)
+    readonly property int dockLauncherDragIndicatorHeight: physical(2)
+    readonly property int dockClockLinePadding: physical(4)
     // Only used when the viewport cannot contain the complete top and bottom
     // stacks. It leaves one power-sized scroll viewport; it is not an estimate
     // of the normal bottom-region height.
@@ -110,8 +151,8 @@ QtObject {
     readonly property int rowSidePadding: scaled(10)
     readonly property int rowSpacing: scaled(3)
     readonly property int iconTextGap: scaled(10)
-    readonly property int dockPopupGap: 9
-    readonly property int dockPopupParallelOffset: -2
+    readonly property int dockPopupGap: physical(9)
+    readonly property int dockPopupParallelOffset: -physical(2)
     readonly property int panelViewportMargin: fitted(12, 8)
     readonly property int dockPanelMaximumWidth: viewportWidth > 0
         ? Math.max(1, viewportWidth - dockWidth - dockPopupGap

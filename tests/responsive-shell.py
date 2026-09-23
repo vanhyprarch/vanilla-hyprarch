@@ -20,9 +20,16 @@ class ResponsiveShellStaticTests(unittest.TestCase):
         metrics = self.read("components/VisualMetrics.qml")
         self.assertIn("viewportWidth: screenScope.modelData.width", shell)
         self.assertIn("viewportHeight: screenScope.modelData.height", shell)
+        self.assertIn("physicalPixelDensity: screenScope.modelData.physicalPixelDensity", shell)
         self.assertIn("readonly property real shellFitFactor", metrics)
+        self.assertIn("readonly property real physicalShellScale", metrics)
         self.assertNotIn("requestSize(", metrics)
         self.assertNotIn("requestSize(", shell)
+
+    def test_dock_width_and_exclusive_zone_share_metric(self) -> None:
+        shell = self.read("shell.qml")
+        self.assertIn("implicitWidth: screenMetrics.dockWidth", shell)
+        self.assertIn("exclusiveZone: screenMetrics.dockWidth", shell)
 
     def test_dock_has_disjoint_top_middle_bottom_regions(self) -> None:
         shell = self.read("shell.qml")

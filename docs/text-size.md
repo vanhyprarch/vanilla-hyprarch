@@ -17,12 +17,14 @@ accept every integer from 9 through 20 pixels.
 
 All shared typography derives from the base size. Shared panel widths, padding,
 spacing, rows, icons, fields, sliders, and toggles scale by the same ratio, with
-12 pixels as the reference. The dock contract does not scale: its width remains
-56 pixels; launcher and Power targets remain 40 pixels; system-control targets
-remain 36 pixels; and launcher and system icon sizes remain 28 and 20 pixels.
-The three-pixel exterior panel outline, one-pixel
-internal separators/control outlines, and nine-pixel dock-to-popup gap also
-remain fixed.
+12 pixels as the reference. Text Size does not scale dock structure. Its
+56-unit design width represents an 11 mm physical target on screens with valid
+Quickshell physical density; launcher, workspace, system-control, icon, gap,
+and inset metrics share that physical scale and may compact further on small
+logical viewports. Invalid physical density uses the original design-unit
+baseline. The three-pixel exterior panel outline and one-pixel internal
+separators/control outlines remain fixed; the dock-to-popup gap follows the
+dock's physical scale.
 
 Panels not yet migrated to `VisualMetrics` retain their old local typography
 until their scheduled visual-foundation migration. They must not create another

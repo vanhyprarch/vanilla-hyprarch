@@ -23,6 +23,34 @@ TestCase {
         fontBaseSize: 14
         viewportWidth: 3072
         viewportHeight: 1728
+        physicalPixelDensity: 5.101176470588235
+    }
+
+    VisualMetrics {
+        id: hdMetrics
+        viewportWidth: 1920
+        viewportHeight: 1080
+        physicalPixelDensity: 3.1882352941176473
+    }
+
+    VisualMetrics {
+        id: scaledHdMetrics
+        viewportWidth: 960
+        viewportHeight: 540
+        physicalPixelDensity: 1.5941176470588236
+    }
+
+    VisualMetrics {
+        id: fallbackMetrics
+        viewportWidth: 1920
+        viewportHeight: 1080
+    }
+
+    VisualMetrics {
+        id: boundedMetrics
+        viewportWidth: 3072
+        viewportHeight: 1728
+        physicalPixelDensity: 20
     }
 
     VisualMetrics {
@@ -236,10 +264,11 @@ TestCase {
     }
 
     function clockDesiredHeight(metrics) {
-        const weekdayFontSize = Math.max(10, metrics.fitted(11, 10))
+        const weekdayFontSize = metrics.fitted(11, 10)
         return metrics.applicationLauncherIconSize
-            + weekdayFontSize + 4
-            + (metrics.dockWorkspaceFontSize + 4) * 2
+            + weekdayFontSize + metrics.dockClockLinePadding
+            + (metrics.dockWorkspaceFontSize
+                + metrics.dockClockLinePadding) * 2
             + metrics.dockItemGap * 3
     }
 
@@ -373,6 +402,7 @@ TestCase {
 
     function test_large_viewport_preserves_standard_metrics() {
         compare(largeMetrics.shellFitFactor, 1)
+        verify(Math.abs(largeMetrics.physicalShellScale - 1) < 0.003)
         compare(largeMetrics.dockWidth, 56)
         compare(largeMetrics.dockLauncherTarget, 40)
         compare(largeMetrics.dockSystemControlTarget, 36)
@@ -384,6 +414,78 @@ TestCase {
         compare(largeMetrics.dockOuterInset, 12)
         compare(largeMetrics.standardPanelWidth, 443)
         compare(largeMetrics.panelPadding, 16)
+    }
+
+    function test_same_monitor_mode_change_preserves_physical_width() {
+        compare(hdMetrics.shellFitFactor, 1)
+        compare(hdMetrics.dockWidth, 35)
+        verify(Math.abs(largeMetrics.dockWidth
+            / largeMetrics.physicalPixelDensity
+            - hdMetrics.dockWidth / hdMetrics.physicalPixelDensity) < 0.1)
+        compare(hdMetrics.dockLauncherTarget, 25)
+        compare(hdMetrics.applicationLauncherIconSize, 18)
+        compare(hdMetrics.dockSystemControlTarget, 23)
+        compare(hdMetrics.dockWorkspaceTarget, 18)
+        compare(hdMetrics.dockPopupGap, 6)
+        compare(hdMetrics.dockPowerGlyphSize, 15)
+        compare(hdMetrics.dockAddGlyphSize, 15)
+        compare(hdMetrics.dockLauncherMarkerWidth, 4)
+    }
+
+    function test_scaled_hd_keeps_physical_sizing_before_compaction() {
+        verify(Math.abs(scaledHdMetrics.physicalShellScale * 56 - 17.5) < 0.1)
+        compare(scaledHdMetrics.shellFitFactor, 0.75)
+        verify(scaledHdMetrics.dockWidth <= 18)
+        verify(scaledHdMetrics.dockWidth >= 12)
+        verify(scaledHdMetrics.dockLauncherTarget < hdMetrics.dockLauncherTarget)
+        verify(scaledHdMetrics.dockSystemControlTarget
+            < hdMetrics.dockSystemControlTarget)
+        verify(scaledHdMetrics.dockWorkspaceTarget < hdMetrics.dockWorkspaceTarget)
+        verify(scaledHdMetrics.dockContentWidth <= scaledHdMetrics.dockWidth)
+        const geometry = regionGeometry(scaledHdMetrics,
+            topDesiredHeight(scaledHdMetrics),
+            bottomDesiredHeight(scaledHdMetrics, true, 2))
+        verify(geometry.topHeight + geometry.systemHeight
+            <= scaledHdMetrics.viewportHeight)
+        compare(geometry.launcherY + geometry.launcherHeight,
+            geometry.systemY)
+        compare(geometry.systemY + geometry.systemHeight,
+            scaledHdMetrics.viewportHeight)
+    }
+
+    function test_text_size_does_not_change_physical_dock() {
+        const width = hdMetrics.dockWidth
+        const target = hdMetrics.dockLauncherTarget
+        const icon = hdMetrics.dockSystemIconSize
+        const addGlyph = hdMetrics.dockAddGlyphSize
+        hdMetrics.fontBaseSize = 20
+        compare(hdMetrics.dockWidth, width)
+        compare(hdMetrics.dockLauncherTarget, target)
+        compare(hdMetrics.dockSystemIconSize, icon)
+        compare(hdMetrics.dockAddGlyphSize, addGlyph)
+        compare(hdMetrics.bodyFontSize, 20)
+    }
+
+    function test_density_fallback_and_bound() {
+        const invalid = [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1000]
+        for (const density of invalid) {
+            fallbackMetrics.physicalPixelDensity = density
+            compare(fallbackMetrics.physicalShellScale, 1)
+            compare(fallbackMetrics.dockWidth, 56)
+        }
+        compare(boundedMetrics.physicalShellScale, 2)
+        compare(boundedMetrics.dockWidth, 112)
+        fallbackMetrics.viewportWidth = 960
+        fallbackMetrics.viewportHeight = 540
+        fallbackMetrics.physicalPixelDensity = 1
+        compare(fallbackMetrics.physicalShellScale, 0.25)
+        verify(fallbackMetrics.dockWidth < 56)
+        fallbackMetrics.physicalPixelDensity = 1.5941176470588236
+        verify(fallbackMetrics.dockWidth <= 18)
+        fallbackMetrics.viewportWidth = 1920
+        fallbackMetrics.viewportHeight = 1080
+        fallbackMetrics.physicalPixelDensity = 3.1882352941176473
+        compare(fallbackMetrics.dockWidth, 35)
     }
 
     function test_large_viewport_reserves_complete_bottom_stack() {

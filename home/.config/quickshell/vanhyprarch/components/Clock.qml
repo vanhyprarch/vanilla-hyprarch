@@ -12,8 +12,7 @@ Item {
     readonly property int contentWidth: root.metrics.dockContentWidth
     readonly property int iconSize: root.metrics.applicationLauncherIconSize
     readonly property int itemSpacing: root.metrics.dockItemGap
-    readonly property int weekdayFontSize: Math.max(10,
-        root.metrics.fitted(11, 10))
+    readonly property int weekdayFontSize: root.metrics.fitted(11, 10)
     readonly property int dateFontSize: root.metrics.dockWorkspaceFontSize
     readonly property int timeFontSize: root.metrics.dockWorkspaceFontSize
 
@@ -81,7 +80,7 @@ Item {
 
         Text {
             width: parent.width
-            height: root.weekdayFontSize + 4
+            height: root.weekdayFontSize + root.metrics.dockClockLinePadding
             text: root.weekdays[clock.date.getDay()]
             color: root.textColor
             font.pixelSize: root.weekdayFontSize
@@ -92,7 +91,7 @@ Item {
 
         Text {
             width: parent.width
-            height: root.dateFontSize + 4
+            height: root.dateFontSize + root.metrics.dockClockLinePadding
             text: Qt.formatDateTime(clock.date, "dd/MM")
             color: root.textColor
             font.pixelSize: root.dateFontSize
@@ -103,7 +102,7 @@ Item {
 
         Text {
             width: parent.width
-            height: root.timeFontSize + 4
+            height: root.timeFontSize + root.metrics.dockClockLinePadding
             text: Qt.formatDateTime(clock.date, "HH:mm")
             color: root.textColor
             font.pixelSize: root.timeFontSize

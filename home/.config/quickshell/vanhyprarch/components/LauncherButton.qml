@@ -58,8 +58,8 @@ Item {
     Column {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        width: 6
-        spacing: -1
+        width: root.metrics.dockLauncherMarkerWidth
+        spacing: -root.metrics.dockLauncherMarkerOverlap
 
         Repeater {
             model: root.workspaceIds
@@ -67,11 +67,11 @@ Item {
             Text {
                 required property var modelData
 
-                width: 6
-                height: 8
+                width: root.metrics.dockLauncherMarkerWidth
+                height: root.metrics.dockLauncherMarkerHeight
                 text: modelData
                 color: root.theme.text
-                font.pixelSize: 8
+                font.pixelSize: root.metrics.dockLauncherMarkerFontSize
                 font.weight: Font.Normal
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter

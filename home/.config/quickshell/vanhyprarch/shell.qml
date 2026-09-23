@@ -143,6 +143,7 @@ ShellRoot {
         fontBaseSize: textSizeController.baseSize
         viewportWidth: screenScope.modelData.width
         viewportHeight: screenScope.modelData.height
+        physicalPixelDensity: screenScope.modelData.physicalPixelDensity
     }
 
     PanelWindow {

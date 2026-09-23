@@ -60,11 +60,11 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            anchors.horizontalCenterOffset: 1
-            anchors.verticalCenterOffset: 4
+            anchors.horizontalCenterOffset: root.metrics.dockPowerGlyphHorizontalOffset
+            anchors.verticalCenterOffset: root.metrics.dockPowerGlyphVerticalOffset
             text: "⏻"
             color: root.iconColor
-            font.pixelSize: 24
+            font.pixelSize: root.metrics.dockPowerGlyphSize
         }
 
         MouseArea {

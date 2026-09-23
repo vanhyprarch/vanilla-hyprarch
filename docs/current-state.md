@@ -403,12 +403,21 @@ The current Quickshell UI includes:
   configuration, so live validation requires a full Quickshell process restart;
   hot reload is insufficient.
 
-Screen-bound shell metrics now derive a bounded fit factor from each target
-screen's logical width and height. At or above the normal design capacity the
-existing dock and panel metrics are unchanged; smaller logical viewports reduce
-only shell-owned targets, icons, gaps, and padding down to explicit usable
-minimums. The saved Text Size remains authoritative and is not changed by this
-layout response. The dock owns disjoint workspace, launcher, and system-control
+Screen-bound dock structure first derives one physical scale from each target
+screen's Quickshell `physicalPixelDensity` and the 11 mm product dock-width
+target. On the measured development output (3840x2160 at Scale 1.25), this
+preserves the approved 56-unit dock; the same monitor at 1920x1080 and Scale 1
+uses about 35 units. Missing, non-finite, or non-positive density, or density
+implying a monitor outside 100–3000 mm wide or 60–2000 mm tall falls back to
+the original structural scale of 1. Valid scale is bounded to 0.25–2. These
+conservative limits admit the measured 1920x1080 at Scale 2 while limiting bad
+EDID; they cannot correct plausible but inaccurate physical-size data. Qt's
+physical DPI is already expressed in device-independent units, so the dock
+does not multiply by DPR. A separate bounded fit factor from logical width and
+height compacts shell structure on constrained viewports; its minimum floors
+scale physically as well. Panel content and the saved Text Size keep their
+existing ownership.
+The dock owns disjoint workspace, launcher, and system-control
 regions. The full height of the actual bottom control stack is reserved before
 the flexible middle launcher region receives the remainder, so launcher content
 is the first content to scroll. Only a viewport too short for the compact top

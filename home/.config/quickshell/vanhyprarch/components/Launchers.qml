@@ -23,8 +23,8 @@ Item {
     property Item contextMenuSourceAnchor: null
     property real preferredContentCenterY: height / 2
     property color dragIndicatorColor: root.theme.accent
-    property int dragIndicatorWidth: 24
-    property int dragIndicatorHeight: 2
+    readonly property int dragIndicatorWidth: root.metrics.dockLauncherDragIndicatorWidth
+    readonly property int dragIndicatorHeight: root.metrics.dockLauncherDragIndicatorHeight
     signal emptySpacePressed()
 
     readonly property var resolvedLaunchers: {
@@ -409,7 +409,7 @@ Item {
                     anchors.centerIn: parent
                     text: "+"
                     color: root.textColor
-                    font.pixelSize: root.metrics.heroIconSize
+                    font.pixelSize: root.metrics.dockAddGlyphSize
                 }
 
                 MouseArea {

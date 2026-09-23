@@ -1,9 +1,17 @@
 import QtQuick
 import QtTest
 import "../home/.config/quickshell/vanhyprarch/components/DockPopupGeometry.js" as Geometry
+import "../home/.config/quickshell/vanhyprarch/components"
 
 TestCase {
     name: "DockPopupGeometry"
+
+    VisualMetrics {
+        id: physicalHdMetrics
+        viewportWidth: 1920
+        viewportHeight: 1080
+        physicalPixelDensity: 3.1882352941176473
+    }
 
     QtObject {
         id: screenA
@@ -174,6 +182,19 @@ TestCase {
         compare(56 + margin, 60)
         compare(Geometry.aboveMargin(120, 36, -2, 220, 240), 0)
         compare(Geometry.alignedTopMargin(210, 4, 80, 240), 160)
+    }
+
+    function test_popupUses_rescaledDockAndRelativeGap(): void {
+        compare(physicalHdMetrics.dockWidth, 35)
+        compare(physicalHdMetrics.dockPopupGap, 6)
+        const margin = Geometry.horizontalMargin(
+            physicalHdMetrics.dockPopupGap, 384,
+            physicalHdMetrics.viewportWidth, physicalHdMetrics.dockWidth)
+        compare(margin, 6)
+        compare(physicalHdMetrics.dockWidth + margin, 41)
+        verify(physicalHdMetrics.dockPanelMaximumWidth
+            + physicalHdMetrics.dockWidth + margin
+            <= physicalHdMetrics.viewportWidth)
     }
 
     function test_popupRespectsSafeVerticalViewportInsets(): void {
