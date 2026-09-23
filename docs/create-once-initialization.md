@@ -23,11 +23,15 @@ content comparison, merge, mode repair, or rewrite. Symlinks, wrong types,
 unsafe owners, and symlinked parents fail closed.
 
 An absent target is written to a private same-directory candidate with the
-manifest mode, fsynced, and linked into place with no-clobber semantics. The
-target directory is then fsynced and final type, owner, mode, and bytes are
+manifest mode, fsynced, and linked into place with no-clobber semantics. A
+manifest artifact may declare generator arguments instead of copying its
+source bytes; the initializer runs that executable source in the isolated
+target environment only while the target is absent, then publishes its output
+through the same no-clobber transaction. The target directory is then fsynced,
+and final type, owner, mode, and bytes are
 verified. Machine and override Lua files are mode `0600`; mpv and MIME seeds
-are mode `0644`. All installed files are regular copies independent of the
-source checkout.
+are mode `0644`. The Foot file is also mode `0644`. All installed files are
+regular copies independent of the source checkout.
 
 A minimal mode-0700 transaction directory under XDG state exists only during
 one create publish. Its fsynced intent names the artifact, destination,
@@ -39,6 +43,19 @@ until recovery occurs. Abrupt termination before publish, after durable
 publish, and after the published marker is deterministic and idempotent.
 
 ## Application seeds
+
+Foot is initialized at `$XDG_CONFIG_HOME/foot/foot.ini` only when absent. Its
+create-once artifact runs the read-only `foot-seed` operation of the managed
+text-size helper from the release source. The helper validates any existing
+authoritative `text-size.conf` and emits `font=monospace:size=<points>` using
+the same conversion as later Text Size changes. A missing preference yields the
+Vanilla baseline of 12 points; an existing valid Text Size 14 yields 14 points
+on the first create, including an update of a previously affected installation.
+Malformed preference state fails before creating Foot. A pre-existing safe user
+`foot.ini` is preserved without invoking the generator, comparing content, or
+repairing its mode. Subsequent explicit Text Size changes use the helper's
+existing conservative projection rules; already open Foot windows may need to
+be reopened.
 
 The provisional mpv seed is exactly:
 

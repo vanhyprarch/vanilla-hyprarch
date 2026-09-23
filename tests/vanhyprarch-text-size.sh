@@ -64,6 +64,9 @@ chmod 755 "$test_dir/mock-bin/gsettings" "$test_dir/mock-bin/foot"
 preference_dir=$XDG_CONFIG_HOME/vanhyprarch
 preference_file=$preference_dir/text-size.conf
 foot_file=$XDG_CONFIG_HOME/foot/foot.ini
+[ "$(sh "$helper" foot-seed)" = 'font=monospace:size=12' ] ||
+    fail 'missing preference did not generate the Foot 12 pt baseline'
+[ ! -e "$foot_file" ] || fail 'Foot seed output created a configuration file'
 cat > "$foot_file" <<'EOF'
 [main]
 font=Iosevka:size=12
@@ -112,6 +115,8 @@ grep -Fxq 'font=Iosevka:size=16' "$foot_file" ||
 grep -Fxq 'pad=8x8' "$foot_file" || fail 'unrelated Foot configuration changed'
 [ "$(cat "$preference_file")" = "version=1
 size=16" ] || fail 'preference contents are invalid'
+[ "$(sh "$helper" foot-seed)" = 'font=monospace:size=16' ] ||
+    fail 'explicit preference did not generate the matching Foot seed'
 [ "$(stat -c '%a' "$preference_dir")" = 700 ] || fail 'preference directory is not private'
 [ "$(stat -c '%a' "$preference_file")" = 600 ] || fail 'preference file is not private'
 
@@ -135,6 +140,28 @@ printf '%s\n' "$result" | grep -Fxq 'foot=unmanaged' ||
     fail 'an indirect Foot configuration was not left unmanaged'
 [ "$(cat "$foot_file")" = 'include=~/.config/foot/private.ini' ] ||
     fail 'an indirect Foot configuration was modified'
+
+cat > "$foot_file" <<'EOF'
+include=~/.config/foot/private.ini
+font=Iosevka:size=12
+EOF
+cp "$foot_file" "$test_dir/foot.with-include"
+result=$(sh "$helper" set 13)
+printf '%s\n' "$result" | grep -Fxq 'foot=unmanaged' ||
+    fail 'a Foot configuration with an include was not left unmanaged'
+cmp -s "$foot_file" "$test_dir/foot.with-include" ||
+    fail 'a Foot configuration with an include was modified'
+
+cat > "$foot_file" <<'EOF'
+font=Iosevka:size=12
+font=monospace:size=12
+EOF
+cp "$foot_file" "$test_dir/foot.with-multiple-fonts"
+result=$(sh "$helper" set 13)
+printf '%s\n' "$result" | grep -Fxq 'foot=unmanaged' ||
+    fail 'multiple Foot font definitions were not left unmanaged'
+cmp -s "$foot_file" "$test_dir/foot.with-multiple-fonts" ||
+    fail 'multiple Foot font definitions were modified'
 
 rm -f "$preference_file"
 ln -s "$test_dir/outside" "$preference_file"

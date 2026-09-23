@@ -212,12 +212,14 @@ uninstall, or privileged integration. Version 1 remains historical.
 
 ## Create-once application state
 
-Phase 3 implements the accepted provisional mpv seed and a minimal MIME seed.
-Their targets are `$XDG_CONFIG_HOME/mpv/mpv.conf` and
-`$XDG_CONFIG_HOME/mimeapps.list`, both mode `0644`. A future installer may
-create either only when its target is absent. Each becomes user-owned
-immediately and is never overwritten or merged automatically. Existing
-standards-defined user MIME configuration also suppresses the MIME seed.
+Phase 3 initializes Foot, the accepted provisional mpv seed, and a minimal MIME
+seed. Their targets are `$XDG_CONFIG_HOME/foot/foot.ini`,
+`$XDG_CONFIG_HOME/mpv/mpv.conf`, and `$XDG_CONFIG_HOME/mimeapps.list`, all mode
+`0644`. Foot's initial font size is generated from the authoritative Vanilla
+Text Size: 12 points when no preference exists, or the existing valid explicit
+size. Each file is created only when absent, becomes user-owned immediately,
+and is never overwritten or merged automatically. Existing standards-defined
+user MIME configuration also suppresses the MIME seed.
 
 The same internal initializer publishes the machine and override seeds with
 no-clobber semantics, invokes `xdg-user-dirs-update` only when its configuration

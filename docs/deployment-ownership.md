@@ -58,15 +58,20 @@ user deployment nor Phase 4 package/service integration consumes that state.
 
 ## Create-once seeds
 
-Files below `seeds/` are installation inputs, not normal managed-update
-payloads. The Phase 3 initializer may copy a seed only when its target does
-not exist. Once created, the target takes the ownership class declared in the
-manifest and normal updates preserve it. The machine and override files
+Files below `seeds/`, or executable sources declared as create-once generators,
+are installation inputs, not normal managed-update payloads. The Phase 3
+initializer may publish seed bytes only when the target does not exist. Once
+created, the target takes the ownership class declared in the manifest, and
+normal updates preserve it. The machine and override files
 are private user configuration with mode `0600`.
 
-The provisional mpv and minimal MIME defaults are mode-0644 create-once user
-seeds. Alternate user-level MIME configuration in standards-defined XDG
-locations prevents MIME seeding. A short-lived backend-owned transaction intent
+The Foot, provisional mpv, and minimal MIME defaults are mode-0644 create-once
+user files. Foot's initial bytes come from the text-size helper's read-only
+generator: the baseline is 12 points, or the size of an existing valid explicit
+Vanilla preference. The initializer publishes those bytes only when `foot.ini`
+is absent; existing user Foot configuration remains untouched. Alternate
+user-level MIME configuration in standards-defined XDG locations prevents MIME
+seeding. A short-lived backend-owned transaction intent
 allows killed create publication to recover without treating user edits as
 replaceable state; it conveys no ongoing ownership of created bytes.
 

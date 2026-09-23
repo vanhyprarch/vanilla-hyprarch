@@ -151,6 +151,12 @@ prepare_foot_candidate()
     [ "$foot_owner" = "$current_uid" ] ||
         fail "$foot_file is not owned by the current user"
 
+    # An include can supply another effective font definition. Leave the
+    # complete user configuration alone rather than guessing precedence.
+    if grep -Eq '^[[:space:]]*include[[:space:]]*=' "$foot_file"; then
+        return 0
+    fi
+
     main_font_count=$(awk '
         BEGIN { in_main = 1; count = 0 }
         /^[[:space:]]*\[/ {
@@ -304,6 +310,14 @@ print_status()
         "$size" "$explicit"
 }
 
+print_foot_seed()
+{
+    load_preference
+    terminal_points=$(terminal_points_for "$size") ||
+        fail 'could not calculate the Foot font size'
+    printf 'font=monospace:size=%s\n' "$terminal_points"
+}
+
 prepare_paths
 case ${1-} in
     status)
@@ -311,9 +325,13 @@ case ${1-} in
         load_preference
         print_status
         ;;
+    foot-seed)
+        [ "$#" -eq 1 ] || fail 'usage: foot-seed'
+        print_foot_seed
+        ;;
     set)
         [ "$#" -eq 2 ] || fail 'usage: set <9-20>'
         apply_size "$2"
         ;;
-    *) fail 'usage: status | set <9-20>' ;;
+    *) fail 'usage: status | foot-seed | set <9-20>' ;;
 esac

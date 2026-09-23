@@ -54,6 +54,8 @@ video/x-matroska=mpv.desktop;
 x-scheme-handler/http=firefox.desktop;
 x-scheme-handler/https=firefox.desktop;
 """
+FOOT_BYTES_12 = b"font=monospace:size=12\n"
+FOOT_BYTES_14 = b"font=monospace:size=14\n"
 
 
 def digest(path: Path) -> str:
@@ -347,7 +349,7 @@ class ActualManifestTests(unittest.TestCase):
         initializer = self.initializer()
         self.assertEqual(
             [item.identifier for item in initializer.seeds],
-            ["machine-hyprland", "mimeapps-config", "mpv-config", "user-hyprland-override"],
+            ["foot-config", "machine-hyprland", "mimeapps-config", "mpv-config", "user-hyprland-override"],
         )
         self.assertEqual((REPOSITORY / "seeds/home/.config/mpv/mpv.conf").read_bytes(), MPV_BYTES)
         self.assertEqual((REPOSITORY / "seeds/home/.config/mimeapps.list").read_bytes(), MIME_BYTES)
@@ -376,6 +378,7 @@ class ActualManifestTests(unittest.TestCase):
             self.fixture.config / "vanhyprarch/machine/hyprland.lua": 0o600,
             self.fixture.config / "vanhyprarch/overrides/hyprland.lua": 0o600,
             self.fixture.config / "mpv/mpv.conf": 0o644,
+            self.fixture.config / "foot/foot.ini": 0o644,
             self.fixture.config / "mimeapps.list": 0o644,
             self.fixture.config / "vanhyprarch/appearance.json": 0o600,
             self.fixture.config / "vanhyprarch/power-idle.conf": 0o600,
@@ -385,9 +388,12 @@ class ActualManifestTests(unittest.TestCase):
         for path, mode in expected.items():
             self.assertTrue(path.is_file(), path)
             self.assertFalse(path.is_symlink())
+            self.assertEqual(path.stat().st_uid, os.getuid())
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
             before[path] = (path.stat().st_ino, path.stat().st_mtime_ns, digest(path))
         self.assertEqual((self.fixture.config / "mpv/mpv.conf").read_bytes(), MPV_BYTES)
+        self.assertEqual((self.fixture.config / "foot/foot.ini").read_bytes(), FOOT_BYTES_12)
+        self.assertFalse((self.fixture.config / "vanhyprarch/text-size.conf").exists())
         self.assertEqual((self.fixture.config / "mimeapps.list").read_bytes(), MIME_BYTES)
         self.assertTrue((self.fixture.config / "user-dirs.dirs").is_file())
         self.assertTrue((self.fixture.config / "user-dirs.locale").is_file())
@@ -403,15 +409,139 @@ class ActualManifestTests(unittest.TestCase):
             self.fixture.config / "vanhyprarch/machine/hyprland.lua": b"-- machine custom\n",
             self.fixture.config / "vanhyprarch/overrides/hyprland.lua": b"-- override custom\n",
             self.fixture.config / "mpv/mpv.conf": b"fullscreen=no\n",
+            self.fixture.config / "foot/foot.ini": b"font=Iosevka:size=15\npad=8x8\n",
             self.fixture.config / "mimeapps.list": b"[Default Applications]\ntext/plain=custom.desktop;\n",
         }
+        before = {}
         for path, data in values.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
+            if path == self.fixture.config / "foot/foot.ini":
+                path.chmod(0o640)
+            before[path] = (path.stat().st_ino, path.stat().st_mtime_ns, stat.S_IMODE(path.stat().st_mode))
         self.initialize()
         self.initialize()
         for path, data in values.items():
             self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(
+                (path.stat().st_ino, path.stat().st_mtime_ns, stat.S_IMODE(path.stat().st_mode)),
+                before[path],
+            )
+
+    def test_foot_seed_uses_existing_explicit_text_size(self) -> None:
+        preference = self.fixture.config / "vanhyprarch/text-size.conf"
+        preference.parent.mkdir(parents=True, exist_ok=True)
+        preference.write_bytes(b"version=1\nsize=14\n")
+        preference.chmod(0o600)
+        before = (preference.stat().st_ino, preference.stat().st_mtime_ns, preference.read_bytes())
+        foot = self.fixture.config / "foot/foot.ini"
+        self.assertFalse(foot.exists())
+        self.initialize()
+        self.assertEqual(foot.read_bytes(), FOOT_BYTES_14)
+        self.assertEqual(stat.S_IMODE(foot.stat().st_mode), 0o644)
+        self.assertEqual(
+            (preference.stat().st_ino, preference.stat().st_mtime_ns, preference.read_bytes()),
+            before,
+        )
+        created = (foot.stat().st_ino, foot.stat().st_mtime_ns, foot.read_bytes())
+        self.initialize()
+        self.assertEqual((foot.stat().st_ino, foot.stat().st_mtime_ns, foot.read_bytes()), created)
+        self.validate()
+
+    def test_invalid_text_size_refuses_missing_foot_seed(self) -> None:
+        preference = self.fixture.config / "vanhyprarch/text-size.conf"
+        preference.parent.mkdir(parents=True, exist_ok=True)
+        preference.write_bytes(b"version=1\nsize=21\n")
+        foot = self.fixture.config / "foot/foot.ini"
+        with self.assertRaises(ConflictError):
+            self.initializer().plan()
+        with self.assertRaises(ConflictError):
+            self.initialize()
+        self.assertFalse(foot.exists())
+        self.assertEqual(preference.read_bytes(), b"version=1\nsize=21\n")
+
+    def test_existing_foot_is_preserved_even_with_invalid_text_size(self) -> None:
+        foot = self.fixture.config / "foot/foot.ini"
+        foot.parent.mkdir()
+        foot.write_bytes(b"font=custom:size=13\n")
+        preference = self.fixture.config / "vanhyprarch/text-size.conf"
+        preference.parent.mkdir(parents=True, exist_ok=True)
+        preference.write_bytes(b"invalid\n")
+        before = (foot.stat().st_ino, foot.stat().st_mtime_ns, foot.read_bytes())
+        self.initialize()
+        self.assertEqual((foot.stat().st_ino, foot.stat().st_mtime_ns, foot.read_bytes()), before)
+
+    def test_foot_unsafe_targets_fail_closed(self) -> None:
+        foot = self.fixture.config / "foot/foot.ini"
+        foot.parent.mkdir()
+        foot.symlink_to(self.fixture.home / "outside")
+        with self.assertRaises(ConflictError):
+            self.initialize()
+        foot.unlink()
+        foot.mkdir()
+        with self.assertRaises(ConflictError):
+            self.initialize()
+        foot.rmdir()
+        foot.write_bytes(b"font=custom:size=13\n")
+        artifact = next(item for item in self.initializer().seeds if item.identifier == "foot-config")
+        with mock.patch("create_once.os.getuid", return_value=os.getuid() + 1):
+            with self.assertRaises(ConflictError):
+                self.initializer()._existing_result(artifact, foot)
+        foot.unlink()
+        foot.parent.rmdir()
+        foot.parent.symlink_to(self.fixture.home)
+        with self.assertRaises(SafetyError):
+            self.initializer().plan()
+
+    def test_installed_text_size_helper_updates_initialized_foot(self) -> None:
+        self.initialize()
+        foot = self.fixture.config / "foot/foot.ini"
+        self.assertEqual(foot.read_bytes(), FOOT_BYTES_12)
+        checked = subprocess.run(
+            ["foot", "--check-config", f"--config={foot}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        foot.write_bytes(FOOT_BYTES_12 + b"pad=8x8\n")
+
+        fake_bin = self.root / "text-size-bin"
+        fake_bin.mkdir()
+        state = self.root / "gtk-factor"
+        state.write_text("1.0\n", encoding="utf-8")
+        gsettings = fake_bin / "gsettings"
+        gsettings.write_text(
+            "#!/bin/sh\n"
+            "case $1:$2:$3 in\n"
+            "get:org.gnome.desktop.interface:font-name) printf \"'Adwaita Sans 11'\\n\" ;;\n"
+            "get:org.gnome.desktop.interface:text-scaling-factor) cat \"$MOCK_GSETTINGS_STATE\" ;;\n"
+            "set:org.gnome.desktop.interface:text-scaling-factor) printf '%s\\n' \"$4\" > \"$MOCK_GSETTINGS_STATE\" ;;\n"
+            "*) exit 2 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        gsettings.chmod(0o755)
+        environment = self.fixture.target.environment() | {
+            "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+            "MOCK_GSETTINGS_STATE": str(state),
+        }
+        helper = self.fixture.config / "quickshell/vanhyprarch/helpers/vanhyprarch_text_size"
+        result = subprocess.run(
+            [str(helper), "set", "14"],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("foot=updated\n", result.stdout)
+        self.assertEqual(foot.read_bytes(), FOOT_BYTES_14 + b"pad=8x8\n")
+        self.assertEqual(
+            (self.fixture.config / "vanhyprarch/text-size.conf").read_bytes(),
+            b"version=1\nsize=14\n",
+        )
 
     def test_alternate_user_mime_configuration_prevents_seed(self) -> None:
         alternate = self.fixture.data / "applications/mimeapps.list"
@@ -559,6 +689,7 @@ class ActualManifestTests(unittest.TestCase):
             path: digest(path)
             for path in (
                 self.fixture.config / "mpv/mpv.conf",
+                self.fixture.config / "foot/foot.ini",
                 self.fixture.config / "mimeapps.list",
                 self.fixture.config / "vanhyprarch/machine/hyprland.lua",
             )
@@ -571,6 +702,7 @@ class ActualManifestTests(unittest.TestCase):
             CreateOnceInitializer(source_root=copied_source, target=independent.target).initialize()
         shutil.rmtree(copied_source)
         self.assertEqual((independent.config / "mpv/mpv.conf").read_bytes(), MPV_BYTES)
+        self.assertEqual((independent.config / "foot/foot.ini").read_bytes(), FOOT_BYTES_12)
         for path, expected in snapshots.items():
             self.assertEqual(digest(path), expected)
 

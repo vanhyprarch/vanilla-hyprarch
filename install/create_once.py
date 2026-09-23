@@ -103,6 +103,7 @@ class SeedArtifact:
     ownership_class: str
     mode: int
     validators: tuple[str, ...]
+    generator_arguments: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -273,6 +274,11 @@ class CreateOnceInitializer:
                 isinstance(item, str) and item for item in validators
             ):
                 raise ManifestError(f"{identifier} validators must be strings")
+            generator_arguments = record.get("generator_arguments", [])
+            if not isinstance(generator_arguments, list) or not all(
+                isinstance(item, str) and item for item in generator_arguments
+            ):
+                raise ManifestError(f"{identifier} generator arguments must be strings")
             destinations.add(target)
             self.seeds.append(
                 SeedArtifact(
@@ -282,6 +288,7 @@ class CreateOnceInitializer:
                     str(record["class"]),
                     _mode(record.get("mode"), f"{identifier} mode"),
                     tuple(validators),
+                    tuple(generator_arguments),
                 )
             )
         self.seeds.sort(key=lambda item: item.identifier)
@@ -368,6 +375,36 @@ class CreateOnceInitializer:
                 ):
                     raise ManifestError("MIME seed contains an invalid or duplicate mapping")
                 keys.add(mime_type)
+
+    def _seed_bytes(self, artifact: SeedArtifact) -> bytes:
+        source = self._source_path(artifact.source)
+        if not artifact.generator_arguments:
+            data = _read_regular(source)
+        else:
+            if stat.S_IMODE(os.lstat(source).st_mode) & 0o111 == 0:
+                raise ManifestError(f"seed generator is not executable: {artifact.source}")
+            try:
+                completed = subprocess.run(
+                    [str(source), *artifact.generator_arguments],
+                    env=self.target.environment(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    shell=False,
+                    timeout=10,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise ConflictError(f"{artifact.identifier} seed generator failed: {error}") from error
+            if completed.returncode != 0:
+                detail = completed.stderr.decode("utf-8", errors="replace").strip()
+                raise ConflictError(
+                    f"{artifact.identifier} seed generator failed: {detail or completed.returncode}"
+                )
+            data = completed.stdout
+            if not data or len(data) > 65536:
+                raise ConflictError(f"{artifact.identifier} seed generator returned invalid data")
+        self._validate_seed(artifact, data)
+        return data
 
     def _fault(self, point: str, identifier: str) -> None:
         if os.environ.get(TEST_MODE_ENV) == "1":
@@ -537,9 +574,7 @@ class CreateOnceInitializer:
         return intent
 
     def _create_seed(self, artifact: SeedArtifact) -> Result:
-        source = self._source_path(artifact.source)
-        data = _read_regular(source)
-        self._validate_seed(artifact, data)
+        self._source_path(artifact.source)
         destination, root = self.target.xdg.resolve(artifact.target)
         _ensure_directory(destination.parent, root)
         existing = self._existing_result(artifact, destination)
@@ -548,6 +583,7 @@ class CreateOnceInitializer:
         alternate = self._mime_alternate(artifact)
         if alternate is not None:
             return alternate
+        data = self._seed_bytes(artifact)
         intent = self._begin_transaction(artifact, destination, data)
         candidate = Path(str(intent["candidate"]))
         try:
@@ -715,8 +751,7 @@ class CreateOnceInitializer:
             ]
         results: list[Result] = []
         for artifact in self.seeds:
-            data = _read_regular(self._source_path(artifact.source))
-            self._validate_seed(artifact, data)
+            self._source_path(artifact.source)
             destination, root = self.target.xdg.resolve(artifact.target)
             _walk_existing_without_symlinks(destination.parent)
             existing = self._existing_result(artifact, destination)
@@ -724,6 +759,8 @@ class CreateOnceInitializer:
                 results.append(existing)
                 continue
             alternate = self._mime_alternate(artifact)
+            if alternate is None:
+                self._seed_bytes(artifact)
             results.append(
                 alternate
                 or Result(

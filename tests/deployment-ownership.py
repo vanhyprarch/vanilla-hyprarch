@@ -156,12 +156,21 @@ class DeploymentOwnershipTests(unittest.TestCase):
         for identifier in (
             "machine-hyprland",
             "user-hyprland-override",
+            "foot-config",
             "mpv-config",
             "mimeapps-config",
         ):
             artifact = next(item for item in self.artifacts if item["id"] == identifier)
             self.assertEqual(artifact["status"], "implemented")
             self.assertIn("source", artifact)
+
+        foot = self.artifact_for_target(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/foot/foot.ini"
+        )
+        self.assertEqual(foot["class"], "CREATE_ONCE_USER")
+        self.assertEqual(foot["mode"], "0644")
+        self.assertEqual(foot["generator_arguments"], ["foot-seed"])
+        self.assertEqual(foot["component"], "text-size")
 
     def test_appearance_preference_renderer_and_manager_ownership(self) -> None:
         preference = self.artifact_for_target(

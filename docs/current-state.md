@@ -116,7 +116,9 @@ is not a second preference. Launcher order uses
 `Quickshell.statePath("launchers.json")` under Quickshell's shell-ID state.
 Global text size uses the versioned preference documented in
 [Global text size](text-size.md); a missing preference means the 12-pixel
-default without creating state.
+default without creating preference state. Create-once initialization supplies
+Foot's corresponding 12-point file, or uses an existing valid explicit size
+when migrating a system whose Foot file is absent.
 
 ## Session startup — IMPLEMENTED AND VM-ACCEPTED
 
@@ -1114,12 +1116,15 @@ Deterministic Release A/B fixtures, including abrupt subprocess termination,
 prove idempotence, source-tree independence, conflict refusal,
 path/symlink safety, rollback, and crash recovery.
 
-The internal `install/create_once.py` Phase 3 layer now creates the four
-implemented machine/user seeds only when absent, initializes XDG user
+The internal `install/create_once.py` Phase 3 layer now creates the implemented
+machine/user files only when absent, initializes XDG user
 directories only when their configuration is absent, and calls offline
 Appearance and Power & Idle owner interfaces. Starter wallpaper deletion and
-customization remain preserved through the Appearance receipt. Text Size,
-Bluetooth preference, and launcher state remain safely lazy. Abrupt create,
+customization remain preserved through the Appearance receipt. Foot receives
+a create-once font config from the text-size helper's read-only generator;
+the Text Size preference, Bluetooth preference, and launcher state remain
+safely lazy. The Foot addition is fixture-tested and awaits real-host acceptance.
+Abrupt create,
 Appearance starter-seed, and Power & Idle initialization tests run only against
 disposable targets.
 

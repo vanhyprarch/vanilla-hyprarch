@@ -199,6 +199,21 @@ user_editable = true
 machine_specific = false
 
 [[artifact]]
+id = "foot-config"
+source = "home/.config/quickshell/vanhyprarch/helpers/vanhyprarch_text_size"
+generator_arguments = ["foot-seed"]
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/foot/foot.ini"
+class = "CREATE_ONCE_USER"
+component = "text-size"
+kind = "file"
+mode = "0644"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Generate once from the authoritative Vanilla Text Size, then preserve any existing Foot file."
+
+[[artifact]]
 id = "mpv-config"
 source = "seeds/home/.config/mpv/mpv.conf"
 target = "${XDG_CONFIG_HOME:-$HOME/.config}/mpv/mpv.conf"

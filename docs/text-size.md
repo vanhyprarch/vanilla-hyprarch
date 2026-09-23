@@ -38,14 +38,20 @@ tracked `xdg-desktop-portal-gtk` baseline; no GNOME session component is added.
 
 Foot points are derived from Vanilla's validated baseline as
 `round(12 points × base pixels / 12)`. With the current integer range this is
-a one-to-one projection: Text Size 12 preserves Foot's existing 12-point
-baseline. The helper edits only
+a one-to-one projection. During create-once initialization, the helper emits
+`font=monospace:size=12` when the preference is absent, or the point size of an
+existing valid explicit preference. The initializer publishes that output as
+`$XDG_CONFIG_HOME/foot/foot.ini` only when the file is absent. It never creates
+`text-size.conf` merely to establish the default. Existing safe user Foot files
+are preserved exactly by installation and updates.
+
+After initialization, the helper edits only
 one directly declared `font=` key in the user-owned `[main]` section, preserving
 the family and every unrelated setting. It refuses symlinks and foreign-owned
-files. If the font comes only from includes, the file is absent, or its ownership
-is ambiguous, Foot is reported as unmanaged and is not changed. This avoids
-inventing or overriding a user's font configuration before the update-safe
-managed/default/user layers exist.
+files. If the file is absent or contains an include, multiple direct font
+definitions, no direct font, or ambiguous ownership, Foot is reported as
+unmanaged and is not changed. The helper's normal `set` operation does not
+create a missing Foot file.
 
 Foot 1.28 has no signal for reloading font configuration. Existing terminals
 keep their startup size; newly launched terminals use the projected value. GTK
@@ -63,7 +69,7 @@ place. The controller changes the live shell base size only after parsing a
 successful helper result, so a failed operation does not leave QML with an
 optimistic second state.
 
-This small preference and projection boundary is intended to move unchanged
-behind the future managed/default/user configuration architecture. A future
-bootstrap can establish a dedicated Foot override layer; it must not turn the
-current conservative editor into permission to overwrite arbitrary user files.
+The create-once Foot file is user-owned immediately. A later managed/default/user
+configuration architecture must retain this preservation boundary rather than
+turning the conservative editor into permission to overwrite arbitrary user
+files.
