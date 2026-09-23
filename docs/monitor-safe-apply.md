@@ -229,6 +229,12 @@ available Modes, Scale, effective bitdepth choices, physical identity, and
 normalized explicit/fallback/materializable/conflict state, strict EDID-derived
 HDR eligibility, exact base CM intent, and the global Automatic HDR policy;
 QML does not parse raw `monitors all` JSON or decide materialization eligibility.
+For Automatic HDR, inspection may project the effective candidate during an
+unexpired `temporary-active` Safe Apply only after read-only validation of the
+current compositor identity, owned authority lock, journal candidate, and
+unchanged original machine and override snapshots. This is the expected interval
+between runtime apply and durable Keep. Outside that exact transaction state,
+the persistent/effective Automatic HDR mismatch remains unavailable and visible.
 
 ## HDR capability and durable intent
 

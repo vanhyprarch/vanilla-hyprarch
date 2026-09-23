@@ -731,13 +731,22 @@ def inspection_payload(
     automatic_hdr_runtime: AutomaticHdrRuntime | None = None,
     cm_enabled: bool = True,
     edid_reader: Callable[[MonitorState], bytes] | None = None,
+    temporary_automatic_hdr_intent: AutomaticHdrRuntime | None = None,
 ) -> dict[str, object]:
     """Project the transaction domain into the small read-only UI contract."""
     runtime_policy = automatic_hdr_runtime or AutomaticHdrRuntime(1, False)
     try:
-        automatic_intent = automatic_hdr_config_intent(
-            machine_content, override_content, runtime_policy
-        )
+        if temporary_automatic_hdr_intent is None:
+            automatic_intent = automatic_hdr_config_intent(
+                machine_content, override_content, runtime_policy
+            )
+        else:
+            original_intent = automatic_hdr_config_intent(
+                machine_content, override_content, temporary_automatic_hdr_intent
+            )
+            automatic_intent = AutomaticHdrRuntime(
+                runtime_policy.value, original_intent.explicitly_set
+            )
         automatic_available = cm_enabled
         automatic_reason = None if cm_enabled else "Hyprland color management is disabled."
     except MonitorError as error:
@@ -2967,6 +2976,32 @@ class RuntimeStore:
             os.close(self._lock_descriptor)
             self._lock_descriptor = None
 
+    def has_active_owner(self) -> bool:
+        """Check the existing authority lock without creating or acquiring it."""
+        try:
+            descriptor = os.open(
+                self.lock_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+            )
+        except OSError:
+            return False
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+            ):
+                return False
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            return False
+        except OSError:
+            return False
+        finally:
+            os.close(descriptor)
+
     def write(self, journal: TransactionJournal) -> None:
         if self._lock_descriptor is None:
             raise JournalError("journal write requires the transaction lock")
@@ -3717,12 +3752,67 @@ def _status_payload(journal: TransactionJournal | None, clock: Clock) -> object:
     }
 
 
+def verified_temporary_automatic_hdr_intent(
+    store: RuntimeStore,
+    instance_provider: InstanceProvider,
+    instance: InstanceIdentity,
+    paths: ConfigPaths,
+    machine: FileSnapshot,
+    override: FileSnapshot,
+    runtime: AutomaticHdrRuntime,
+    clock: Clock,
+) -> AutomaticHdrRuntime | None:
+    """Recognize only a live, unchanged Safe Apply awaiting confirmation."""
+    try:
+        journal = store.read()
+    except MonitorError:
+        return None
+    if (
+        journal is None
+        or journal.state != "temporary-active"
+        or journal.candidate.policy != SAFE_CONFIRMED_POLICY
+        or journal.candidate.automatic_hdr is None
+        or journal.candidate.automatic_hdr != runtime.value
+        or not runtime.explicitly_set
+        or journal.automatic_hdr_intent is None
+        or journal.automatic_hdr_explicit is None
+        or journal.candidate.automatic_hdr == journal.automatic_hdr_intent
+        or journal.instance != instance
+        or journal.deadline_monotonic is None
+        or clock.monotonic() >= journal.deadline_monotonic
+        or journal.persistence_phase != "original"
+        or journal.failure is not None
+        or journal.machine_file.path != str(paths.machine)
+        or journal.override_file.path != str(paths.override)
+        or journal.machine_file != machine
+        or journal.override_file != override
+        or not store.has_active_owner()
+    ):
+        return None
+    try:
+        if (
+            not snapshot_matches(journal.machine_file)
+            or not snapshot_matches(journal.override_file)
+            or store.read() != journal
+            or not store.has_active_owner()
+            or instance_provider.current(instance.signature) != instance
+            or clock.monotonic() >= journal.deadline_monotonic
+        ):
+            return None
+    except MonitorError:
+        return None
+    return AutomaticHdrRuntime(
+        journal.automatic_hdr_intent, journal.automatic_hdr_explicit
+    )
+
+
 def inspect_command(
     environment: Mapping[str, str] = os.environ,
     runner: Runner = run_command,
     instance_provider: InstanceProvider | None = None,
     config_paths: ConfigPaths | None = None,
     edid_reader: Callable[[MonitorState], bytes] = read_connector_edid,
+    clock: Clock | None = None,
 ) -> int:
     signature = environment.get("HYPRLAND_INSTANCE_SIGNATURE", "")
     if SIGNATURE_RE.fullmatch(signature) is None:
@@ -3737,6 +3827,10 @@ def inspect_command(
     paths = config_paths or default_config_paths(environment)
     machine = snapshot_file(paths.machine)
     override = snapshot_file(paths.override)
+    temporary_automatic_hdr_intent = verified_temporary_automatic_hdr_intent(
+        RuntimeStore(root), provider, instance, paths, machine, override,
+        automatic_hdr, clock or SystemClock(),
+    )
     payload = inspection_payload(
         topology,
         machine.content,
@@ -3745,6 +3839,7 @@ def inspect_command(
         automatic_hdr,
         cm_enabled,
         edid_reader,
+        temporary_automatic_hdr_intent,
     )
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return 0

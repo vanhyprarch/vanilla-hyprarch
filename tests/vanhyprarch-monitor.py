@@ -472,6 +472,62 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertEqual(journal.state, "temporary-active")
         return authority, runner, journal
 
+    def begin_automatic_hdr(self, previous: int, candidate: int) -> object:
+        self.machine.write_bytes(
+            monitor.rewrite_automatic_hdr(self.machine.read_bytes(), previous)
+        )
+        authority, _ = self.authority([
+            [output()],
+            option_result("render:cm_auto_hdr", integer=previous, explicit=True),
+            OK,
+            [output()],
+            option_result("render:cm_auto_hdr", integer=candidate, explicit=True),
+        ])
+        journal = authority.begin(
+            monitor.Candidate.safe("DP-1", automatic_hdr=candidate),
+            self.instance.signature,
+        )
+        self.assertEqual(journal.state, "temporary-active")
+        return journal
+
+    def inspect_automatic_hdr(self, value: int) -> dict[str, object]:
+        runner = QueueRunner([
+            [output()],
+            option_result("render:cm_auto_hdr", integer=value, explicit=True),
+            option_result("render:cm_enabled", boolean=True),
+        ])
+        environment = {
+            "HOME": str(self.root / "home"),
+            "XDG_CONFIG_HOME": str(self.config),
+            "XDG_RUNTIME_DIR": str(self.runtime),
+            "HYPRLAND_INSTANCE_SIGNATURE": self.instance.signature,
+        }
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            self.assertEqual(
+                monitor.inspect_command(
+                    environment, runner, self.provider, self.paths,
+                    lambda state: hdr_edid(
+                        model=state.identity.model,
+                        serial=state.identity.serial,
+                    ),
+                    self.clock,
+                ),
+                0,
+            )
+        self.assertEqual(runner.responses, [])
+        self.assertTrue(all("eval" not in call for call in runner.calls))
+        return json.loads(stream.getvalue())["automatic_hdr"]
+
+    def assert_automatic_hdr_mismatch(self, value: int) -> None:
+        inspected = self.inspect_automatic_hdr(value)
+        self.assertEqual(inspected["value"], value)
+        self.assertFalse(inspected["available"])
+        self.assertEqual(
+            inspected["unavailable_reason"],
+            "persistent and effective Automatic HDR policy disagree",
+        )
+
     def test_monitor_json_parsing_and_duplicate_advertised_modes(self) -> None:
         raw = output(
             available=[
@@ -694,6 +750,81 @@ class MonitorBackendTests(unittest.TestCase):
             ],
         )
         self.assertTrue(all("eval" not in call for call in runner.calls))
+
+    def assert_verified_temporary_automatic_hdr(self, previous: int, candidate: int) -> None:
+        self.begin_automatic_hdr(previous, candidate)
+        self.assertIn(
+            f"cm_auto_hdr = {previous}".encode(), self.machine.read_bytes()
+        )
+        inspected = self.inspect_automatic_hdr(candidate)
+        self.assertEqual(inspected["value"], candidate)
+        self.assertTrue(inspected["available"])
+        self.assertIsNone(inspected["unavailable_reason"])
+        self.assertTrue(inspected["explicit"])
+
+    def test_inspect_accepts_verified_temporary_automatic_hdr_off_to_on(self) -> None:
+        self.assert_verified_temporary_automatic_hdr(0, 1)
+
+    def test_inspect_accepts_verified_temporary_automatic_hdr_on_to_off(self) -> None:
+        self.assert_verified_temporary_automatic_hdr(1, 0)
+
+    def test_inspect_automatic_hdr_mismatch_without_transaction_remains_visible(self) -> None:
+        self.machine.write_bytes(
+            monitor.rewrite_automatic_hdr(self.machine.read_bytes(), 0)
+        )
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_with_expired_journal(self) -> None:
+        self.begin_automatic_hdr(0, 1)
+        self.clock.advance(11)
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_without_active_authority(self) -> None:
+        self.begin_automatic_hdr(0, 1)
+        self.store.release()
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_if_authority_exits_during_read(self) -> None:
+        self.begin_automatic_hdr(0, 1)
+        with mock.patch.object(
+            monitor.RuntimeStore, "has_active_owner", side_effect=(True, False)
+        ):
+            self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_with_terminal_or_invalid_journal(self) -> None:
+        active = self.begin_automatic_hdr(0, 1)
+        authority, _ = self.authority([
+            [output()], OK,
+            option_result("render:cm_auto_hdr", integer=0, explicit=True),
+            [output()],
+        ])
+        self.assertEqual(authority.rollback(active.transaction_id).state, "reverted")
+        self.assert_automatic_hdr_mismatch(1)
+        self.store.journal_path.write_text("invalid journal\n", encoding="utf-8")
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_with_wrong_candidate_or_instance(self) -> None:
+        self.begin_automatic_hdr(0, 1)
+        self.assert_automatic_hdr_mismatch(2)
+        self.provider.identity = replace(self.instance, start_time_ticks=9001)
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_with_changed_machine(self) -> None:
+        self.begin_automatic_hdr(0, 1)
+        self.machine.write_bytes(self.machine.read_bytes() + b"-- external edit\n")
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_with_changed_override(self) -> None:
+        self.begin_automatic_hdr(0, 1)
+        self.override.write_bytes(self.override.read_bytes() + b"-- external edit\n")
+        self.assert_automatic_hdr_mismatch(1)
+
+    def test_inspect_automatic_hdr_mismatch_with_unrelated_transaction(self) -> None:
+        self.machine.write_bytes(
+            monitor.rewrite_automatic_hdr(self.machine.read_bytes(), 0)
+        )
+        self.begin_success()
+        self.assert_automatic_hdr_mismatch(1)
 
     def test_fallback_inspection_is_read_only_and_publishes_live_controls(self) -> None:
         original = fallback_configuration()
