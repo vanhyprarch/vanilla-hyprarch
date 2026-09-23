@@ -552,6 +552,7 @@ class MonitorBackendTests(unittest.TestCase):
             {"width": 3840, "height": 2160, "refresh_millihz": 60000},
         )
         self.assertEqual(inspected["scale_millionths"], 1_250_000)
+        self.assertFalse(inspected["scale_automatic"])
         self.assertEqual(inspected["effective_bitdepth"], 10)
         self.assertEqual(inspected["bitdepth_choices"], [8, 10])
         modes = inspected["available_modes"]
@@ -730,6 +731,7 @@ class MonitorBackendTests(unittest.TestCase):
             "width": 2560, "height": 1440, "refresh_millihz": 59950,
         })
         self.assertEqual(inspected["scale_millionths"], 1_250_000)
+        self.assertTrue(inspected["scale_automatic"])
         self.assertEqual(inspected["bitdepth_choices"], [8, 10])
         self.assertTrue(inspected["hdr"]["available"])
         self.assertEqual(self.machine.read_bytes(), original)
@@ -1605,6 +1607,37 @@ class MonitorBackendTests(unittest.TestCase):
         self.assert_failed_apply_rolls_back(
             output(width=1920, height=1080, refresh=60.0, scale=1.5)
         )
+
+    def test_automatic_scale_may_recalculate_during_mode_apply(self) -> None:
+        self.machine.write_bytes(
+            machine_configuration().replace(
+                b"scale = vanhyprarchMonitorScale", b'scale = "auto"'
+            )
+        )
+        authority, runner = self.authority([
+            [output()],
+            OK,
+            [output(width=1920, height=1080, refresh=60.0, scale=1.333333)],
+        ])
+        journal = authority.begin(self.candidate, self.instance.signature)
+        self.assertEqual(journal.state, "temporary-active", journal.failure)
+        self.assertEqual(len([call for call in runner.calls if "eval" in call]), 1)
+
+    def test_explicit_scale_change_from_automatic_remains_strict(self) -> None:
+        self.machine.write_bytes(
+            machine_configuration().replace(
+                b"scale = vanhyprarchMonitorScale", b'scale = "auto"'
+            )
+        )
+        candidate = monitor.Candidate.scale("DP-1", "1.50")
+        wrong = output(scale=1.333333)
+        authority, _ = self.authority(
+            [[output()], OK, [wrong], [wrong], [wrong], OK, [output()]],
+            persister=monitor.MachineConfigPersister(RecordingVerifier()),
+        )
+        journal = authority.begin(candidate, self.instance.signature)
+        self.assertEqual(journal.state, "reverted", journal.failure)
+        self.assertIn("requested scale is not active", journal.failure)
 
     def test_failed_apply_command_still_attempts_bounded_rollback(self) -> None:
         rejected = monitor.CommandResult(1, "", "invalid monitor rule")

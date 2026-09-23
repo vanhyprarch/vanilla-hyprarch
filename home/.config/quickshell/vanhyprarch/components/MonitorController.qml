@@ -150,6 +150,8 @@ Scope {
                     || !Array.isArray(item.available_modes)
                     || !Number.isInteger(item.scale_millionths)
                     || item.scale_millionths <= 0
+                    || (item.scale_automatic !== undefined
+                        && typeof item.scale_automatic !== "boolean")
                     || (item.effective_bitdepth !== null
                         && [8, 10].indexOf(item.effective_bitdepth) < 0)
                     || !Array.isArray(item.bitdepth_choices)
@@ -201,6 +203,7 @@ Scope {
                 current_mode: currentMode,
                 available_modes: modes,
                 scale_millionths: item.scale_millionths,
+                scale_automatic: item.scale_automatic === true,
                 effective_bitdepth: item.effective_bitdepth,
                 bitdepth_choices: choices,
                 effective: item.effective,

@@ -870,6 +870,9 @@ def inspection_payload(
                 },
                 "available_modes": modes,
                 "scale_millionths": state.scale_millionths,
+                "scale_automatic": (
+                    profile is not None and profile.scale_value == '"auto"'
+                ),
                 "effective_bitdepth": state.effective_bitdepth,
                 "bitdepth_choices": bitdepth_choices,
                 "effective": {
@@ -1225,6 +1228,7 @@ def verify_candidate_readback(
     identity: PhysicalIdentity,
     cm_intent: str = "srgb",
     icc_intent: str = "",
+    scale_compositor_owned: bool = False,
 ) -> None:
     before = snapshot.by_connector()
     after = readback.by_connector()
@@ -1268,7 +1272,10 @@ def verify_candidate_readback(
             SCALE_TOLERANCE * 1_000_000
         ):
             raise ValidationError("requested scale is not active")
-    elif target.scale_millionths != original.scale_millionths:
+    elif (
+        not scale_compositor_owned
+        and target.scale_millionths != original.scale_millionths
+    ):
         raise ValidationError("unowned scale changed during apply")
     _verify_color_transition(original, target, candidate, cm_intent, icc_intent)
 
@@ -3057,7 +3064,20 @@ class TransactionAuthority:
             journal.target_identity,
             journal.cm_intent,
             journal.icc_intent,
+            scale_compositor_owned=(
+                TransactionAuthority._scale_is_compositor_owned(journal)
+            ),
         )
+
+    @staticmethod
+    def _scale_is_compositor_owned(journal: TransactionJournal) -> bool:
+        candidate = journal.candidate
+        if candidate.scale_millionths is not None:
+            return False
+        profile = require_explicit_profile(
+            journal.machine_file.content, candidate.connector
+        )
+        return profile.scale_value == '"auto"'
 
     @staticmethod
     def _candidate_has_monitor_mutation(candidate: Candidate) -> bool:

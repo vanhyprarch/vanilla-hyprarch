@@ -367,18 +367,26 @@ DockPopup {
             : root.monitorDescription
     }
 
-    function scaleText(): string {
-        if (root.inspectedOutput === null)
+    function scaleTextFor(output: var): string {
+        if (output === null || output === undefined)
             return "—"
-        const scale = root.inspectedOutput.scale_millionths / 1000000
-        return isFinite(scale) && scale > 0 ? root.formatNumber(scale, 2) + "×" : "—"
+        const scale = output.scale_millionths / 1000000
+        return isFinite(scale) && scale > 0 ? root.formatNumber(scale, 6) + "×" : "—"
+    }
+
+    function scaleText(): string {
+        return root.scaleTextFor(root.inspectedOutput)
+    }
+
+    function scaleMatchesOutput(output: var, preset: real): bool {
+        if (output === null || output === undefined || output.scale_automatic)
+            return false
+        const currentScale = output.scale_millionths / 1000000
+        return isFinite(currentScale) && Math.abs(currentScale - preset) < 0.01
     }
 
     function scaleMatches(preset: real): bool {
-        if (root.inspectedOutput === null)
-            return false
-        const currentScale = root.inspectedOutput.scale_millionths / 1000000
-        return isFinite(currentScale) && Math.abs(currentScale - preset) < 0.01
+        return root.scaleMatchesOutput(root.inspectedOutput, preset)
     }
 
     function requestScalePreset(preset: string) {

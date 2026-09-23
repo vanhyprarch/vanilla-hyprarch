@@ -53,6 +53,7 @@ ShellRoot {
                     { width: 3840, height: 2160, refresh_millihz: 60000 }
                 ],
                 scale_millionths: 1250000,
+                scale_automatic: false,
                 effective_bitdepth: 10,
                 bitdepth_choices: [8, 10],
                 effective: {
@@ -78,6 +79,7 @@ ShellRoot {
                 current_mode: null,
                 available_modes: [],
                 scale_millionths: 1000000,
+                scale_automatic: false,
                 effective_bitdepth: 8,
                 bitdepth_choices: [],
                 effective: {
@@ -106,6 +108,7 @@ ShellRoot {
                     { width: 1920, height: 1080, refresh_millihz: 60000 }
                 ],
                 scale_millionths: 1000000,
+                scale_automatic: false,
                 effective_bitdepth: 8,
                 bitdepth_choices: [8, 10],
                 effective: {

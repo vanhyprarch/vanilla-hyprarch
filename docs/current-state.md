@@ -1005,8 +1005,12 @@ deferred. See [Monitor Safe Apply backend](monitor-safe-apply.md).
 Fresh create-once machine state uses Scale 1, omits forced-HDR `cm` intent so
 Forced HDR is Off, and carries the strict Vanilla-owned
 `render:cm_auto_hdr = 0` block so Automatic HDR is Off. Existing supported
-`scale = "auto"` state remains readable and replaceable. Global Text Size still
-uses the helper-owned missing-preference default of 12 pixels.
+`scale = "auto"` state remains readable and replaceable. Its effective numeric
+Scale may be recalculated by Hyprland during another monitor change without
+being mistaken for failed readback, while explicit Scale remains strict. The
+panel displays that effective value without selecting a Vanilla preset until
+the user explicitly chooses one. Global Text Size still uses the helper-owned
+missing-preference default of 12 pixels.
 
 The published schema-v5/protocol-v4/inspect-v3 HDR implementation extends Safe
 Apply with per-monitor

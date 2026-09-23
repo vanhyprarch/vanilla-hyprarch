@@ -3,6 +3,8 @@ import Quickshell
 import "components"
 
 ShellRoot {
+    id: root
+
     function require(value: bool, message: string): void {
         if (!value) {
             console.error("MONITOR_CONFIRMATION_LAYOUT_FAIL: " + message)
@@ -67,6 +69,14 @@ ShellRoot {
         id: focusCoordinator
     }
 
+    QtObject {
+        id: textSizeController
+        property var values: [10, 11, 12, 13, 14]
+        property int baseSize: 12
+        property bool busy: false
+        function requestSize(value: int): bool { return true }
+    }
+
     MonitorConfirmationPanel {
         id: confirmationPanel
         controller: monitorController
@@ -80,6 +90,17 @@ ShellRoot {
         dockWidth: 0
         width: implicitWidth
         height: implicitHeight
+    }
+
+    MonitorPanel {
+        id: scaleTestPanel
+        theme: shellTheme
+        metrics: visualMetrics
+        targetScreen: null
+        focusCoordinator: focusCoordinator
+        textSizeController: textSizeController
+        monitorController: monitorController
+        visible: false
     }
 
     Component {
@@ -148,6 +169,29 @@ ShellRoot {
             require(revertButton.width + 0.5 >= Math.max(revertLabel.implicitWidth,
                     keepLabel.implicitWidth) + visualMetrics.rowSidePadding * 2,
                 "button labels do not have deliberate horizontal padding")
+            const automaticArbitrary = {
+                scale_millionths: 1333333, scale_automatic: true
+            }
+            require(scaleTestPanel.scaleTextFor(automaticArbitrary) === "1.333333×",
+                "automatic Scale did not display its effective numeric value")
+            for (const preset of [1, 1.25, 1.5, 2])
+                require(!scaleTestPanel.scaleMatchesOutput(
+                    automaticArbitrary, preset),
+                    "automatic arbitrary Scale selected a Vanilla preset")
+            const automaticPreset = {
+                scale_millionths: 1250000, scale_automatic: true
+            }
+            require(scaleTestPanel.scaleTextFor(automaticPreset) === "1.25×",
+                "automatic preset-valued Scale did not display its effective value")
+            for (const preset of [1, 1.25, 1.5, 2])
+                require(!scaleTestPanel.scaleMatchesOutput(automaticPreset, preset),
+                    "automatic preset-valued Scale selected a Vanilla preset")
+            const explicitPreset = {
+                scale_millionths: 1250000, scale_automatic: false
+            }
+            require(scaleTestPanel.scaleMatchesOutput(explicitPreset, 1.25)
+                    && !scaleTestPanel.scaleMatchesOutput(explicitPreset, 1.5),
+                "explicit Scale did not select exactly its matching preset")
             monitorController.transactionCandidate = ({
                 connector: "DP-1",
                 mode: {

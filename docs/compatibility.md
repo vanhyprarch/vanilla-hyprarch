@@ -155,7 +155,14 @@ is uniquely nearest; ties between adjacent advertised entries fail closed.
 Catalogue comparison deduplicates and sorts complete resolution/refresh tuples,
 because upstream JSON list order and duplicate multiplicity carry no selectable
 identity. Scale preflight requires the 1/120 grid and readback within one
-millionth.
+millionth. An exact profile with `scale = "auto"` delegates its effective
+numeric Scale to Hyprland, so a non-Scale monitor transaction permits only that
+target's effective Scale to be recalculated; explicit Scale profiles, explicit
+Scale transactions, other outputs, and every other protected field remain
+strict. Inspection publishes that configured ownership separately from the
+effective number so the panel never presents a compositor-owned value as a
+selected Vanilla preset. Retest this exception if Hyprland changes automatic
+Scale ownership or monitor readback semantics.
 
 For bitdepth, the exact 0.56.2
 [Lua binding](https://github.com/hyprwm/Hyprland/blob/v0.56.2/src/config/lua/bindings/LuaBindingsConfigRules.cpp)
