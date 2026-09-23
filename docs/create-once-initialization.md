@@ -111,7 +111,11 @@ Power & Idle remains authoritative for `power-idle.conf` and the generated
 `hypr/vanhyprarch-idle.conf`. It creates the established disabled-by-default
 durable preference only when absent, renders and validates its generated
 projection offline, and never contacts or restarts the live hypridle process.
-Existing valid preferences are preserved; malformed state fails closed.
+Existing valid preferences are preserved. Both owner hooks use the validated
+session Caffeine marker when comparing or generating the fragment, so a
+same-session update preserves Caffeine ON without changing durable preferences.
+Malformed runtime state or genuine fragment drift fails closed during the
+read-only status check.
 
 Text Size, Bluetooth power preference, and launcher state already have safe
 lazy defaults and are intentionally not initialized. Phase 3 never changes a

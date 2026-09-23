@@ -90,7 +90,12 @@ them, it compares the deployed fragment with the expected fragment for current
 preferences and runtime Caffeine state; the non-operational effect annotation
 is ignored because effect-only changes deliberately do not apply the fragment.
 An incoherent fragment produces an error instead of a misleading logical
-listener count. `configure`
+listener count. The read-only `initialize-status` owner check uses the same
+validated session marker and exact projection while sharing the existing
+backend lock, so Caffeine ON does not appear as configuration drift. An invalid
+marker or a genuine fragment mismatch still fails closed. `initialize-defaults`
+also retains the current Caffeine projection during a same-session update;
+only `session-start` resets Caffeine OFF for a new session. `configure`
 updates all durable fields as one validated transaction; `set` changes one
 field and rejects the result if it breaks ordering or lock ownership. `apply`
 regenerates runtime configuration without changing preferences. Effect-only

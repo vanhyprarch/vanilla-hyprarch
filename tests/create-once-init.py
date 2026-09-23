@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -602,6 +603,136 @@ class ActualManifestTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             self.initialize()
         self.assertEqual(power.read_text(encoding="utf-8"), "invalid\n")
+
+    def test_power_idle_caffeine_projection_preserved_by_owner_hooks(self) -> None:
+        self.initialize()
+        command = self.fixture.home / ".local/bin/vanhyprarch-idle"
+        preference = self.fixture.config / "vanhyprarch/power-idle.conf"
+        fragment = self.fixture.config / "hypr/vanhyprarch-idle.conf"
+        marker = self.fixture.runtime / "vanhyprarch/caffeine"
+        preference_before = preference.read_bytes()
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            self.assertTrue(any(item.identifier == "power-idle-defaults" for item in self.initializer().plan()))
+        self.validate()
+
+        capability = next(
+            line.split("capability=", 1)[1]
+            for line in fragment.read_text(encoding="utf-8").splitlines()
+            if line.startswith("# Effective:")
+        )
+        rendered = subprocess.run(
+            [command, "render", "never", "never", "never", "none", "on", "colormix", capability],
+            env=self.fixture.target.environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        fragment.write_text(rendered.stdout, encoding="utf-8")
+        marker.write_text("on\n", encoding="utf-8")
+        marker.chmod(0o600)
+        fragment_before = (fragment.stat().st_ino, fragment.read_bytes())
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            self.initializer().plan()
+        self.assertEqual((fragment.stat().st_ino, fragment.read_bytes()), fragment_before)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "on\n")
+        self.assertEqual(preference.read_bytes(), preference_before)
+        self.validate()
+        self.initialize()
+        self.assertEqual(marker.read_text(encoding="utf-8"), "on\n")
+        self.assertEqual((fragment.stat().st_ino, fragment.read_bytes()), fragment_before)
+        self.assertEqual(preference.read_bytes(), preference_before)
+
+        fragment.unlink()
+        regenerated = subprocess.run(
+            [command, "initialize-defaults"],
+            env=self.fixture.target.environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(regenerated.returncode, 0, regenerated.stderr)
+        self.assertEqual(fragment.read_bytes(), fragment_before[1])
+        self.assertEqual(marker.read_text(encoding="utf-8"), "on\n")
+        self.validate()
+
+    def test_power_idle_initialize_status_waits_for_backend_lock(self) -> None:
+        self.initialize()
+        command = self.fixture.home / ".local/bin/vanhyprarch-idle"
+        lock = self.fixture.runtime / "vanhyprarch/idle.lock"
+        with lock.open("rb") as descriptor:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            process = subprocess.Popen(
+                [command, "initialize-status"],
+                env=self.fixture.target.environment(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                time.sleep(0.1)
+                self.assertIsNone(process.poll())
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            output, error = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 0, error)
+        self.assertIn("fragment=valid\n", output)
+
+    def test_power_idle_owner_hooks_reject_drift_and_invalid_caffeine(self) -> None:
+        self.initialize()
+        command = self.fixture.home / ".local/bin/vanhyprarch-idle"
+        preference = self.fixture.config / "vanhyprarch/power-idle.conf"
+        fragment = self.fixture.config / "hypr/vanhyprarch-idle.conf"
+        marker = self.fixture.runtime / "vanhyprarch/caffeine"
+        preference_before = preference.read_bytes()
+        for caffeine in ("off", "on"):
+            if caffeine == "on":
+                marker.write_text("on\n", encoding="utf-8")
+                marker.chmod(0o600)
+                fragment.write_text(
+                    fragment.read_text(encoding="utf-8").replace(
+                        "# Caffeine: off\n",
+                        "# Caffeine: on\n# Automatic Power & Idle actions are disabled.\n",
+                    ),
+                    encoding="utf-8",
+                )
+            fragment_before = fragment.read_bytes()
+            fragment.write_bytes(fragment_before + b"# drift\n")
+            with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+                with self.assertRaisesRegex(ConflictError, "deployed hypridle configuration"):
+                    self.initializer().plan()
+            fragment.write_bytes(fragment_before)
+            preference.write_text(
+                "version=2\nscreensaver=never\ndisplay=300\nsuspend=never\nlock=display\neffect=colormix\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConflictError, "deployed hypridle configuration"):
+                self.validate()
+            preference.write_bytes(preference_before)
+            self.validate()
+
+        marker.write_text("invalid\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            with self.assertRaisesRegex(ConflictError, "invalid runtime state"):
+                self.initializer().plan()
+        marker.unlink()
+        marker.symlink_to(preference)
+        with self.assertRaisesRegex(ConflictError, "must not be a symbolic link"):
+            self.validate()
+        rejected = subprocess.run(
+            [command, "initialize-defaults"],
+            env=self.fixture.target.environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("must not be a symbolic link", rejected.stderr)
+        self.assertEqual(preference.read_bytes(), preference_before)
+        self.assertEqual(fragment.read_bytes(), fragment_before)
 
     def test_appearance_abrupt_seed_crashes_recover(self) -> None:
         command = self.fixture.home / ".local/bin/vanhyprarch-appearance"

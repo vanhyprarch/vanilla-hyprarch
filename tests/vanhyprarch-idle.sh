@@ -104,6 +104,47 @@ require_line "$status" 'effective_listeners=3'
 grep -Fqx 'version=1' "$preferences" ||
     fail 'observational status rewrote the legacy preference file'
 
+require_line "$("$idle" initialize-status)" 'fragment=valid'
+"$idle" render 120 300 600 display on colormix > "$managed_fragment"
+printf 'on\n' > "$XDG_RUNTIME_DIR/vanhyprarch/caffeine"
+require_line "$("$idle" initialize-status)" 'fragment=valid'
+require_line "$("$idle" status)" 'caffeine=on'
+cp "$preferences" "$test_dir/initialization-preferences"
+sed 's/display=300/display=310/' "$preferences" > "$test_dir/changed-preferences"
+cp "$test_dir/changed-preferences" "$preferences"
+reject_command "$idle" initialize-status
+grep -Fq 'deployed hypridle configuration does not match current Power & Idle state' \
+    "$test_dir/rejected.err" || fail 'Caffeine-on initialization missed changed preferences'
+cp "$test_dir/initialization-preferences" "$preferences"
+sed 's/# Caffeine: on/# Caffeine: off/' "$managed_fragment" > "$test_dir/drifted-fragment"
+cp "$test_dir/drifted-fragment" "$managed_fragment"
+reject_command "$idle" initialize-status
+grep -Fq 'deployed hypridle configuration does not match current Power & Idle state' \
+    "$test_dir/rejected.err" || fail 'Caffeine-on initialization accepted fragment drift'
+"$idle" render 120 300 600 display on colormix > "$managed_fragment"
+printf 'invalid\n' > "$XDG_RUNTIME_DIR/vanhyprarch/caffeine"
+reject_command "$idle" initialize-status
+grep -Fq 'contains invalid runtime state' "$test_dir/rejected.err" ||
+    fail 'initialization accepted invalid Caffeine marker'
+rm -f "$XDG_RUNTIME_DIR/vanhyprarch/caffeine"
+ln -s "$test_dir/initialization-preferences" \
+    "$XDG_RUNTIME_DIR/vanhyprarch/caffeine"
+reject_command "$idle" initialize-status
+grep -Fq 'must not be a symbolic link' "$test_dir/rejected.err" ||
+    fail 'initialization accepted symlinked Caffeine marker'
+rm -f "$XDG_RUNTIME_DIR/vanhyprarch/caffeine"
+reject_command "$idle" initialize-status
+grep -Fq 'deployed hypridle configuration does not match current Power & Idle state' \
+    "$test_dir/rejected.err" || fail 'Caffeine-off initialization accepted on fragment'
+"$idle" render 120 300 600 display off colormix > "$managed_fragment"
+require_line "$("$idle" initialize-status)" 'fragment=valid'
+cp "$test_dir/changed-preferences" "$preferences"
+reject_command "$idle" initialize-status
+grep -Fq 'deployed hypridle configuration does not match current Power & Idle state' \
+    "$test_dir/rejected.err" || fail 'Caffeine-off initialization missed changed preferences'
+cp "$test_dir/initialization-preferences" "$preferences"
+require_line "$("$idle" initialize-status)" 'fragment=valid'
+
 for effect in colormix matrix doom gameoflife; do
     "$idle" set effect "$effect" >/dev/null
     require_line "$("$idle" status)" "effect=$effect"
@@ -900,9 +941,17 @@ require_line "$(cat "$session_fragment")" '# Caffeine: off'
 
 run_caffeine_transaction on > "$session_root/caffeine-explicit-on.out"
 require_line "$(cat "$session_root/caffeine-explicit-on.out")" 'caffeine on'
+run_caffeine_transaction on > "$session_root/caffeine-reapply-on.out"
+require_line "$(cat "$session_root/caffeine-reapply-on.out")" 'caffeine on'
+require_line "$(cat "$session_runtime/vanhyprarch/caffeine")" 'on'
+require_line "$(cat "$session_fragment")" '# Caffeine: on'
+[ "$(grep -c '^listener {$' "$session_fragment" || true)" -eq 0 ] ||
+    fail 'Caffeine-on reapply restored automatic listeners'
 run_caffeine_transaction off > "$session_root/caffeine-explicit-off.out"
 require_line "$(cat "$session_root/caffeine-explicit-off.out")" 'caffeine off'
-[ "$(wc -l < "$qs_log")" -eq 4 ] ||
+[ "$(grep -c '^listener {$' "$session_fragment")" -eq 3 ] ||
+    fail 'Caffeine-off reapply did not restore durable listeners'
+[ "$(wc -l < "$qs_log")" -eq 5 ] ||
     fail 'explicit Caffeine ON/OFF did not notify exactly once each'
 
 run_caffeine_transaction on false unavailable \
@@ -911,13 +960,13 @@ require_line "$(cat "$session_root/caffeine-unavailable.out")" 'caffeine on'
 run_caffeine_transaction off false nonzero \
     > "$session_root/caffeine-nonzero.out"
 require_line "$(cat "$session_root/caffeine-nonzero.out")" 'caffeine off'
-[ "$(wc -l < "$qs_log")" -eq 6 ] ||
+[ "$(wc -l < "$qs_log")" -eq 7 ] ||
     fail 'failed IPC calls changed backend success or notification count'
 
 run_caffeine_transaction on false missing \
     > "$session_root/caffeine-missing.out"
 require_line "$(cat "$session_root/caffeine-missing.out")" 'caffeine on'
-[ "$(wc -l < "$qs_log")" -eq 6 ] ||
+[ "$(wc -l < "$qs_log")" -eq 7 ] ||
     fail 'missing qs executable unexpectedly ran a notification'
 
 hang_started=$(date +%s%N)
@@ -927,10 +976,10 @@ hang_milliseconds=$(((hang_finished - hang_started) / 1000000))
 require_line "$(cat "$session_root/caffeine-hang.out")" 'caffeine off'
 [ "$hang_milliseconds" -lt 2500 ] ||
     fail "hung IPC was not bounded: ${hang_milliseconds}ms"
-[ "$(wc -l < "$qs_log")" -eq 7 ] ||
+[ "$(wc -l < "$qs_log")" -eq 8 ] ||
     fail 'hung IPC changed backend success or notification count'
 [ "$(grep -Fc 'argv=ipc -c vanhyprarch call vanhyprarch.idle refresh ' \
-    "$qs_log")" -eq 7 ] || fail 'IPC notification carried unexpected arguments'
+    "$qs_log")" -eq 8 ] || fail 'IPC notification carried unexpected arguments'
 if grep -Fv 'lock=released' "$qs_log" >/dev/null; then
     fail 'IPC notification ran before the backend lock was released'
 fi

@@ -150,6 +150,46 @@ prepare_initialization_status_paths()
     managed_fragment=$hypr_dir/$managed_fragment_name
     screensaver_manager=$HOME/.local/bin/vanhyprarch-screensaver
     current_uid=$(/usr/bin/id -u) || fail 'could not determine the current user ID'
+
+    caffeine=off
+    initialization_lock_absent=false
+    [ -n "${XDG_RUNTIME_DIR:-}" ] || return 0
+    case $XDG_RUNTIME_DIR in
+        /*) ;;
+        *) fail 'XDG_RUNTIME_DIR must be an absolute path' ;;
+    esac
+    [ -d "$XDG_RUNTIME_DIR" ] ||
+        fail 'XDG_RUNTIME_DIR is not a directory'
+    runtime_dir=$XDG_RUNTIME_DIR/$runtime_subdir
+    caffeine_file=$runtime_dir/$caffeine_name
+    backend_lock=$runtime_dir/$lock_name
+    if [ ! -e "$runtime_dir" ] && [ ! -L "$runtime_dir" ]; then
+        initialization_lock_absent=true
+        return 0
+    fi
+    [ -d "$runtime_dir" ] && [ ! -L "$runtime_dir" ] ||
+        fail "$runtime_dir is not a safe directory"
+    [ "$(stat -c '%u' -- "$runtime_dir")" = "$current_uid" ] ||
+        fail "$runtime_dir is not owned by the current user"
+    if [ ! -e "$backend_lock" ] && [ ! -L "$backend_lock" ]; then
+        initialization_lock_absent=true
+        [ ! -e "$caffeine_file" ] && [ ! -L "$caffeine_file" ] ||
+            fail 'Caffeine marker exists without the backend lock'
+        return 0
+    fi
+    [ -f "$backend_lock" ] && [ ! -L "$backend_lock" ] &&
+        [ "$(stat -c '%u' -- "$backend_lock")" = "$current_uid" ] ||
+        fail "$backend_lock is not a safe regular file"
+    exec 8<"$backend_lock" || fail "could not open $backend_lock"
+    flock -s 8 || fail "could not lock $backend_lock"
+    load_caffeine
+}
+
+validate_initialization_lock_absence()
+{
+    [ "$initialization_lock_absent" = true ] || return 0
+    [ ! -e "$backend_lock" ] && [ ! -L "$backend_lock" ] ||
+        fail 'Power & Idle backend lock appeared during inspection'
 }
 
 load_screensaver_capability()
@@ -1035,6 +1075,7 @@ command_initialize_status()
 {
     [ "$#" -eq 0 ] || fail 'initialize-status takes no arguments'
     if [ ! -e "$preferences_file" ] && [ ! -L "$preferences_file" ]; then
+        validate_initialization_lock_absence
         printf 'preference=missing\nfragment=deferred\n'
         return 0
     fi
@@ -1043,18 +1084,20 @@ command_initialize_status()
     load_preferences
     validate_preferences
     load_screensaver_capability
-    caffeine=off
     if [ ! -e "$managed_fragment" ] && [ ! -L "$managed_fragment" ]; then
+        validate_initialization_lock_absence
         printf 'preference=initialized\nfragment=missing\n'
         return 0
     fi
     validate_fragment_coherence
+    validate_initialization_lock_absence
     printf 'preference=initialized\nfragment=valid\n'
 }
 
 command_initialize_defaults()
 {
     [ "$#" -eq 0 ] || fail 'initialize-defaults takes no arguments'
+    load_caffeine
     preferences_created=false
     load_preferences
     validate_preferences
@@ -1066,7 +1109,6 @@ command_initialize_defaults()
         validate_preferences
     fi
     load_screensaver_capability
-    caffeine=off
     initialize_generated_fragment
     printf 'preference=%s\nfragment=%s\n' \
         "$([ "$preferences_created" = true ] && printf created || printf preserved)" \
