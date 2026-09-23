@@ -74,6 +74,29 @@ class ResponsiveShellStaticTests(unittest.TestCase):
         self.assertIn("Flickable {\n            id: dockSystemRegion", shell)
         self.assertIn("boundsBehavior: Flickable.StopAtBounds", shell)
 
+    def test_launcher_popup_anchors_project_reactive_flickable_geometry(self) -> None:
+        launchers = self.read("components/Launchers.qml")
+        self.assertIn(
+            "y: root.y + launcherViewport.y + content.y + addButton.y\n"
+            "            - launcherViewport.contentY",
+            launchers,
+        )
+        self.assertIn(
+            "? root.y + launcherViewport.y + content.y\n"
+            "                + root.contextMenuSourceAnchor.y"
+            " - launcherViewport.contentY",
+            launchers,
+        )
+        self.assertNotIn("mapToItem(parent, 0, 0).y", launchers)
+
+    def test_app_picker_uses_context_menu_top_alignment(self) -> None:
+        app_picker = self.read("components/AppPicker.qml")
+        context_menu = self.read("components/LauncherContextMenu.qml")
+        for source in (app_picker, context_menu):
+            self.assertIn("property int popupVerticalOffset: 4", source)
+            self.assertIn("alignToAnchorTop: true", source)
+            self.assertIn("anchorTopOffset: root.popupVerticalOffset", source)
+
     def test_all_tall_system_panels_share_scrollable_surface(self) -> None:
         for name in (
             "AudioPanel.qml",

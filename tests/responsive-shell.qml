@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
 import "../home/.config/quickshell/vanhyprarch/components"
+import "../home/.config/quickshell/vanhyprarch/components/DockPopupGeometry.js" as DockGeometry
 
 TestCase {
     id: testCase
@@ -115,6 +116,81 @@ TestCase {
         }
     }
 
+    Item {
+        id: launcherAnchorFixture
+
+        x: 80
+        y: 160
+        width: 60
+        height: 480
+        property real preferredContentCenterY: height / 2
+        property Item contextSource: firstLauncher
+
+        Flickable {
+            id: anchorViewport
+
+            y: 8
+            width: parent.width
+            height: parent.height - 16
+            contentWidth: width
+            contentHeight: Math.max(height, anchorContent.implicitHeight)
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: anchorContent
+
+                y: implicitHeight >= anchorViewport.height ? 0
+                    : Math.max(0, Math.min(
+                        anchorViewport.height - implicitHeight,
+                        launcherAnchorFixture.preferredContentCenterY
+                            - implicitHeight / 2))
+                width: anchorViewport.width
+                spacing: 4
+
+                Item {
+                    id: firstLauncher
+                    width: 40
+                    height: 40
+                }
+
+                Item {
+                    id: fixtureAddButton
+                    width: 40
+                    height: 40
+                }
+
+                Item {
+                    id: secondLauncher
+                    width: 40
+                    height: 40
+                }
+            }
+        }
+
+        Item {
+            id: appPickerAnchor
+
+            parent: launcherAnchorFixture.parent
+            y: launcherAnchorFixture.y + anchorViewport.y + anchorContent.y
+                + fixtureAddButton.y - anchorViewport.contentY
+            width: 40
+            height: 40
+        }
+
+        Item {
+            id: contextMenuAnchor
+
+            parent: launcherAnchorFixture.parent
+            y: launcherAnchorFixture.contextSource
+                ? launcherAnchorFixture.y + anchorViewport.y + anchorContent.y
+                    + launcherAnchorFixture.contextSource.y - anchorViewport.contentY
+                : 0
+            width: 40
+            height: launcherAnchorFixture.contextSource
+                ? launcherAnchorFixture.contextSource.height : 40
+        }
+    }
+
     ScrollablePanelSurface {
         id: largePanel
         x: 500
@@ -191,6 +267,85 @@ TestCase {
         backgroundDismissCount = 0
         controlActivationCount = 0
         fixturePanelOpen = false
+    }
+
+    function init() {
+        launcherAnchorFixture.height = 480
+        firstLauncher.height = 40
+        anchorViewport.contentY = 0
+        launcherAnchorFixture.contextSource = firstLauncher
+    }
+
+    function verifyAnchorMatchesSource(anchor, source) {
+        tryVerify(function() {
+            return Math.abs(anchor.y
+                - source.mapToItem(anchor.parent, 0, 0).y) < 0.001
+        })
+    }
+
+    function test_appPicker_anchor_initial_wide_placement() {
+        verify(anchorContent.y > 0, "launcher fixture is not centered")
+        verifyAnchorMatchesSource(appPickerAnchor, fixtureAddButton)
+        compare(appPickerAnchor.y, launcherAnchorFixture.y + anchorViewport.y
+            + anchorContent.y + fixtureAddButton.y)
+        const topMargin = DockGeometry.alignedTopMargin(appPickerAnchor.y,
+            4, 360, 1728, 12)
+        compare(topMargin, appPickerAnchor.y - 4)
+        verify(topMargin !== DockGeometry.aboveMargin(appPickerAnchor.y,
+            appPickerAnchor.height, -2, 360, 1728, 12),
+            "picker still uses bottom alignment")
+    }
+
+    function test_appPicker_anchor_tracks_responsive_relayout() {
+        const initialY = appPickerAnchor.y
+        launcherAnchorFixture.height = 260
+        verifyAnchorMatchesSource(appPickerAnchor, fixtureAddButton)
+        verify(appPickerAnchor.y !== initialY,
+            "recentered launcher did not move the picker anchor")
+
+        launcherAnchorFixture.height = 100
+        verifyAnchorMatchesSource(appPickerAnchor, fixtureAddButton)
+        compare(anchorContent.y, 0)
+    }
+
+    function test_appPicker_anchor_tracks_scroll() {
+        launcherAnchorFixture.height = 100
+        anchorViewport.contentY = 20
+        compare(anchorViewport.contentY, 20)
+        verifyAnchorMatchesSource(appPickerAnchor, fixtureAddButton)
+    }
+
+    function test_popup_anchors_track_launcher_position_changes() {
+        launcherAnchorFixture.contextSource = secondLauncher
+        const initialPickerY = appPickerAnchor.y
+        const initialContextY = contextMenuAnchor.y
+        firstLauncher.height = 60
+        tryVerify(function() {
+            return appPickerAnchor.y !== initialPickerY
+                && contextMenuAnchor.y !== initialContextY
+        })
+        verifyAnchorMatchesSource(appPickerAnchor, fixtureAddButton)
+        verifyAnchorMatchesSource(contextMenuAnchor, secondLauncher)
+    }
+
+    function test_context_menu_anchor_tracks_source_and_retargeting() {
+        verifyAnchorMatchesSource(contextMenuAnchor, firstLauncher)
+        launcherAnchorFixture.contextSource = secondLauncher
+        verifyAnchorMatchesSource(contextMenuAnchor, secondLauncher)
+        compare(contextMenuAnchor.height, secondLauncher.height)
+        launcherAnchorFixture.contextSource = null
+        compare(contextMenuAnchor.y, 0)
+    }
+
+    function test_context_menu_anchor_tracks_relayout_and_scroll() {
+        launcherAnchorFixture.contextSource = secondLauncher
+        launcherAnchorFixture.height = 260
+        verifyAnchorMatchesSource(contextMenuAnchor, secondLauncher)
+
+        launcherAnchorFixture.height = 100
+        anchorViewport.contentY = 20
+        compare(anchorViewport.contentY, 20)
+        verifyAnchorMatchesSource(contextMenuAnchor, secondLauncher)
     }
 
     function test_empty_region_dismisses_without_swallowing_controls() {

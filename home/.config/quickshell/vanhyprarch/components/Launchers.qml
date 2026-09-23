@@ -490,7 +490,8 @@ Item {
 
         parent: root.parent
         anchors.horizontalCenter: parent.horizontalCenter
-        y: addButton.mapToItem(parent, 0, 0).y
+        y: root.y + launcherViewport.y + content.y + addButton.y
+            - launcherViewport.contentY
         width: root.metrics.dockLauncherTarget
         height: root.metrics.dockLauncherTarget
     }
@@ -501,7 +502,9 @@ Item {
         parent: root.parent
         anchors.horizontalCenter: parent.horizontalCenter
         y: root.contextMenuSourceAnchor
-            ? root.contextMenuSourceAnchor.mapToItem(parent, 0, 0).y : 0
+            ? root.y + launcherViewport.y + content.y
+                + root.contextMenuSourceAnchor.y - launcherViewport.contentY
+            : 0
         width: root.metrics.dockLauncherTarget
         height: root.contextMenuSourceAnchor
             ? root.contextMenuSourceAnchor.height

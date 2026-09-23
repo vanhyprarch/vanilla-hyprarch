@@ -8,11 +8,14 @@ DockPopup {
 
     required property var theme
     required property LauncherStore launcherStore
+    property int popupVerticalOffset: 4
     readonly property int maximumPanelHeight: root.metrics.scaled(360)
 
     panelWidth: root.metrics.actionSurfaceWidth
     implicitHeight: Math.min(root.maximumPanelHeight,
         applicationsView.contentHeight + root.metrics.panelPadding * 2)
+    alignToAnchorTop: true
+    anchorTopOffset: root.popupVerticalOffset
 
     onVisibleChanged: {
         if (visible)
