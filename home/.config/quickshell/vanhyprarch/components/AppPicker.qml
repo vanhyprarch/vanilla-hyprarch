@@ -12,7 +12,7 @@ DockPopup {
     readonly property int maximumPanelHeight: root.metrics.scaled(360)
 
     panelWidth: root.metrics.actionSurfaceWidth
-    implicitHeight: Math.min(root.maximumPanelHeight,
+    requestedPanelHeight: Math.min(root.maximumPanelHeight,
         applicationsView.contentHeight + root.metrics.panelPadding * 2)
     alignToAnchorTop: true
     anchorTopOffset: root.popupVerticalOffset

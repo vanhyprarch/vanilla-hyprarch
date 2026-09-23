@@ -382,7 +382,7 @@ DockPopup {
         }
     }
 
-    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
+    requestedPanelHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     component DeviceRow: Rectangle {
         id: deviceRow

@@ -32,7 +32,7 @@ DockPopup {
     readonly property date firstDay: new Date(displayedYear, displayedMonth, 1)
     readonly property int firstDayOffset: (firstDay.getDay() + 6) % 7
     panelWidth: root.calendarPanelWidth
-    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
+    requestedPanelHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     onVisibleChanged: {
         if (visible)

@@ -73,7 +73,7 @@ DockPopup {
         objects: root.outputDevices.concat(root.inputDevices)
     }
 
-    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
+    requestedPanelHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     component VolumeSection: Column {
         id: volumeSection

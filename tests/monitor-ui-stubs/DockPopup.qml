@@ -6,4 +6,7 @@ Item {
     required property var targetScreen
     required property var focusCoordinator
     property var popupAnchorItem
+    property int requestedPanelHeight: 0
+
+    implicitHeight: requestedPanelHeight
 }

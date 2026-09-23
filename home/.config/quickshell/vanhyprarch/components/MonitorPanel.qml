@@ -521,7 +521,7 @@ DockPopup {
             root.textSizePreviewIndex = -1
     }
 
-    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
+    requestedPanelHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     component InfoRow: Item {
         required property string label

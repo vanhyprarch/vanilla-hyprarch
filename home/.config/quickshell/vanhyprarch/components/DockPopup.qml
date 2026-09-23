@@ -11,6 +11,7 @@ PanelWindow {
     required property var focusCoordinator
     required property Item popupAnchorItem
     property int panelWidth: root.metrics.standardPanelWidth
+    property int requestedPanelHeight: 0
     property int parallelOffset: root.metrics.dockPopupParallelOffset
     property bool alignToAnchorTop: false
     property int anchorTopOffset: 0
@@ -73,8 +74,8 @@ PanelWindow {
         : 0
 
     implicitWidth: Math.min(root.panelWidth, root.viewportMaximumWidth)
-    width: implicitWidth
-    height: Math.min(implicitHeight, root.viewportMaximumHeight)
+    implicitHeight: Math.min(root.requestedPanelHeight,
+        root.viewportMaximumHeight)
     color: "transparent"
     aboveWindows: true
     exclusiveZone: 0

@@ -16,7 +16,7 @@ DockPopup {
     signal closeAllRequested()
 
     panelWidth: root.metrics.compactActionSurfaceWidth
-    implicitHeight: actionsColumn.implicitHeight
+    requestedPanelHeight: actionsColumn.implicitHeight
         + root.metrics.compactMenuPadding * 2
     alignToAnchorTop: true
     anchorTopOffset: root.popupVerticalOffset

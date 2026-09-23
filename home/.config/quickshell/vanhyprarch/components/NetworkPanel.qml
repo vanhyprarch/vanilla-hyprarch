@@ -520,7 +520,7 @@ DockPopup {
         }
     }
 
-    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
+    requestedPanelHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     ScrollablePanelSurface {
         anchors.fill: parent

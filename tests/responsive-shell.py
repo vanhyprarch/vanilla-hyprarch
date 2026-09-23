@@ -110,7 +110,8 @@ class ResponsiveShellStaticTests(unittest.TestCase):
             self.assertIn("ScrollablePanelSurface {", source, name)
         monitor = self.read("components/MonitorPanel.qml")
         self.assertIn(
-            "implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2",
+            "requestedPanelHeight: content.implicitHeight"
+            " + root.metrics.panelPadding * 2",
             monitor,
         )
 
@@ -126,10 +127,52 @@ class ResponsiveShellStaticTests(unittest.TestCase):
         self.assertIn("root.metrics.dockPanelMaximumWidth", popup)
         self.assertIn("root.metrics.dockPanelMaximumHeight", popup)
         self.assertIn("implicitWidth: Math.min(root.panelWidth", popup)
-        self.assertIn("height: Math.min(implicitHeight", popup)
+        self.assertIn("property int requestedPanelHeight: 0", popup)
+        self.assertIn(
+            "implicitHeight: Math.min(root.requestedPanelHeight,\n"
+            "        root.viewportMaximumHeight)",
+            popup,
+        )
         self.assertIn("root.viewportMaximumWidth", popup)
         self.assertIn("root.viewportMaximumHeight", popup)
         self.assertIn("root.metrics.panelViewportMargin", popup)
+        self.assertNotRegex(popup, r"(?m)^\s+(?:width|height):")
+        self.assertIn("root.width, root.targetScreen.width", popup)
+        self.assertIn("root.height, root.targetScreen.height", popup)
+
+    def test_every_dock_popup_supplies_its_original_requested_height(self) -> None:
+        expected = {
+            "AppPicker.qml": "Math.min(root.maximumPanelHeight,",
+            "LauncherContextMenu.qml": "actionsColumn.implicitHeight",
+            "MonthCalendar.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
+            "AudioPanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
+            "BluetoothPanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
+            "MonitorPanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
+            "NetworkPanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
+            "PowerIdlePanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
+            "PowerMenu.qml": '(root.pendingAction === ""',
+        }
+        consumers = {
+            path.name for path in COMPONENTS.glob("*.qml")
+            if "DockPopup {" in path.read_text(encoding="utf-8")
+        }
+        self.assertEqual(consumers, set(expected))
+        for name, expression in expected.items():
+            source = self.read(f"components/{name}")
+            self.assertIn(f"requestedPanelHeight: {expression}", source, name)
+            if name != "PowerMenu.qml":
+                self.assertNotRegex(source, r"(?m)^    implicitHeight:")
+
+        app_picker = self.read("components/AppPicker.qml")
+        self.assertIn(
+            "applicationsView.contentHeight + root.metrics.panelPadding * 2)",
+            app_picker,
+        )
+        context_menu = self.read("components/LauncherContextMenu.qml")
+        self.assertIn("+ root.metrics.compactMenuPadding * 2", context_menu)
+        self.assertIn("alignToAnchorTop: true", context_menu)
+        self.assertIn("anchorTopOffset: root.popupVerticalOffset", context_menu)
+        self.assertIn("implicitHeight: buttonSize", self.read("components/PowerMenu.qml"))
 
     def test_dock_popup_animation_rule_is_namespace_scoped(self) -> None:
         popup = self.read("components/DockPopup.qml")

@@ -64,7 +64,7 @@ DockPopup {
         + (screensaverSection.visible
             ? screensaverSection.implicitHeight + content.spacing : 0)
 
-    implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
+    requestedPanelHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
     function lockChoiceEnabled(value: string): bool {
         return root.controller.canSetLock(value)

@@ -155,7 +155,7 @@ Item {
         targetScreen: root.targetScreen
         focusCoordinator: root.focusCoordinator
         panelWidth: root.metrics.compactActionSurfaceWidth
-        implicitHeight: (root.pendingAction === ""
+        requestedPanelHeight: (root.pendingAction === ""
             ? actionMenu.implicitHeight : confirmationMenu.implicitHeight)
             + root.metrics.compactMenuPadding * 2
 
