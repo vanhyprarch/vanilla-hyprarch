@@ -363,8 +363,11 @@ def parse_hdr_edid(data: bytes, identity: PhysicalIdentity) -> HdrCapability:
     serial = _normalize_edid_text(_edid_descriptor_text(blocks[0], 0xFF))
     if not model or model != _normalize_edid_text(identity.model):
         raise ValidationError("display EDID model does not match the bound monitor")
-    if not identity.serial.strip() or not serial or serial != _normalize_edid_text(identity.serial):
+    bound_serial = _normalize_edid_text(identity.serial)
+    if bound_serial and serial and serial != bound_serial:
         raise ValidationError("display EDID serial does not match the bound monitor")
+    if not bound_serial or not serial:
+        raise ValidationError("HDR capability could not be established.")
     supports_bt2020 = False
     supports_pq = False
     for block in blocks[1:]:

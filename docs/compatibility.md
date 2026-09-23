@@ -200,8 +200,13 @@ UI deliberately reports policy rather than claimed live HDR activity.
 Hyprland/Aquamarine capability selection consults EDID BT.2020 colorimetry and
 PQ/ST2084 metadata plus `supports_hdr` and `supports_wide_color` overrides. The
 local backend reads the identity-bound sysfs EDID, validates its complete block
-inventory/checksums and model/serial association, and requires both capabilities
-before exposing forced HDR. This is version-specific and must be retested after
+inventory/checksums and model association, and compares serials only when both
+the bound output and EDID publish non-empty values. Two known serials that
+differ fail closed. If either serial is unavailable, the existing connector and
+topology identity still manage the output, but EDID HDR capability remains
+unknown and forced HDR unavailable rather than reporting a fabricated serial
+mismatch. Both advertised capabilities remain required before exposing forced
+HDR. This is version-specific and must be retested after
 Hyprland 0.56.2 or Aquamarine 0.15.1 changes its EDID/capability path. Vanilla
 also imposes the stricter product invariant that forced HDR requires verified
 10-bit; current Hyprland acceptance of another combination is not sufficient.

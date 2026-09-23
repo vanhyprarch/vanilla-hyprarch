@@ -3277,6 +3277,65 @@ error("VANHYPRARCH_CONTAINMENT_PROBE_COMPLETE")
         with self.assertRaisesRegex(monitor.ValidationError, "checksum"):
             monitor.parse_hdr_edid(bytes(malformed), state.identity)
 
+    def test_hdr_edid_serial_comparison_requires_two_known_serials(self) -> None:
+        state = monitor.parse_monitor_payload([output()]).target("DP-1")
+        self.assertTrue(
+            monitor.parse_hdr_edid(hdr_edid(serial="ABC123"), state.identity).available
+        )
+        with self.assertRaisesRegex(monitor.ValidationError, "serial does not match"):
+            monitor.parse_hdr_edid(hdr_edid(serial="DIFFERENT"), state.identity)
+        for bound_serial, edid_serial in (
+            ("", ""),
+            ("ABC123", ""),
+            ("", "ABC123"),
+        ):
+            with self.subTest(bound_serial=bound_serial, edid_serial=edid_serial):
+                identity = replace(state.identity, serial=bound_serial)
+                with self.assertRaisesRegex(
+                    monitor.ValidationError,
+                    r"^HDR capability could not be established\.$",
+                ):
+                    monitor.parse_hdr_edid(
+                        hdr_edid(serial=edid_serial), identity
+                    )
+
+    def test_qemu_like_serialless_identity_stays_editable_without_hdr(self) -> None:
+        virtual = output(
+            name="Virtual-1",
+            make="Red Hat, Inc.",
+            model="QEMU Monitor",
+            serial="",
+        )
+        topology = monitor.parse_monitor_payload([virtual])
+        target = topology.target("Virtual-1")
+        monitor.validate_materialization_identity(
+            topology, target, allow_serialless=True
+        )
+        payload = monitor.inspection_payload(
+            topology,
+            machine_configuration("Virtual-1"),
+            b"-- override\n",
+            self.instance.signature,
+            monitor.AutomaticHdrRuntime(0, True),
+            True,
+            lambda state: hdr_edid(
+                model="QEMU Monitor", serial="", bt2020=True, pq=True
+            ),
+        )
+        inspected = payload["outputs"][0]
+        self.assertTrue(inspected["editable"])
+        self.assertEqual(inspected["identity"]["serial"], "")
+        self.assertEqual(inspected["hdr"]["capability"], "unknown")
+        self.assertFalse(inspected["hdr"]["available"])
+        self.assertEqual(
+            inspected["hdr"]["unavailable_reason"],
+            "HDR capability could not be established.",
+        )
+        self.assertNotIn(
+            "serial does not match", inspected["hdr"]["unavailable_reason"]
+        )
+        self.assertNotIn("QEMU", BACKEND.read_text(encoding="utf-8"))
+
     def test_hdr_capability_overrides_and_icc_fail_closed(self) -> None:
         state = monitor.parse_monitor_payload([output()]).target("DP-1")
         disabled = machine_configuration().replace(

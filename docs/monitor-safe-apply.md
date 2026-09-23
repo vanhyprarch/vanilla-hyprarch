@@ -227,8 +227,12 @@ QML does not parse raw `monitors all` JSON or decide materialization eligibility
 ## HDR capability and durable intent
 
 The backend enables forced HDR only when the bound connector's sysfs EDID is
-unambiguous, structurally and checksum valid, matches the monitor's model and
-serial, and advertises both BT.2020 colorimetry and PQ/ST2084. Explicit
+unambiguous, structurally and checksum valid, matches the monitor's model, and
+matches its serial when both sides publish one. It must also advertise both
+BT.2020 colorimetry and PQ/ST2084. Two known non-empty serials that differ are a
+hard mismatch. When either side has no serial, the output remains bound through
+the existing connector/topology identity but EDID HDR capability is neutral
+`unknown` and forced HDR remains unavailable. Explicit
 `supports_hdr = -1` or `supports_wide_color = -1`, an ICC-owned output,
 disabled color management, a malformed/unknown monitor rule, or an unavailable
 10-bit path fails closed. Current wide color, current bit depth, or connector
