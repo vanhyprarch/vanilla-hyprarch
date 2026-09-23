@@ -95,7 +95,11 @@ Each per-screen panel maps its own `ShellScreen` through
 `Hyprland.monitorFor(screen)` and sends display operations to the global
 Monitor controller. The controller consumes the backend's normalized read-only
 `inspect` projection and reconciles transaction status; it does not duplicate
-Hyprland monitor parsing or claim optimistic display state.
+Hyprland monitor parsing or claim optimistic display state. Capability-derived
+warnings are shown only after the controller's successful authoritative
+inspection; backend, validation, transaction, and recovery errors remain
+independent red error paths. A refresh retains the last valid inspection until
+its replacement succeeds.
 
 A deliberately authored portable managed `hyprlock.conf` baseline now exists
 in the repository. It was not copied from the live development configuration
@@ -352,7 +356,8 @@ Current IPC targets are:
 
 The current Quickshell UI includes:
 
-- a 56-pixel vertical dock, without a decorative desktop frame;
+- a normally 56-pixel vertical dock, compacting no further than 48 logical
+  pixels on constrained screens, without a decorative desktop frame;
 - five numbered workspaces, relative navigation, and a special scratchpad;
 - persistent, drag-reorderable application launchers with running-workspace
   indicators, add/remove controls, and context actions;
@@ -395,6 +400,25 @@ The current Quickshell UI includes:
   Shortcuts Page Up/Page Down remain clamped. The wheel value is process-start
   configuration, so live validation requires a full Quickshell process restart;
   hot reload is insufficient.
+
+Screen-bound shell metrics now derive a bounded fit factor from each target
+screen's logical width and height. At or above the normal design capacity the
+existing dock and panel metrics are unchanged; smaller logical viewports reduce
+only shell-owned targets, icons, gaps, and padding down to explicit usable
+minimums. The saved Text Size remains authoritative and is not changed by this
+layout response. The dock owns disjoint workspace, launcher, and system-control
+regions. The full height of the actual bottom control stack is reserved before
+the flexible middle launcher region receives the remainder, so launcher content
+is the first content to scroll. Only a viewport too short for the compact top
+and complete bottom stacks bounds the bottom region itself; its controls remain
+reachable by scrolling. Dock popups are clamped to safe monitor-local width and
+height margins; Display, Audio, Network, Bluetooth, Power & Idle, and Calendar
+content scrolls within the fixed outer panel when it cannot fit. This keeps a
+960x540 logical desktop usable without changing compositor or application
+scaling. Dock popups use the dedicated `vanhyprarch-dock-popup` layer-shell
+namespace. Managed Hyprland policy disables animation only for that namespace,
+so panels appear at their bounded anchored geometry without changing the
+persistent dock or other Quickshell surfaces.
 
 Super+Space uses `DesktopEntries.applications` directly and launches through
 the native `DesktopEntry.execute()` API. It has no project-owned application
@@ -476,8 +500,11 @@ Their positions remain independent. Interaction and containment are separate
 from that compositor whitelist: a click delivered to a dock panel dismisses a
 visible central overlay without consuming the panel action, while a click on
 non-actionable persistent-dock background dismisses both kinds of transient
-surface. An owning dock control remains an explicit toggle, and opening a
-different dock panel retains the existing one-panel replacement behavior.
+surface. The responsive launcher and system Flickables provide their own
+behind-content empty-space handlers so they do not block that dismissal, while
+their child controls retain pointer priority. An owning dock control remains
+an explicit toggle, and opening a different dock panel retains the existing
+one-panel replacement behavior.
 
 The described binding set also exposes `Super+Ctrl+L` as **Lock system** and
 `Super+Ctrl+I` as **Toggle Caffeine** in the System shortcut category. Lock
@@ -519,8 +546,9 @@ pending.
 Theme, Info/Shortcuts, Power & Idle, Display, Audio, Network, and Bluetooth use
 one original Vanilla-owned structural icon set under
 `assets/system-icons/`. Every semantic state has one scale-independent SVG
-with a `0 0 24 24` view box. One shared renderer fixes the logical icon size
-at the existing 20 pixels and recolors the monochrome source through the
+with a `0 0 24 24` view box. One shared renderer uses the existing 20-pixel
+logical icon size in the normal layout (with a bounded responsive reduction on
+constrained logical screens) and recolors the monochrome source through the
 existing Power/menu icon's `theme.accent` foreground using Qt's icon-image
 color property, so light and dark appearances remain coherent without
 preserving the source artwork's dark luminance or selecting different artwork

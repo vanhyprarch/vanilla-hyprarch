@@ -1,0 +1,175 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+
+from pathlib import Path
+import unittest
+
+
+REPOSITORY = Path(__file__).resolve().parents[1]
+SHELL_ROOT = REPOSITORY / "home/.config/quickshell/vanhyprarch"
+COMPONENTS = SHELL_ROOT / "components"
+HYPRLAND_CORE = REPOSITORY / "home/.config/hypr/vanhyprarch/core.lua"
+
+
+class ResponsiveShellStaticTests(unittest.TestCase):
+    def read(self, relative: str) -> str:
+        return (SHELL_ROOT / relative).read_text(encoding="utf-8")
+
+    def test_screen_metrics_follow_logical_screen_without_writing_text_size(self) -> None:
+        shell = self.read("shell.qml")
+        metrics = self.read("components/VisualMetrics.qml")
+        self.assertIn("viewportWidth: screenScope.modelData.width", shell)
+        self.assertIn("viewportHeight: screenScope.modelData.height", shell)
+        self.assertIn("readonly property real shellFitFactor", metrics)
+        self.assertNotIn("requestSize(", metrics)
+        self.assertNotIn("requestSize(", shell)
+
+    def test_dock_has_disjoint_top_middle_bottom_regions(self) -> None:
+        shell = self.read("shell.qml")
+        self.assertIn("id: dockTopRegion", shell)
+        self.assertIn("id: dockLauncherRegion", shell)
+        self.assertIn("id: dockSystemRegion", shell)
+        self.assertIn("y: dockTopRegion.height", shell)
+        self.assertIn("height: screenMetrics.dockLauncherRegionHeight(", shell)
+        self.assertIn("height: screenMetrics.dockSystemRegionHeight(", shell)
+        self.assertNotIn("anchors.verticalCenter: parent.verticalCenter", shell)
+
+    def test_bottom_height_uses_complete_real_stack(self) -> None:
+        shell = self.read("shell.qml")
+        metrics = self.read("components/VisualMetrics.qml")
+        bottom = shell.split("id: dockBottomContent", 1)[1]
+        bottom = bottom.split("VerticalScrollIndicator {", 1)[0]
+        for control in (
+            "dockSystemTray.implicitHeight",
+            "dockBluetooth.implicitHeight",
+            "dockNetwork.implicitHeight",
+            "dockAudio.implicitHeight",
+            "dockMonitor.implicitHeight",
+            "dockPowerIdle.implicitHeight",
+            "dockThemeToggle.implicitHeight",
+            "dockShortcutsButton.implicitHeight",
+            "dockClock.implicitHeight",
+            "powerMenu.implicitHeight",
+        ):
+            self.assertIn(control, bottom)
+        self.assertIn("bottom: parent.bottom", bottom)
+        self.assertIn("bottom: powerMenu.top", bottom)
+        self.assertIn("bottom: dockClock.top", bottom)
+        self.assertIn("bottom: dockShortcutsButton.top", bottom)
+        self.assertIn("bottom: dockThemeToggle.top", bottom)
+        self.assertIn("bottom: dockPowerIdle.top", bottom)
+        self.assertIn("bottom: dockMonitor.top", bottom)
+        self.assertIn("bottom: dockAudio.top", bottom)
+        self.assertIn("bottom: dockNetwork.top", bottom)
+        self.assertIn("bottom: dockBluetooth.top", bottom)
+        self.assertIn("contentHeight: dockBottomContent.height", shell)
+        self.assertNotIn("dockPowerButtonTarget * 2", metrics)
+
+    def test_launcher_and_bottom_regions_use_bounded_flickables(self) -> None:
+        shell = self.read("shell.qml")
+        launchers = self.read("components/Launchers.qml")
+        self.assertIn("id: launcherViewport", launchers)
+        self.assertIn("contentHeight: Math.max(height, content.implicitHeight)", launchers)
+        self.assertIn("clip: true", launchers)
+        self.assertIn("Flickable {\n            id: dockSystemRegion", shell)
+        self.assertIn("boundsBehavior: Flickable.StopAtBounds", shell)
+
+    def test_all_tall_system_panels_share_scrollable_surface(self) -> None:
+        for name in (
+            "AudioPanel.qml",
+            "NetworkPanel.qml",
+            "BluetoothPanel.qml",
+            "MonitorPanel.qml",
+            "PowerIdlePanel.qml",
+            "MonthCalendar.qml",
+        ):
+            source = self.read(f"components/{name}")
+            self.assertIn("ScrollablePanelSurface {", source, name)
+        monitor = self.read("components/MonitorPanel.qml")
+        self.assertIn(
+            "implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2",
+            monitor,
+        )
+
+    def test_scrollable_panel_has_no_overflow_geometry_cycle(self) -> None:
+        surface = self.read("components/ScrollablePanelSurface.qml")
+        self.assertIn("contentHeight: scrollContent.childrenRect.height", surface)
+        self.assertIn("width: viewport.width", surface)
+        self.assertNotIn("width: viewport.width - (root.contentScrollable", surface)
+        self.assertNotIn("height: childrenRect.height", surface)
+
+    def test_dock_popup_has_hard_viewport_bounds(self) -> None:
+        popup = self.read("components/DockPopup.qml")
+        self.assertIn("root.metrics.dockPanelMaximumWidth", popup)
+        self.assertIn("root.metrics.dockPanelMaximumHeight", popup)
+        self.assertIn("implicitWidth: Math.min(root.panelWidth", popup)
+        self.assertIn("height: Math.min(implicitHeight", popup)
+        self.assertIn("root.viewportMaximumWidth", popup)
+        self.assertIn("root.viewportMaximumHeight", popup)
+        self.assertIn("root.metrics.panelViewportMargin", popup)
+
+    def test_dock_popup_animation_rule_is_namespace_scoped(self) -> None:
+        popup = self.read("components/DockPopup.qml")
+        shell = self.read("shell.qml")
+        core = HYPRLAND_CORE.read_text(encoding="utf-8")
+        namespace = "vanhyprarch-dock-popup"
+        self.assertIn("import Quickshell.Wayland", popup)
+        self.assertIn(f'WlrLayershell.namespace: "{namespace}"', popup)
+        self.assertIn('name = "vanhyprarch-dock-popup-no-animation"', core)
+        self.assertIn(f'namespace = "^{namespace}$"', core)
+        self.assertIn("no_anim = true", core)
+        self.assertEqual(core.count("no_anim = true"), 1)
+        self.assertNotIn('namespace = "^quickshell$"', core)
+        self.assertNotIn("WlrLayershell.namespace", shell)
+        self.assertNotIn(namespace, shell)
+
+    def test_dock_popup_has_no_obsolete_presentation_workaround(self) -> None:
+        popup = self.read("components/DockPopup.qml")
+        presentation = COMPONENTS / "PopupPresentationState.qml"
+        self.assertFalse(presentation.exists())
+        self.assertNotIn("PopupPresentationState", popup)
+        self.assertNotIn("contentItem.opacity", popup)
+        self.assertNotIn("frameSwapped", popup)
+        self.assertIn("visible: DockGeometry.surfaceVisible(", popup)
+        self.assertNotIn("Timer {", popup)
+        self.assertNotIn("Behavior on", popup)
+        self.assertNotIn("FrameAnimation {", popup)
+        self.assertNotIn("NumberAnimation {", popup)
+
+    def test_responsive_regions_restore_empty_space_dismissal(self) -> None:
+        shell = self.read("shell.qml")
+        launchers = self.read("components/Launchers.qml")
+        self.assertIn("signal emptySpacePressed()", launchers)
+        self.assertIn("z: -1", launchers)
+        self.assertIn("onPressed: root.emptySpacePressed()", launchers)
+        self.assertIn("onEmptySpacePressed:", shell)
+        self.assertGreaterEqual(
+            shell.count("overlayFocusCoordinator.dockBackgroundInteracted()"),
+            3,
+        )
+        bottom = shell.split("id: dockBottomContent", 1)[1]
+        bottom = bottom.split("SystemTray {", 1)[0]
+        self.assertIn("MouseArea {", bottom)
+        self.assertIn("z: -1", bottom)
+        self.assertIn("dockBackgroundInteracted()", bottom)
+
+    def test_controls_retain_click_areas_and_system_icons(self) -> None:
+        for name in (
+            "ThemeToggle.qml",
+            "Audio.qml",
+            "Network.qml",
+            "PowerIdle.qml",
+            "Bluetooth.qml",
+            "Monitor.qml",
+            "ShortcutsButton.qml",
+        ):
+            source = self.read(f"components/{name}")
+            self.assertIn("MouseArea {", source, name)
+            self.assertIn("anchors.fill: parent", source, name)
+        bluetooth = self.read("components/Bluetooth.qml")
+        self.assertIn("visible: root.hardwareAvailable", bluetooth)
+        self.assertIn("implicitHeight: visible ? buttonSize : 0", bluetooth)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

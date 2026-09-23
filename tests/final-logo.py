@@ -53,20 +53,25 @@ class FinalLogoTests(unittest.TestCase):
         shell = SHELL.read_text(encoding="utf-8")
         self.assertEqual(shell.count('Qt.resolvedUrl("assets/logo.svg")'), 1)
         self.assertIn("import QtQuick.VectorImage", shell)
-        self.assertIn("VectorImage {\n            id: dockLogo", shell)
+        self.assertIn("VectorImage {\n                id: dockLogo", shell)
         self.assertNotRegex(
             shell, r"(?m)^\s*Image \{\n\s*id: dockLogo$"
         )
         self.assertIn("source: logoSource", shell)
-        self.assertIn("width: logoSize", shell)
-        self.assertIn("height: logoSize", shell)
-        self.assertIn("property int logoSize: 40", shell)
+        self.assertIn("width: screenMetrics.dockLogoSize", shell)
+        self.assertIn("height: screenMetrics.dockLogoSize", shell)
+        metrics = (SHELL.parent / "components/VisualMetrics.qml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "readonly property int dockLogoSize: fitted(40, 30)", metrics
+        )
         self.assertIn("fillMode: VectorImage.PreserveAspectFit", shell)
         self.assertIn(
             "preferredRendererType: VectorImage.CurveRenderer", shell
         )
-        logo_block = shell.split("VectorImage {\n            id: dockLogo", 1)[1]
-        logo_block = logo_block.split("\n        Workspaces {", 1)[0]
+        logo_block = shell.split("VectorImage {\n                id: dockLogo", 1)[1]
+        logo_block = logo_block.split("\n            Workspaces {", 1)[0]
         self.assertNotIn("sourceSize", logo_block)
         self.assertNotIn("mipmap", logo_block)
         self.assertNotIn("smooth", logo_block)

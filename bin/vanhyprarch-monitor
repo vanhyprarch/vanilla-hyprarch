@@ -442,6 +442,7 @@ class MonitorState:
         return not self.disabled and self.dpms and self.width > 0 and self.height > 0
 
     def protected_key(self) -> tuple[object, ...]:
+        # `reserved` is derived from layer-shell exclusive zones, not monitor state.
         return (
             self.identity,
             self.x,
@@ -451,7 +452,6 @@ class MonitorState:
             self.dpms,
             self.mirror_of,
             json.dumps(self.vrr, sort_keys=True, separators=(",", ":")),
-            json.dumps(self.reserved, sort_keys=True, separators=(",", ":")),
             self.canonical_advertised_modes(),
         )
 

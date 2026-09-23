@@ -176,6 +176,13 @@ TestCase {
         compare(Geometry.alignedTopMargin(210, 4, 80, 240), 160)
     }
 
+    function test_popupRespectsSafeVerticalViewportInsets(): void {
+        compare(Geometry.aboveMargin(120, 36, -2, 516, 540, 12), 12)
+        compare(Geometry.alignedTopMargin(520, 4, 516, 540, 12), 12)
+        compare(Geometry.aboveMargin(500, 28, -2, 300, 540, 9), 230)
+        compare(Geometry.alignedTopMargin(20, 4, 300, 540, 9), 16)
+    }
+
     function test_varyingLogicalDimensions(): void {
         compare(Geometry.horizontalMargin(12, 420, 1600, 72), 12)
         compare(Geometry.aboveMargin(850, 48, -4, 500, 900), 400)

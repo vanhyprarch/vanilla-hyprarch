@@ -45,8 +45,8 @@ list_count=$(grep -R -h --include='*.qml' -F 'ListView {' \
 
 indicator_count=$(grep -R -h --include='*.qml' \
     -F 'VerticalScrollIndicator {' "$components_dir" | wc -l)
-[ "$indicator_count" -eq 6 ] \
-    || fail "expected an indicator on all six production vertical ListViews"
+[ "$indicator_count" -eq 8 ] \
+    || fail "expected indicators on list, panel, and dock overflow viewports"
 
 [ "$(grep -F -c 'orientation: ListView.Horizontal' \
     "$components_dir/BackgroundPickerPanel.qml")" -eq 1 ] \

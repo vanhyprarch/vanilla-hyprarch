@@ -119,9 +119,31 @@ class MonitorPanelPolicyTests(unittest.TestCase):
         )
         self.assertIn("function validationMessage(connector: string)", self.controller)
         self.assertIn("Forced HDR On requires selecting 10-bit Color Depth", self.controller)
-        self.assertIn("root.inspectedOutput.hdr.unavailable_reason", self.panel)
+        self.assertIn("output.hdr.unavailable_reason", self.panel)
         self.assertIn("root.monitorController.automaticHdrUnavailableReason", self.panel)
         self.assertNotIn("effective_hdr", self.controller)
+
+    def test_capability_warnings_require_authoritative_inspection(self) -> None:
+        self.assertIn(
+            "readonly property bool monitorInspectionReady:", self.panel
+        )
+        self.assertIn("&& root.monitorController.ready", self.panel)
+        self.assertIn(
+            "if (!inspectionReady || output === null || output === undefined)",
+            self.panel,
+        )
+        self.assertIn("function warningTextFor(inspectionReady: bool", self.panel)
+        self.assertIn("readonly property string displayWarningMessage:", self.panel)
+        self.assertIn("text: root.displayWarningMessage", self.panel)
+        self.assertIn('if (backendError !== "")', self.panel)
+        self.assertIn('if (validationError !== "")', self.panel)
+        self.assertLess(
+            self.panel.index('if (backendError !== "")'),
+            self.panel.index("if (!inspectionReady || output === null"),
+        )
+        warning_section = self.panel.split("function warningTextFor", 1)[1]
+        warning_section = warning_section.split("function scaleTextFor", 1)[0]
+        self.assertNotIn("Timer {", warning_section)
 
     def test_automatic_hdr_pending_value_is_one_global_controller_state(self) -> None:
         self.assertEqual(self.controller.count("property int pendingAutomaticHdr:"), 1)

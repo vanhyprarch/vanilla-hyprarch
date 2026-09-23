@@ -137,6 +137,15 @@ hl.animation({ leaf = "workspacesIn", enabled = true, speed = 1.21, bezier = "al
 hl.animation({ leaf = "workspacesOut", enabled = true, speed = 1.94, bezier = "almostLinear", style = "fade" })
 hl.animation({ leaf = "zoomFactor", enabled = true, speed = 7, bezier = "quick" })
 
+-- Dock popups use final bounded geometry immediately; compositor layer
+-- animation would otherwise make their bottom-anchored placement appear to
+-- rise. The persistent dock retains Quickshell's default namespace.
+hl.layer_rule({
+    name = "vanhyprarch-dock-popup-no-animation",
+    match = { namespace = "^vanhyprarch-dock-popup$" },
+    no_anim = true,
+})
+
 -- Layout ----------------------------------------------------------------------
 
 -- Preserve split choices made through the managed dwindle controls.

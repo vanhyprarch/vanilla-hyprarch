@@ -33,9 +33,11 @@ The published HDR extension advances the journal to schema 5, control protocol
 
 The invariant remains: **an unconfirmed safety-critical display configuration
 is never persisted**. Position, output enablement, transform, mirroring,
-wide-color capability overrides, ICC, VRR, and reserved area are not editable. Brightness
-remains the Monitor panel's separate DDC/CI path. Text Size remains the existing
-global TextSizeController/preference architecture.
+wide-color capability overrides, ICC, and VRR are not editable. Reserved area
+is also not editable, but is layer-shell-derived observability rather than
+monitor-owned protected state. Brightness remains the Monitor panel's separate
+DDC/CI path. Text Size remains the existing global
+TextSizeController/preference architecture.
 
 The per-monitor **HDR** policy has two states: **Off** restores the exact durable
 non-HDR CM intent, while **Always On** forces `cm = "hdr"`. It does not report
@@ -145,6 +147,10 @@ are `colorManagementPreset`, `sdrBrightness`, `sdrSaturation`,
 types fail closed. Unrelated additional upstream keys are ignored so a new
 informational field does not break readback; the project-owned transaction
 journal retains its separate exact-key, unknown-key-rejecting schema.
+The required `reserved` array remains parsed and exposed for observability, but
+is not a protected monitor-state field: it is compositor output derived from
+active layer-shell exclusive zones, not state owned or restorable by the
+monitor backend.
 
 All production subprocesses have an explicit five-second timeout, including
 `hyprctl eval`, `hyprctl -j monitors all`, ordinary `hyprctl reload`,
@@ -288,9 +294,10 @@ recovery machinery as other persistence operations. It never calls
 `hl.monitor()`, enters `temporary-active`, or owns a deadline. Complete
 pre/post topology equality is mandatory, including every connected output,
 identity, active Mode, Scale, position, transform, DPMS, mirror, VRR, DRM/color
-state, reserved area, and advertised catalogue. A mismatch restores the exact
-original machine bytes, reconciles the reload, and verifies the original
-topology; no runtime correction hides a mismatch.
+state, and advertised catalogue. Layer-shell `reserved` geometry may be
+recomputed across the reload and is deliberately excluded. A mismatch restores
+the exact original machine bytes, reconciles the reload, and verifies the
+original topology; no runtime correction hides a mismatch.
 
 Normal eligibility requires meaningful make/model and a unique non-empty
 serial. A serial-less output is eligible only when meaningful

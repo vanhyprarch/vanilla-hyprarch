@@ -119,8 +119,16 @@ grep -Fq 'monitorController: root.globalMonitorController' "$shell" \
     || fail 'per-screen Monitor uses an ambiguous controller binding'
 grep -Fq 'readonly property bool monitorControllerReady:' "$panel" \
     || fail 'Monitor panel lacks a soft-reload controller guard'
+grep -Fq 'readonly property bool monitorInspectionReady:' "$panel" \
+    || fail 'Monitor panel lacks an authoritative inspection guard'
+grep -Fq '&& root.monitorController.ready' "$panel" \
+    || fail 'Monitor panel treats controller existence as inspection authority'
 grep -Fq '? root.monitorController.pendingFor(root.connectorName) : null' "$panel" \
     || fail 'Monitor panel binding mutates pending controller state'
+grep -Fq 'if (!inspectionReady || output === null || output === undefined)' \
+    "$panel" || fail 'capability warnings are not gated on completed inspection'
+grep -Fq 'text: root.displayWarningMessage' "$panel" \
+    || fail 'Display warning does not use the authoritative resolver'
 if grep -Fq 'color: root.text }' "$panel"; then
     fail 'Monitor selector uses an undefined root text color'
 fi

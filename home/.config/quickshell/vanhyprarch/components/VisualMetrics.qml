@@ -1,12 +1,27 @@
 import QtQuick
 
 QtObject {
-    // One global controller supplies the user preference. The fixed dock
-    // remains 56 px; panel and control geometry scales with shell text.
+    // One global controller supplies the user preference. Screen-bound
+    // instances additionally compact shell-owned geometry when the logical
+    // viewport cannot hold the normal layout. Typography always follows the
+    // preference and is never rewritten by responsive layout.
     property int fontBaseSize: 12
+    property int viewportWidth: 0
+    property int viewportHeight: 0
     readonly property int fontReferenceSize: 12
     readonly property real fontScale: Math.max(1 / fontReferenceSize,
         fontBaseSize / fontReferenceSize)
+    readonly property int normalShellMinimumWidth: 960
+    readonly property int normalShellMinimumHeight: 720
+    readonly property real minimumShellFitFactor: 0.75
+    readonly property real shellFitFactor: {
+        const widthFactor = viewportWidth > 0
+            ? viewportWidth / normalShellMinimumWidth : 1
+        const heightFactor = viewportHeight > 0
+            ? viewportHeight / normalShellMinimumHeight : 1
+        return Math.max(minimumShellFitFactor,
+            Math.min(1, widthFactor, heightFactor))
+    }
 
     function scaled(baseValue: real): int {
         return Math.max(1, Math.round(baseValue * fontScale))
@@ -16,18 +31,55 @@ QtObject {
         return Math.max(1, Math.round(fontBaseSize * multiplier))
     }
 
+    function fitted(baseValue: real, minimumValue: real): int {
+        return Math.max(minimumValue,
+            Math.round(baseValue * shellFitFactor))
+    }
+
+    function dockTopRegionHeight(desiredHeight: real): int {
+        return Math.min(Math.max(0, Math.round(desiredHeight)),
+            Math.max(0, viewportHeight - dockEmergencySystemViewport))
+    }
+
+    function dockSystemRegionHeight(topHeight: real,
+            desiredHeight: real): int {
+        const maximumHeight = Math.max(0, viewportHeight
+            - Math.max(0, topHeight))
+        return Math.min(Math.max(0, Math.round(desiredHeight)), maximumHeight)
+    }
+
+    function dockLauncherRegionHeight(topHeight: real,
+            systemHeight: real): int {
+        return Math.max(0, viewportHeight - Math.max(0, topHeight)
+            - Math.max(0, systemHeight))
+    }
+
     // Dock geometry.
-    readonly property int dockWidth: 56
-    readonly property int dockLauncherTarget: 40
-    readonly property int dockSystemControlTarget: 36
-    readonly property int dockPowerButtonTarget: 40
-    readonly property int dockSystemIconSize: 20
-    readonly property int applicationLauncherIconSize: 28
-    readonly property int dockContentWidth: 48
-    readonly property int dockItemGap: 4
-    readonly property int dockGroupGap: 8
+    readonly property int dockWidth: fitted(56, 48)
+    readonly property int dockLauncherTarget: fitted(40, 32)
+    readonly property int dockSystemControlTarget: fitted(36, 28)
+    readonly property int dockPowerButtonTarget: fitted(40, 32)
+    readonly property int dockSystemIconSize: fitted(20, 16)
+    readonly property int applicationLauncherIconSize: fitted(28, 22)
+    readonly property int dockContentWidth: fitted(48, 40)
+    readonly property int dockItemGap: fitted(4, 2)
+    readonly property int dockGroupGap: fitted(8, 5)
     readonly property int dockSystemControlGap: 0
-    readonly property int dockOuterInset: 12
+    readonly property int dockOuterInset: fitted(12, 8)
+    readonly property int dockLogoSize: fitted(40, 30)
+    readonly property int dockWorkspaceWidth: fitted(40, 34)
+    readonly property int dockWorkspaceTarget: fitted(28, 21)
+    readonly property int dockWorkspaceGap: fitted(1, 1)
+    readonly property int dockWorkspaceLogoGap: fitted(13, 9)
+    readonly property int dockWorkspaceFontSize: fitted(13, 11)
+    readonly property int dockTrayTarget: fitted(32, 24)
+    readonly property int dockTrayIconSize: fitted(22, 17)
+    readonly property int dockTrayGap: fitted(2, 1)
+    // Only used when the viewport cannot contain the complete top and bottom
+    // stacks. It leaves one power-sized scroll viewport; it is not an estimate
+    // of the normal bottom-region height.
+    readonly property int dockEmergencySystemViewport: dockPowerButtonTarget
+        + dockItemGap * 2
 
     // Surface size classes.
     readonly property int standardPanelWidth: scaled(380)
@@ -49,7 +101,8 @@ QtObject {
     // Shared surface geometry.
     readonly property int panelRadius: 0
     readonly property int rowRadius: 0
-    readonly property int panelPadding: scaled(14)
+    readonly property int panelPadding: Math.max(scaled(9),
+        Math.round(scaled(14) * shellFitFactor))
     readonly property int overlayPadding: scaled(18)
     readonly property int compactMenuPadding: scaled(10)
     readonly property int sectionGap: scaled(14)
@@ -59,6 +112,12 @@ QtObject {
     readonly property int iconTextGap: scaled(10)
     readonly property int dockPopupGap: 9
     readonly property int dockPopupParallelOffset: -2
+    readonly property int panelViewportMargin: fitted(12, 8)
+    readonly property int dockPanelMaximumWidth: viewportWidth > 0
+        ? Math.max(1, viewportWidth - dockWidth - dockPopupGap
+            - panelViewportMargin) : 16777215
+    readonly property int dockPanelMaximumHeight: viewportHeight > 0
+        ? Math.max(1, viewportHeight - panelViewportMargin * 2) : 16777215
     readonly property int panelOutlineThickness: 3
     readonly property int controlOutlineThickness: 1
     readonly property int separatorThickness: 1

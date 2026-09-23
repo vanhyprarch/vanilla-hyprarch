@@ -28,14 +28,28 @@ DockPopup {
     readonly property var scalePresets: ["1.00", "1.25", "1.50", "2.00"]
     readonly property bool monitorControllerReady: root.monitorController !== null
         && root.monitorController !== undefined
+    readonly property bool monitorInspectionReady: root.monitorControllerReady
+        && root.monitorController.ready
     readonly property var monitor: Hyprland.monitorFor(root.targetScreen)
     readonly property string connectorName: monitor ? String(monitor.name || "") : ""
     readonly property var inspectedOutput:
-        root.monitorControllerReady
+        root.monitorInspectionReady
             ? root.monitorController.outputFor(root.connectorName) : null
     readonly property var pendingState:
-        root.monitorControllerReady
+        root.monitorInspectionReady
             ? root.monitorController.pendingFor(root.connectorName) : null
+    readonly property string displayValidationMessage:
+        root.monitorControllerReady
+            ? root.monitorController.validationMessage(root.connectorName) : ""
+    readonly property string displayWarningMessage:
+        root.monitorControllerReady
+            ? root.warningTextFor(root.monitorInspectionReady,
+                root.monitorController.errorMessage,
+                root.displayValidationMessage,
+                root.inspectedOutput,
+                root.monitorController.automaticHdrAvailable,
+                root.monitorController.automaticHdrUnavailableReason)
+            : ""
     readonly property string monitorDescription: {
         if (root.inspectedOutput !== null)
             return root.inspectedOutput.label
@@ -369,6 +383,28 @@ DockPopup {
             : root.monitorDescription
     }
 
+    function warningTextFor(inspectionReady: bool, backendError: string,
+            validationError: string, output: var,
+            automaticHdrAvailable: bool,
+            automaticHdrUnavailableReason: string): string {
+        if (backendError !== "")
+            return backendError
+        if (validationError !== "")
+            return validationError
+        if (!inspectionReady || output === null || output === undefined)
+            return ""
+
+        const outputManaged = Boolean(output.editable || output.materializable)
+        if (outputManaged && output.hdr !== null && output.hdr !== undefined
+                && !output.hdr.available)
+            return String(output.hdr.unavailable_reason || "")
+        if (outputManaged && !automaticHdrAvailable)
+            return automaticHdrUnavailableReason
+        if (!output.editable && !output.materializable)
+            return String(output.unavailable_reason || "")
+        return ""
+    }
+
     function scaleTextFor(output: var): string {
         if (output === null || output === undefined)
             return "—"
@@ -698,7 +734,7 @@ DockPopup {
         }
     }
 
-    PanelSurface {
+    ScrollablePanelSurface {
         anchors.fill: parent
         metrics: root.metrics
         theme: root.theme
@@ -851,37 +887,10 @@ DockPopup {
             }
 
             Text {
-                visible: (root.monitorControllerReady
-                        && root.monitorController.errorMessage !== "")
-                    || (root.monitorControllerReady
-                        && root.monitorController.validationMessage(
-                            root.connectorName) !== "")
-                    || (root.displayEditable
-                        && root.inspectedOutput !== null
-                        && !root.inspectedOutput.hdr.available)
-                    || (root.displayEditable
-                        && root.monitorControllerReady
-                        && !root.monitorController.automaticHdrAvailable)
-                    || (root.inspectedOutput !== null
-                        && !root.inspectedOutput.editable
-                        && !root.inspectedOutput.materializable)
+                objectName: "displayWarning"
+                visible: text !== ""
                 width: parent.width
-                text: root.monitorControllerReady
-                    && root.monitorController.errorMessage !== ""
-                    ? root.monitorController.errorMessage
-                    : root.monitorControllerReady
-                        && root.monitorController.validationMessage(
-                            root.connectorName) !== ""
-                        ? root.monitorController.validationMessage(
-                            root.connectorName)
-                    : root.displayEditable && root.inspectedOutput !== null
-                        && !root.inspectedOutput.hdr.available
-                        ? root.inspectedOutput.hdr.unavailable_reason
-                    : root.displayEditable && root.monitorControllerReady
-                        && !root.monitorController.automaticHdrAvailable
-                        ? root.monitorController.automaticHdrUnavailableReason
-                    : root.inspectedOutput !== null
-                        ? root.inspectedOutput.unavailable_reason : ""
+                text: root.displayWarningMessage
                 color: root.theme.danger
                 font.pixelSize: root.metrics.captionFontSize
                 wrapMode: Text.WordWrap

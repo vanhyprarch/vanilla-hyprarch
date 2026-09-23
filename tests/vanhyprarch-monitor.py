@@ -1487,7 +1487,9 @@ class MonitorBackendTests(unittest.TestCase):
             "DP-1", width=1920, height=1080, refresh="60.00", scale="auto"
         )
         baseline = output(scale=1.5)
+        baseline["reserved"] = [48, 0, 0, 0]
         applied = output(width=1920, height=1080, refresh=60.0, scale=1.6)
+        applied["reserved"] = [56, 0, 0, 0]
         self.machine.write_bytes(
             machine_configuration().replace(
                 b"vanhyprarchMonitorScale = 1.25",
@@ -1771,15 +1773,74 @@ class MonitorBackendTests(unittest.TestCase):
         self.assertIn("timed out", journal.failure)
         self.assertEqual(len([call for call in runner.calls if "eval" in call]), 2)
 
-    def test_unexpected_protected_field_drift_rolls_back(self) -> None:
-        drift = candidate_output()
-        drift["transform"] = 1
-        self.assert_failed_apply_rolls_back(drift)
+    def test_monitor_owned_protected_field_drift_still_fails_closed(self) -> None:
+        second = output(
+            name="DP-2", make="Second", model="Panel", serial="SECOND", x=2560
+        )
+        second["id"] = 1
+        changes = {
+            "identity": ("serial", "REPLACEMENT"),
+            "position": ("x", 10),
+            "transform": ("transform", 1),
+            "DPMS": ("dpmsStatus", False),
+            "mirror": ("mirrorOf", "1"),
+            "VRR": ("vrr", True),
+        }
+        snapshot = monitor.parse_monitor_payload([output(), second])
+        for label, (field, value) in changes.items():
+            with self.subTest(field=label):
+                drift = candidate_output()
+                drift[field] = value
+                readback = monitor.parse_monitor_payload([drift, second])
+                with self.assertRaisesRegex(monitor.ValidationError, "protected"):
+                    monitor.verify_candidate_readback(
+                        snapshot,
+                        self.candidate,
+                        readback,
+                        snapshot.target("DP-1").identity,
+                    )
 
-    def test_reserved_area_drift_rolls_back(self) -> None:
-        drift = candidate_output()
-        drift["reserved"] = [0, 0, 32, 0]
-        self.assert_failed_apply_rolls_back(drift)
+    def test_mode_and_compositor_scale_accept_reserved_area_reflow(self) -> None:
+        modes = ["3840x2160@60.00Hz", "1920x1080@60.00Hz"]
+        baseline = output(
+            width=1920,
+            height=1080,
+            refresh=60.0,
+            scale=2.0,
+            available=modes,
+        )
+        baseline["reserved"] = [48, 0, 0, 0]
+        candidate = monitor.Candidate.safe(
+            "DP-1", width=3840, height=2160, refresh="60.00", scale="auto"
+        )
+        snapshot = monitor.parse_monitor_payload([baseline])
+        for reserved in ([48, 0, 0, 0], [56, 0, 0, 0]):
+            with self.subTest(reserved=reserved):
+                applied = output(
+                    width=3840,
+                    height=2160,
+                    refresh=60.0,
+                    scale=1.25,
+                    available=modes,
+                )
+                applied["reserved"] = reserved
+                monitor.verify_candidate_readback(
+                    snapshot,
+                    candidate,
+                    monitor.parse_monitor_payload([applied]),
+                    snapshot.target("DP-1").identity,
+                    scale_compositor_owned=True,
+                )
+
+    def test_rollback_verification_ignores_reserved_area_reflow(self) -> None:
+        baseline = output()
+        baseline["reserved"] = [48, 0, 0, 0]
+        restored = output()
+        restored["reserved"] = [56, 0, 0, 0]
+        monitor.verify_rollback_readback(
+            monitor.parse_monitor_payload([baseline]),
+            monitor.parse_monitor_payload([restored]),
+        )
 
     def test_reordered_equivalent_mode_catalogue_is_not_drift(self) -> None:
         original = output(

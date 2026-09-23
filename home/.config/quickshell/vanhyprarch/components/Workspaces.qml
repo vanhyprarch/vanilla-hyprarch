@@ -7,11 +7,12 @@ Item {
     id: root
 
     required property var theme
-    property int contentWidth: 40
-    property int buttonHeight: 28
-    property int spacing: 1
-    property int logoGap: 13
-    property int fontSize: 13
+    required property var metrics
+    readonly property int contentWidth: root.metrics.dockWorkspaceWidth
+    readonly property int buttonHeight: root.metrics.dockWorkspaceTarget
+    readonly property int spacing: root.metrics.dockWorkspaceGap
+    readonly property int logoGap: root.metrics.dockWorkspaceLogoGap
+    readonly property int fontSize: root.metrics.dockWorkspaceFontSize
     property color textColor: root.theme.text
 
     implicitWidth: contentWidth

@@ -10,11 +10,12 @@ Item {
     required property var focusCoordinator
     property color textColor: root.theme.text
     readonly property int contentWidth: root.metrics.dockContentWidth
-    property int iconSize: 28
+    readonly property int iconSize: root.metrics.applicationLauncherIconSize
     readonly property int itemSpacing: root.metrics.dockItemGap
-    property int weekdayFontSize: 11
-    property int dateFontSize: 13
-    property int timeFontSize: 13
+    readonly property int weekdayFontSize: Math.max(10,
+        root.metrics.fitted(11, 10))
+    readonly property int dateFontSize: root.metrics.dockWorkspaceFontSize
+    readonly property int timeFontSize: root.metrics.dockWorkspaceFontSize
 
     readonly property var weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 

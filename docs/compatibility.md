@@ -37,6 +37,25 @@ This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
 separately when required.
 
+## Hyprland dock-popup layer animation boundary
+
+**Affected components:** Hyprland 0.56.2 and Quickshell 0.3.1
+
+Quickshell `PanelWindow` layer surfaces otherwise share the `quickshell`
+namespace. On Hyprland 0.56.2, its configured layer animation makes bounded
+bottom-dock panels appear to move from bottom to top even when QML supplies
+their final geometry. A controlled live rule with `no_anim = true` for the
+shared namespace removed the movement, proving compositor animation was the
+cause, but that broad match would also change the persistent dock and unrelated
+Quickshell surfaces.
+
+Vanilla dock popups therefore set the dedicated Wlr layer-shell namespace
+`vanhyprarch-dock-popup`. Managed Hyprland policy applies `no_anim = true` only
+to an exact match for that namespace. The persistent dock retains Quickshell's
+default namespace. Retest the namespace assignment and popup motion after a
+Quickshell Wlr layer-shell API change or a Hyprland layer-animation/rule change;
+remove the rule if upstream no longer animates these popup surfaces incorrectly.
+
 ## Quickshell IPC handler reload boundary
 
 **Affected component:** Quickshell 0.3.1
@@ -142,8 +161,12 @@ The mitigation is fresh `hyprctl --instance <signature> -j monitors all`
 readback after every candidate and rollback operation. The backend compares
 the chosen advertised resolution/refresh tuple, Scale or effective bitdepth,
 physical identity, full output set, and protected
-position/transform/enablement/DPMS/mirror/color-management/VRR/reserved-area
-state. Hyprland 0.56.2 reports the physical
+position/transform/enablement/DPMS/mirror/color-management/VRR state.
+The required `reserved` array remains observable but is excluded from protected
+equality and rollback: Hyprland derives it from layer-shell exclusive zones,
+which may legitimately change when the responsive shell recomputes its dock
+geometry. The monitor backend neither owns nor can restore that value.
+Hyprland 0.56.2 reports the physical
 serial as `serial` (not `serialNumber`) and exposes color state directly as
 `colorManagementPreset` plus four SDR numeric fields; the backend consumes
 those exact `CHyprCtl::getMonitorData()` keys. ICC profile state is not present

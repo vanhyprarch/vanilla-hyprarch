@@ -64,6 +64,7 @@ ShellRoot {
         readonly property color hoverFill: "#404040"
         readonly property color normalFill: "#303030"
         readonly property color activeFill: "#606060"
+        readonly property color danger: "#ff5555"
     }
 
     QtObject {
@@ -173,6 +174,60 @@ ShellRoot {
             require(monitorController.confirmationDescription()
                     === "2560×1440 · 59.95 Hz · Scale: Auto",
                 "combined Resolution and Scale confirmation is incomplete")
+            const displayWarning = namedChild(scaleTestPanel, "displayWarning")
+            require(displayWarning !== null,
+                "Display warning object was not constructed")
+            const hdrUnavailableOutput = {
+                editable: true,
+                materializable: false,
+                unavailable_reason: "",
+                hdr: {
+                    available: false,
+                    unavailable_reason: "HDR metadata is unavailable."
+                }
+            }
+            const hdrAvailableOutput = {
+                editable: true,
+                materializable: false,
+                unavailable_reason: "",
+                hdr: { available: true, unavailable_reason: null }
+            }
+            const unmanagedOutput = {
+                editable: false,
+                materializable: false,
+                unavailable_reason: "Display identity could not be verified.",
+                hdr: { available: false, unavailable_reason: null }
+            }
+            require(scaleTestPanel.warningTextFor(false, "", "",
+                        hdrUnavailableOutput, false,
+                        "Automatic HDR is unavailable.") === "",
+                "loading inspection exposed a capability warning")
+            require(scaleTestPanel.warningTextFor(true, "", "",
+                        hdrUnavailableOutput, true, "")
+                    === "HDR metadata is unavailable.",
+                "authoritative forced-HDR reason was hidden")
+            require(scaleTestPanel.warningTextFor(true, "", "",
+                        hdrAvailableOutput, false,
+                        "Automatic HDR is unavailable.")
+                    === "Automatic HDR is unavailable.",
+                "authoritative Automatic HDR reason was hidden")
+            require(scaleTestPanel.warningTextFor(true, "", "",
+                        unmanagedOutput, true, "")
+                    === "Display identity could not be verified.",
+                "authoritative display capability error was hidden")
+            require(scaleTestPanel.warningTextFor(false,
+                        "Display backend failed.", "",
+                        null, false, "") === "Display backend failed.",
+                "backend error was hidden while inspection was unavailable")
+            require(scaleTestPanel.warningTextFor(false, "",
+                        "Forced HDR requires 10-bit.",
+                        null, false, "") === "Forced HDR requires 10-bit.",
+                "validation error was hidden while inspection was unavailable")
+            monitorController.ready = false
+            monitorController.errorMessage = "Display transaction recovery failed."
+            require(scaleTestPanel.displayWarningMessage
+                    === "Display transaction recovery failed.",
+                "real controller error was not resolved")
             const automaticOnePointSix = {
                 scale_millionths: 1600000, scale_automatic: true
             }
@@ -236,6 +291,10 @@ ShellRoot {
                 require(description.implicitHeight + 0.5
                         >= description.contentHeight,
                     "long confirmation description clips vertically")
+                require(displayWarning.text
+                        === "Display transaction recovery failed.",
+                    "real controller error was not rendered")
+                monitorController.errorMessage = ""
                 console.log("MONITOR_UI_TYPES_TEST_PASS")
                 Qt.quit()
             })

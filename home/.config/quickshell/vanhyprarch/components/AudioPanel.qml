@@ -304,7 +304,7 @@ DockPopup {
         }
     }
 
-    PanelSurface {
+    ScrollablePanelSurface {
         anchors.fill: parent
         metrics: root.metrics
         theme: root.theme

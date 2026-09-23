@@ -6,6 +6,7 @@ test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_dir=$(CDPATH= cd -- "$test_dir/.." && pwd)
 components_dir=$repository_dir/home/.config/quickshell/vanhyprarch/components
 shell_file=$repository_dir/home/.config/quickshell/vanhyprarch/shell.qml
+hyprland_core=$repository_dir/home/.config/hypr/vanhyprarch/core.lua
 
 fail()
 {
@@ -121,7 +122,28 @@ grep -Fq 'return DockGeometry.mapAnchorRect(item, window,' \
     || fail 'dock placement bypasses the guarded itemRect mapping path'
 grep -Fq 'visible: DockGeometry.surfaceVisible(root.requestedVisible,' \
     "$components_dir/DockPopup.qml" \
-    || fail 'dock native visibility is not gated on valid placement'
+    || fail 'dock native visibility is not gated on valid placement and geometry'
+grep -Fq 'WlrLayershell.namespace: "vanhyprarch-dock-popup"' \
+    "$components_dir/DockPopup.qml" \
+    || fail 'dock popups do not own a dedicated layer namespace'
+grep -Fq 'match = { namespace = "^vanhyprarch-dock-popup$" }' \
+    "$hyprland_core" \
+    || fail 'managed no-animation rule does not match only dock popups'
+grep -Fq 'no_anim = true' "$hyprland_core" \
+    || fail 'dock popup layer animation remains enabled'
+[ "$(grep -F -c 'no_anim = true' "$hyprland_core")" -eq 1 ] \
+    || fail 'managed no-animation policy is broader than the popup rule'
+if grep -Fq 'namespace = "^quickshell$"' "$hyprland_core"
+then
+    fail 'persistent Quickshell surfaces are matched by no-animation policy'
+fi
+if grep -Fq 'contentItem.opacity' "$components_dir/DockPopup.qml" \
+        || grep -Fq 'PopupPresentationState' "$components_dir/DockPopup.qml"
+then
+    fail 'obsolete dock presentation workaround remains'
+fi
+[ ! -e "$components_dir/PopupPresentationState.qml" ] \
+    || fail 'obsolete PopupPresentationState component remains'
 grep -Fq 'window.windowTransform' "$components_dir/DockPopup.qml" \
     || fail 'dock placement does not react to window or output transforms'
 grep -Fq '? DockGeometry.horizontalMargin(root.metrics.dockPopupGap,' \
@@ -153,7 +175,6 @@ if grep -Fq 'Timer {' "$components_dir/DockPopup.qml"
 then
     fail 'dock anchor readiness uses a time-based delay'
 fi
-
 expected_consumers='AppPicker.qml
 AudioPanel.qml
 BluetoothPanel.qml

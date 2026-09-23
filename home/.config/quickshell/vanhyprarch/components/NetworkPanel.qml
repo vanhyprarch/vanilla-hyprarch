@@ -522,7 +522,7 @@ DockPopup {
 
     implicitHeight: content.implicitHeight + root.metrics.panelPadding * 2
 
-    PanelSurface {
+    ScrollablePanelSurface {
         anchors.fill: parent
         metrics: root.metrics
         theme: root.theme

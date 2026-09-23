@@ -120,10 +120,7 @@ ShellRoot {
     readonly property var globalTextSizeController: textSizeController
     readonly property var globalMonitorController: monitorController
     readonly property PowerActions globalPowerActions: powerActions
-    readonly property int dockWidth: visualMetrics.dockWidth
     property url logoSource: Qt.resolvedUrl("assets/logo.svg")
-    property int logoSize: 40
-    readonly property int logoTopMargin: visualMetrics.dockOuterInset
 
     OverlayFocusCoordinator {
         id: overlayFocusCoordinator
@@ -141,6 +138,13 @@ ShellRoot {
 
             required property var modelData
 
+    VisualMetrics {
+        id: screenMetrics
+        fontBaseSize: textSizeController.baseSize
+        viewportWidth: screenScope.modelData.width
+        viewportHeight: screenScope.modelData.height
+    }
+
     PanelWindow {
         id: dockWindow
 
@@ -152,8 +156,8 @@ ShellRoot {
             left: true
         }
 
-        implicitWidth: dockWidth
-        exclusiveZone: dockWidth
+        implicitWidth: screenMetrics.dockWidth
+        exclusiveZone: screenMetrics.dockWidth
         color: "transparent"
 
         Rectangle {
@@ -167,192 +171,289 @@ ShellRoot {
             onPressed: overlayFocusCoordinator.dockBackgroundInteracted()
         }
 
-        // Keep the exact SVG curves in the Qt Quick scene. CurveRenderer avoids
-        // Image's SVG-to-pixmap rasterization and its cost is negligible for
-        // one static 40-pixel mark.
-        VectorImage {
-            id: dockLogo
+        Item {
+            id: dockTopRegion
 
-            anchors {
-                top: parent.top
-                horizontalCenter: parent.horizontalCenter
-                topMargin: logoTopMargin
+            readonly property int desiredHeight: screenMetrics.dockOuterInset
+                + screenMetrics.dockLogoSize + dockWorkspaces.logoGap
+                + dockWorkspaces.implicitHeight
+
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: screenMetrics.dockTopRegionHeight(desiredHeight)
+            clip: true
+
+            // Keep the exact SVG curves in the Qt Quick scene. CurveRenderer
+            // avoids Image's SVG-to-pixmap rasterization for the static mark.
+            VectorImage {
+                id: dockLogo
+
+                anchors {
+                    top: parent.top
+                    horizontalCenter: parent.horizontalCenter
+                    topMargin: screenMetrics.dockOuterInset
+                }
+                source: logoSource
+                width: screenMetrics.dockLogoSize
+                height: screenMetrics.dockLogoSize
+                fillMode: VectorImage.PreserveAspectFit
+                preferredRendererType: VectorImage.CurveRenderer
+
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: superSpace.toggle()
+                }
             }
-            source: logoSource
-            width: logoSize
-            height: logoSize
-            fillMode: VectorImage.PreserveAspectFit
-            preferredRendererType: VectorImage.CurveRenderer
 
-            MouseArea {
+            Workspaces {
+                id: dockWorkspaces
+                theme: shellTheme
+                metrics: screenMetrics
+
+                anchors {
+                    top: dockLogo.bottom
+                    topMargin: dockWorkspaces.logoGap
+                    horizontalCenter: parent.horizontalCenter
+                }
+            }
+        }
+
+        Item {
+            id: dockLauncherRegion
+
+            readonly property int contentInset: height
+                > screenMetrics.dockItemGap * 2
+                ? screenMetrics.dockItemGap : 0
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            y: dockTopRegion.height
+            height: screenMetrics.dockLauncherRegionHeight(
+                dockTopRegion.height, dockSystemRegion.height)
+            clip: true
+
+            Launchers {
+                id: dockLaunchers
+
+                store: launcherStore
+                theme: shellTheme
+                metrics: screenMetrics
+                targetScreen: screenScope.modelData
+                focusCoordinator: overlayFocusCoordinator
                 anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: superSpace.toggle()
+                anchors.topMargin: dockLauncherRegion.contentInset
+                anchors.bottomMargin: dockLauncherRegion.contentInset
+                preferredContentCenterY: dockWindow.height / 2
+                    - dockLauncherRegion.y - dockLaunchers.y
+                onEmptySpacePressed:
+                    overlayFocusCoordinator.dockBackgroundInteracted()
             }
         }
 
-        Workspaces {
-            id: dockWorkspaces
-            theme: shellTheme
+        Flickable {
+            id: dockSystemRegion
 
-            anchors {
-                top: dockLogo.bottom
-                topMargin: dockWorkspaces.logoGap
-                horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: screenMetrics.dockSystemRegionHeight(
+                dockTopRegion.height, dockBottomContent.implicitHeight)
+            contentWidth: width
+            contentHeight: dockBottomContent.height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            function keepBottomVisible(): void {
+                if (!dragging && !moving)
+                    contentY = Math.max(0, contentHeight - height)
             }
-        }
 
-        Launchers {
-            store: launcherStore
-            theme: shellTheme
-            metrics: visualMetrics
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.horizontalCenter: parent.horizontalCenter
-        }
+            onHeightChanged: Qt.callLater(keepBottomVisible)
+            onContentHeightChanged: Qt.callLater(keepBottomVisible)
 
-        PowerMenu {
-            id: powerMenu
-            theme: shellTheme
-            metrics: visualMetrics
-            powerActions: root.globalPowerActions
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
+            Item {
+                id: dockBottomContent
 
-            anchors {
-                bottom: parent.bottom
-                horizontalCenter: parent.horizontalCenter
+                width: dockSystemRegion.width
+                implicitHeight: dockSystemTray.implicitHeight
+                    + (dockSystemTray.implicitHeight > 0
+                        ? dockSystemTray.clockGap : 0)
+                    + dockBluetooth.implicitHeight
+                    + dockNetwork.implicitHeight
+                    + dockAudio.implicitHeight
+                    + dockMonitor.implicitHeight
+                    + dockPowerIdle.implicitHeight
+                    + dockThemeToggle.implicitHeight
+                    + dockShortcutsButton.implicitHeight
+                    + screenMetrics.dockSystemControlGap * 6
+                    + screenMetrics.dockGroupGap
+                    + dockClock.implicitHeight
+                    + screenMetrics.dockGroupGap
+                    + powerMenu.implicitHeight
+                    + screenMetrics.dockOuterInset
+                height: implicitHeight
+
+                MouseArea {
+                    anchors.fill: parent
+                    z: -1
+                    acceptedButtons: Qt.LeftButton
+                    onPressed:
+                        overlayFocusCoordinator.dockBackgroundInteracted()
+                }
+
+                SystemTray {
+                    id: dockSystemTray
+                    theme: shellTheme
+                    metrics: screenMetrics
+
+                    anchors {
+                        bottom: dockBluetooth.top
+                        bottomMargin: implicitHeight > 0 ? clockGap : 0
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                Bluetooth {
+                    id: dockBluetooth
+                    controller: bluetoothAgentController
+                    powerController: bluetoothPowerController
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    screenName: screenScope.modelData.name
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+                    hardwareAvailable: bluetoothHardwareController.hardwareAvailable
+
+                    anchors {
+                        bottom: dockNetwork.top
+                        bottomMargin: screenMetrics.dockSystemControlGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                Network {
+                    id: dockNetwork
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+
+                    anchors {
+                        bottom: dockAudio.top
+                        bottomMargin: screenMetrics.dockSystemControlGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                Audio {
+                    id: dockAudio
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+
+                    anchors {
+                        bottom: dockMonitor.top
+                        bottomMargin: screenMetrics.dockSystemControlGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                Monitor {
+                    id: dockMonitor
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    textSizeController: root.globalTextSizeController
+                    monitorController: root.globalMonitorController
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+
+                    anchors {
+                        bottom: dockPowerIdle.top
+                        bottomMargin: screenMetrics.dockSystemControlGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                PowerIdle {
+                    id: dockPowerIdle
+                    controller: idleController
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+
+                    anchors {
+                        bottom: dockThemeToggle.top
+                        bottomMargin: screenMetrics.dockSystemControlGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                ThemeToggle {
+                    id: dockThemeToggle
+                    controller: appearanceController
+                    theme: shellTheme
+                    metrics: screenMetrics
+
+                    anchors {
+                        bottom: dockShortcutsButton.top
+                        bottomMargin: screenMetrics.dockSystemControlGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                ShortcutsButton {
+                    id: dockShortcutsButton
+                    controller: shortcuts
+                    theme: shellTheme
+                    metrics: screenMetrics
+
+                    anchors {
+                        bottom: dockClock.top
+                        bottomMargin: screenMetrics.dockGroupGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                Clock {
+                    id: dockClock
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+
+                    anchors {
+                        bottom: powerMenu.top
+                        bottomMargin: screenMetrics.dockGroupGap
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
+
+                PowerMenu {
+                    id: powerMenu
+                    theme: shellTheme
+                    metrics: screenMetrics
+                    powerActions: root.globalPowerActions
+                    targetScreen: screenScope.modelData
+                    focusCoordinator: overlayFocusCoordinator
+
+                    anchors {
+                        bottom: parent.bottom
+                        bottomMargin: screenMetrics.dockOuterInset
+                        horizontalCenter: parent.horizontalCenter
+                    }
+                }
             }
-        }
 
-        Clock {
-            id: dockClock
-            theme: shellTheme
-            metrics: visualMetrics
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-
-            anchors {
-                bottom: powerMenu.top
-                bottomMargin: visualMetrics.dockGroupGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        ThemeToggle {
-            id: dockThemeToggle
-            controller: appearanceController
-            theme: shellTheme
-            metrics: visualMetrics
-
-            anchors {
-                bottom: dockShortcutsButton.top
-                bottomMargin: visualMetrics.dockSystemControlGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        ShortcutsButton {
-            id: dockShortcutsButton
-            controller: shortcuts
-            theme: shellTheme
-            metrics: visualMetrics
-
-            anchors {
-                bottom: dockClock.top
-                bottomMargin: visualMetrics.dockGroupGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        PowerIdle {
-            id: dockPowerIdle
-            controller: idleController
-            theme: shellTheme
-            metrics: visualMetrics
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-
-            anchors {
-                bottom: dockThemeToggle.top
-                bottomMargin: visualMetrics.dockSystemControlGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        Monitor {
-            id: dockMonitor
-            theme: shellTheme
-            metrics: visualMetrics
-            textSizeController: root.globalTextSizeController
-            monitorController: root.globalMonitorController
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-
-            anchors {
-                bottom: dockPowerIdle.top
-                bottomMargin: visualMetrics.dockSystemControlGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        Audio {
-            id: dockAudio
-            theme: shellTheme
-            metrics: visualMetrics
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-
-            anchors {
-                bottom: dockMonitor.top
-                bottomMargin: visualMetrics.dockSystemControlGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        Network {
-            id: dockNetwork
-            theme: shellTheme
-            metrics: visualMetrics
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-
-            anchors {
-                bottom: dockAudio.top
-                bottomMargin: visualMetrics.dockSystemControlGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        Bluetooth {
-            id: dockBluetooth
-            controller: bluetoothAgentController
-            powerController: bluetoothPowerController
-            theme: shellTheme
-            metrics: visualMetrics
-            screenName: screenScope.modelData.name
-            targetScreen: screenScope.modelData
-            focusCoordinator: overlayFocusCoordinator
-            hardwareAvailable: bluetoothHardwareController.hardwareAvailable
-
-            anchors {
-                bottom: dockNetwork.top
-                bottomMargin: visualMetrics.dockSystemControlGap
-                horizontalCenter: parent.horizontalCenter
-            }
-        }
-
-        SystemTray {
-            id: dockSystemTray
-            theme: shellTheme
-
-            anchors {
-                bottom: dockBluetooth.top
-                bottomMargin: dockSystemTray.clockGap
-                horizontalCenter: parent.horizontalCenter
+            VerticalScrollIndicator {
+                view: dockSystemRegion
+                metrics: screenMetrics
+                theme: shellTheme
             }
         }
 
@@ -365,7 +466,7 @@ ShellRoot {
     }
 
     ShortcutsPanel {
-        metrics: visualMetrics
+        metrics: screenMetrics
         controller: shortcuts
         theme: shellTheme
         focusCoordinator: overlayFocusCoordinator
@@ -373,11 +474,11 @@ ShellRoot {
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
-        dockWidth: root.dockWidth
+        dockWidth: screenMetrics.dockWidth
     }
 
     SuperSpacePanel {
-        metrics: visualMetrics
+        metrics: screenMetrics
         controller: superSpace
         theme: shellTheme
         focusCoordinator: overlayFocusCoordinator
@@ -385,11 +486,11 @@ ShellRoot {
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
-        dockWidth: root.dockWidth
+        dockWidth: screenMetrics.dockWidth
     }
 
     BackgroundPickerPanel {
-        metrics: visualMetrics
+        metrics: screenMetrics
         controller: backgroundPicker
         theme: shellTheme
         focusCoordinator: overlayFocusCoordinator
@@ -397,19 +498,19 @@ ShellRoot {
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
-        dockWidth: root.dockWidth
+        dockWidth: screenMetrics.dockWidth
     }
 
     MonitorConfirmationPanel {
         controller: monitorController
-        metrics: visualMetrics
+        metrics: screenMetrics
         theme: shellTheme
         focusCoordinator: overlayFocusCoordinator
         targetScreen: screenScope.modelData
         screenName: screenScope.modelData.name
         screenWidth: screenScope.modelData.width
         screenHeight: screenScope.modelData.height
-        dockWidth: root.dockWidth
+        dockWidth: screenMetrics.dockWidth
     }
 
         }

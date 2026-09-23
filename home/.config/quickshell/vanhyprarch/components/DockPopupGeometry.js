@@ -1,7 +1,9 @@
-function clampMargin(preferredMargin, panelExtent, screenExtent) {
-    const maximumMargin = Math.max(0,
-        Math.round(screenExtent - panelExtent))
-    return Math.max(0, Math.min(Math.round(preferredMargin), maximumMargin))
+function clampMargin(preferredMargin, panelExtent, screenExtent, safeInset) {
+    const inset = Math.max(0, Math.round(safeInset || 0))
+    const maximumMargin = Math.max(inset,
+        Math.round(screenExtent - panelExtent - inset))
+    return Math.max(inset,
+        Math.min(Math.round(preferredMargin), maximumMargin))
 }
 
 function anchorReady(anchorItem, anchorWindow, targetScreen) {
@@ -28,11 +30,13 @@ function horizontalMargin(gap, panelWidth, screenWidth, persistentLeftInset) {
 }
 
 function aboveMargin(anchorY, anchorHeight, parallelOffset, panelHeight,
-        screenHeight) {
+        screenHeight, safeInset) {
     const preferred = anchorY + anchorHeight - parallelOffset - panelHeight
-    return clampMargin(preferred, panelHeight, screenHeight)
+    return clampMargin(preferred, panelHeight, screenHeight, safeInset)
 }
 
-function alignedTopMargin(anchorY, topOffset, panelHeight, screenHeight) {
-    return clampMargin(anchorY - topOffset, panelHeight, screenHeight)
+function alignedTopMargin(anchorY, topOffset, panelHeight, screenHeight,
+        safeInset) {
+    return clampMargin(anchorY - topOffset, panelHeight, screenHeight,
+        safeInset)
 }

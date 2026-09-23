@@ -21,9 +21,11 @@ Item {
     property string activeDragDesktopId: ""
     property int pendingDropIndex: -1
     property Item contextMenuSourceAnchor: null
+    property real preferredContentCenterY: height / 2
     property color dragIndicatorColor: root.theme.accent
     property int dragIndicatorWidth: 24
     property int dragIndicatorHeight: 2
+    signal emptySpacePressed()
 
     readonly property var resolvedLaunchers: {
         // Re-resolve saved IDs when the installed application index changes.
@@ -347,111 +349,140 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    Column {
-        id: content
+    Flickable {
+        id: launcherViewport
 
-        width: root.width
-        spacing: root.spacing
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: Math.max(height, content.implicitHeight)
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+
+        MouseArea {
+            width: launcherViewport.width
+            height: launcherViewport.contentHeight
+            z: -1
+            acceptedButtons: Qt.LeftButton
+            onPressed: root.emptySpacePressed()
+        }
+
+        Column {
+            id: content
+
+            y: implicitHeight >= launcherViewport.height ? 0
+                : Math.max(0, Math.min(
+                    launcherViewport.height - implicitHeight,
+                    root.preferredContentCenterY - implicitHeight / 2))
+            width: root.width
+            spacing: root.spacing
+
+            Repeater {
+                model: root.resolvedLaunchers
+
+                LauncherButton {
+                    id: launcherButton
+
+                    required property var modelData
+
+                    theme: root.theme
+                    metrics: root.metrics
+                    x: (root.width - width) / 2
+                    desktopEntry: modelData.desktopEntry
+                    draggable: true
+                    workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
+                    onActivationRequested: root.activateOrLaunch(modelData.desktopEntry)
+                    onContextMenuRequested: root.openContextMenu(modelData.desktopEntry,
+                        launcherButton, true, root.isDesktopEntryRunning(modelData.desktopEntry))
+                    onDragStarted: root.beginPinnedDrag(modelData.desktopEntry.id)
+                    onDragFinished: root.finishPinnedDrag(modelData.desktopEntry.id)
+                }
+            }
+
+            Item {
+                id: addButton
+
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: root.buttonSize
+                height: root.buttonSize
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: root.textColor
+                    font.pixelSize: root.metrics.heroIconSize
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.focusCoordinator.toggleDockWindow(appPicker)
+                }
+            }
+
+            Repeater {
+                model: root.runtimeLaunchers
+
+                LauncherButton {
+                    id: runtimeLauncherButton
+
+                    required property DesktopEntry modelData
+
+                    theme: root.theme
+                    metrics: root.metrics
+                    x: (root.width - width) / 2
+                    desktopEntry: modelData
+                    draggable: false
+                    workspaceIds: root.workspaceIdsForDesktopEntry(modelData)
+                    onActivationRequested: root.activateOrLaunch(modelData)
+                    onContextMenuRequested: root.openContextMenu(modelData,
+                        runtimeLauncherButton, false, root.isDesktopEntryRunning(modelData))
+                }
+            }
+        }
 
         Repeater {
-            model: root.resolvedLaunchers
+            model: root.resolvedLaunchers.length + 1
 
-            LauncherButton {
-                id: launcherButton
+            DropArea {
+                required property int index
 
-                required property var modelData
+                x: (root.width - root.buttonSize) / 2
+                y: content.y + root.insertionTargetY(index)
+                width: root.buttonSize
+                height: root.insertionTargetHeight(index)
+                z: 10
+                keys: ["pinned-launcher"]
 
-                theme: root.theme
-                metrics: root.metrics
-                x: (root.width - width) / 2
-                desktopEntry: modelData.desktopEntry
-                draggable: true
-                workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
-                onActivationRequested: root.activateOrLaunch(modelData.desktopEntry)
-                onContextMenuRequested: root.openContextMenu(modelData.desktopEntry,
-                    launcherButton, true, root.isDesktopEntryRunning(modelData.desktopEntry))
-                onDragStarted: root.beginPinnedDrag(modelData.desktopEntry.id)
-                onDragFinished: root.finishPinnedDrag(modelData.desktopEntry.id)
+                onEntered: drag => {
+                    if (root.isPinnedDragSource(drag.source))
+                        root.pendingDropIndex = index
+                }
+                onExited: {
+                    if (root.pendingDropIndex === index)
+                        root.pendingDropIndex = -1
+                }
+                onDropped: drop => root.dropPinnedLauncher(drop, index)
             }
         }
 
-        Item {
-            id: addButton
-
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: root.buttonSize
-            height: root.buttonSize
-
-            Text {
-                anchors.centerIn: parent
-                text: "+"
-                color: root.textColor
-                font.pixelSize: root.metrics.heroIconSize
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.focusCoordinator.toggleDockWindow(appPicker)
-            }
+        Rectangle {
+            x: (root.width - width) / 2
+            y: content.y + root.insertionIndicatorY(root.pendingDropIndex)
+            width: root.dragIndicatorWidth
+            height: root.dragIndicatorHeight
+            z: 11
+            radius: height / 2
+            color: root.dragIndicatorColor
+            visible: root.activeDragDesktopId !== ""
+                && root.pendingDropIndex >= 0
         }
 
-        Repeater {
-            model: root.runtimeLaunchers
-
-            LauncherButton {
-                id: runtimeLauncherButton
-
-                required property DesktopEntry modelData
-
-                theme: root.theme
-                metrics: root.metrics
-                x: (root.width - width) / 2
-                desktopEntry: modelData
-                draggable: false
-                workspaceIds: root.workspaceIdsForDesktopEntry(modelData)
-                onActivationRequested: root.activateOrLaunch(modelData)
-                onContextMenuRequested: root.openContextMenu(modelData,
-                    runtimeLauncherButton, false, root.isDesktopEntryRunning(modelData))
-            }
+        VerticalScrollIndicator {
+            view: launcherViewport
+            metrics: root.metrics
+            theme: root.theme
         }
-    }
-
-    Repeater {
-        model: root.resolvedLaunchers.length + 1
-
-        DropArea {
-            required property int index
-
-            x: (root.width - root.buttonSize) / 2
-            y: root.insertionTargetY(index)
-            width: root.buttonSize
-            height: root.insertionTargetHeight(index)
-            z: 10
-            keys: ["pinned-launcher"]
-
-            onEntered: drag => {
-                if (root.isPinnedDragSource(drag.source))
-                    root.pendingDropIndex = index
-            }
-            onExited: {
-                if (root.pendingDropIndex === index)
-                    root.pendingDropIndex = -1
-            }
-            onDropped: drop => root.dropPinnedLauncher(drop, index)
-        }
-    }
-
-    Rectangle {
-        x: (root.width - width) / 2
-        y: root.insertionIndicatorY(root.pendingDropIndex)
-        width: root.dragIndicatorWidth
-        height: root.dragIndicatorHeight
-        z: 11
-        radius: height / 2
-        color: root.dragIndicatorColor
-        visible: root.activeDragDesktopId !== "" && root.pendingDropIndex >= 0
     }
 
     Item {
@@ -459,7 +490,7 @@ Item {
 
         parent: root.parent
         anchors.horizontalCenter: parent.horizontalCenter
-        y: root.y + addButton.y
+        y: addButton.mapToItem(parent, 0, 0).y
         width: root.metrics.dockLauncherTarget
         height: root.metrics.dockLauncherTarget
     }

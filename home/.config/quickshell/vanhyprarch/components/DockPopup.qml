@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import "DockPopupGeometry.js" as DockGeometry
 
 PanelWindow {
@@ -14,6 +15,10 @@ PanelWindow {
     property bool alignToAnchorTop: false
     property int anchorTopOffset: 0
     property bool requestedVisible: false
+    readonly property int viewportMaximumWidth:
+        root.metrics.dockPanelMaximumWidth
+    readonly property int viewportMaximumHeight:
+        root.metrics.dockPanelMaximumHeight
     readonly property var anchorWindow: root.popupAnchorItem
         ? root.popupAnchorItem.QsWindow.window : null
     readonly property var focusCompanion: root.anchorWindow
@@ -46,26 +51,30 @@ PanelWindow {
     }
 
     screen: root.targetScreen
+    WlrLayershell.namespace: "vanhyprarch-dock-popup"
     anchors {
         top: true
         left: true
     }
     margins.left: root.placementReady
         ? DockGeometry.horizontalMargin(root.metrics.dockPopupGap,
-            root.implicitWidth, root.targetScreen.width,
+            root.width, root.targetScreen.width,
             root.metrics.dockWidth)
         : 0
     margins.top: root.placementReady
         ? (root.alignToAnchorTop
             ? DockGeometry.alignedTopMargin(root.anchorRect.y,
-                root.anchorTopOffset, root.implicitHeight,
-                root.targetScreen.height)
+                root.anchorTopOffset, root.height,
+                root.targetScreen.height, root.metrics.panelViewportMargin)
             : DockGeometry.aboveMargin(root.anchorRect.y,
                 root.anchorRect.height, root.parallelOffset,
-                root.implicitHeight, root.targetScreen.height))
+                root.height, root.targetScreen.height,
+                root.metrics.panelViewportMargin))
         : 0
 
-    implicitWidth: root.panelWidth
+    implicitWidth: Math.min(root.panelWidth, root.viewportMaximumWidth)
+    width: implicitWidth
+    height: Math.min(implicitHeight, root.viewportMaximumHeight)
     color: "transparent"
     aboveWindows: true
     exclusiveZone: 0
