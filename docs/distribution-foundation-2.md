@@ -40,11 +40,11 @@ The machine-readable authorities introduced by this phase are:
 Pacman remains the package dependency authority. These manifests contain no
 package versions and do not attempt dependency solving.
 
-## Supported Alpha base
+## Supported initial base
 
-The initial Alpha target is Arch Linux x86_64 installed through a documented
+The initial target is Arch Linux x86_64 installed through a documented
 fresh-install or archinstall-derived path. Vanilla HyprArch is installed on top
-of that known base. Alpha does not promise adoption of arbitrary existing Arch
+of that known base. It does not promise adoption of arbitrary existing Arch
 desktops, migration from other Hyprland distributions, NVIDIA provisioning, or
 support for every hardware combination.
 
@@ -91,7 +91,7 @@ Dictation is optional. Its baseline manager is managed content, while `gnupg`
 and `wtype` are component-only official packages and Voxtype is a pinned
 external payload. The separate non-default `dictation-vulkan` variant records
 the loader plus AMD/Intel ICD candidates without selecting hardware
-automatically; NVIDIA provisioning remains out of Alpha scope. Zig Screensaver
+automatically; NVIDIA provisioning remains outside the initial scope. Zig Screensaver
 follows the same manager/payload split and never requires a Zig compiler on an
 installed system.
 

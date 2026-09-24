@@ -652,13 +652,13 @@ persistence, reload, and technical rollback remain one operation. The backend
 never edits the fallback block; on the first real change it may clone a
 strictly supported fallback into an identity-validated connector profile.
 Neither policy guesses a profile or exposes a general multi-monitor schema
-during Alpha. The deployed UI and backend have
+in the initial release. The deployed UI and backend have
 completed controlled single-monitor live acceptance; physical multi-monitor
 acceptance remains a separate hardware-dependent boundary.
 
 Create-once seeds are never normal managed-update payloads. Machine files and
 override files are preserved, but preservation of an override file does not
-promise Alpha stability for every Lua symbol, property, format, or internal
+promise compatibility for every Lua symbol, property, format, or internal
 interface it references. Persistent preferences remain owned by their backend,
 and generated effective files remain replaceable by their generator.
 
@@ -948,7 +948,7 @@ versioned TOML manifests under `packages/` and `deployment/` are their canonical
 authorities. They contain intent rather than package versions or dependency
 resolution; pacman remains authoritative for dependencies.
 
-The default Alpha includes required packages, the `base-devel` and `git`
+The default installation includes required packages, the `base-devel` and `git`
 bootstrap prerequisites, the sole approved AUR exception `yay`, and the
 recommended `pavucontrol` and `bluez-utils`. Printing is a non-default
 recommended component. Dictation and the native Zig Screensaver payload remain
@@ -961,7 +961,7 @@ and adopted privileged state each retain separate semantics. Development may
 use repository symlinks; installed mode requires regular files and no runtime
 checkout dependency.
 
-Initial Alpha supports a documented fresh Arch Linux x86_64 or
+The initial release supports a documented fresh Arch Linux x86_64 or
 archinstall-derived base, not arbitrary desktop adoption. A local Git clone is
 the initial source acquisition path, but installed runtime layout remains
 compatible with future release archives. Vanilla update never silently runs a
@@ -1106,7 +1106,7 @@ The detailed contract and remaining integration boundaries are documented in
 The public post-install entry point runs as the normal target user and acquires
 an exact-commit GitHub source archive with curl, so a fresh Arch Minimal system
 does not need Git merely to obtain Vanilla. The moving `main` ref is permitted
-only for Alpha development; release instructions must use a pinned tag. The
+only for development; release mode uses a verified local bundle. The
 wrapper reports the requested ref, resolved commit, and archive digest, then
 removes its private temporary source after completion.
 

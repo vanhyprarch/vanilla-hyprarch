@@ -410,7 +410,7 @@ fallback rule itself. For a supported fallback-only output, a real user change
 automatically clones the fallback for that connector while preserving
 `preferred`/`auto`/`1` intent and verifying a complete observational no-op.
 Neither bootstrap, session startup, nor panel opening performs that operation.
-No general multi-monitor schema is promised during Alpha.
+No general multi-monitor schema is promised by the initial release.
 
 The managed `vanhyprarch-monitor` Python command and static, non-enabled
 `vanhyprarch-monitor-safe-apply.service` use baseline Python, systemd,
@@ -449,7 +449,7 @@ change monitor scale, bit depth, color management, or cursor settings.
 
 ## Printing
 
-Printing is a recommended component that is not installed by the default Alpha
+Printing is a recommended component that is not installed by the default
 policy. Its direct packages are:
 
 - `cups`

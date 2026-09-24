@@ -3,7 +3,8 @@
 Status: offline release declaration, deterministic artifact builder, verifier,
 fresh-install identity publisher, upgrade-safe stages, migration runner,
 durable journal, local exact-target driver, and installed manual updater
-implemented. Super+Space exposes the manual updater. No release is published.
+implemented. Super+Space exposes the manual updater. Immutable rc1, rc2, and
+rc3 candidates are published; `v1.0.0` stable is the prepared, unpublished target.
 
 ## Identity and authored declaration
 
@@ -178,8 +179,8 @@ has a release identity, so it cannot silently leave a stale release claim.
 The system and create-once stages now accept `--lifecycle fresh|upgrade`;
 `fresh` remains the default used by `install.sh`. These are individual stage
 semantics, not a release updater. They never advance the installed
-`/usr/share/vanhyprarch/release.json` identity. A future transaction driver
-must supply a verified target source tree and invoke the stages in order.
+`/usr/share/vanhyprarch/release.json` identity. The target driver supplies a
+verified release tree and invokes the stages in order.
 
 `system_integration.py --lifecycle upgrade plan|apply|validate` requires the
 prior root-private system state and SDDM provenance. Fresh apply records its
@@ -222,17 +223,17 @@ state. Malformed or unsafe lifecycle state fails closed. Create-once items are
 non-essential starter or user state; required system-correctness artifacts must
 use another ownership class.
 
-The supported released upgrade history starts with a future fresh
-`v1.0.0-rc1` installation, which creates both lifecycle inventories. No
+The supported released upgrade history starts with `v1.0.0-rc1`, whose real
+fresh installation passed and created both lifecycle inventories. No
 retrospective adoption of pre-rc1 development installations is implemented.
 
 `managed_deploy.py update` already has the needed release-upgrade behavior:
 provenance-gated replacement, safe stale removal, foreign-content conflicts,
 local recovery, and read-only validation. The SDDM authority similarly uses
 its root-private provenance and local transaction for source updates. Neither
-needs a synthetic lifecycle flag. Release discovery, installed update UI, and
-VM acceptance remain unimplemented. The migration and journal primitives are
-described below.
+needs a synthetic lifecycle flag. Release discovery and the installed update UI
+are implemented. A real rc1-to-rc3 update and post-reboot VM acceptance passed.
+The migration and journal primitives are described below.
 
 ## Migration registry and durable journal (release Phase 4)
 
@@ -253,10 +254,12 @@ must agree. The runner accepts only regular mode-0644 implementation files
 under a safe target source tree, with bounded sizes and no symlinks. The
 local target driver verifies the complete target artifact before giving its
 root-controlled extracted tree and metadata to the runner. Registry entries
-never contain shell commands. `release/release.toml` remains at level 0 with minimum
-0; the production registry is empty. Fresh installs establish the target
-state directly and do not replay migrations. Production migration `0001` is
-reserved for a later rc2 change, not a no-op in rc1.
+never contain shell commands. The prepared stable declaration has minimum level
+0 and target level 1; the production registry contains migration `0001`, which
+upgrades rc1 updater provenance from schema 1 to schema 2. A real rc1-to-rc3
+update physically validated it. Fresh installations establish level 1 and schema
+2 directly without replaying the migration. Rc3-to-stable needs no migration;
+rc1-to-stable runs `0001` directly. Stable adds no new migration.
 
 Each migration Python file exposes `plan(context) -> list[str]`,
 `apply(context) -> None`, and `validate(context) -> bool`. `plan` and
@@ -323,7 +326,10 @@ the Phase 1 verifier, upgrade compatibility, the migration chain, and all
 target authority plans. It uses temporary root-owned staging under `/run` for
 inspection and removes that preview; it does not change installed release
 state or create an update journal. Candidate upgrades stay within the same base version:
-`rc1 → rc2 → stable`. Stable installations accept only newer stable releases.
+`rc1 → rc3 → stable` or directly `rc1 → stable`; intermediate candidates are not
+required. Rc2 is an immutable historical candidate whose pre-migration upgrade
+planning failed on rc1 provenance. Rc3 fixes that planning path. Stable
+installations accept only newer stable releases.
 The target must be newer, have the same supported architecture and protocol,
 and admit the source version and migration level. Development installations,
 same-version transitions, downgrades, and stable-to-candidate transitions fail.
@@ -364,8 +370,8 @@ can remove only the staged bundle matching the already committed installed
 identity. Failures retain the journal and exact target material for diagnosis
 or explicit resume; there is no global rollback.
 
-The installed discovery/download bootstrap follows below. Release publication
-and VM acceptance remain future work.
+The installed discovery/download bootstrap follows below. Candidate release
+publication and rc1-to-rc3 VM acceptance passed; stable acceptance is pending.
 
 ## Installed manual updater (release Phase 6)
 
@@ -423,6 +429,7 @@ Super+Space → Update → Vanilla HyprArch launches the installed command throu
 the existing supervised terminal helper, with a fixed direct argument vector
 and no QML-side sudo or release logic. The same action appears on development
 installations; the updater refuses automatic release updates without an
-installed release identity. End-to-end released upgrade acceptance still awaits
-the rc1/rc2 VM sequence. Background checks, release publication, production
-migration `0001`, and VM acceptance remain unimplemented.
+installed release identity. Real rc1-to-rc3 public-updater acceptance, migration
+`0001`, and post-reboot smoke testing passed. Stable fresh-install and direct
+rc1/rc3 upgrade acceptance are pending. Background checks and stable publication
+remain future work.

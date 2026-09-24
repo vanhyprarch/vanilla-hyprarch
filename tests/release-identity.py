@@ -58,8 +58,8 @@ class InstalledReleaseTests(unittest.TestCase):
         cls.extracted.mkdir()
         with tarfile.open(cls.artifact, "r:gz") as archive:
             archive.extractall(cls.extracted, filter="data")
-        cls.source_root = cls.extracted / CONTRACT.archive_root("v1.0.0-rc1")
         cls.record = CONTRACT.parse_metadata(cls.metadata.read_bytes())
+        cls.source_root = cls.extracted / CONTRACT.archive_root(cls.record["version"])
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -168,11 +168,19 @@ class InstalledReleaseTests(unittest.TestCase):
                     self.identity.validate()
 
     def test_invalid_identity_fields_fail(self) -> None:
+        alternate_version = (
+            self.record["version"] + "-rc1"
+            if self.record["channel"] == "stable"
+            else self.record["version"].split("-rc", 1)[0]
+        )
+        alternate_channel = (
+            "candidate" if self.record["channel"] == "stable" else "stable"
+        )
         changes = (
-            {"version": "v1.0.0"}, {"channel": "stable"},
+            {"version": alternate_version}, {"channel": alternate_channel},
             {"architecture": "aarch64"}, {"schema": 2},
             {"update_protocol": 2}, {"migration_level": -1},
-            {"minimum_migration_level": 1},
+            {"minimum_migration_level": self.record["migration_level"] + 1},
             {"artifact": {**self.record["artifact"], "sha256": "bad"}},
             {"artifact": {**self.record["artifact"], "name": "wrong.tar.gz"}},
             {"artifact": {**self.record["artifact"], "size": 0}},
@@ -193,7 +201,13 @@ class InstalledReleaseTests(unittest.TestCase):
         source = self.source_root / "release/release.toml"
         original = source.read_bytes()
         try:
-            source.write_bytes(original.replace(b"First Vanilla", b"Other Vanilla"))
+            declared = CONTRACT.parse_declaration(original)
+            changed = original.replace(
+                f'summary = "{declared["summary"]}"'.encode(),
+                b'summary = "Other summary."',
+            )
+            self.assertNotEqual(changed, original)
+            source.write_bytes(changed)
             with self.assertRaisesRegex(IDENTITY.IdentityError, "source differs"):
                 self.commit()
         finally:

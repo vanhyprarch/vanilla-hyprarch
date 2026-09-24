@@ -7,7 +7,7 @@ remains authoritative for dependency resolution and package versions.
 Every package record declares its source, role, default-install policy, direct
 Vanilla owner, and reason. `default_install` is independent of `role`: for
 example, `pavucontrol` and `bluez-utils` are recommended but installed by the
-normal Alpha baseline, while the recommended `printing` component is not.
+default baseline, while the recommended `printing` component is not.
 Here `default_install` means the future executor selects that record directly;
 pacman may still install a non-default record transitively for another package.
 

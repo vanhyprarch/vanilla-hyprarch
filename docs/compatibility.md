@@ -1041,7 +1041,7 @@ field that survives runtime inspection.
 
 **Status:** validated with `vanhyprarch-zig-player` v0.1.1
 
-The player is now optional for the Arch Linux x86_64 Alpha target. Absence is
+The player is optional for the Arch Linux x86_64 target. Absence is
 not a compatibility failure: the backend suppresses all player actions while
 Display, Suspend, Automatic Lock, and Caffeine remain available. Marker or
 payload corruption is reported as incomplete and uses the same safe effective

@@ -7,14 +7,14 @@ managed-file, create-once, accepted system-integration, and SDDM stages. The
 repository-root `install.sh` now provides their thin shared post-install orchestration;
 the optional archinstall entry point does not exist yet.
 
-The current repository remains an Alpha development and testing source. Its
-Hyprland files express portable managed, create-once machine, and user-override
+The repository now prepares `v1.0.0` stable; `main` remains a development ref.
+Its Hyprland files express portable managed, create-once machine, and user-override
 ownership. The public wrapper does not duplicate those lifecycles: each
 existing stage retains its own manifests, provenance, conflict handling, and
 validation. Privileged BlueZ replacement remains limited to the system stage's
 package-pristine adoption and exact rollback contract.
 
-The initial Alpha support target is deliberately narrow: Arch Linux x86_64 on
+The initial support target is deliberately narrow: Arch Linux x86_64 on
 a documented fresh-install or archinstall-derived base. It does not promise
 adoption of arbitrary existing Arch desktops or other Hyprland distributions.
 The public acquisition path uses curl to resolve the requested GitHub ref to
@@ -61,7 +61,7 @@ The archinstall-time first-reboot integration is not implemented yet.
 
 ## Public development bootstrap
 
-Run the Alpha development path as the normal target user, never root:
+Run the development path as the normal target user, never root:
 
 ```bash
 sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/main/install.sh)
@@ -84,7 +84,10 @@ to avoid a stale claim. The system stage installs the root-owned
 `/usr/local/bin/vanhyprarch-update` command on release and development paths;
 it refuses updates while the installed release identity is absent. Manual
 GitHub release discovery and verified target-driver handoff are implemented.
-Fresh-install release acquisition and GitHub publication remain future work.
+Fresh release installation uses the local verified bundle mode above. Candidate
+releases rc1, rc2, and rc3 are published; stable publication and stable
+fresh-install acceptance remain pending. The supported stable target keeps
+direct rc1 upgrades, running migration 0001; rc3 upgrades require no migration.
 
 The exact orchestrated sequence is:
 
@@ -260,7 +263,7 @@ rejects unsupported pre-existing display-manager configuration.
 
 ## Vanilla update boundary
 
-A future Vanilla update replaces only validated Vanilla-managed content and
+The installed Vanilla updater replaces only validated Vanilla-managed content and
 preflights newly required packages. It never silently runs `pacman -Syu`, never
 performs an unsupported partial Arch upgrade, and never assumes ownership of
 the administrator's full system upgrade. If the current Arch state cannot

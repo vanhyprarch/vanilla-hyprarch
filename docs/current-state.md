@@ -1,27 +1,34 @@
 # Current project state
 
-Snapshot date: 2026-09-24.
+Snapshot date: 2026-09-25.
 
-The offline release contract now includes an authored candidate declaration,
-deterministic exact-commit artifact builder, generated metadata, and
-pre-extraction verifier. Phase 2 adds an offline, root-owned installed release
-identity committed only after a fresh release installation validates. See
-[Release engineering](release-engineering.md). No tag or published release exists yet.
+The authored declaration now prepares `v1.0.0` stable. Immutable candidate
+releases rc1, rc2, and rc3 are published; stable is not yet tagged or published.
+The offline release contract includes a deterministic exact-commit
+artifact builder, pre-extraction verifier, and root-owned installed identity
+committed only after fresh release installation validates. See
+[Release engineering](release-engineering.md).
 
 Release Phase 3 adds explicit upgrade semantics to the existing system and
 create-once authorities. These stage modes do not orchestrate an upgrade or
 advance installed release identity.
 
-Release Phase 4 adds an empty migration registry, a versioned migration
-runner, and a durable root-owned update journal with a runtime lock. They are
-primitives for a local exact-target driver.
+Release Phase 4 adds a versioned migration runner and durable root-owned update
+journal with a runtime lock. The production registry contains migration 0001,
+which converts rc1 updater provenance from schema 1 to schema 2.
 
 Release Phase 5 adds that offline target-release driver: it verifies a supplied
 bundle, stages it durably, orchestrates existing upgrade-safe authorities,
 commits installed identity last, and supports exact-target resume. Phase 6 adds
 the manually invoked, root-owned `vanhyprarch-update` command for fixed-repository
 GitHub discovery, bounded acquisition, and verified target-driver handoff.
-Release publication and the Super+Space action remain future work.
+The Super+Space update action is implemented. A real rc1 fresh release install
+passed, and a real rc1 installation upgraded directly to rc3 through the public
+updater. Migration 0001, installed identity, journal/staging cleanup, and rc3
+post-reboot smoke acceptance passed. Rc2 remains an immutable historical
+candidate with a pre-migration planning defect; rc3 corrects that defect.
+Stable retains direct rc1 upgrade support and migration level 1. Fresh stable
+installation and rc1/rc3-to-stable acceptance remain pending.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -1224,7 +1231,7 @@ The user-managed Arch Minimal GNOME Boxes VM passed the no-Python bootstrap,
 partial-state resume, full apply, preserve-only second apply, validation,
 reboot, and integrated Phase 2/3/4 acceptance. The repository-root `install.sh` now
 orchestrates these distribution cores with Phase 5 SDDM integration for the
-post-install Alpha path. Optional-component installation remains separate and
+post-install release/development paths. Optional-component installation remains separate and
 live development-host deployment is not part of this path.
 
 DF2 Phase 5 Slices 1–3 provide the accepted Vanilla SDDM theme/session source
@@ -1249,8 +1256,8 @@ directory. It delegates in dependency order to the existing Python bootstrap,
 system integration, managed deployment, and create-once stages. Success
 requires managed, create-once, and system validation; system validation
 includes SDDM login payload validation. Installed runtime content remains
-independent of the downloaded source. `main` is explicitly the Alpha
-development default; releases must use a pinned tag.
+independent of the downloaded source. `main` is explicitly the
+development default; fresh release mode uses a verified local bundle.
 Managed reruns use the deployment authority's `reconcile` operation: absent
 provenance selects `install`, complete provenance selects `update`, and invalid
 or drifted provenance still fails closed.

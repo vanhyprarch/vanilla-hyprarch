@@ -138,7 +138,7 @@ edits specialize only their owned field in that explicit rule. The public seed
 contains no connector, fixed mode, keyboard layout, bit depth, forced HDR,
 color profile, device rule, or UI-owned scale field. Its separate strict owned
 renderer block sets Automatic HDR Off. No general multi-monitor schema is
-promised during Alpha. The override seed contains only its administrative header.
+promised by the initial release. The override seed contains only its administrative header.
 
 Monitor transaction journals are versioned same-boot recovery material, not
 managed deployment payloads. Never replace `vanhyprarch-monitor` while an
@@ -278,18 +278,11 @@ The player remains at the intentional public-command location
 respect `XDG_DATA_HOME`, falling back to `$HOME/.local/share`; preferences and
 the generated idle fragment independently respect `XDG_CONFIG_HOME`.
 
-## Alpha compatibility contract
+## User customization compatibility
 
-Vanilla HyprArch is Alpha. Public Alpha releases are intended for testing and
-feedback and are not production-stable releases. User-owned files are
-preserved according to this ownership contract. Preserving an override file
-does not promise stability for every symbol, property, format, or internal
-interface referenced by that file.
-
-Justified breaking changes remain possible during Alpha. Known breaking
-changes should be identified in release notes, with migration guidance where
-reasonably practical. Alpha is not permission for careless changes: evidence,
-small reviewed changes, explicit ownership, and avoidance of unnecessary
-breakage remain project principles. Compatibility expectations may become
-stricter in Beta. Future architectural quality takes priority over preserving
-immature Alpha interfaces indefinitely.
+User-owned files are preserved according to this ownership contract. Preserving
+an override file does not guarantee that every symbol, property, format, or
+internal interface it references will remain unchanged. Document known
+breaking changes in release notes and provide migration guidance where
+practical. Changes require evidence, review, explicit ownership, and care to
+avoid unnecessary breakage.

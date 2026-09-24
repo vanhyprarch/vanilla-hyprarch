@@ -28,6 +28,7 @@ from install.update_bootstrap_integration import (  # noqa: E402
     BootstrapIntegration, BootstrapIntegrationError, FILES,
 )
 from install.release_update import ReleaseUpdate, TargetUser  # noqa: E402
+from install.release_migrations import MigrationContext, MigrationRegistry  # noqa: E402
 from release import build as contract  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("phase5_fixtures", PROJECT / "tests/release-update-driver.py")
@@ -493,15 +494,43 @@ class InstalledCommandTests(unittest.TestCase):
         newer.apply(lifecycle="upgrade")
         newer.validate()
 
-    def test_upgrade_plan_accepts_rc1_provenance_until_migration(self):
+    def test_stable_upgrade_plans_rc1_provenance_before_migration_0001(self):
         self.authority.apply(lifecycle="fresh")
         state = json.loads(self.authority.state.read_text())
         self.authority.state.write_text(
             json.dumps({"schema": 1, "sha256": state["sha256"]}, sort_keys=True) + "\n"
         )
+        registry = MigrationRegistry(PROJECT)
+        self.assertEqual(registry.declaration["version"], "v1.0.0")
+        self.assertEqual(registry.declaration["channel"], "stable")
+        target = contract.parse_metadata(contract.metadata_bytes({
+            **registry.declaration,
+            "commit": "2" * 40,
+            "artifact": {"name": contract.artifact_name("v1.0.0"),
+                         "size": 1, "sha256": "2" * 64},
+        }))
+        source = contract.parse_metadata(contract.metadata_bytes({
+            **target,
+            "version": "v1.0.0-rc1", "channel": "candidate",
+            "commit": "1" * 40, "minimum_installed_version": None,
+            "migration_level": 0,
+            "artifact": {"name": contract.artifact_name("v1.0.0-rc1"),
+                         "size": 1, "sha256": "1" * 64},
+        }))
+        self.assertEqual(registry.range_from(source["migration_level"]), [1])
+        migration = registry._module(1)
+        context = MigrationContext(self.root, PROJECT, source, target, 1,
+                                   registry.entries[1]["scope"])
+        self.assertIn("schema 1 to schema 2", migration.plan(context)[0])
         self.assertEqual(self.authority.plan(lifecycle="upgrade"), "preserve")
         with self.assertRaisesRegex(BootstrapIntegrationError, "requires migration"):
             self.authority.validate()
+        migration.apply(context)
+        self.assertTrue(migration.validate(context))
+        self.assertEqual(json.loads(self.authority.state.read_text()), {
+            "schema": 2, "sha256": state["sha256"], "update_protocol": 1,
+        })
+        self.authority.validate()
 
     def test_publication_modes_do_not_depend_on_umask(self):
         old = os.umask(0o077)

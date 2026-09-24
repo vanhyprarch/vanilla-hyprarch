@@ -131,7 +131,7 @@ transaction. A resolution or transaction failure stops with the successfully
 installed package state left to pacman; Vanilla implements no package rollback.
 
 `default_install=true`, not package role, selects the transaction. This keeps
-recommended `pavucontrol` and `bluez-utils` in the normal Alpha install while
+recommended `pavucontrol` and `bluez-utils` in the default install while
 excluding printing, network printing, dictation deltas, hardware-specific
 Vulkan choices, and every other non-default component.
 
@@ -162,7 +162,7 @@ including an unused debug archive, is removed afterward.
 The `.SRCINFO` reader keeps repeatable fields as lists and evaluates the
 selected `yay` pkgname section separately from the shared pkgbase section.
 Multiple unique pkgbase architectures are valid; the selected package is
-eligible on Alpha when its effective list contains `x86_64`, or contains only
+eligible when its effective list contains `x86_64`, or contains only
 `any`. Missing architecture metadata, duplicates, `any` mixed with another
 architecture, and architecture lists that exclude x86_64 fail closed.
 Architecture-qualified dependencies for other targets are not installed on

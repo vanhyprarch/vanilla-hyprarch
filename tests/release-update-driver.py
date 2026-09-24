@@ -179,6 +179,26 @@ class DriverFixture(unittest.TestCase):
 
 class DriverTests(DriverFixture):
 
+    def test_rc3_to_stable_plan_has_no_migrations(self) -> None:
+        folder = Path(self.temporary.name) / "stable-bundle"
+        folder.mkdir()
+        _rc1, metadata_path, artifact_path, target = BundleFixture.build(
+            folder, target_version="v1.0.0", minimum="v1.0.0-rc1",
+            low=0, high=1,
+        )
+        source = copy.deepcopy(self.source)
+        source.update(version="v1.0.0-rc3", channel="candidate",
+                      migration_level=1, minimum_installed_version="v1.0.0-rc1")
+        source["artifact"]["name"] = contract.artifact_name(source["version"])
+        self.identity_path.write_bytes(contract.metadata_bytes(source))
+        plan = self.driver.plan(metadata_path, artifact_path)
+        self.assertEqual(plan.source["version"], "v1.0.0-rc3")
+        self.assertEqual(plan.target, target)
+        self.assertEqual(plan.migrations, ())
+        self.assertEqual(list(plan.authorities),
+                         ["system-integration", "managed-deployment", "create-once"])
+        self.assertIsNone(self.driver.journal.inspect())
+
     def test_plan_is_read_only_and_includes_all_authorities(self) -> None:
         before = self.identity_path.read_bytes()
         plan = self.driver.plan(self.target_json, self.target_archive)

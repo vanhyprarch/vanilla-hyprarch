@@ -1,7 +1,7 @@
 # Vanilla HyprArch
 
-> **Status: Alpha / Work in progress.** The one-command installer is intended
-> for development and fresh-VM testing, not production-stable use.
+> **Status: v1.0.0 stable in preparation.** The published rc1, rc2, and rc3
+> candidates are historical; stable has not been published.
 
 Vanilla HyprArch is a small, incremental desktop configuration layer for a
 standard Arch Linux installation. Its philosophy is **Arch vanilla + Hyprland
@@ -73,7 +73,7 @@ Matrix, Doom, and Game of Life.
 
 ## Installation status
 
-The shared post-install bootstrap is implemented for the narrow Alpha target:
+The shared post-install bootstrap is implemented for the narrow initial target:
 a fresh Arch Minimal x86_64 installation with Internet access, a normal user,
 sudo, and pacman. Run this development command as that normal user:
 
@@ -85,9 +85,10 @@ It resolves `main` to an exact commit, downloads that commit's source archive,
 and delegates package/system integration, managed deployment, create-once
 initialization, SDDM integration, and validation to their existing
 authoritative stages. `install.sh --yes` suppresses the single confirmation.
-`VANHYPRARCH_REF=<tag-or-commit>` selects another simple ref. Published
-releases must use a pinned tag in both the raw script URL and
-`VANHYPRARCH_REF`, rather than moving `main`.
+`VANHYPRARCH_REF=<tag-or-commit>` selects another simple ref. This ref-based
+command remains a development installation even when the ref is a release tag.
+Fresh release mode instead requires a verified local `release.json` and archive;
+see [release engineering](docs/release-engineering.md).
 Reruns select managed `install` or `update` through the deployment authority's
 provenance-aware `reconcile` operation; create-once content remains no-clobber.
 
@@ -99,7 +100,7 @@ The repository now separates managed portable Hyprland configuration from
 create-once machine configuration and a user-owned customization override.
 The controlled live migration has placed that split architecture on the
 current development machine. That migration remains separate from the
-fresh-install Alpha bootstrap.
+fresh-install bootstrap.
 The tracked BlueZ `main.conf` is also a complete system-file replacement and
 must not overwrite an existing administrator configuration without review and
 rollback. See the
@@ -113,7 +114,7 @@ distribution decisions are summarized in
 For development, public commands may be symlinked from `bin/` into
 `$HOME/.local/bin`. The managed-file core can install regular executables and
 complete configuration trees atomically into an isolated installed target
-without retaining a source-checkout dependency. The public Alpha bootstrap
+without retaining a source-checkout dependency. The public bootstrap
 calls that core as one step in the larger installation lifecycle.
 
 Dictation is a separate opt-in component, not part of the baseline. Its
@@ -142,26 +143,23 @@ Saver Effect, Screensaver, and the Screensaver lock stage. Missing or damaged
 payload never generates a player invocation; its Check status and Repair
 actions remain visible in Additional system components.
 
-## Alpha limitations
+## Current limitations
 
-Vanilla HyprArch Alpha releases are for testing and feedback, not
-production-stable use. Ownership boundaries and the controlled
-development-machine migration now exist, but automated clean installation,
-first-reboot deployment, project self-update, and general migration, update,
-and rollback infrastructure do not. User-owned files are preserved by
-ownership class; their Alpha interfaces may still change with release-note
-disclosure and practical migration guidance.
+The `v1.0.0` stable release is being prepared and has not yet passed its fresh
+stable installation and direct-upgrade acceptance. The shared post-install
+bootstrap, public manual updater, and migration 0001 are implemented. The
+optional archinstall first-reboot entry point is still pending. User-owned
+files remain protected by their ownership class.
 
-The Appearance foundation and visual Background Picker are repository
-implemented, with production deployment still awaiting the DF2 installer.
+The Appearance foundation and visual Background Picker are integrated with the
+managed deployment path.
 System keyboard synchronization and the supporting
 direct-session lifecycle hardening are live-validated. The development machine
 has no global keyboard fallback: localed is the persistent graphical authority
 and the managed service is its sole global runtime projection into Hyprland.
 The pinned player release is
 x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
-hardware/pairing matrix remain pending, while Super+Space Remove Application
-and Vanilla HyprArch self-update are not implemented. See
+hardware/pairing matrix remain pending. See
 [current state](docs/current-state.md).
 
 Architecture decisions, compatibility evidence, and version-specific retest

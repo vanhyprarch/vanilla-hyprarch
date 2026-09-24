@@ -42,7 +42,6 @@ VALID_CLASSES = {
 OVERRIDE_HEADER = (
     "-- Vanilla HyprArch user customization override.\n"
     "-- This file is user-owned; project updates do not overwrite it.\n"
-    "-- Vanilla HyprArch is Alpha; this override interface is not stable.\n"
     "-- Check release notes for breaking changes and available migration guidance.\n"
 )
 
