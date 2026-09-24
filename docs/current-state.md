@@ -649,9 +649,11 @@ The validated host write target is writable
 provider maps `prefer-dark` to `org.freedesktop.appearance/color-scheme` 1 and
 `prefer-light` to 2 and emits the standardized change signal from the
 GSettings notification. The backend reads the portal after every write and
-reports mismatches. It does not write to the portal, alter `gtk-theme`, set Qt
-style overrides, edit Firefox or other application configuration, or restart
-applications.
+reports mismatches. It also projects the mode to only
+`gtk-application-prefer-dark-theme` in user-owned GTK3 `settings.ini`, preserving
+unrelated settings and reporting unsafe or conflicting state. It does not write
+to the portal, alter `gtk-theme`, set Qt style overrides, edit Firefox or other
+application configuration, or restart applications.
 
 Hyprpaper remains a required official package and is renderer only. Hyprland's
 direct session startup now enters it through `vanhyprarch-appearance

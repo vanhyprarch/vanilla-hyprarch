@@ -80,7 +80,7 @@ and unresolved base-system choices are maintained in the canonical
 | Screenshot capture | `python`, `grim`, `slurp`, `wl-clipboard` | Hyprland owns Print Screen; `vanhyprarch-screenshot` selects, saves, and publishes PNG clipboard data without Quickshell image processing. |
 | Optional screensaver renderer | baseline `python` and `wayland`, external `vanhyprarch-zig-player` v0.1.1 | `python` and Wayland are independently required, so the component adds no official package. `vanhyprarch-screensaver` and immutable pinned metadata are baseline; the native player, license, notices, README/release record, and marker exist only when Zig Screensaver is installed. |
 | Optional dictation | optional `gnupg`, `wtype`, external Voxtype 1.0.1; conditional official Vulkan loader/vendor ICD | CPU is the public local-Whisper default. Vulkan GPU is an explicit signed-artifact choice in SuperSpace and is never selected automatically. Hyprland supplies F9 press/release and starts the project user service only when installed. |
-| Appearance and wallpaper | `hyprpaper`, `file` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
+| Appearance and wallpaper | `hyprpaper`, `file`, `gtk3`, baseline `python-gobject` | `vanhyprarch-appearance` owns Light/Dark and wallpaper preference and projects one GTK3 dark-preference key. Hyprland starts one Hyprpaper renderer through that manager; Hyprpaper owns no preference. |
 | System keyboard projection | `python`, `python-gobject`, `libxkbcommon`, `xkeyboard-config`, `systemd`, `hyprland` | `systemd-localed` owns the graphical XKB tuple; the static user service projects it into Hyprland without owning active groups or per-device rules. |
 | Monitor transactions | `python`, `hyprland`, `bubblewrap`, `systemd` | The static authority owns confirmed Safe Apply for mode/bitdepth and immediate validated Scale. Bubblewrap isolates prospective full-config verification from the live session; schema v3 and its UI have completed single-monitor live acceptance. |
 | Generic graphics runtime | `mesa` | Hardware-neutral Mesa userspace. The installer must select any hardware-specific Vulkan package separately. |
@@ -294,11 +294,13 @@ itself with `/usr/bin/hyprshutdown`; compositor crashes are handled by the
 drop-in's conditioned package restart instead of a graceful-exit callback.
 
 The GTK portal backend supplies `org.freedesktop.impl.portal.Settings` because
-the Hyprland backend does not implement that interface. Appearance writes only
-the writable `org.gnome.desktop.interface color-scheme` host key and verifies
-the brokered `org.freedesktop.appearance/color-scheme` result. Dark is portal
-value 1 and Light is value 2. No toolkit theme name or application-specific
-configuration is part of this contract.
+the Hyprland backend does not implement that interface. Appearance writes the
+writable `org.gnome.desktop.interface color-scheme` host key and verifies the
+brokered `org.freedesktop.appearance/color-scheme` result. Dark is portal
+value 1 and Light is value 2. The official `gtk3` package supplies
+`gtk-query-settings` for validating the additional GTK3 dark-preference
+projection. No toolkit theme name or application-specific configuration is
+part of this contract.
 
 ## Appearance and wallpapers
 

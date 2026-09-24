@@ -520,6 +520,19 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+id = "appearance-gtk3-settings"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/settings.ini"
+class = "USER_OWNED"
+component = "appearance"
+kind = "file"
+mode = "0600"
+authority = "user-and-vanhyprarch-appearance"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Appearance projects only [Settings] gtk-application-prefer-dark-theme; all other keys, comments, and theme names remain user-owned. Existing file mode is preserved."
+
+[[artifact]]
 id = "appearance-provenance"
 target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/appearance-assets.json"
 class = "BACKEND_OWNED"

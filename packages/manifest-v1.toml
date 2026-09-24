@@ -228,6 +228,15 @@ owner = "file-management"
 reason = "Provides Thunar trash and normal user-session volume mounting."
 
 [[package]]
+name = "gtk3"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "appearance"
+reason = "Provides gtk-query-settings for effective GTK3 Appearance validation."
+
+[[package]]
 name = "hypridle"
 source = "official"
 role = "required"

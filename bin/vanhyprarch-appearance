@@ -22,12 +22,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
+from gi.repository import GLib
+
 
 GSETTINGS = "/usr/bin/gsettings"
 BUSCTL = "/usr/bin/busctl"
 HYPRCTL = "/usr/bin/hyprctl"
 HYPRPAPER = "/usr/bin/hyprpaper"
 FILE = "/usr/bin/file"
+GTK_QUERY_SETTINGS = "/usr/bin/gtk-query-settings"
+GTK3_DARK_KEY = "gtk-application-prefer-dark-theme"
 MODES = ("light", "dark")
 MODE_DIRECTORIES = {"light": "Light", "dark": "Dark"}
 HOST_VALUES = {"light": "prefer-light", "dark": "prefer-dark"}
@@ -43,6 +47,10 @@ SUPPORTED_MIME_TYPES = {
 }
 PORTAL_PATTERN = re.compile(r"^v v u ([012])$")
 MAX_PREFERENCE_SIZE = 65536
+MAX_GTK3_SETTINGS_SIZE = 1024 * 1024
+GTK3_QUERY_PATTERN = re.compile(
+    r"^\s*gtk-application-prefer-dark-theme\s*:\s*(TRUE|FALSE)\s*$"
+)
 RENDERER_RETRY_SECONDS = 30
 OFFICIAL_WALLPAPERS = {
     "Light/Wolkenstein_1_light.png": "aa875da4d6deb582124a4a352024750bc3ab66373e19e4a58927d6f739b46f84",
@@ -216,6 +224,8 @@ class AppearanceManager:
         )
         self.wallpaper_root = self.pictures / "Wallpapers"
         self.preference_path = self.config_home / "vanhyprarch/appearance.json"
+        self.gtk3_directory = self.config_home / "gtk-3.0"
+        self.gtk3_settings_path = self.gtk3_directory / "settings.ini"
         self.asset_receipt_path = (
             self.state_home / "vanhyprarch/appearance-assets.json"
         )
@@ -779,7 +789,236 @@ class AppearanceManager:
             raise AppearanceError("portal color-scheme returned an unexpected value")
         return int(match.group(1))
 
-    def apply_host_mode(self, mode: str) -> list[str]:
+    def _gtk3_parent_ready(self, *, create: bool) -> bool:
+        if create:
+            self._ensure_owned_directory(self.gtk3_directory, self.config_home, 0o700)
+            return True
+        for directory in (self.config_home, self.gtk3_directory):
+            try:
+                metadata = directory.lstat()
+            except FileNotFoundError:
+                return False
+            except OSError as error:
+                raise AppearanceError(f"could not inspect GTK3 directory: {error}") from error
+            if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid():
+                raise AppearanceError(f"GTK3 directory is not safely user-owned: {directory}")
+        return True
+
+    @staticmethod
+    def _gtk3_identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+        return (metadata.st_dev, metadata.st_ino, metadata.st_size,
+            metadata.st_mtime_ns)
+
+    def _read_gtk3_file(self) -> tuple[bytes | None, os.stat_result | None]:
+        if not self._gtk3_parent_ready(create=False):
+            return None, None
+        path = self.gtk3_settings_path
+        try:
+            before = path.lstat()
+        except FileNotFoundError:
+            return None, None
+        except OSError as error:
+            raise AppearanceError(f"could not inspect GTK3 settings: {error}") from error
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                or before.st_nlink != 1 or before.st_size > MAX_GTK3_SETTINGS_SIZE):
+            raise AppearanceError("GTK3 settings is not a safe user-owned regular file")
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC
+                | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                opened = os.fstat(descriptor)
+                if self._gtk3_identity(opened) != self._gtk3_identity(before):
+                    raise AppearanceError("GTK3 settings changed while opening")
+                chunks: list[bytes] = []
+                total = 0
+                while True:
+                    chunk = os.read(descriptor, 65536)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total > MAX_GTK3_SETTINGS_SIZE:
+                        raise AppearanceError("GTK3 settings is too large")
+                if self._gtk3_identity(os.fstat(descriptor)) != self._gtk3_identity(before):
+                    raise AppearanceError("GTK3 settings changed while reading")
+                return b"".join(chunks), before
+            finally:
+                os.close(descriptor)
+        except OSError as error:
+            raise AppearanceError(f"could not read GTK3 settings: {error}") from error
+
+    @staticmethod
+    def _gtk3_document(data: bytes, desired: bool | None = None) -> tuple[bool | None, bytes]:
+        try:
+            content = data.decode("utf-8")
+            if "\x00" in content:
+                raise ValueError("NUL byte")
+            if content.strip():
+                keyfile = GLib.KeyFile()
+                keyfile.load_from_data(content, len(content), GLib.KeyFileFlags.NONE)
+        except (UnicodeError, ValueError, GLib.Error) as error:
+            raise AppearanceError(f"GTK3 settings is not a valid key file: {error}") from error
+
+        if "\r\n" in content and "\n" in content.replace("\r\n", ""):
+            raise AppearanceError("GTK3 settings has ambiguous newline style")
+        newline = "\r\n" if "\r\n" in content else "\n"
+        lines = content.splitlines(keepends=True)
+        section = None
+        settings_sections = 0
+        key_index = None
+        section_end = None
+        for index, line in enumerate(lines):
+            body = line.rstrip("\r\n")
+            stripped = body.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("["):
+                match = re.fullmatch(r"\[([^\]\r\n]+)\]", stripped)
+                if match is None:
+                    raise AppearanceError("GTK3 settings has an ambiguous section")
+                if section == "Settings" and section_end is None:
+                    section_end = index
+                section = match.group(1)
+                if section == "Settings":
+                    settings_sections += 1
+                continue
+            if "=" not in body or section is None:
+                raise AppearanceError("GTK3 settings has an ambiguous entry")
+            if section == "Settings" and body.split("=", 1)[0].strip() == GTK3_DARK_KEY:
+                if key_index is not None:
+                    raise AppearanceError("GTK3 settings has duplicate dark-preference keys")
+                key_index = index
+        if settings_sections > 1:
+            raise AppearanceError("GTK3 settings has duplicate [Settings] sections")
+        if settings_sections == 1 and section_end is None:
+            section_end = len(lines)
+        current = None
+        if key_index is not None:
+            try:
+                current = keyfile.get_boolean("Settings", GTK3_DARK_KEY)
+            except GLib.Error as error:
+                raise AppearanceError(f"GTK3 dark preference is invalid: {error}") from error
+        if desired is None or current == desired:
+            return current, data
+
+        literal = "true" if desired else "false"
+        if key_index is not None:
+            line = lines[key_index]
+            ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            body = line[:-len(ending)] if ending else line
+            left, right = body.split("=", 1)
+            leading = re.match(r"[ \t]*", right).group(0)
+            trailing = re.search(r"[ \t]*$", right).group(0)
+            lines[key_index] = f"{left}={leading}{literal}{trailing}{ending}"
+        elif section_end is not None:
+            if section_end > 0 and not lines[section_end - 1].endswith("\n"):
+                lines[section_end - 1] += newline
+            lines.insert(section_end, f"{GTK3_DARK_KEY}={literal}{newline}")
+        else:
+            if lines and not lines[-1].endswith("\n"):
+                lines[-1] += newline
+            lines.extend((f"[Settings]{newline}",
+                f"{GTK3_DARK_KEY}={literal}{newline}"))
+        candidate = "".join(lines).encode("utf-8")
+        if len(candidate) > MAX_GTK3_SETTINGS_SIZE:
+            raise AppearanceError("GTK3 settings would be too large")
+        return current, candidate
+
+    def read_gtk3_effective(self) -> bool:
+        result = self.run([GTK_QUERY_SETTINGS])
+        if result.returncode != 0:
+            raise AppearanceError(concise_error(result) or "could not query GTK3 settings")
+        values = [match.group(1) == "TRUE" for line in str(result.stdout).splitlines()
+            if (match := GTK3_QUERY_PATTERN.fullmatch(line)) is not None]
+        if len(values) != 1:
+            raise AppearanceError("GTK3 dark preference readback is unavailable or ambiguous")
+        return values[0]
+
+    def apply_gtk3_mode(self, mode: str, *, explicit: bool) -> None:
+        self.require_mode(mode)
+        desired = mode == "dark"
+        try:
+            self.gtk3_directory.lstat()
+            directory_existed = True
+        except FileNotFoundError:
+            directory_existed = False
+        self._gtk3_parent_ready(create=True)
+        original, before = self._read_gtk3_file()
+        current, candidate = self._gtk3_document(original or b"", desired)
+        if current is not None and current != desired and not explicit:
+            raise AppearanceError("GTK3 dark preference conflicts with Vanilla mode; preserving the existing user value")
+        if original == candidate:
+            if self.read_gtk3_effective() != desired:
+                raise AppearanceError("effective GTK3 dark preference does not match Vanilla mode")
+            return
+
+        directory = self.gtk3_directory
+        target = self.gtk3_settings_path
+        descriptor, temporary_name = tempfile.mkstemp(prefix=".settings.ini.", dir=directory)
+        temporary = Path(temporary_name)
+        backup: Path | None = None
+        published = False
+        retained_backup = False
+        replacement: os.stat_result | None = None
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                os.fchmod(stream.fileno(), stat.S_IMODE(before.st_mode) if before else 0o600)
+                stream.write(candidate)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if before is None:
+                os.link(temporary, target, follow_symlinks=False)
+                published = True
+                temporary.unlink()
+            else:
+                backup = directory / (temporary.name + ".backup")
+                os.link(target, backup, follow_symlinks=False)
+                backup_metadata = backup.lstat()
+                if (backup_metadata.st_nlink != 2
+                        or self._gtk3_identity(backup_metadata) != self._gtk3_identity(before)):
+                    raise AppearanceError("GTK3 settings changed before publication")
+                target_metadata = target.lstat()
+                if (target_metadata.st_nlink != 2
+                        or self._gtk3_identity(target_metadata) != self._gtk3_identity(before)):
+                    raise AppearanceError("GTK3 settings changed before publication")
+                os.replace(temporary, target)
+                published = True
+            replacement = target.lstat()
+            self._fsync_directory(directory)
+            actual, _ = self._read_gtk3_file()
+            if actual != candidate or self._gtk3_document(actual)[0] != desired:
+                raise AppearanceError("GTK3 settings publication did not verify")
+            if self.read_gtk3_effective() != desired:
+                raise AppearanceError("effective GTK3 dark preference did not match after publication")
+        except (OSError, AppearanceError) as error:
+            if published:
+                try:
+                    if replacement is None or self._gtk3_identity(target.lstat()) != self._gtk3_identity(replacement):
+                        raise AppearanceError("GTK3 settings changed before rollback")
+                    if backup is None:
+                        target.unlink()
+                    else:
+                        os.replace(backup, target)
+                        backup = None
+                    self._fsync_directory(directory)
+                    restored, _ = self._read_gtk3_file()
+                    if restored != original:
+                        raise AppearanceError("GTK3 settings rollback did not verify")
+                except (OSError, AppearanceError) as rollback_error:
+                    retained_backup = backup is not None
+                    raise AppearanceError(f"GTK3 projection failed: {error}; rollback failed: {rollback_error}") from error
+            raise AppearanceError(f"GTK3 projection failed: {error}") from error
+        finally:
+            temporary.unlink(missing_ok=True)
+            if backup is not None and not retained_backup:
+                backup.unlink(missing_ok=True)
+            if not directory_existed:
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
+
+    def _apply_color_scheme(self, mode: str) -> list[str]:
         self.require_mode(mode)
         errors: list[str] = []
         try:
@@ -813,6 +1052,14 @@ class AppearanceManager:
                 self.sleeper(0.1)
         if not errors:
             errors.append("portal color-scheme did not match the requested host preference")
+        return errors
+
+    def apply_host_mode(self, mode: str, *, explicit: bool = False) -> list[str]:
+        errors = self._apply_color_scheme(mode)
+        try:
+            self.apply_gtk3_mode(mode, explicit=explicit)
+        except (AppearanceError, OSError) as error:
+            errors.append(str(error))
         return errors
 
     def _live_renderer_pids(self) -> list[int]:
@@ -1199,7 +1446,7 @@ class AppearanceManager:
             self.write_preference(preference)
             return (
                 asset_errors
-                + self.apply_host_mode(mode)
+                + self.apply_host_mode(mode, explicit=True)
                 + self.apply_wallpaper(preference)
             )
 
@@ -1226,8 +1473,11 @@ class AppearanceManager:
         result: dict[str, object] = {
             "expected_gsettings": HOST_VALUES[mode],
             "expected_portal": PORTAL_VALUES[mode],
+            "expected_gtk3": mode == "dark",
             "gsettings": None,
             "portal": None,
+            "gtk3_configured": None,
+            "gtk3_effective": None,
             "matches": False,
             "error": None,
         }
@@ -1240,14 +1490,23 @@ class AppearanceManager:
             result["portal"] = self.read_portal_value()
         except AppearanceError as error:
             errors.append(str(error))
+        try:
+            data, _ = self._read_gtk3_file()
+            if data is not None:
+                result["gtk3_configured"] = self._gtk3_document(data)[0]
+            result["gtk3_effective"] = self.read_gtk3_effective()
+        except AppearanceError as error:
+            errors.append(str(error))
         result["matches"] = (
             result["gsettings"] == result["expected_gsettings"]
             and result["portal"] == result["expected_portal"]
+            and result["gtk3_configured"] is result["expected_gtk3"]
+            and result["gtk3_effective"] is result["expected_gtk3"]
         )
         if errors:
             result["error"] = "; ".join(errors)
         elif not result["matches"]:
-            result["error"] = "host or portal color-scheme does not match the desired mode"
+            result["error"] = "host, portal, or GTK3 preference does not match the desired mode"
         return result
 
     def _renderer_status(

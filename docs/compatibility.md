@@ -498,7 +498,18 @@ authoritative. A read-only GTK 4 probe reported interface color scheme 2
 (Dark), matching the live portal, while retaining the `Adwaita-dark` theme.
 A GTK 3 probe instead reported application-prefer-dark false and the explicit
 `Adwaita-dark` theme; such legacy applications may not change with the standard
-preference because Appearance deliberately does not replace `gtk-theme`. Qt
+preference because Appearance deliberately does not replace `gtk-theme`. A
+later fresh-install reproduction with `gtk-theme` set to `Adwaita` confirmed
+that GTK 3.24.52 still reported `gtk-application-prefer-dark-theme: FALSE`
+while the portal reported Dark. A temporary XDG configuration containing
+`[Settings] gtk-application-prefer-dark-theme=1` changed that GTK3 readback to
+TRUE. Appearance now projects only this GTK3 boolean from its durable mode,
+validates a new GTK3 process with `gtk-query-settings`, and preserves the theme
+name and unrelated user settings. GTK3's 3.24 source loads the user key file
+during `GtkSettings` initialization; the projection does not claim to recolor
+an already-running Thunar process. Retest this scoped projection after a GTK3
+or portal upgrade, especially if GTK3 begins consuming the standard
+color-scheme preference directly. Qt
 6.11.2 provides the XDG desktop portal platform-theme plugin with the standard
 appearance namespace and `QStyleHints::colorScheme`. However, a read-only
 ordinary Wayland Qt 6.11.2 probe with no `QT_QPA_PLATFORMTHEME` override
@@ -509,7 +520,7 @@ applications that select the portal theme may behave differently.
 
 Retest provider selection, writable schema, portal readback and signal,
 Firefox System-theme behavior, representative GTK 4 and Qt applications, and
-the documented GTK 3 limitation after portal, GLib, Firefox, GTK, or Qt
+the GTK3 projection after portal, GLib, Firefox, GTK, or Qt
 upgrades. Do not compensate with per-application configuration.
 
 ## Hyprpaper 0.8.4 IPC and image boundary

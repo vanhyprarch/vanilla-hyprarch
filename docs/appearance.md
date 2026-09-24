@@ -58,8 +58,18 @@ The host preference is the writable
 `prefer-dark`; Light maps to `prefer-light`. The GTK Settings portal provider
 projects that value as `org.freedesktop.appearance/color-scheme` values 1 and 2
 respectively. Appearance verifies that portal readback and does not write to
-the portal, edit application profiles, force toolkit themes, or restart
-applications. Applications that choose their own theme remain in control.
+the portal, edit application profiles, force toolkit theme names, or restart
+applications. GTK3 additionally receives the derived
+`gtk-application-prefer-dark-theme=true/false` key in the user-owned
+`${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/settings.ini`. Appearance creates a
+missing file, preserves unrelated entries and comments in an existing file,
+and never writes `gtk-theme-name`. Automatic reconciliation preserves and
+reports an explicit conflicting user value; an explicit `set-mode` may replace
+that one valid key. Duplicate target keys, duplicate `[Settings]` sections,
+unsafe paths, and failed GTK3 readback fail closed. Status distinguishes the
+configured key from a new GTK3 process's effective readback. Existing GTK3
+processes are not restarted or promised immediate recoloring. Applications
+that choose their own theme remain in control.
 
 Hyprpaper is a required renderer, not a preference authority. Hyprland starts
 one session-owned instance through `vanhyprarch-appearance renderer-start`.
@@ -108,8 +118,9 @@ remaining catalog item explicitly; Appearance never manufactures an official
 fallback after bootstrap.
 
 `set-mode` first persists the desired mode, then applies and verifies the host
-preference and the remembered wallpaper. Status keeps desired preference
-separate from effective host, portal, process, and per-output wallpaper state.
+preference, GTK3 projection, and remembered wallpaper. Status keeps desired
+preference separate from effective host, portal, GTK3, process, and per-output
+wallpaper state.
 Partial external failure therefore remains visible and can be repaired by an
 idempotent `reconcile`; it never causes the dock to invent a second mode. If
 Hyprpaper is absent or unavailable, shell and host appearance still reconcile,

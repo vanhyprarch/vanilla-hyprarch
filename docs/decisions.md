@@ -834,7 +834,10 @@ The writable host source is `org.gnome.desktop.interface color-scheme`.
 Appearance sets `prefer-dark` or `prefer-light` and requires corresponding
 `org.freedesktop.appearance/color-scheme` portal readback of 1 or 2. The portal
 is a read interface, not a write target. No application profile, GTK theme,
-Qt override, or application lifecycle is modified.
+Qt override, or application lifecycle is modified. GTK3's user-owned
+`settings.ini` receives only the derived `gtk-application-prefer-dark-theme`
+preference; its theme name and unrelated settings remain outside Vanilla's
+write scope.
 
 Hyprpaper is the required session-owned renderer and never the preference
 authority. Hyprland starts one instance through the public Appearance manager;

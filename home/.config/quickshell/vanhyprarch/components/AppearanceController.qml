@@ -21,6 +21,8 @@ Scope {
     property string darkDirectory: ""
     property string effectiveHostMode: "unknown"
     property int effectivePortalValue: -1
+    property var configuredGtk3Preference: null
+    property var effectiveGtk3Preference: null
     property string rendererState: "unknown"
     property bool rendererMatches: false
     property var effectiveWallpapers: ({})
@@ -33,6 +35,8 @@ Scope {
     readonly property bool externallyConsistent: ready
         && effectiveShellMode === mode && effectiveHostMode === mode
         && effectivePortalValue === (darkMode ? 1 : 2)
+        && configuredGtk3Preference === darkMode
+        && effectiveGtk3Preference === darkMode
         && (currentWallpaper === "" || rendererMatches)
 
     Component.onCompleted: if (checksEnabled)
@@ -119,6 +123,11 @@ Scope {
         const expectedHost = value.mode === "dark" ? "prefer-dark" : "prefer-light"
         if (value.host.expected_portal !== expectedPortal
                 || value.host.expected_gsettings !== expectedHost
+                || value.host.expected_gtk3 !== (value.mode === "dark")
+                || (value.host.gtk3_configured !== null
+                    && typeof value.host.gtk3_configured !== "boolean")
+                || (value.host.gtk3_effective !== null
+                    && typeof value.host.gtk3_effective !== "boolean")
                 || (value.host.portal !== null
                     && [0, 1, 2].indexOf(value.host.portal) < 0)
                 || (value.host.gsettings !== null
@@ -151,6 +160,8 @@ Scope {
             effectiveHostMode: value.host.gsettings === "prefer-dark" ? "dark"
                 : value.host.gsettings === "prefer-light" ? "light" : "unknown",
             effectivePortalValue: value.host.portal === null ? -1 : value.host.portal,
+            configuredGtk3Preference: value.host.gtk3_configured,
+            effectiveGtk3Preference: value.host.gtk3_effective,
             rendererState: value.renderer.state,
             rendererMatches: value.renderer.matches,
             effectiveWallpapers: value.renderer.active,
@@ -198,6 +209,8 @@ Scope {
         root.darkDirectory = state.darkDirectory
         root.effectiveHostMode = state.effectiveHostMode
         root.effectivePortalValue = state.effectivePortalValue
+        root.configuredGtk3Preference = state.configuredGtk3Preference
+        root.effectiveGtk3Preference = state.effectiveGtk3Preference
         root.rendererState = state.rendererState
         root.rendererMatches = state.rendererMatches
         root.effectiveWallpapers = state.effectiveWallpapers

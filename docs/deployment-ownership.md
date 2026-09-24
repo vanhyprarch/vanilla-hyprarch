@@ -137,6 +137,11 @@ effective external state, not preference storage. Appearance runtime locking,
 bounded restart suppression, and renderer logging stay under
 `XDG_RUNTIME_DIR/vanhyprarch`.
 
+GTK3 `settings.ini` remains `USER_OWNED`. The Appearance backend projects only
+`[Settings] gtk-application-prefer-dark-theme` from `appearance.json`; all other
+keys, comments, theme names, and existing file permissions remain user-owned.
+This projection is neither a managed payload nor a second mode preference.
+
 The eight GPL-2.0-only files under `assets/wallpapers/` and their deployed XDG
 data copies are `VANILLA_MANAGED` distribution payload. The copies seeded beneath
 `<XDG Pictures>/Wallpapers/Light` and `Dark` are `USER_OWNED`; their parent

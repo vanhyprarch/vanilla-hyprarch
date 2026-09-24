@@ -57,6 +57,7 @@ REQUIRED_DEFAULT = {
     "foot",
     "grim",
     "gvfs",
+    "gtk3",
     "hypridle",
     "hyprland",
     "hyprlock",

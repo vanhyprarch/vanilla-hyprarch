@@ -56,8 +56,11 @@ ShellRoot {
                 host: {
                     expected_gsettings: "prefer-dark",
                     expected_portal: 1,
+                    expected_gtk3: true,
                     gsettings: "prefer-light",
                     portal: 2,
+                    gtk3_configured: false,
+                    gtk3_effective: false,
                     matches: false,
                     error: null
                 },
@@ -84,6 +87,8 @@ ShellRoot {
             root.check(controller.effectiveHostMode === "light"
                     && controller.effectivePortalValue === 2,
                 "effective host mismatch was hidden")
+            root.check(!controller.externallyConsistent,
+                "GTK3 mismatch was omitted from external consistency")
             root.check(controller.rendererState === "mismatch"
                     && !controller.rendererMatches,
                 "effective wallpaper mismatch was hidden")
@@ -120,8 +125,11 @@ ShellRoot {
                 host: {
                     expected_gsettings: "prefer-light",
                     expected_portal: 2,
+                    expected_gtk3: false,
                     gsettings: "prefer-light",
                     portal: 2,
+                    gtk3_configured: false,
+                    gtk3_effective: false,
                     matches: true,
                     error: null
                 },
@@ -137,6 +145,17 @@ ShellRoot {
             controller.applyStatus(controller.parseStatus(lightReady), false)
             root.check(controller.mode === "light" && !theme.darkMode,
                 "Appearance authority did not restore the Vanilla light palette")
+            root.check(controller.externallyConsistent,
+                "matching GTK3 preference was not included in consistency")
+            const gtk3Mismatch = JSON.parse(lightReady)
+            gtk3Mismatch.host.gtk3_effective = true
+            gtk3Mismatch.host.matches = false
+            gtk3Mismatch.consistent = false
+            gtk3Mismatch.errors = ["effective GTK3 preference differs"]
+            controller.applyStatus(controller.parseStatus(JSON.stringify(gtk3Mismatch)), false)
+            root.check(!controller.externallyConsistent,
+                "isolated GTK3 readback mismatch was hidden")
+            controller.applyStatus(controller.parseStatus(lightReady), false)
             root.check(theme.accent === theme.text
                     && (theme.accent.r + theme.accent.g + theme.accent.b) / 3 < 0.4,
                 "light system-icon foreground does not match dock Power")

@@ -66,6 +66,8 @@ class FakeSystem:
         self.ignore_wallpaper: set[str] = set()
         self.mime = "image/png"
         self.fail: set[tuple[str, ...]] = set()
+        self.gtk3_settings_path: Path | None = None
+        self.gtk3_effective_override: bool | None = None
         self.calls: list[list[str]] = []
         self.spawn_calls: list[list[str]] = []
 
@@ -88,6 +90,16 @@ class FakeSystem:
         if argv[0] == appearance.BUSCTL:
             value = self.portal if self.portal_override is None else self.portal_override
             return subprocess.CompletedProcess(argv, 0, f"v v u {value}\n", "")
+        if argv == [appearance.GTK_QUERY_SETTINGS]:
+            assert self.gtk3_settings_path is not None
+            configured = (appearance.AppearanceManager._gtk3_document(
+                self.gtk3_settings_path.read_bytes())[0]
+                if self.gtk3_settings_path.exists() else False)
+            effective = (configured if self.gtk3_effective_override is None
+                else self.gtk3_effective_override)
+            return subprocess.CompletedProcess(argv, 0,
+                "gtk-application-prefer-dark-theme: "
+                + ("TRUE" if effective else "FALSE") + "\n", "")
         if argv == [appearance.HYPRCTL, "-j", "monitors"]:
             if self.monitor_payload is not None:
                 return subprocess.CompletedProcess(
@@ -180,6 +192,7 @@ class AppearanceTests(unittest.TestCase):
                 "dark": "Official Dark.png",
             },
         )
+        self.system.gtk3_settings_path = self.manager.gtk3_settings_path
         self.manager.ensure_user_directories()
 
     def tearDown(self) -> None:
@@ -732,6 +745,180 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(self.manager.set_mode("light"), [])
         self.assertEqual(self.system.host, "prefer-light")
         self.assertEqual(self.system.portal, 2)
+
+    def gtk3_file(self, content: bytes, mode: int = 0o644) -> Path:
+        path = self.manager.gtk3_settings_path
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.write_bytes(content)
+        path.chmod(mode)
+        return path
+
+    def test_fresh_gtk3_dark_and_light_projection(self) -> None:
+        for mode, expected in (("dark", b"true"), ("light", b"false")):
+            with self.subTest(mode=mode):
+                self.manager.gtk3_settings_path.unlink(missing_ok=True)
+                self.write_preference(mode)
+                self.assertEqual(self.manager.reconcile(), [])
+                path = self.manager.gtk3_settings_path
+                self.assertEqual(path.read_bytes(),
+                    b"[Settings]\ngtk-application-prefer-dark-theme="
+                    + expected + b"\n")
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                host = self.manager.status()["host"]
+                self.assertIs(host["gtk3_configured"], mode == "dark")
+                self.assertIs(host["gtk3_effective"], mode == "dark")
+                self.assertTrue(host["matches"])
+
+    def test_gtk3_dark_light_dark_switches_keep_one_preference(self) -> None:
+        self.write_preference("light")
+        for mode in ("dark", "light", "dark"):
+            self.assertEqual(self.manager.set_mode(mode), [])
+            self.assertIs(self.manager._gtk3_document(
+                self.manager.gtk3_settings_path.read_bytes())[0], mode == "dark")
+            self.assertEqual(self.manager.read_preference().mode, mode)
+            self.assertTrue(self.manager.status()["consistent"])
+
+    def test_existing_gtk3_file_preserves_other_keys_theme_comments_and_crlf(self) -> None:
+        original = (b"# user comment\r\n[Settings]\r\n"
+            b"gtk-theme-name=PersonalTheme\r\n"
+            b"gtk-icon-theme-name=PersonalIcons\r\n"
+            b"# keep this comment\r\n"
+            b"[Other]\r\nkey=value\r\n")
+        path = self.gtk3_file(original, 0o640)
+        self.write_preference("light")
+        self.assertEqual(self.manager.set_mode("dark"), [])
+        self.assertEqual(path.read_bytes(), original.replace(
+            b"[Other]\r\n", b"gtk-application-prefer-dark-theme=true\r\n[Other]\r\n"))
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(self.manager.set_mode("light"), [])
+        self.assertIn(b"gtk-application-prefer-dark-theme=false\r\n", path.read_bytes())
+        self.assertIn(b"gtk-theme-name=PersonalTheme\r\n", path.read_bytes())
+
+    def test_existing_gtk3_file_without_settings_section_is_extended_narrowly(self) -> None:
+        original = b"# personal note\n[Other]\nkey=value\n"
+        path = self.gtk3_file(original)
+        self.write_preference("light")
+        self.assertEqual(self.manager.set_mode("dark"), [])
+        self.assertEqual(path.read_bytes(), original
+            + b"[Settings]\ngtk-application-prefer-dark-theme=true\n")
+
+    def test_matching_gtk3_key_is_preserved_without_rewrite(self) -> None:
+        path = self.gtk3_file(b"[Settings]\n# keep\ngtk-application-prefer-dark-theme=true\n")
+        self.write_preference("dark")
+        before = path.stat().st_ino
+        self.assertEqual(self.manager.reconcile(), [])
+        self.assertEqual(path.stat().st_ino, before)
+        self.assertEqual(path.read_bytes(),
+            b"[Settings]\n# keep\ngtk-application-prefer-dark-theme=true\n")
+
+    def test_startup_preserves_conflicting_gtk3_key_but_explicit_mode_changes_it(self) -> None:
+        path = self.gtk3_file(b"[Settings]\ngtk-theme-name=PersonalTheme\n"
+            b"gtk-application-prefer-dark-theme=false\n")
+        self.write_preference("dark")
+        original = path.read_bytes()
+        errors = self.manager.reconcile()
+        self.assertTrue(any("conflicts with Vanilla mode" in error for error in errors))
+        self.assertEqual(path.read_bytes(), original)
+        self.assertFalse(self.manager.status()["consistent"])
+        self.assertEqual(self.manager.set_mode("dark"), [])
+        self.assertEqual(path.read_bytes(), original.replace(b"=false", b"=true"))
+        self.assertEqual(self.manager.read_preference().mode, "dark")
+
+    def test_duplicate_gtk3_target_or_section_fails_closed(self) -> None:
+        for content in (
+                b"[Settings]\ngtk-application-prefer-dark-theme=false\n"
+                b"gtk-application-prefer-dark-theme=true\n",
+                b"[Settings]\ngtk-theme-name=PersonalTheme\n"
+                b"[Settings]\ngtk-application-prefer-dark-theme=false\n"):
+            with self.subTest(content=content):
+                path = self.gtk3_file(content)
+                self.write_preference("light")
+                errors = self.manager.set_mode("dark")
+                self.assertTrue(any("duplicate" in error for error in errors))
+                self.assertEqual(path.read_bytes(), content)
+
+    def test_unsafe_gtk3_paths_and_malformed_file_fail_closed(self) -> None:
+        path = self.manager.gtk3_settings_path
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        outside = self.root / "outside.ini"
+        outside.write_text("[Settings]\n")
+        path.symlink_to(outside)
+        self.write_preference("light")
+        self.assertTrue(any("safe user-owned" in error
+            for error in self.manager.set_mode("dark")))
+        self.assertEqual(outside.read_text(), "[Settings]\n")
+        path.unlink()
+        path.mkdir()
+        self.assertTrue(any("safe user-owned" in error
+            for error in self.manager.set_mode("dark")))
+        path.rmdir()
+        self.gtk3_file(b"not a key file\n")
+        self.assertTrue(any("valid key file" in error
+            for error in self.manager.set_mode("dark")))
+        path.unlink()
+        self.gtk3_file(b"[Settings]\ngtk-application-prefer-dark-theme=invalid\n")
+        self.assertTrue(any("dark preference is invalid" in error
+            for error in self.manager.set_mode("dark")))
+        path.unlink()
+        path.parent.rmdir()
+        path.parent.symlink_to(self.root)
+        self.assertTrue(any("symbolic link" in error
+            for error in self.manager.set_mode("dark")))
+        path.parent.unlink()
+        self.gtk3_file(b"[Settings]\n")
+        with mock.patch.object(appearance.os, "getuid", return_value=os.getuid() + 1):
+            self.assertTrue(any("owned" in error
+                for error in self.manager.set_mode("dark")))
+
+    def test_gtk3_publication_failure_and_effective_mismatch_restore_preimage(self) -> None:
+        original = b"[Settings]\n# exact preimage\ngtk-application-prefer-dark-theme=false\n"
+        path = self.gtk3_file(original, 0o640)
+        self.write_preference("light")
+        real_replace = appearance.os.replace
+
+        def fail_gtk3_replace(source, destination):
+            if Path(destination) == path:
+                raise OSError("fixture publication failure")
+            return real_replace(source, destination)
+
+        with mock.patch.object(appearance.os, "replace", side_effect=fail_gtk3_replace):
+            errors = self.manager.set_mode("dark")
+        self.assertTrue(any("fixture publication failure" in error for error in errors))
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        original_inode = path.stat().st_ino
+
+        self.system.gtk3_effective_override = False
+        errors = self.manager.set_mode("dark")
+        self.assertTrue(any("effective GTK3" in error for error in errors))
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(path.stat().st_ino, original_inode)
+        self.assertEqual(list(path.parent.glob(".settings.ini.*")), [])
+
+        self.system.gtk3_effective_override = None
+        self.system.fail.add((appearance.GTK_QUERY_SETTINGS,))
+        errors = self.manager.set_mode("dark")
+        self.assertTrue(any("fixture failure" in error for error in errors))
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_new_gtk3_file_is_removed_when_effective_readback_fails(self) -> None:
+        self.write_preference("light")
+        self.system.gtk3_effective_override = False
+        errors = self.manager.set_mode("dark")
+        self.assertTrue(any("effective GTK3" in error for error in errors))
+        self.assertFalse(self.manager.gtk3_settings_path.exists())
+        self.assertFalse(self.manager.gtk3_directory.exists())
+
+    def test_gtk3_effective_mismatch_is_in_status_and_consistency(self) -> None:
+        self.write_preference("dark")
+        self.gtk3_file(b"[Settings]\ngtk-application-prefer-dark-theme=true\n")
+        self.system.gtk3_effective_override = False
+        status = self.manager.status()
+        self.assertIs(status["host"]["gtk3_configured"], True)
+        self.assertIs(status["host"]["gtk3_effective"], False)
+        self.assertFalse(status["host"]["matches"])
+        self.assertFalse(status["consistent"])
 
     def test_host_command_failure_is_reported_without_per_app_mutation(self) -> None:
         command = (
