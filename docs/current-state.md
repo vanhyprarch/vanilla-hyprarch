@@ -681,6 +681,15 @@ reconciliation. Each per-screen Theme button calls only that controller and
 has no persistence or private theme state. The accepted `Theme.qml` palettes
 are unchanged.
 
+The repository now contains a small managed Dunst presentation file and an
+Appearance-owned inverse-palette color projection. Dunst keeps package/D-Bus
+startup and existing notification behavior. Its width and proportional visual
+metrics increase by approximately 30%; top-right offset changes from the
+package `(10, 50)` to `(10, 10)` to align with the managed application-area
+outer gap. Appearance changes reload an active Dunst through `dunstctl reload`.
+Repository tests cover the projection and deployment contract; managed
+deployment and real-host visual acceptance passed in both Appearance modes.
+
 The validated host write target is writable
 `org.gnome.desktop.interface color-scheme`. The active GTK Settings portal
 provider maps `prefer-dark` to `org.freedesktop.appearance/color-scheme` 1 and
@@ -1154,7 +1163,7 @@ privileged boundaries. A separate service-policy manifest records future
 activation ownership without changing systemd state.
 
 The internal `install/managed_deploy.py` engine now consumes ownership v2 and
-implements plan/install/update/validate for the 21 `VANILLA_MANAGED` user
+implements plan/install/update/validate for the 23 `VANILLA_MANAGED` user
 artifacts. Installed mode uses regular files, explicit modes, private staging,
 atomic generation exchange, mode-0600 hash provenance, safe stale removal, and
 per-artifact rollback. Durable transaction milestones cover staging, publish,

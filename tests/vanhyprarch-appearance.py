@@ -68,6 +68,7 @@ class FakeSystem:
         self.fail: set[tuple[str, ...]] = set()
         self.gtk3_settings_path: Path | None = None
         self.gtk3_effective_override: bool | None = None
+        self.dunst_active = False
         self.calls: list[list[str]] = []
         self.spawn_calls: list[list[str]] = []
 
@@ -100,6 +101,10 @@ class FakeSystem:
             return subprocess.CompletedProcess(argv, 0,
                 "gtk-application-prefer-dark-theme: "
                 + ("TRUE" if effective else "FALSE") + "\n", "")
+        if argv == [appearance.SYSTEMCTL, "--user", "is-active", "--quiet", "dunst.service"]:
+            return subprocess.CompletedProcess(argv, 0 if self.dunst_active else 3, "", "")
+        if argv == [appearance.DUNSTCTL, "reload"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
         if argv == [appearance.HYPRCTL, "-j", "monitors"]:
             if self.monitor_payload is not None:
                 return subprocess.CompletedProcess(
@@ -211,6 +216,106 @@ class AppearanceTests(unittest.TestCase):
         dark: str | None = None,
     ) -> None:
         self.manager.write_preference(appearance.Preference(mode, light, dark))
+
+    def enable_managed_dunst(self) -> None:
+        base = self.manager.dunst_base_path
+        base.parent.mkdir(parents=True, exist_ok=True)
+        base.write_bytes((REPOSITORY / "home/.config/dunst/dunstrc").read_bytes())
+        components = self.manager.theme_path.parent
+        components.mkdir(parents=True, exist_ok=True)
+        for name in ("Theme.qml", "VisualMetrics.qml", "PanelSurface.qml"):
+            shutil.copyfile(
+                REPOSITORY / "home/.config/quickshell/vanhyprarch/components" / name,
+                components / name,
+            )
+
+    def enable_fake_user_bus(self) -> None:
+        self.manager._dunst_bus_available = lambda: True
+
+    def test_dunst_inverse_palette_and_live_reload(self) -> None:
+        self.enable_managed_dunst()
+        self.enable_fake_user_bus()
+        self.system.dunst_active = True
+
+        self.assertEqual(self.manager.set_mode("dark"), [])
+        light_colors = self.manager.dunst_color_path.read_text(encoding="ascii")
+        self.assertIn('[urgency_normal]\n    background = "#FFF8F5"\n', light_colors)
+        self.assertIn('    foreground = "#3A3A3A"\n', light_colors)
+        self.assertIn('    frame_color = "#939292"\n', light_colors)
+        self.assertIn('[urgency_low]\n    background = "#ECEAE9"\n', light_colors)
+        self.assertIn('[urgency_critical]\n    background = "#FFF8F5"\n', light_colors)
+        self.assertIn('    frame_color = "#A33A32"\n', light_colors)
+        self.assertIn('    highlight = "#A33A32"\n', light_colors)
+
+        self.assertEqual(self.manager.set_mode("light"), [])
+        dark_colors = self.manager.dunst_color_path.read_text(encoding="ascii")
+        self.assertIn('[urgency_normal]\n    background = "#1C1714"\n', dark_colors)
+        self.assertIn('    foreground = "#F4F4F3"\n', dark_colors)
+        self.assertIn('    frame_color = "#535251"\n', dark_colors)
+        self.assertIn('[urgency_low]\n    background = "#302E2D"\n', dark_colors)
+        self.assertIn('[urgency_critical]\n    background = "#1C1714"\n', dark_colors)
+        self.assertIn('    frame_color = "#E06C5F"\n', dark_colors)
+        self.assertIn('    highlight = "#E06C5F"\n', dark_colors)
+        self.assertNotIn("#285577", dark_colors)
+        self.assertEqual(self.system.calls.count([appearance.DUNSTCTL, "reload"]), 2)
+        keyfile = appearance.GLib.KeyFile()
+        keyfile.load_from_data(dark_colors, len(dark_colors), appearance.GLib.KeyFileFlags.NONE)
+        self.assertEqual(keyfile.get_string("urgency_normal", "background"), '"#1C1714"')
+
+    def test_dunst_projection_rolls_back_on_reload_failure(self) -> None:
+        self.enable_managed_dunst()
+        self.enable_fake_user_bus()
+        self.assertEqual(self.manager.set_mode("light"), [])
+        original = self.manager.dunst_color_path.read_bytes()
+        self.system.dunst_active = True
+        self.system.fail.add((appearance.DUNSTCTL, "reload"))
+        errors = self.manager.set_mode("dark")
+        self.assertTrue(any("Dunst reload failed" in error or "fixture failure" in error for error in errors))
+        self.assertEqual(self.manager.dunst_color_path.read_bytes(), original)
+
+    def test_fresh_initialization_projects_without_starting_dunst(self) -> None:
+        self.enable_managed_dunst()
+        self.manager.initialize_defaults()
+        projected = self.manager.dunst_color_path.read_text(encoding="ascii")
+        self.assertIn('[urgency_normal]\n    background = "#1C1714"\n', projected)
+        self.assertEqual(self.system.calls.count([appearance.DUNSTCTL, "reload"]), 0)
+
+    def test_dunst_projection_refuses_unowned_color_file(self) -> None:
+        self.enable_managed_dunst()
+        elsewhere = self.config / "user-colors.conf"
+        elsewhere.write_text("personal", encoding="utf-8")
+        self.manager.dunst_color_directory.mkdir()
+        self.manager.dunst_color_path.symlink_to(elsewhere)
+        errors = self.manager.set_mode("dark")
+        self.assertTrue(any("safe regular file" in error for error in errors))
+        self.assertEqual(elsewhere.read_text(encoding="utf-8"), "personal")
+
+    def test_dunst_geometry_and_unmanaged_config_boundary(self) -> None:
+        source = (REPOSITORY / "home/.config/dunst/dunstrc").read_text(encoding="utf-8")
+        self.assertIn("width = 390", source)
+        self.assertIn("height = (0, 390)", source)
+        self.assertIn("origin = top-right", source)
+        self.assertIn("offset = (10, 10)", source)
+        self.assertIn("padding = 10", source)
+        self.assertIn("horizontal_padding = 10", source)
+        self.assertIn("frame_width = 4", source)
+        self.assertIn("corner_radius = 0", source)
+        self.assertIn("separator_height = 3", source)
+        self.assertIn("font = Sans 10", source)
+        self.assertIn("min_icon_size = 42", source)
+        self.assertIn("max_icon_size = 166", source)
+        self.assertIn("progress_bar_height = 13", source)
+        self.assertIn("progress_bar_min_width = 195", source)
+        self.assertIn("progress_bar_max_width = 390", source)
+        self.assertNotIn("Monospace 8", source)
+        self.assertNotIn("format =", source)
+        self.assertNotIn("timeout =", source)
+        self.assertNotIn("mouse_left_click =", source)
+
+        self.manager.dunst_base_path.parent.mkdir(parents=True, exist_ok=True)
+        self.manager.dunst_base_path.write_text("[global]\nwidth = 500\n", encoding="utf-8")
+        self.assertEqual(self.manager.set_mode("dark"), [])
+        self.assertFalse(self.manager.dunst_color_path.exists())
 
     def test_xdg_pictures_resolution_and_required_plural_directories(self) -> None:
         pictures = self.home / "Images and Pictures"

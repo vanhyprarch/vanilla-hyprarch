@@ -35,12 +35,14 @@ tree are equivalent inputs.
 
 ## Current managed inventory
 
-The current manifest supplies exactly 21 Phase 2 artifacts:
+The current manifest supplies exactly 23 Phase 2 artifacts:
 
 - Hyprland configuration: `hyprland-loader`, `hyprland-managed-core`,
   `hypridle-config`, `hyprpaper-config`, and `hyprlock-config`;
 - shell configuration: `quickshell-config`;
-- public commands: `appearance-command`, `dictation-command`, `idle-command`,
+- notification configuration: `dunst-config`;
+- public commands: `appearance-command`, `default-apps-command`,
+  `dictation-command`, `idle-command`,
   `keyboard-command`, `monitor-command`, `polkit-command`,
   `screensaver-command`, and `screenshot-command`;
 - user systemd files: `keyboard-unit`, `monitor-transaction-unit`, and

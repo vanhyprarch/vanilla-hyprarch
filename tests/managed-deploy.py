@@ -306,6 +306,7 @@ class ManifestConsumptionTests(FixtureTestCase):
                 "default-apps-command",
                 "dictation-command",
                 "dictation-resources",
+                "dunst-config",
                 "hypridle-config",
                 "hyprland-loader",
                 "hyprland-managed-core",

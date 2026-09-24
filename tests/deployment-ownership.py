@@ -212,6 +212,20 @@ class DeploymentOwnershipTests(unittest.TestCase):
         self.assertEqual(assets["source"], "assets/wallpapers")
         self.assertEqual(assets["kind"], "tree")
 
+    def test_dunst_base_is_managed_and_inverse_colors_are_generated(self) -> None:
+        base = self.artifact_for_target(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/dunst/dunstrc"
+        )
+        self.assertEqual(base["class"], "VANILLA_MANAGED")
+        self.assertEqual(base["source"], "home/.config/dunst/dunstrc")
+        self.assertEqual(base["mode"], "0644")
+        colors = self.artifact_for_target(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/dunst/dunstrc.d/90-vanhyprarch-colors.conf"
+        )
+        self.assertEqual(colors["class"], "GENERATED")
+        self.assertEqual(colors["authority"], "vanhyprarch-appearance")
+        self.assertNotIn("source", colors)
+
     def test_override_is_header_only(self) -> None:
         self.assertEqual(OVERRIDE_SEED.read_text(encoding="utf-8"), OVERRIDE_HEADER)
 

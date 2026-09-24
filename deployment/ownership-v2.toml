@@ -322,6 +322,19 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+id = "dunst-config"
+source = "home/.config/dunst/dunstrc"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/dunst/dunstrc"
+class = "VANILLA_MANAGED"
+component = "notifications"
+kind = "file"
+mode = "0644"
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
 id = "dictation-command"
 source = "bin/vanhyprarch-dictation"
 target = "$HOME/.local/bin/vanhyprarch-dictation"
@@ -578,6 +591,19 @@ status = "implemented"
 user_editable = true
 machine_specific = false
 notes = "Appearance projects only [Settings] gtk-application-prefer-dark-theme; all other keys, comments, and theme names remain user-owned. Existing file mode is preserved."
+
+[[artifact]]
+id = "appearance-dunst-colors"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/dunst/dunstrc.d/90-vanhyprarch-colors.conf"
+class = "GENERATED"
+component = "notifications"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-appearance"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Inverse of the current Appearance palette, derived from deployed Theme.qml and PanelSurface geometry; no separate mode preference."
 
 [[artifact]]
 id = "appearance-provenance"

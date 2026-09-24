@@ -156,6 +156,14 @@ GTK3 `settings.ini` remains `USER_OWNED`. The Appearance backend projects only
 keys, comments, theme names, and existing file permissions remain user-owned.
 This projection is neither a managed payload nor a second mode preference.
 
+The small Dunst base file is `VANILLA_MANAGED`, installed as a regular file
+through the normal provenance-checked deployment. Appearance alone writes the
+adjacent `GENERATED` urgency-color drop-in from the current mode and the
+deployed Quickshell palette. A pre-existing user Dunst base file is a managed
+deployment conflict, not an adoption target. The generated drop-in has no
+release source or independent preference; unrelated package Dunst defaults stay
+package-owned.
+
 The eight GPL-2.0-only files under `assets/wallpapers/` and their deployed XDG
 data copies are `VANILLA_MANAGED` distribution payload. The copies seeded beneath
 `<XDG Pictures>/Wallpapers/Light` and `Dark` are `USER_OWNED`; their parent

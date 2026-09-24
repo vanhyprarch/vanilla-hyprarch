@@ -29,6 +29,7 @@ and removable local mitigations. Package selection belongs in
 | xdg-desktop-portal-gtk | 1.15.3 (`xdg-desktop-portal-gtk 1.15.3-1`) | Active Settings provider mapping GNOME interface color scheme to the standard portal value |
 | xdg-desktop-portal-hyprland | 1.4.1 (`xdg-desktop-portal-hyprland 1.4.1-2`) | Hyprland portal interfaces; does not provide Settings on this version |
 | Papirus | `papirus-icon-theme 20260801-1` | Project icon theme |
+| Dunst | 1.13.2 (`dunst 1.13.2-2`) | Package/D-Bus notification daemon; packaged `dunstctl reload` interface documented and managed config syntax parsed in isolation; live visual acceptance passed in both Appearance modes on the physical Vanilla host |
 | grim | 1.5.0 (`grim 1.5.0-2`) | Installed screenshot encoder; deterministic tests and the real 10-bit workflow pass |
 | slurp | 1.5.0 (`slurp 1.5.0-2`) | Installed unrestricted region picker with predefined smart rectangles; real pointer selection passes |
 | wl-clipboard | 2.3.0 (`wl-clipboard 1:2.3.0-1`) | Installed clipboard publisher; deterministic MIME/byte-stream tests and real paste acceptance pass |

@@ -1,0 +1,19 @@
+# Vanilla HyprArch managed Dunst geometry. Appearance owns the color drop-in.
+# Unspecified notification behavior stays with Dunst's packaged configuration.
+[global]
+    origin = top-right
+    width = 390
+    height = (0, 390)
+    offset = (10, 10)
+    padding = 10
+    horizontal_padding = 10
+    separator_height = 3
+    frame_width = 4
+    corner_radius = 0
+    font = Sans 10
+    icon_theme = Papirus
+    min_icon_size = 42
+    max_icon_size = 166
+    progress_bar_height = 13
+    progress_bar_min_width = 195
+    progress_bar_max_width = 390

@@ -31,6 +31,8 @@ HYPRCTL = "/usr/bin/hyprctl"
 HYPRPAPER = "/usr/bin/hyprpaper"
 FILE = "/usr/bin/file"
 GTK_QUERY_SETTINGS = "/usr/bin/gtk-query-settings"
+SYSTEMCTL = "/usr/bin/systemctl"
+DUNSTCTL = "/usr/bin/dunstctl"
 GTK3_DARK_KEY = "gtk-application-prefer-dark-theme"
 MODES = ("light", "dark")
 MODE_DIRECTORIES = {"light": "Light", "dark": "Dark"}
@@ -48,6 +50,8 @@ SUPPORTED_MIME_TYPES = {
 PORTAL_PATTERN = re.compile(r"^v v u ([012])$")
 MAX_PREFERENCE_SIZE = 65536
 MAX_GTK3_SETTINGS_SIZE = 1024 * 1024
+DUNST_COLORS_HEADER = "# Vanilla HyprArch Appearance color projection.\n"
+DUNST_BASE_HEADER = "# Vanilla HyprArch managed Dunst geometry."
 GTK3_QUERY_PATTERN = re.compile(
     r"^\s*gtk-application-prefer-dark-theme\s*:\s*(TRUE|FALSE)\s*$"
 )
@@ -226,6 +230,12 @@ class AppearanceManager:
         self.preference_path = self.config_home / "vanhyprarch/appearance.json"
         self.gtk3_directory = self.config_home / "gtk-3.0"
         self.gtk3_settings_path = self.gtk3_directory / "settings.ini"
+        self.dunst_base_path = self.config_home / "dunst/dunstrc"
+        self.dunst_color_directory = self.config_home / "dunst/dunstrc.d"
+        self.dunst_color_path = self.dunst_color_directory / "90-vanhyprarch-colors.conf"
+        self.theme_path = self.config_home / "quickshell/vanhyprarch/components/Theme.qml"
+        self.metrics_path = self.config_home / "quickshell/vanhyprarch/components/VisualMetrics.qml"
+        self.panel_surface_path = self.config_home / "quickshell/vanhyprarch/components/PanelSurface.qml"
         self.asset_receipt_path = (
             self.state_home / "vanhyprarch/appearance-assets.json"
         )
@@ -718,6 +728,7 @@ class AppearanceManager:
             preference = self.read_preference()
             if preference is None:
                 raise AppearanceError("appearance preference was not created")
+        self.project_dunst_colors(preference.mode)
         return {
             "version": 1,
             "preference": "created" if preference_created else "preserved",
@@ -1060,7 +1071,206 @@ class AppearanceManager:
             self.apply_gtk3_mode(mode, explicit=explicit)
         except (AppearanceError, OSError) as error:
             errors.append(str(error))
+        try:
+            self.project_dunst_colors(mode)
+        except (AppearanceError, OSError) as error:
+            errors.append(str(error))
         return errors
+
+    @staticmethod
+    def _mix_color(base: str, foreground: str, strength: float) -> str:
+        channels = (
+            round(int(base[index:index + 2], 16) * (1 - strength)
+                + int(foreground[index:index + 2], 16) * strength)
+            for index in (1, 3, 5)
+        )
+        return "#" + "".join(f"{channel:02X}" for channel in channels)
+
+    def _dunst_palette(self, mode: str) -> dict[str, str]:
+        """Read the deployed QML palette and invert the requested Appearance mode."""
+        self.require_mode(mode)
+        try:
+            theme = self.theme_path.read_text(encoding="utf-8")
+            metrics = self.metrics_path.read_text(encoding="utf-8")
+            panel = self.panel_surface_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise AppearanceError(f"could not read deployed Vanilla palette: {error}") from error
+        if ("color: root.theme.background" not in panel
+                or "outlineColor: root.theme.panelOutline" not in panel
+                or "radius: root.metrics.panelRadius" not in panel
+                or not re.search(r"^\s*readonly property int panelRadius: 0\s*$", metrics, re.MULTILINE)):
+            raise AppearanceError("Vanilla panel surface contract changed")
+        if not re.search(
+            r"panelOutline:\s*mixOpaque\(surface, text, darkMode\s*"
+            r"\? metrics\.panelOutlineDarkMixStrength\s*"
+            r": metrics\.panelOutlineLightMixStrength\)", theme,
+        ):
+            raise AppearanceError("Vanilla panel outline expression changed")
+        inverted = "light" if mode == "dark" else "dark"
+        palette: dict[str, str] = {}
+        for role in ("background", "surface", "text", "danger"):
+            match = re.search(
+                rf'^\s*readonly property color {role}: darkMode \? "(#[0-9A-Fa-f]{{6}})"'
+                rf' : "(#[0-9A-Fa-f]{{6}})"\s*$',
+                theme, re.MULTILINE,
+            )
+            if match is None:
+                raise AppearanceError(f"Vanilla {role} palette expression changed")
+            palette[role] = match.group(1 if inverted == "dark" else 2).upper()
+        strength_name = (
+            "panelOutlineDarkMixStrength" if inverted == "dark"
+            else "panelOutlineLightMixStrength"
+        )
+        match = re.search(
+            rf"^\s*readonly property real {strength_name}: (0(?:\.\d+)?|1(?:\.0+)?)\s*$",
+            metrics, re.MULTILINE,
+        )
+        if match is None:
+            raise AppearanceError("Vanilla panel outline strength changed")
+        palette["outline"] = self._mix_color(
+            palette["surface"], palette["text"], float(match.group(1))
+        )
+        return palette
+
+    def _dunst_color_document(self, mode: str) -> bytes:
+        palette = self._dunst_palette(mode)
+        return (
+            DUNST_COLORS_HEADER
+            + "[urgency_low]\n"
+            + f'    background = "{palette["surface"]}"\n'
+            + f'    foreground = "{palette["text"]}"\n'
+            + f'    frame_color = "{palette["outline"]}"\n'
+            + f'    highlight = "{palette["text"]}"\n'
+            + "\n[urgency_normal]\n"
+            + f'    background = "{palette["background"]}"\n'
+            + f'    foreground = "{palette["text"]}"\n'
+            + f'    frame_color = "{palette["outline"]}"\n'
+            + f'    highlight = "{palette["text"]}"\n'
+            + "\n[urgency_critical]\n"
+            + f'    background = "{palette["background"]}"\n'
+            + f'    foreground = "{palette["text"]}"\n'
+            + f'    frame_color = "{palette["danger"]}"\n'
+            + f'    highlight = "{palette["danger"]}"\n'
+        ).encode("ascii")
+
+    def _dunst_bus_available(self) -> bool:
+        try:
+            bus = (self.runtime_dir / "bus").lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise AppearanceError(f"could not inspect user bus: {error}") from error
+        return stat.S_ISSOCK(bus.st_mode) and bus.st_uid == os.getuid()
+
+    def project_dunst_colors(self, mode: str) -> None:
+        """Atomically project inverse colors, then reload only an active Dunst."""
+        self.require_mode(mode)
+        try:
+            base = self.dunst_base_path.lstat()
+        except FileNotFoundError:
+            return  # A user without the managed Dunst payload retains package defaults.
+        except OSError as error:
+            raise AppearanceError(f"could not inspect Dunst config: {error}") from error
+        if (not stat.S_ISREG(base.st_mode) or base.st_uid != os.getuid()
+                or base.st_nlink != 1):
+            raise AppearanceError("Dunst config is not a safe managed regular file")
+        try:
+            if not self.dunst_base_path.read_text(encoding="utf-8").startswith(DUNST_BASE_HEADER):
+                return  # Preserve an existing user Dunst configuration.
+        except (OSError, UnicodeError) as error:
+            raise AppearanceError(f"could not read Dunst config: {error}") from error
+
+        candidate = self._dunst_color_document(mode)
+        self._ensure_owned_directory(self.dunst_color_directory, self.config_home, 0o755)
+        target = self.dunst_color_path
+        try:
+            before = target.lstat()
+        except FileNotFoundError:
+            before = None
+        if before is not None and (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.getuid() or before.st_nlink != 1
+                or stat.S_IMODE(before.st_mode) != 0o644):
+            raise AppearanceError("Dunst color projection is not a safe regular file")
+        original = target.read_bytes() if before is not None else None
+        color_lines = b"".join(
+            b"    " + key + rb' = "#[0-9A-F]{6}"\n'
+            for key in (b"background", b"foreground", b"frame_color", b"highlight")
+        )
+        if original is not None and not re.fullmatch(
+            rb"# Vanilla HyprArch Appearance color projection\.\n"
+            rb"\[urgency_low\]\n" + color_lines
+            + rb"\n\[urgency_normal\]\n" + color_lines
+            + rb"\n\[urgency_critical\]\n" + color_lines,
+            original,
+        ):
+            raise AppearanceError("Dunst color projection has unexpected content")
+
+        active_code = 3
+        if self._dunst_bus_available():
+            active = self.run([SYSTEMCTL, "--user", "is-active", "--quiet", "dunst.service"])
+            if active.returncode not in (0, 3):
+                raise AppearanceError(concise_error(active) or "could not inspect Dunst service")
+            active_code = active.returncode
+        needs_write = original != candidate
+        temporary: Path | None = None
+        backup: Path | None = None
+        published = False
+        retained_backup = False
+        try:
+            if needs_write:
+                descriptor, name = tempfile.mkstemp(prefix=".90-vanhyprarch-colors.", dir=self.dunst_color_directory)
+                temporary = Path(name)
+                with os.fdopen(descriptor, "wb") as stream:
+                    os.fchmod(stream.fileno(), 0o644)
+                    stream.write(candidate)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if before is None:
+                    os.link(temporary, target, follow_symlinks=False)
+                    temporary.unlink()
+                    temporary = None
+                else:
+                    backup = self.dunst_color_directory / (temporary.name + ".backup")
+                    os.link(target, backup, follow_symlinks=False)
+                    if self._gtk3_identity(target.lstat()) != self._gtk3_identity(before):
+                        raise AppearanceError("Dunst colors changed before publication")
+                    os.replace(temporary, target)
+                    temporary = None
+                published = True
+                self._fsync_directory(self.dunst_color_directory)
+                if target.read_bytes() != candidate:
+                    raise AppearanceError("Dunst color projection did not verify")
+            if active_code == 0:
+                result = self.run([DUNSTCTL, "reload"])
+                if result.returncode != 0:
+                    raise AppearanceError(concise_error(result) or "Dunst reload failed")
+        except (OSError, AppearanceError) as error:
+            if published:
+                try:
+                    if target.read_bytes() != candidate:
+                        raise AppearanceError("Dunst colors changed before rollback")
+                    if backup is None:
+                        target.unlink()
+                    else:
+                        os.replace(backup, target)
+                        backup = None
+                    self._fsync_directory(self.dunst_color_directory)
+                    if (target.read_bytes() if original is not None else None) != original \
+                            or (original is None and target.exists()):
+                        raise AppearanceError("Dunst color rollback did not verify")
+                    if active_code == 0:
+                        restored = self.run([DUNSTCTL, "reload"])
+                        if restored.returncode != 0:
+                            raise AppearanceError(concise_error(restored) or "Dunst rollback reload failed")
+                except (OSError, AppearanceError) as rollback_error:
+                    retained_backup = backup is not None
+                    raise AppearanceError(f"Dunst projection failed: {error}; rollback failed: {rollback_error}") from error
+            raise AppearanceError(f"Dunst projection failed: {error}") from error
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            if backup is not None and not retained_backup:
+                backup.unlink(missing_ok=True)
 
     def _live_renderer_pids(self) -> list[int]:
         expected = Path(HYPRPAPER)

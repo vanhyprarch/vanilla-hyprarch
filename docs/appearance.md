@@ -71,6 +71,31 @@ configured key from a new GTK3 process's effective readback. Existing GTK3
 processes are not restarted or promised immediate recoloring. Applications
 that choose their own theme remain in control.
 
+Notifications remain the official Dunst daemon. A short managed
+`$XDG_CONFIG_HOME/dunst/dunstrc` changes only presentation geometry, Sans
+typography, and the already-required Papirus icon theme; the package's title/body
+format, timing, stacking, actions, history, and progress behavior remain in
+force. The fixed width is 390 rather than 300 pixels. The top-right offset is
+`(10, 10)`, matching the managed 10-pixel top and right Hyprland outer gaps;
+the persistent dock occupies the left edge. The position passed physical visual
+acceptance on the Vanilla host.
+
+Appearance derives Dunst's urgency colors from the deployed `Theme.qml` and
+`VisualMetrics.qml` values used by `PanelSurface`, rather than storing another
+palette. The projection intentionally inverts the current mode: Dark Appearance
+uses the Light panel colors, and Light Appearance uses the Dark panel colors.
+Normal notifications use the inverse panel background and outline; low uses its
+surface; critical keeps the panel background with the inverse palette's danger
+frame. The generated
+`$XDG_CONFIG_HOME/dunst/dunstrc.d/90-vanhyprarch-colors.conf` contains only
+these urgency colors and no mode preference. First initialization, mode changes,
+and reconciliation regenerate it under the Appearance lock. An active packaged
+`dunst.service` is refreshed with the installed Dunst 1.13.2 `dunstctl reload`
+interface; an inactive service remains D-Bus activated on its first notification.
+Failed reload restores the exact previous projection and reports an error.
+An existing user Dunst base config is preserved by managed deployment and is not
+claimed by the Appearance projection.
+
 Hyprpaper is a required renderer, not a preference authority. Hyprland starts
 one session-owned instance through `vanhyprarch-appearance renderer-start`.
 The managed Hyprpaper configuration enables IPC and contains no wallpaper
