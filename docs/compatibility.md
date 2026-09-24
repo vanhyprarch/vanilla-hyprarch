@@ -79,6 +79,21 @@ Quickshell upgrade or any material `IpcHandler` lifecycle change. The backend's
 notification remains bounded and nonfatal, and startup plus the 30-second
 authoritative refresh remain recovery paths if IPC is unavailable.
 
+## AppPicker sorter teardown on Quickshell reload
+
+**Affected components:** Quickshell 0.3.1 and Qt 6.11.2
+
+The preliminary `SortFilterProxyModel` / `FunctionSorter` sorter used only by
+Dock `+` crashes during same-process configuration reload. The focused
+`tests/app-picker-reload.py` fixture reproduces `pure virtual method called`
+with the committed sorter on its first reload; the real host reported
+`QQmlFunctionSorter::~QQmlFunctionSorter()` in the abort stack. AppPicker now
+copies `DesktopEntries.applications.values` into a local sorted QML array and
+rebuilds it on `valuesChanged`. The fixture also checks that the replacement
+survives three reloads. Retest the preliminary sorter only after Quickshell or
+Qt changes its QML sorter destruction behavior; the local projection can be
+removed if an upstream model sorter survives that regression test.
+
 ## Hyprland Lua import boundary
 
 **Affected component:** Hyprland 0.56.2

@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""Check AppPicker's sorted native desktop-entry model offscreen."""
+"""Check AppPicker order, delegate identity, activation, and live updates."""
 
 from __future__ import annotations
 
@@ -110,20 +110,28 @@ ShellRoot {
         interval: 50
         running: true
         repeat: true
+        property int stage: 0
         onTriggered: {
-            if (DesktopEntries.applications.values.length !== 6)
+            const expectedCount = stage === 1 ? 7 : 6
+            if (DesktopEntries.applications.values.length !== expectedCount)
                 return
             const view = root.findItem(picker, "appPickerApplicationsView")
-            if (!view || view.count !== 6)
+            if (!view || view.count !== expectedCount)
                 return
 
-            const expectedIds = ["a-alpha", "b-alpha", "c-beta",
-                "a-same", "z-same", "z-last"]
-            const expectedNames = ["alpha", "Alpha", "beta",
-                "Same", "Same", "zebra"]
+            const expectedIds = stage === 0
+                ? ["a-alpha", "b-alpha", "c-beta", "a-same", "z-same", "z-last"]
+                : stage === 1
+                ? ["aa-new", "a-alpha", "b-alpha", "c-beta", "a-same", "z-same", "z-last"]
+                : ["aa-new", "a-alpha", "b-alpha", "c-beta", "a-same", "z-same"]
+            const expectedNames = stage === 0
+                ? ["alpha", "Alpha", "beta", "Same", "Same", "zebra"]
+                : stage === 1
+                ? ["aardvark", "alpha", "Alpha", "beta", "Same", "Same", "zebra"]
+                : ["aardvark", "alpha", "Alpha", "beta", "Same", "Same"]
             const sourceIds = DesktopEntries.applications.values.map(
                 entry => entry.id)
-            if (sourceIds.join(",") === expectedIds.join(",")) {
+            if (stage === 0 && sourceIds.join(",") === expectedIds.join(",")) {
                 root.fail("desktop-entry fixture arrived already sorted")
                 stop()
                 return
@@ -143,8 +151,19 @@ ShellRoot {
                 }
             }
 
+            if (stage === 0) {
+                stage = 1
+                console.log("APP_PICKER_INITIAL_PASS")
+                return
+            }
+            if (stage === 1) {
+                stage = 2
+                console.log("APP_PICKER_ADD_PASS")
+                return
+            }
+
             picker.requestedVisible = true
-            view.itemAtIndex(2).activated()
+            view.itemAtIndex(3).activated()
             if (launcherStore.addedId !== "c-beta" || picker.requestedVisible)
                 root.fail("activation lost the sorted row's desktop ID")
             else
@@ -193,9 +212,21 @@ ShellRoot {
                 stderr=subprocess.STDOUT,
             )
             try:
-                deadline = time.monotonic() + 10
+                deadline = time.monotonic() + 15
+                added = False
+                removed = False
                 while time.monotonic() < deadline:
                     output = log.read_text(encoding="utf-8", errors="replace")
+                    if "APP_PICKER_INITIAL_PASS" in output and not added:
+                        (applications / "aa-new.desktop").write_text(
+                            "[Desktop Entry]\nType=Application\nName=aardvark\n"
+                            "Exec=/usr/bin/true\nIcon=application-x-executable\n",
+                            encoding="utf-8",
+                        )
+                        added = True
+                    if "APP_PICKER_ADD_PASS" in output and not removed:
+                        (applications / "z-last.desktop").unlink()
+                        removed = True
                     if "APP_PICKER_ORDER_PASS" in output or "APP_PICKER_ORDER_FAILURE" in output:
                         break
                     if process.poll() is not None:
@@ -214,7 +245,7 @@ ShellRoot {
             raise AssertionError(f"AppPicker order test failed:\n{output}")
         if "critical" in output.lower() or "FATAL" in output:
             raise AssertionError(f"AppPicker emitted an error:\n{output}")
-    print("AppPicker native order, modelData, and activation: PASS")
+    print("AppPicker order, modelData, activation, and live updates: PASS")
 
 
 if __name__ == "__main__":

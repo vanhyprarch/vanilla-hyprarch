@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQml.Models
 import Quickshell
 
 DockPopup {
@@ -10,7 +9,29 @@ DockPopup {
     required property var theme
     required property LauncherStore launcherStore
     property int popupVerticalOffset: 4
+    property var sortedApplications: []
     readonly property int maximumPanelHeight: root.metrics.scaled(360)
+
+    function refreshApplications(): void {
+        const applications = []
+        for (const entry of DesktopEntries.applications.values)
+            applications.push(entry)
+        applications.sort(function(left, right) {
+            const nameOrder = left.name.toLocaleLowerCase().localeCompare(
+                right.name.toLocaleLowerCase())
+            if (nameOrder !== 0)
+                return nameOrder
+            return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+        })
+        sortedApplications = applications
+    }
+
+    Component.onCompleted: refreshApplications()
+
+    Connections {
+        target: DesktopEntries.applications
+        function onValuesChanged(): void { root.refreshApplications() }
+    }
 
     panelWidth: root.metrics.actionSurfaceWidth
     requestedPanelHeight: Math.min(root.maximumPanelHeight,
@@ -23,28 +44,6 @@ DockPopup {
             applicationsView.positionViewAtBeginning()
         else
             root.contentItem.forceActiveFocus()
-    }
-
-    SortFilterProxyModel {
-        id: sortedApplications
-        model: DesktopEntries.applications
-
-        sorters: FunctionSorter {
-            component RoleData: QtObject {
-                property DesktopEntry modelData
-            }
-
-            function sort(left: RoleData, right: RoleData): int {
-                const leftEntry = left.modelData
-                const rightEntry = right.modelData
-                const nameOrder = leftEntry.name.toLocaleLowerCase().localeCompare(
-                    rightEntry.name.toLocaleLowerCase())
-                if (nameOrder !== 0)
-                    return nameOrder
-                return leftEntry.id < rightEntry.id ? -1
-                    : leftEntry.id > rightEntry.id ? 1 : 0
-            }
-        }
     }
 
     PanelSurface {
@@ -60,7 +59,7 @@ DockPopup {
             anchors.fill: parent
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            model: sortedApplications
+            model: root.sortedApplications
 
             VerticalScrollIndicator {
                 view: applicationsView
