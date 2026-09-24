@@ -3,8 +3,7 @@
 Status: offline release declaration, deterministic artifact builder, verifier,
 fresh-install identity publisher, upgrade-safe stages, migration runner,
 durable journal, local exact-target driver, and installed manual updater
-implemented. No release is published; the Super+Space menu action does not
-exist yet.
+implemented. Super+Space exposes the manual updater. No release is published.
 
 ## Identity and authored declaration
 
@@ -365,8 +364,8 @@ can remove only the staged bundle matching the already committed installed
 identity. Failures retain the journal and exact target material for diagnosis
 or explicit resume; there is no global rollback.
 
-The installed discovery/download bootstrap follows below. The Super+Space
-action, release publication, and VM acceptance remain future work.
+The installed discovery/download bootstrap follows below. Release publication
+and VM acceptance remain future work.
 
 ## Installed manual updater (release Phase 6)
 
@@ -420,5 +419,10 @@ cleanup path. A malformed journal or retained bundle fails closed. The manual
 command crosses sudo once, passing a resolved explicit target username; root
 invocation requires `--target-user` and never infers it from HOME or cwd.
 
-The Super+Space menu action, background checks, release publication, production
+Super+Space → Update → Vanilla HyprArch launches the installed command through
+the existing supervised terminal helper, with a fixed direct argument vector
+and no QML-side sudo or release logic. The same action appears on development
+installations; the updater refuses automatic release updates without an
+installed release identity. End-to-end released upgrade acceptance still awaits
+the rc1/rc2 VM sequence. Background checks, release publication, production
 migration `0001`, and VM acceptance remain unimplemented.

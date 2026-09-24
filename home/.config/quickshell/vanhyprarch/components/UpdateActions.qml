@@ -13,8 +13,10 @@ Scope {
     readonly property string footExecutable: "/usr/bin/foot"
     readonly property string yayExecutable: "/usr/bin/yay"
     readonly property string flatpakExecutable: "/usr/bin/flatpak"
+    readonly property string vanillaExecutable: "/usr/local/bin/vanhyprarch-update"
     readonly property string terminalOperation:
         Quickshell.shellDir + "/helpers/vanhyprarch_terminal_operation"
+    property var commandLauncher: function(command) { Quickshell.execDetached(command) }
     readonly property var actions: [
         {
             id: "system",
@@ -29,6 +31,13 @@ Scope {
             detail: "Update installed Flatpak apps and runtimes",
             icon: "package-x-generic",
             keywords: ["flatpak", "applications", "apps", "runtimes"]
+        },
+        {
+            id: "vanilla",
+            label: "Vanilla HyprArch",
+            detail: "Update to a published Vanilla HyprArch release",
+            icon: "system-software-update",
+            keywords: ["vanilla", "hyprarch", "release", "update"]
         }
     ]
 
@@ -63,6 +72,17 @@ Scope {
             ]
         }
 
+        if (actionId === "vanilla") {
+            return [
+                terminalOperation,
+                "--supervise-foot",
+                footExecutable,
+                "Vanilla HyprArch Update",
+                "--",
+                vanillaExecutable
+            ]
+        }
+
         return []
     }
 
@@ -87,7 +107,7 @@ Scope {
             return false
         }
 
-        Quickshell.execDetached(command)
+        commandLauncher(command)
         return true
     }
 

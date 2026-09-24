@@ -482,15 +482,19 @@ cancellation, Enter closes the terminal. Remove Application is deliberately
 absent because Quickshell's `DesktopEntry` does not expose enough source-path
 provenance to prove package ownership safely.
 
-Update contains the fixed typed actions System and Flatpak. Entering the
-section only presents those actions. Explicit System activation starts
-`/usr/bin/yay -Syu`; explicit Flatpak activation starts
-`/usr/bin/flatpak update`. Both use direct argument vectors through the shared
-Foot terminal-operation helper, preserve normal interactive prompts, and add
-no forced ordering, noninteractive confirmation, database-force, downgrade,
-or shell option. One startup-time executable check reports a missing required
-Flatpak command in the panel and blocks that activation. There is no Everything
-action and no Vanilla HyprArch self-update action.
+Update contains the fixed typed actions System, Flatpak, and Vanilla HyprArch,
+in that order. Entering the section only presents those actions. Explicit
+System activation starts `/usr/bin/yay -Syu`; explicit Flatpak activation
+starts `/usr/bin/flatpak update`; explicit Vanilla HyprArch activation starts
+the installed `/usr/local/bin/vanhyprarch-update`. Each uses a direct argument
+vector through the shared Foot terminal-operation helper. The updater owns its
+release selection, confirmation, and lifecycle checks; Quickshell performs no
+update discovery. System and Flatpak retain their normal interactive prompts
+and add no forced ordering, noninteractive confirmation, database-force,
+downgrade, or shell option. One startup-time executable check reports a missing
+required Flatpak command in the panel and blocks that activation. There is no
+Everything action. On an unreleased development installation, the updater
+reports that automatic release updates are unavailable.
 
 Local Dictation Install, Apply, and Uninstall use a supervised form of that
 terminal helper. A private runtime result carries the manager child's status,
