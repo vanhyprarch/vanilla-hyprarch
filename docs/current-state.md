@@ -9,6 +9,10 @@ identity committed only after a fresh release installation validates. See
 [Release engineering](release-engineering.md). No tag, published release,
 upgrade path, or self-updater exists yet.
 
+Release Phase 3 adds explicit upgrade semantics to the existing system and
+create-once authorities. These stage modes do not orchestrate an upgrade or
+advance installed release identity.
+
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 

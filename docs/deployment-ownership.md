@@ -71,6 +71,11 @@ validations. It is copied from verified release metadata, never from a managed
 repository source file. Manual edits invalidate it; user managed deployment,
 create-once initialization, and development bootstrap do not write it.
 
+The `create-once-lifecycle-state` artifact is mode-0600 target-user-owned
+`BACKEND_OWNED` state. It records processed create-once seed and owner-hook IDs
+so release upgrades preserve deliberate user deletion. Only the create-once
+authority writes it; it contains no user content and is not managed deployment.
+
 ## Create-once seeds
 
 Files below `seeds/`, or executable sources declared as create-once generators,

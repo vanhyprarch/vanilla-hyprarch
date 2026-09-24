@@ -87,7 +87,8 @@ class Fixture:
             self.runtime,
         )
 
-    def cli(self, source: Path, command: str, environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def cli(self, source: Path, command: str, environment: dict[str, str] | None = None,
+            *, lifecycle: str = "fresh") -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         if environment:
             env.update(environment)
@@ -97,6 +98,8 @@ class Fixture:
                 str(REPOSITORY / "install/create_once.py"),
                 "--source-root",
                 str(source),
+                "--lifecycle",
+                lifecycle,
                 "--home",
                 str(self.home),
                 "--xdg-config-home",
@@ -128,6 +131,7 @@ def write_minimal_release(root: Path) -> None:
             """\
             schema_version = 2
             create_once_transaction_state = "transaction"
+            create_once_lifecycle_state = "lifecycle"
 
             [[artifact]]
             id = "example"
@@ -163,6 +167,18 @@ def write_minimal_release(root: Path) -> None:
             kind = "tree"
             mode = "0755"
             authority = "flatpak"
+            status = "implemented"
+            user_editable = false
+            machine_specific = false
+
+            [[artifact]]
+            id = "lifecycle"
+            target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-lifecycle-v1.json"
+            class = "BACKEND_OWNED"
+            component = "distribution"
+            kind = "file"
+            mode = "0600"
+            authority = "vanhyprarch-create-once"
             status = "implemented"
             user_editable = false
             machine_specific = false
@@ -224,8 +240,30 @@ class MinimalCreateOnceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def initializer(self) -> CreateOnceInitializer:
-        return CreateOnceInitializer(source_root=self.release, target=self.fixture.target)
+    def initializer(self, lifecycle: str = "fresh") -> CreateOnceInitializer:
+        return CreateOnceInitializer(source_root=self.release, target=self.fixture.target,
+                                     lifecycle=lifecycle)
+
+    def add_second_seed(self) -> Path:
+        (self.release / "seeds/second.conf").write_text("new seed\n", encoding="utf-8")
+        manifest = self.release / "deployment/ownership-v2.toml"
+        with manifest.open("a", encoding="utf-8") as destination:
+            destination.write(textwrap.dedent("""
+
+                [[artifact]]
+                id = "second"
+                source = "seeds/second.conf"
+                target = "${XDG_CONFIG_HOME:-$HOME/.config}/second.conf"
+                class = "CREATE_ONCE_USER"
+                component = "test"
+                kind = "file"
+                mode = "0600"
+                authority = "user"
+                status = "implemented"
+                user_editable = true
+                machine_specific = false
+                """))
+        return self.fixture.config / "second.conf"
 
     def test_manifest_selects_only_create_once(self) -> None:
         initializer = self.initializer()
@@ -329,6 +367,106 @@ class MinimalCreateOnceTests(unittest.TestCase):
         result = self.fixture.cli(self.release, "initialize")
         self.assertEqual(result.returncode, 2)
         self.assertIn("malformed", result.stderr)
+
+    def test_upgrade_preserves_processed_bytes_and_user_deletion(self) -> None:
+        self.initializer().initialize()
+        target = self.fixture.config / "example.conf"
+        target.write_bytes(b"user changes\n")
+        before = (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes())
+        upgrade = self.initializer("upgrade")
+        self.assertEqual(upgrade.plan()[-1].action, "preserve-existing")
+        upgrade.initialize()
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes()), before)
+        target.unlink()
+        self.assertEqual(upgrade.plan()[-1].action, "preserve-absent")
+        upgrade.initialize()
+        upgrade.validate()
+        self.assertFalse(target.exists())
+
+    def test_upgrade_creates_only_new_seed_once(self) -> None:
+        self.initializer().initialize()
+        old = self.fixture.config / "example.conf"
+        old.unlink()
+        target = self.add_second_seed()
+        upgrade = self.initializer("upgrade")
+        self.assertIn(("create", "second"), [(item.action, item.identifier)
+                                             for item in upgrade.plan()])
+        self.assertFalse(target.exists())
+        upgrade.initialize()
+        self.assertEqual(target.read_bytes(), b"new seed\n")
+        before = (target.stat().st_ino, target.stat().st_mtime_ns)
+        upgrade.initialize()
+        upgrade.validate()
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns), before)
+        self.assertFalse(old.exists())
+        lifecycle = self.fixture.state / "vanhyprarch/create-once-lifecycle-v1.json"
+        self.assertEqual(json.loads(lifecycle.read_text())["seeds"], ["example", "second"])
+        self.assertEqual(stat.S_IMODE(lifecycle.stat().st_mode), 0o600)
+
+    def test_upgrade_new_seed_preserves_preexisting_user_file(self) -> None:
+        self.initializer().initialize()
+        target = self.add_second_seed()
+        target.write_bytes(b"personal\x00bytes")
+        before = (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes())
+        upgrade = self.initializer("upgrade")
+        upgrade.initialize()
+        upgrade.validate()
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns,
+                          target.read_bytes()), before)
+
+    def test_upgrade_interrupted_new_seed_never_reinitializes(self) -> None:
+        self.initializer().initialize()
+        target = self.add_second_seed()
+        crashed = self.fixture.cli(self.release, "initialize", {
+            "VANHYPRARCH_CREATE_ONCE_TESTING": "1",
+            "VANHYPRARCH_CREATE_ONCE_TEST_FAULT_AT": "after-publish:second",
+        }, lifecycle="upgrade")
+        self.assertEqual(crashed.returncode, 197, crashed.stderr)
+        self.assertEqual(target.read_bytes(), b"new seed\n")
+        target.unlink()
+        planned = self.fixture.cli(self.release, "plan", lifecycle="upgrade")
+        self.assertEqual(planned.returncode, 2)
+        self.assertIn("recovery-required", planned.stdout)
+        resumed = self.fixture.cli(self.release, "initialize", lifecycle="upgrade")
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        self.assertFalse(target.exists())
+        self.initializer("upgrade").validate()
+
+    def test_upgrade_interrupted_before_publish_preserves_absence(self) -> None:
+        self.initializer().initialize()
+        target = self.add_second_seed()
+        crashed = self.fixture.cli(self.release, "initialize", {
+            "VANHYPRARCH_CREATE_ONCE_TESTING": "1",
+            "VANHYPRARCH_CREATE_ONCE_TEST_FAULT_AT": "before-publish:second",
+        }, lifecycle="upgrade")
+        self.assertEqual(crashed.returncode, 197, crashed.stderr)
+        self.assertFalse(target.exists())
+        resumed = self.fixture.cli(self.release, "initialize", lifecycle="upgrade")
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        self.assertFalse(target.exists())
+        self.initializer("upgrade").validate()
+
+    def test_upgrade_rejects_missing_malformed_and_unsafe_lifecycle(self) -> None:
+        with self.assertRaisesRegex(ConflictError, "requires prior"):
+            self.initializer("upgrade").plan()
+        self.initializer().initialize()
+        lifecycle = self.fixture.state / "vanhyprarch/create-once-lifecycle-v1.json"
+        for data in (b"{", b'{"schema":1,"schema":1}'):
+            lifecycle.write_bytes(data)
+            with self.assertRaises(ConflictError):
+                self.initializer("upgrade").plan()
+        lifecycle.write_text("{}", encoding="utf-8")
+        lifecycle.chmod(0o644)
+        with self.assertRaisesRegex(ConflictError, "mode"):
+            self.initializer("upgrade").plan()
+        lifecycle.unlink()
+        lifecycle.symlink_to(self.fixture.config / "example.conf")
+        with self.assertRaises(ConflictError):
+            self.initializer("upgrade").plan()
+        lifecycle.unlink()
+        lifecycle.parent.chmod(0o777)
+        with self.assertRaisesRegex(ConflictError, "unsafe create-once lifecycle directory"):
+            self.initializer("upgrade").plan()
 
 
 class ActualManifestTests(unittest.TestCase):
@@ -889,6 +1027,20 @@ class ActualManifestTests(unittest.TestCase):
         self.assertFalse(wallpaper.exists())
         deployment.validate_installed(require_current_release=True)
         self.validate()
+
+    def test_upgrade_preserves_deleted_processed_owner_preference(self) -> None:
+        self.initialize()
+        preference = self.fixture.config / "vanhyprarch/appearance.json"
+        preference.unlink()
+        with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):
+            upgrade = CreateOnceInitializer(source_root=REPOSITORY,
+                                            target=self.fixture.target,
+                                            lifecycle="upgrade")
+            self.assertIn(("preserve-absent", "appearance-defaults"),
+                          {(item.action, item.identifier) for item in upgrade.plan()})
+            upgrade.initialize()
+            upgrade.validate()
+        self.assertFalse(preference.exists())
 
     def test_source_tree_removal_does_not_break_initialized_files(self) -> None:
         self.initialize()

@@ -37,6 +37,8 @@ from sddm_login_integration import (
 
 
 SCHEMA_VERSION = 1
+MAX_STATE_BYTES = 1024 * 1024
+MAX_INVENTORY_ITEMS = 2048
 STATE_DIRECTORY = "/var/lib/vanhyprarch"
 STATE_FILE = f"{STATE_DIRECTORY}/system-integration-v1.json"
 TRANSACTION_FILE = f"{STATE_DIRECTORY}/system-integration-transaction-v1.json"
@@ -231,7 +233,11 @@ class SystemIntegration:
         effective_uid: int | None = None,
         root_identity: tuple[int, int] = (0, 0),
         testing: bool = False,
+        lifecycle: str = "fresh",
     ) -> None:
+        if lifecycle not in {"fresh", "upgrade"}:
+            raise IntegrationError("lifecycle must be fresh or upgrade")
+        self.lifecycle = lifecycle
         self.source_root = source_root.resolve()
         self.system_root = system_root.resolve()
         self.runner = runner or SubprocessRunner()
@@ -432,8 +438,26 @@ class SystemIntegration:
     def _resolve_official(self, packages: Sequence[str]) -> None:
         if not packages:
             return
-        result = self._run(["/usr/bin/pacman", "-Sp", "--print-format", "%n", "--needed", "--", *packages])
-        self._require_success(result, "required packages cannot be resolved from the current sync databases")
+        preview_format = "%n|%H|%R" if self.lifecycle == "upgrade" else "%n"
+        result = self._run(["/usr/bin/pacman", "-Sp", "--print-format", preview_format,
+                            "--needed", "--", *packages])
+        output = self._require_success(result, "required packages cannot be resolved from the current sync databases")
+        if self.lifecycle == "upgrade":
+            transaction = [line.split("|") for line in output.splitlines()]
+            if (not transaction or any(len(fields) != 3 or PACKAGE_NAME.fullmatch(fields[0]) is None
+                                       for fields in transaction)):
+                raise IntegrationError("official package preview is malformed")
+            already_installed = sorted({fields[0] for fields in transaction}
+                                       & self._read_installed_packages())
+            if already_installed:
+                raise IntegrationError("official package transaction would change installed packages; run Update → System first: "
+                                       + ", ".join(already_installed))
+            unsafe_relations = sorted({fields[0] for fields in transaction
+                                       if fields[1] or fields[2]})
+            if unsafe_relations:
+                raise IntegrationError("official package transaction declares conflicts or replacements; "
+                                       "run Update → System or review the package change: "
+                                       + ", ".join(unsafe_relations))
 
     def _package_plan(self) -> tuple[list[PlanItem], set[str], tuple[str, ...]]:
         installed, pending = self._base_preflight()
@@ -613,20 +637,101 @@ class SystemIntegration:
 
     def _read_state(self) -> dict:
         path = self._system_path(STATE_FILE)
-        if not path.exists():
+        try:
+            details = path.lstat()
+        except FileNotFoundError:
             return {"schema": SCHEMA_VERSION}
         self._validate_private_file(path, 0o600, "system integration state")
+        if not 0 < details.st_size <= MAX_STATE_BYTES:
+            raise IntegrationError("system integration state size is invalid")
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            value = json.loads(path.read_text(encoding="utf-8"),
+                               object_pairs_hook=self._unique_state_pairs)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise IntegrationError(f"invalid system integration state: {error}") from error
-        if not isinstance(value, dict) or value.get("schema") != SCHEMA_VERSION:
+        if (not isinstance(value, dict) or type(value.get("schema")) is not int
+                or value["schema"] != SCHEMA_VERSION):
             raise IntegrationError("unsupported system integration state schema")
         return value
 
+    @staticmethod
+    def _unique_state_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise IntegrationError(f"duplicate system integration state key: {key}")
+            value[key] = item
+        return value
+
+    def _target_system_artifacts(self) -> dict[str, dict[str, str]]:
+        source = self._safe_source_file(TERMINAL_FALLBACK_SOURCE, "terminal fallback")
+        data = source.read_bytes()
+        if data != b"foot.desktop\n":
+            raise IntegrationError("terminal fallback source is not the reviewed Foot preference")
+        return {"terminal-fallback": {
+            "target": TERMINAL_FALLBACK_PATH,
+            "sha256": _sha256(data),
+            "mode": "0644",
+        }}
+
+    def _upgrade_baseline(self) -> dict:
+        state = self._read_state()
+        packages = state.get("official_packages")
+        artifacts = state.get("system_artifacts")
+        services = state.get("services")
+        if (not isinstance(packages, list) or len(packages) > MAX_INVENTORY_ITEMS
+                or any(not isinstance(name, str) or PACKAGE_NAME.fullmatch(name) is None
+                       for name in packages)
+                or packages != sorted(set(packages))
+                or not isinstance(artifacts, dict) or len(artifacts) > MAX_INVENTORY_ITEMS
+                or not isinstance(services, dict)
+                or not isinstance(services.get("desired"), dict)
+                or state.get("display_manager") != {"state": "sddm-baseline"}
+                or not isinstance(state.get("bluez"), dict)):
+            raise IntegrationError("upgrade requires complete prior system integration provenance")
+        if any(not isinstance(name, str) or PACKAGE_NAME.fullmatch(name) is None
+               for name in artifacts):
+            raise IntegrationError("invalid prior system artifact inventory")
+        for record in artifacts.values():
+            if (not isinstance(record, dict)
+                    or set(record) != {"target", "sha256", "mode"}
+                    or not isinstance(record["target"], str)
+                    or not record["target"].startswith("/")
+                    or ".." in Path(record["target"]).parts
+                    or not isinstance(record["sha256"], str)
+                    or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None
+                    or not isinstance(record["mode"], str)
+                    or re.fullmatch(r"0[0-7]{3}", record["mode"]) is None):
+                raise IntegrationError("invalid prior system artifact provenance")
+        previous_services = services["desired"]
+        if any(not isinstance(unit, str) or SERVICE_NAME.fullmatch(unit) is None
+               or not isinstance(wanted, str) or wanted not in {"enabled", "disabled"}
+               for unit, wanted in previous_services.items()):
+            raise IntegrationError("invalid prior service-policy provenance")
+        pending = state.get("pending_system_artifact")
+        if pending is not None:
+            target = self._target_system_artifacts().get("terminal-fallback")
+            if pending != {"id": "terminal-fallback", **target}:
+                raise IntegrationError("pending system artifact does not match target release")
+            if "terminal-fallback" in artifacts:
+                raise IntegrationError("pending system artifact is already committed")
+        return state
+
+    def _commit_stage_inventory(self) -> None:
+        state = self._read_state()
+        if self._terminal_fallback_status().action != "terminal-fallback-preserve":
+            raise IntegrationError("terminal fallback cannot be recorded before validation")
+        state["official_packages"] = list(self.official_default_packages)
+        state["system_artifacts"] = self._target_system_artifacts()
+        state["pending_system_artifact"] = None
+        if state != self._read_state():
+            self._write_state(state)
+
     def _read_transaction(self) -> dict | None:
         path = self._system_path(TRANSACTION_FILE)
-        if not path.exists():
+        try:
+            path.lstat()
+        except FileNotFoundError:
             return None
         self._validate_private_file(path, 0o600, "system integration transaction")
         try:
@@ -719,10 +824,13 @@ class SystemIntegration:
 
     def _remove_transaction(self) -> None:
         path = self._system_path(TRANSACTION_FILE)
-        if path.exists():
-            self._validate_private_file(path, 0o600, "system integration transaction")
-            path.unlink()
-            self._fsync_directory(path.parent)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return
+        self._validate_private_file(path, 0o600, "system integration transaction")
+        path.unlink()
+        self._fsync_directory(path.parent)
 
     @contextlib.contextmanager
     def _mutation_lock(self):
@@ -953,6 +1061,7 @@ class SystemIntegration:
 
     def plan(self) -> SystemPlan:
         self._require_root_integration("plan")
+        baseline = self._upgrade_baseline() if self.lifecycle == "upgrade" else None
         transaction = self._read_transaction()
         if transaction is not None:
             return SystemPlan((PlanItem("recovery-required", transaction["kind"], transaction.get("phase", "unknown")),))
@@ -989,6 +1098,47 @@ class SystemIntegration:
         items.extend(self._display_manager_plan())
         if pending:
             items.append(PlanItem("prerequisite-block", "phase4-apply", "package provisioning is blocked until administrator-managed full upgrade"))
+        if baseline is not None:
+            old_packages = set(baseline["official_packages"])
+            old_artifacts = baseline["system_artifacts"]
+            intent = baseline.get("pending_system_artifact")
+            old_services = baseline["services"]["desired"]
+            for item in tuple(items):
+                if item.action == "package-install" and item.subject in old_packages:
+                    items.append(PlanItem("conflict", item.subject,
+                                          "previously required official package is missing"))
+                elif item.action == "aur-bootstrap":
+                    items.append(PlanItem("conflict", "yay", "upgrade cannot bootstrap missing AUR baseline"))
+                elif item.action == "flathub-add":
+                    items.append(PlanItem("conflict", "flathub", "previously required system remote is missing"))
+                elif item.subject == TERMINAL_FALLBACK_PATH:
+                    if item.action == "terminal-fallback-create" and "terminal-fallback" in old_artifacts:
+                        items.append(PlanItem("conflict", item.subject,
+                                              "previously managed system file is missing"))
+                    if item.action == "terminal-fallback-preserve" and (
+                            "terminal-fallback" not in old_artifacts and intent is None):
+                        items.append(PlanItem("conflict", item.subject,
+                                              "pre-existing system file lacks Vanilla provenance"))
+            current_record = old_artifacts.get("terminal-fallback")
+            if current_record is not None and current_record != self._target_system_artifacts()["terminal-fallback"]:
+                items.append(PlanItem("conflict", TERMINAL_FALLBACK_PATH,
+                                      "system file source changed; explicit replacement authority is required"))
+            try:
+                if self._sddm_login(source=False)._read_provenance()[0] is None:
+                    items.append(PlanItem("conflict", "sddm-login",
+                                          "previously required SDDM provenance is missing"))
+            except SddmLoginError as error:
+                items.append(PlanItem("conflict", "sddm-login", str(error)))
+            for unit, wanted in self.desired_system_services.items():
+                current = self._service_state(unit)
+                old = old_services.get(unit)
+                if old == wanted and current != wanted:
+                    items.append(PlanItem("conflict", unit, "previously managed service policy drifted"))
+                elif old is not None and current not in {old, wanted}:
+                    items.append(PlanItem("conflict", unit, "service state diverged from prior policy"))
+                elif old is None and current != "disabled":
+                    items.append(PlanItem("conflict", unit,
+                                          "new service has unproven pre-existing enablement"))
         return SystemPlan(tuple(items))
 
     def _require_root_integration(self, operation: str) -> None:
@@ -1448,7 +1598,9 @@ class SystemIntegration:
         alias_ready = context["alias"] == SDDM_UNIT_TARGET
         if prior == desired and alias_ready:
             state = self._read_state()
-            if state.get("display_manager") == {"state": "sddm-baseline"}:
+            if (state.get("display_manager") == {"state": "sddm-baseline"}
+                    and isinstance(state.get("services"), dict)
+                    and state["services"].get("desired") == desired):
                 return
         transaction = {
             "schema": SCHEMA_VERSION,
@@ -1586,24 +1738,40 @@ class SystemIntegration:
         self._require_root_integration("apply")
         with self._mutation_lock():
             self.recover()
+            if self.lifecycle == "upgrade":
+                proposed = self.plan()
+                if proposed.blockers:
+                    raise IntegrationError("upgrade plan is blocked: " + "; ".join(
+                        f"{item.subject}: {item.detail}" for item in proposed.blockers))
             installed, pending = self._base_preflight()
             if pending:
                 raise IntegrationError("pending Arch upgrades detected; administrator must complete a normal pacman -Syu before Vanilla package provisioning")
             self._display_manager_context()
             self._install_official_packages(installed)
-            self._bootstrap_yay()
+            if self.lifecycle == "fresh":
+                self._bootstrap_yay()
             self._apply_bluez()
             self._apply_flatpak()
             self._ensure_flatpak_exports()
             if "xdg-terminal-exec" not in self._read_installed_packages():
                 raise IntegrationError("xdg-terminal-exec must precede the Foot fallback")
+            if self.lifecycle == "upgrade":
+                state = self._upgrade_baseline()
+                if "terminal-fallback" not in state["system_artifacts"] and state.get("pending_system_artifact") is None:
+                    state["pending_system_artifact"] = {
+                        "id": "terminal-fallback",
+                        **self._target_system_artifacts()["terminal-fallback"],
+                    }
+                    self._write_state(state)
             self._terminal_fallback_status(create=True)
             self._apply_sddm_login()
             self._apply_services()
+            self.validate(require_inventory_current=False)
+            self._commit_stage_inventory()
             self.validate()
             return self.plan()
 
-    def validate(self) -> SystemPlan:
+    def validate(self, *, require_inventory_current: bool = True) -> SystemPlan:
         self._require_root_integration("validate")
         transaction = self._read_transaction()
         if transaction is not None:
@@ -1641,12 +1809,19 @@ class SystemIntegration:
         overlap = sorted(default_names & forbidden_direct)
         if overlap:
             raise IntegrationError("non-default/forbidden packages entered default manifest: " + ", ".join(overlap))
+        if self.lifecycle == "upgrade" and require_inventory_current:
+            state = self._upgrade_baseline()
+            if (state["official_packages"] != list(self.official_default_packages)
+                    or state["system_artifacts"] != self._target_system_artifacts()
+                    or state.get("pending_system_artifact") is not None):
+                raise IntegrationError("system upgrade inventory is incomplete")
         return self.plan()
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Vanilla HyprArch DF2 system integration")
     parser.add_argument("operation", choices=("plan", "apply", "validate"))
+    parser.add_argument("--lifecycle", choices=("fresh", "upgrade"), default="fresh")
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--target-user", required=True)
     return parser
@@ -1655,7 +1830,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
-        integration = SystemIntegration(source_root=arguments.source_root, target_username=arguments.target_user)
+        integration = SystemIntegration(source_root=arguments.source_root,
+                                        target_username=arguments.target_user,
+                                        lifecycle=arguments.lifecycle)
         if arguments.operation == "plan":
             plan = integration.plan()
         elif arguments.operation == "apply":

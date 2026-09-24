@@ -118,16 +118,26 @@ class FakeRunner:
         if args == ["/usr/bin/pacman", "-Qu"]:
             pending = state["pending"]
             return CommandResult(0 if pending else 1, "".join(f"{value}\n" for value in pending))
-        if args[1:5] == ["-Sp", "--print-format", "%n", "--needed"]:
+        if (args[1:3] == ["-Sp", "--print-format"]
+                and args[3] in {"%n", "%n|%H|%R"}
+                and args[4:6] == ["--needed", "--"]):
             requested = args[6:]
             missing = [name for name in requested if name not in state["official"]]
             if missing:
                 return CommandResult(1, "", "target not found: " + ",".join(missing))
-            return CommandResult(0, "".join(f"{name}\n" for name in requested))
+            resolved = [*requested, *state.get("transaction_extra", [])]
+            if args[3] == "%n":
+                return CommandResult(0, "".join(f"{name}\n" for name in resolved))
+            conflicts = state.get("transaction_conflicts", {})
+            replaces = state.get("transaction_replaces", {})
+            return CommandResult(0, "".join(
+                f"{name}|{conflicts.get(name, '')}|{replaces.get(name, '')}\n"
+                for name in resolved
+            ))
         if args[1:5] == ["-S", "--needed", "--noconfirm", "--"]:
             if state.get("package_failure"):
                 return CommandResult(1, "", "fixture package transaction failure")
-            installed.update(args[5:])
+            installed.update([*args[5:], *state.get("transaction_extra", [])])
             if "sddm" in args[5:]:
                 state["services"]["sddm.service"] = "disabled"
             state["installed"] = sorted(installed)
@@ -299,7 +309,8 @@ class Fixture:
         state.update(values)
         save_json(self.runner_state, state)
 
-    def engine(self, *, source_root: Path = REPOSITORY, target: str = "tester") -> SystemIntegration:
+    def engine(self, *, source_root: Path = REPOSITORY, target: str = "tester",
+               lifecycle: str = "fresh") -> SystemIntegration:
         def resolve(name: str) -> TargetUser:
             if name != "tester":
                 raise KeyError(name)
@@ -314,6 +325,7 @@ class Fixture:
             effective_uid=0,
             root_identity=(os.getuid(), os.getgid()),
             testing=True,
+            lifecycle=lifecycle,
         )
 
     def install_existing_yay(self, *, foreign: bool = True) -> None:
@@ -1506,6 +1518,255 @@ class IntegrationTestCase(unittest.TestCase):
         (self.fixture.root / "var/tmp").chmod(0o777)
         with self.assertRaisesRegex(IntegrationError, "sticky bit"):
             self.fixture.engine()._bootstrap_yay()
+
+
+class UpgradeSemanticsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fixture = Fixture()
+        self.fixture.adopt_everything()
+
+    def tearDown(self) -> None:
+        self.fixture.close()
+
+    def upgrade(self) -> SystemIntegration:
+        return self.fixture.engine(lifecycle="upgrade")
+
+    def add_target_package(self, engine: SystemIntegration) -> None:
+        original = next(item for item in engine.package_manifest["package"]
+                        if item["name"] == "dunst")
+        engine.package_manifest["package"].append({**original, "name": "vanilla-extra"})
+        state = self.fixture.state()
+        state["official"].append("vanilla-extra")
+        save_json(self.fixture.runner_state, state)
+
+    def test_existing_target_is_preserved_without_arch_or_aur_update(self) -> None:
+        engine = self.upgrade()
+        self.assertFalse(engine.plan().changes)
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        commands = [entry["argv"] for entry in self.fixture.state()["log"][before:]]
+        self.assertFalse(any(command[0] == "/usr/bin/pacman" and command[1] in {
+            "-S", "-Sy", "-Syu", "-U", "-R"} for command in commands))
+        self.assertFalse(any(command[0] in {"/usr/bin/git", "/usr/bin/makepkg"}
+                             for command in commands))
+        self.assertFalse(engine.validate().blockers)
+
+    def test_new_official_package_is_installed_without_full_upgrade(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        self.assertIn(("package-install", "vanilla-extra"),
+                      {(item.action, item.subject) for item in engine.plan().items})
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        commands = [entry["argv"] for entry in self.fixture.state()["log"][before:]]
+        self.assertIn(["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--",
+                       "vanilla-extra"], commands)
+        self.assertFalse(any(command[0] == "/usr/bin/pacman" and command[1] in {
+            "-Sy", "-Syu", "-R", "-U"} for command in commands))
+        self.assertIn("vanilla-extra", self.fixture.state()["installed"])
+        self.assertFalse(engine.validate().blockers)
+
+    def test_new_official_package_may_pull_in_new_dependency(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        self.fixture.update(transaction_extra=["vanilla-dependency"])
+        self.assertFalse(engine.plan().blockers)
+        engine.apply()
+        self.assertIn("vanilla-extra", self.fixture.state()["installed"])
+        self.assertIn("vanilla-dependency", self.fixture.state()["installed"])
+        self.assertFalse(engine.validate().blockers)
+
+    def test_pending_arch_updates_block_package_change(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        self.fixture.update(pending=["pacman 7 -> 8"])
+        self.assertTrue(engine.plan().blockers)
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+        self.assertNotIn("vanilla-extra", self.fixture.state()["installed"])
+
+    def test_package_preview_refuses_any_installed_dependency_change(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        self.fixture.update(transaction_extra=["pacman"])
+        with self.assertRaisesRegex(IntegrationError, "would change installed packages"):
+            engine.plan()
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+        self.assertNotIn("vanilla-extra", self.fixture.state()["installed"])
+
+    def test_package_preview_refuses_installed_package_downgrade(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        # The no-change policy is name-based, so it also rejects an older sync
+        # version without needing to compare pacman's version strings.
+        self.fixture.update(transaction_extra=["pacman"])
+        with self.assertRaisesRegex(IntegrationError, "would change installed packages"):
+            engine.plan()
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+        self.assertNotIn("vanilla-extra", self.fixture.state()["installed"])
+
+    def test_package_preview_refuses_conflict_removal_and_replacement(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        state = self.fixture.state()
+        state["installed"].append("legacy-package")
+        save_json(self.fixture.runner_state, state)
+        for field in ("transaction_conflicts", "transaction_replaces"):
+            with self.subTest(field=field):
+                relations = {"transaction_conflicts": {}, "transaction_replaces": {}}
+                relations[field] = {"vanilla-extra": "legacy-package"}
+                self.fixture.update(**relations)
+                with self.assertRaisesRegex(IntegrationError, "conflicts or replacements"):
+                    engine.plan()
+                with self.assertRaises(IntegrationError):
+                    engine.apply()
+                self.assertIn("legacy-package", self.fixture.state()["installed"])
+                self.assertNotIn("vanilla-extra", self.fixture.state()["installed"])
+
+    def test_missing_old_package_is_drift_and_dropped_package_is_not_removed(self) -> None:
+        state = self.fixture.state()
+        state["installed"].remove("dunst")
+        save_json(self.fixture.runner_state, state)
+        engine = self.upgrade()
+        self.assertIn("previously required official package is missing",
+                      [item.detail for item in engine.plan().blockers])
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+        state["installed"].append("dunst")
+        save_json(self.fixture.runner_state, state)
+        engine = self.upgrade()
+        engine.package_manifest["package"] = [item for item in engine.package_manifest["package"]
+                                              if item["name"] != "dunst"]
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        commands = [entry["argv"] for entry in self.fixture.state()["log"][before:]]
+        self.assertIn("dunst", self.fixture.state()["installed"])
+        self.assertFalse(any(command[0] == "/usr/bin/pacman" and command[1] == "-R"
+                             for command in commands))
+
+    def test_missing_old_system_file_is_drift(self) -> None:
+        target = self.fixture.root / MODULE.TERMINAL_FALLBACK_PATH.lstrip("/")
+        target.unlink()
+        engine = self.upgrade()
+        self.assertIn("previously managed system file is missing",
+                      [item.detail for item in engine.plan().blockers])
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+        self.assertFalse(target.exists())
+
+    def test_new_system_file_uses_prior_inventory_and_reruns(self) -> None:
+        state_path = self.fixture.root / MODULE.STATE_FILE.lstrip("/")
+        state = load_json(state_path)
+        state["system_artifacts"] = {}
+        save_json(state_path, state)
+        target = self.fixture.root / MODULE.TERMINAL_FALLBACK_PATH.lstrip("/")
+        target.unlink()
+        engine = self.upgrade()
+        self.assertIn("terminal-fallback-create", {item.action for item in engine.plan().items})
+        engine.apply()
+        before = (target.stat().st_ino, target.stat().st_mtime_ns)
+        engine.apply()
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns), before)
+        self.assertIn("terminal-fallback", load_json(state_path)["system_artifacts"])
+
+    def test_new_system_file_preexisting_or_unsafe_is_conflict(self) -> None:
+        state_path = self.fixture.root / MODULE.STATE_FILE.lstrip("/")
+        state = load_json(state_path)
+        state["system_artifacts"] = {}
+        save_json(state_path, state)
+        target = self.fixture.root / MODULE.TERMINAL_FALLBACK_PATH.lstrip("/")
+        engine = self.upgrade()
+        self.assertIn("pre-existing system file lacks Vanilla provenance",
+                      [item.detail for item in engine.plan().blockers])
+        target.chmod(0o600)
+        self.assertTrue(engine.plan().blockers)
+        target.unlink()
+        target.symlink_to(self.fixture.root / "home/tester")
+        self.assertTrue(engine.plan().blockers)
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+
+    def test_interrupted_new_system_file_publication_resumes(self) -> None:
+        state_path = self.fixture.root / MODULE.STATE_FILE.lstrip("/")
+        state = load_json(state_path)
+        state["system_artifacts"] = {}
+        engine = self.upgrade()
+        state["pending_system_artifact"] = {
+            "id": "terminal-fallback", **engine._target_system_artifacts()["terminal-fallback"]
+        }
+        save_json(state_path, state)
+        target = self.fixture.root / MODULE.TERMINAL_FALLBACK_PATH.lstrip("/")
+        before = (target.stat().st_ino, target.stat().st_mtime_ns)
+        self.assertFalse(engine.plan().blockers)
+        engine.apply()
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns), before)
+        self.assertIsNone(load_json(state_path)["pending_system_artifact"])
+
+    def test_declared_service_change_does_not_touch_unrelated_unit(self) -> None:
+        engine = self.upgrade()
+        for item in engine.service_manifest["service"]:
+            if item["name"] == "NetworkManager.service":
+                item["policy"] = "disabled"
+        state = self.fixture.state()
+        state["services"]["unrelated.service"] = "enabled"
+        save_json(self.fixture.runner_state, state)
+        self.assertIn(("service-disable", "NetworkManager.service"),
+                      {(item.action, item.subject) for item in engine.plan().items})
+        engine.apply()
+        self.assertEqual(self.fixture.state()["services"]["unrelated.service"], "enabled")
+        self.assertEqual(self.fixture.state()["services"]["NetworkManager.service"], "disabled")
+
+    def test_new_declared_service_only_enables_that_unit(self) -> None:
+        engine = self.upgrade()
+        engine.service_manifest["service"].append({
+            "name": "vanhyprarch-new.service", "scope": "system",
+            "default_install": True, "policy": "enabled",
+        })
+        state = self.fixture.state()
+        state["services"]["vanhyprarch-new.service"] = "disabled"
+        state["services"]["unrelated.service"] = "enabled"
+        save_json(self.fixture.runner_state, state)
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        commands = [entry["argv"] for entry in self.fixture.state()["log"][before:]]
+        changes = [command for command in commands if command[0] == "/usr/bin/systemctl"
+                   and command[1] in {"enable", "disable"}]
+        self.assertEqual(changes, [["/usr/bin/systemctl", "enable", "--",
+                                    "vanhyprarch-new.service"]])
+        self.assertEqual(self.fixture.state()["services"]["unrelated.service"], "enabled")
+
+    def test_old_service_policy_drift_is_conflict(self) -> None:
+        state = self.fixture.state()
+        state["services"]["NetworkManager.service"] = "disabled"
+        save_json(self.fixture.runner_state, state)
+        engine = self.upgrade()
+        self.assertIn("previously managed service policy drifted",
+                      [item.detail for item in engine.plan().blockers])
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+
+    def test_missing_upgrade_inventory_fails_closed(self) -> None:
+        state_path = self.fixture.root / MODULE.STATE_FILE.lstrip("/")
+        state = load_json(state_path)
+        state.pop("system_artifacts")
+        save_json(state_path, state)
+        with self.assertRaisesRegex(IntegrationError, "prior system integration provenance"):
+            self.upgrade().plan()
+
+    def test_upgrade_rejects_dangling_transaction_and_boolean_state_schema(self) -> None:
+        transaction = self.fixture.root / MODULE.TRANSACTION_FILE.lstrip("/")
+        transaction.symlink_to(transaction.parent / "missing-transaction")
+        with self.assertRaisesRegex(IntegrationError, "safe regular file"):
+            self.upgrade().plan()
+        transaction.unlink()
+        state_path = self.fixture.root / MODULE.STATE_FILE.lstrip("/")
+        state = load_json(state_path)
+        state["schema"] = True
+        save_json(state_path, state)
+        with self.assertRaisesRegex(IntegrationError, "unsupported system integration state schema"):
+            self.upgrade().plan()
 
 
 if __name__ == "__main__":

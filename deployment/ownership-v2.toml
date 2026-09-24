@@ -4,6 +4,7 @@ development_mode = "repository-symlinks-allowed"
 runtime_source_independent = true
 managed_deployment_provenance = "managed-deployment-provenance"
 create_once_transaction_state = "create-once-transaction-state"
+create_once_lifecycle_state = "create-once-lifecycle-state"
 sddm_login_state = "sddm-login-state"
 
 [[initializer]]
@@ -642,6 +643,19 @@ status = "implemented"
 user_editable = false
 machine_specific = false
 notes = "Artifact hashes and release provenance only; never stores preferences or runtime state."
+
+[[artifact]]
+id = "create-once-lifecycle-state"
+target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-lifecycle-v1.json"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-create-once"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Durable processed seed and owner-hook IDs; preserves user deletion across release upgrades without storing user content."
 
 [[artifact]]
 id = "create-once-transaction-state"

@@ -452,6 +452,17 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertFalse(identity["user_editable"])
         self.assertNotIn("source", identity)
 
+    def test_create_once_lifecycle_inventory_is_backend_owned(self) -> None:
+        self.assertEqual(self.document["create_once_lifecycle_state"],
+                         "create-once-lifecycle-state")
+        lifecycle = self.by_id["create-once-lifecycle-state"]
+        self.assertEqual(lifecycle["target"],
+                         "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-lifecycle-v1.json")
+        self.assertEqual(lifecycle["class"], "BACKEND_OWNED")
+        self.assertEqual(lifecycle["authority"], "vanhyprarch-create-once")
+        self.assertEqual(lifecycle["mode"], "0600")
+        self.assertNotIn("source", lifecycle)
+
     def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
         for item in self.artifacts:
             if item["class"] in {"GENERATED", "RUNTIME", "PACKAGE_OWNED"}:

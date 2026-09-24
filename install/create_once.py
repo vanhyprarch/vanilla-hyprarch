@@ -15,6 +15,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -36,6 +37,10 @@ from managed_deploy import (
 CREATE_ONCE_CLASSES = {"CREATE_ONCE_MACHINE", "CREATE_ONCE_USER"}
 SUPPORTED_SCHEMA = 2
 TRANSACTION_VERSION = 1
+LIFECYCLE_VERSION = 1
+MAX_LIFECYCLE_BYTES = 65536
+MAX_LIFECYCLE_ITEMS = 2048
+LIFECYCLE_ID = re.compile(r"[a-z0-9][a-z0-9.-]{0,127}\Z")
 TEST_MODE_ENV = "VANHYPRARCH_CREATE_ONCE_TESTING"
 TEST_FAULT_ENV = "VANHYPRARCH_CREATE_ONCE_TEST_FAULT_AT"
 FLATPAK_USER_EXPORT_ID = "flatpak-user-application-exports"
@@ -212,7 +217,11 @@ class CreateOnceInitializer:
         source_root: str | Path,
         target: InitTarget,
         manifest_relative: str = "deployment/ownership-v2.toml",
+        lifecycle: str = "fresh",
     ) -> None:
+        if lifecycle not in {"fresh", "upgrade"}:
+            raise InitializationError("lifecycle must be fresh or upgrade")
+        self.lifecycle = lifecycle
         if os.geteuid() == 0:
             raise SafetyError("create-once initialization must not run as root")
         source = Path(source_root)
@@ -383,6 +392,18 @@ class CreateOnceInitializer:
         self.transaction_path, self.transaction_root = self.target.xdg.resolve(
             transaction["target"]
         )
+        lifecycle_id = self.manifest.get("create_once_lifecycle_state")
+        if not isinstance(lifecycle_id, str) or lifecycle_id not in self.records:
+            raise ManifestError("create-once lifecycle state declaration is missing")
+        lifecycle_record = self.records[lifecycle_id]
+        if (lifecycle_record.get("class") != "BACKEND_OWNED"
+                or lifecycle_record.get("kind") != "file"
+                or lifecycle_record.get("mode") != "0600"
+                or lifecycle_record.get("authority") != "vanhyprarch-create-once"):
+            raise ManifestError("create-once lifecycle state declaration is invalid")
+        self.lifecycle_path, self.lifecycle_root = self.target.xdg.resolve(
+            lifecycle_record["target"]
+        )
 
     @staticmethod
     def _validate_seed(artifact: SeedArtifact, data: bytes) -> None:
@@ -489,6 +510,118 @@ class CreateOnceInitializer:
 
     def _transaction_exists(self) -> bool:
         return _lexists(self.transaction_path)
+
+    @staticmethod
+    def _unique_json(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ConflictError(f"duplicate create-once lifecycle key: {key}")
+            value[key] = item
+        return value
+
+    @staticmethod
+    def _validate_lifecycle(value: object) -> dict[str, object]:
+        if not isinstance(value, dict) or set(value) != {"schema", "seeds", "hooks", "pending"}:
+            raise ConflictError("create-once lifecycle state has an invalid schema")
+        if type(value["schema"]) is not int or value["schema"] != LIFECYCLE_VERSION:
+            raise ConflictError("unsupported create-once lifecycle schema")
+        for name in ("seeds", "hooks"):
+            items = value[name]
+            if (not isinstance(items, list) or len(items) > MAX_LIFECYCLE_ITEMS
+                    or any(not isinstance(item, str) or LIFECYCLE_ID.fullmatch(item) is None
+                           for item in items)
+                    or items != sorted(set(items))):
+                raise ConflictError(f"invalid create-once lifecycle {name}")
+        pending = value["pending"]
+        if pending is not None:
+            if (not isinstance(pending, dict) or set(pending) != {"kind", "id"}
+                    or not isinstance(pending["kind"], str)
+                    or pending["kind"] not in {"seed", "hook"}
+                    or not isinstance(pending["id"], str)
+                    or LIFECYCLE_ID.fullmatch(pending["id"]) is None
+                    or pending["id"] in value["seeds" if pending["kind"] == "seed" else "hooks"]):
+                raise ConflictError("invalid pending create-once lifecycle item")
+        return value
+
+    def _read_lifecycle(self, *, required: bool) -> dict[str, object] | None:
+        _walk_existing_without_symlinks(self.lifecycle_path.parent)
+        for directory in (self.lifecycle_root, self.lifecycle_path.parent):
+            if not _lexists(directory):
+                continue
+            info = os.lstat(directory)
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
+                raise ConflictError(f"unsafe create-once lifecycle directory: {directory}")
+        if not _lexists(self.lifecycle_path):
+            if required:
+                raise ConflictError("upgrade requires prior create-once lifecycle state")
+            return None
+        details = _regular_owned(self.lifecycle_path)
+        if stat.S_IMODE(details.st_mode) != 0o600 or not 0 < details.st_size <= MAX_LIFECYCLE_BYTES:
+            raise ConflictError("create-once lifecycle file has unsafe mode or size")
+        descriptor = os.open(self.lifecycle_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (details.st_dev, details.st_ino):
+                raise ConflictError("create-once lifecycle changed during inspection")
+            data = os.read(descriptor, MAX_LIFECYCLE_BYTES + 1)
+            after = os.fstat(descriptor)
+            if len(data) != opened.st_size or (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) != (
+                    after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                raise ConflictError("create-once lifecycle changed during inspection")
+        finally:
+            os.close(descriptor)
+        try:
+            value = json.loads(data.decode("utf-8"), object_pairs_hook=self._unique_json)
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise ConflictError(f"malformed create-once lifecycle state: {error}") from error
+        return self._validate_lifecycle(value)
+
+    def _write_lifecycle(self, value: dict[str, object]) -> None:
+        self._validate_lifecycle(value)
+        self._read_lifecycle(required=False)
+        _ensure_directory(self.lifecycle_path.parent, self.lifecycle_root, 0o700)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".create-once-lifecycle-", dir=self.lifecycle_path.parent
+        )
+        temporary = Path(temporary_name)
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb", closefd=False) as stream:
+                stream.write(_canonical_json(value))
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._read_lifecycle(required=False)
+            os.replace(temporary, self.lifecycle_path)
+            _fsync_directory(self.lifecycle_path.parent)
+            if self._read_lifecycle(required=True) != value:
+                raise ConflictError("published create-once lifecycle state differs from intent")
+        finally:
+            os.close(descriptor)
+            temporary.unlink(missing_ok=True)
+
+    def _record_fresh_lifecycle(self) -> None:
+        value = self._read_lifecycle(required=False) or {
+            "schema": LIFECYCLE_VERSION, "seeds": [], "hooks": [], "pending": None,
+        }
+        if value["pending"] is not None:
+            raise ConflictError("pending create-once lifecycle item requires upgrade recovery")
+        value["seeds"] = sorted(set(value["seeds"]) | {item.identifier for item in self.seeds})
+        value["hooks"] = sorted(set(value["hooks"]) | {item.identifier for item in self.hooks})
+        self._write_lifecycle(value)
+
+    def _start_lifecycle_item(self, value: dict[str, object], kind: str, identifier: str) -> None:
+        value["pending"] = {"kind": kind, "id": identifier}
+        self._write_lifecycle(value)
+
+    def _complete_lifecycle_item(self, value: dict[str, object]) -> None:
+        pending = value["pending"]
+        assert isinstance(pending, dict)
+        name = "seeds" if pending["kind"] == "seed" else "hooks"
+        value[name] = sorted(set(value[name]) | {pending["id"]})
+        value["pending"] = None
+        self._write_lifecycle(value)
 
     def _read_intent(self) -> dict[str, object]:
         metadata = os.lstat(self.transaction_path)
@@ -774,6 +907,12 @@ class CreateOnceInitializer:
         )
 
     def plan(self) -> list[Result]:
+        if self.lifecycle == "upgrade":
+            return self._plan_upgrade()
+        lifecycle = self._read_lifecycle(required=False)
+        if lifecycle is not None and lifecycle["pending"] is not None:
+            return [Result("recovery-required", "create-once-lifecycle",
+                           str(self.lifecycle_path), "pending upgrade lifecycle item")]
         if self._transaction_exists():
             return [
                 Result(
@@ -809,6 +948,11 @@ class CreateOnceInitializer:
         return results
 
     def initialize(self) -> list[Result]:
+        if self.lifecycle == "upgrade":
+            return self._initialize_upgrade()
+        lifecycle = self._read_lifecycle(required=False)
+        if lifecycle is not None and lifecycle["pending"] is not None:
+            raise ConflictError("pending create-once upgrade lifecycle item")
         results: list[Result] = []
         recovered = self.recover()
         if recovered is not None:
@@ -818,9 +962,12 @@ class CreateOnceInitializer:
             results.append(self._create_seed(artifact))
         for hook in self.hooks:
             results.append(self._run_hook(hook, initialize=True))
+        self._record_fresh_lifecycle()
         return results
 
     def validate(self) -> list[Result]:
+        if self.lifecycle == "upgrade":
+            return self._validate_upgrade()
         if self._transaction_exists():
             raise ConflictError("create-once recovery is required")
         exports = self._flatpak_exports()
@@ -857,12 +1004,138 @@ class CreateOnceInitializer:
                     "authoritative owner state is valid",
                 )
             )
+        lifecycle = self._read_lifecycle(required=True)
+        assert lifecycle is not None
+        if (lifecycle["pending"] is not None
+                or not {item.identifier for item in self.seeds} <= set(lifecycle["seeds"])
+                or not {item.identifier for item in self.hooks} <= set(lifecycle["hooks"])):
+            raise ConflictError("fresh create-once lifecycle inventory is incomplete")
+        return results
+
+    def _upgrade_seed_result(self, artifact: SeedArtifact, *, processed: bool) -> Result:
+        self._source_path(artifact.source)
+        destination, root = self.target.xdg.resolve(artifact.target)
+        _walk_existing_without_symlinks(destination.parent)
+        existing = self._existing_result(artifact, destination)
+        if existing is not None:
+            return existing
+        if processed:
+            return Result("preserve-absent", artifact.identifier, str(destination),
+                          "previously processed create-once item remains absent")
+        alternate = self._mime_alternate(artifact)
+        if alternate is not None:
+            return alternate
+        self._seed_bytes(artifact)
+        return Result("create", artifact.identifier, str(destination),
+                      "new create-once item is absent")
+
+    def _upgrade_hook_result(self, hook: InitHook, *, processed: bool) -> Result:
+        record = self.records[hook.state_artifact]
+        state_path, _root = self.target.xdg.resolve(record["target"])
+        _walk_existing_without_symlinks(state_path.parent)
+        if processed and not _lexists(state_path):
+            return Result("preserve-absent", hook.identifier, str(state_path),
+                          "previously processed owner state remains absent")
+        result = self._run_hook(hook, initialize=False)
+        if processed and result.action in {"backend-initialize", "external-hook"}:
+            raise ConflictError(f"previously processed owner state needs explicit recovery: {hook.identifier}")
+        return result
+
+    def _plan_upgrade(self) -> list[Result]:
+        lifecycle = self._read_lifecycle(required=True)
+        assert lifecycle is not None
+        if lifecycle["pending"] is not None or self._transaction_exists():
+            return [Result("recovery-required", "create-once-lifecycle",
+                           str(self.lifecycle_path), "upgrade apply must reconcile interrupted item")]
+        results = [self._flatpak_exports()]
+        for artifact in self.seeds:
+            results.append(self._upgrade_seed_result(
+                artifact, processed=artifact.identifier in lifecycle["seeds"]
+            ))
+        for hook in self.hooks:
+            results.append(self._upgrade_hook_result(
+                hook, processed=hook.identifier in lifecycle["hooks"]
+            ))
+        return results
+
+    def _recover_upgrade_pending(self, lifecycle: dict[str, object]) -> Result | None:
+        pending = lifecycle["pending"]
+        if pending is None:
+            if self._transaction_exists():
+                raise ConflictError("create-once transaction lacks lifecycle intent")
+            return None
+        assert isinstance(pending, dict)
+        kind, identifier = pending["kind"], pending["id"]
+        if kind == "seed":
+            artifact = next((item for item in self.seeds if item.identifier == identifier), None)
+            if artifact is None:
+                raise ConflictError("pending create-once seed is absent from target manifest")
+            if self._transaction_exists():
+                intent = self._read_intent()
+                if intent["artifact"] != identifier:
+                    raise ConflictError("create-once transaction and lifecycle intent disagree")
+                self.recover()
+            result = self._upgrade_seed_result(artifact, processed=True)
+        else:
+            hook = next((item for item in self.hooks if item.identifier == identifier), None)
+            if hook is None or self._transaction_exists():
+                raise ConflictError("pending create-once owner hook is ambiguous")
+            result = self._upgrade_hook_result(hook, processed=True)
+        self._complete_lifecycle_item(lifecycle)
+        return result
+
+    def _initialize_upgrade(self) -> list[Result]:
+        lifecycle = self._read_lifecycle(required=True)
+        assert lifecycle is not None
+        results: list[Result] = []
+        recovered = self._recover_upgrade_pending(lifecycle)
+        if recovered is not None:
+            results.append(recovered)
+        results.append(self._flatpak_exports(create=True))
+        for artifact in self.seeds:
+            if artifact.identifier in lifecycle["seeds"]:
+                results.append(self._upgrade_seed_result(artifact, processed=True))
+                continue
+            planned = self._upgrade_seed_result(artifact, processed=False)
+            self._start_lifecycle_item(lifecycle, "seed", artifact.identifier)
+            result = self._create_seed(artifact) if planned.action == "create" else planned
+            self._complete_lifecycle_item(lifecycle)
+            results.append(result)
+        for hook in self.hooks:
+            if hook.identifier in lifecycle["hooks"]:
+                results.append(self._upgrade_hook_result(hook, processed=True))
+                continue
+            self._upgrade_hook_result(hook, processed=False)
+            self._start_lifecycle_item(lifecycle, "hook", hook.identifier)
+            result = self._run_hook(hook, initialize=True)
+            self._complete_lifecycle_item(lifecycle)
+            results.append(result)
+        return results
+
+    def _validate_upgrade(self) -> list[Result]:
+        lifecycle = self._read_lifecycle(required=True)
+        assert lifecycle is not None
+        if lifecycle["pending"] is not None or self._transaction_exists():
+            raise ConflictError("create-once upgrade recovery is required")
+        exports = self._flatpak_exports()
+        if exports.action != "preserve-existing":
+            raise ConflictError("Flatpak user export directory is missing")
+        results = [exports]
+        for artifact in self.seeds:
+            if artifact.identifier not in lifecycle["seeds"]:
+                raise ConflictError(f"new create-once item was not processed: {artifact.identifier}")
+            results.append(self._upgrade_seed_result(artifact, processed=True))
+        for hook in self.hooks:
+            if hook.identifier not in lifecycle["hooks"]:
+                raise ConflictError(f"new owner hook was not processed: {hook.identifier}")
+            results.append(self._upgrade_hook_result(hook, processed=True))
         return results
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True)
+    parser.add_argument("--lifecycle", choices=("fresh", "upgrade"), default="fresh")
     parser.add_argument("--manifest", default="deployment/ownership-v2.toml")
     parser.add_argument("--home")
     parser.add_argument("--xdg-config-home")
@@ -888,6 +1161,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 runtime=arguments.xdg_runtime_dir,
             ),
             manifest_relative=arguments.manifest,
+            lifecycle=arguments.lifecycle,
         )
         operation = getattr(initializer, arguments.command)
         results = operation()

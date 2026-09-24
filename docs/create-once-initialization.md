@@ -12,12 +12,14 @@ the Phase 2 managed-file engine:
 
 The command consumes `deployment/ownership-v2.toml`; Python contains no second
 seed or backend inventory. Its internal interface is `plan`, `initialize`, and
-`validate`, with explicit source root and HOME/XDG target options. It is not a
+`validate`, with explicit source root and HOME/XDG target options. The later
+release-stage `--lifecycle fresh|upgrade` option defaults to fresh. It is not a
 public desktop command or the complete installer.
 
 ## Create-once rule
 
-Absence authorizes creation. Existence removes Vanilla's authority to replace.
+During fresh installation, absence authorizes creation. Existence removes
+Vanilla's authority to replace.
 A safe, user-owned regular file is reported as `preserve-existing` without
 content comparison, merge, mode repair, or rewrite. Symlinks, wrong types,
 unsafe owners, and symlinked parents fail closed.
@@ -41,6 +43,17 @@ discards only the precisely named engine candidate, and clears the intent.
 `plan` is strictly read-only and reports `recovery-required`; `validate` fails
 until recovery occurs. Abrupt termination before publish, after durable
 publish, and after the published marker is deterministic and idempotent.
+
+Fresh initialization also records every processed seed and owner-hook ID in
+mode-0600 backend-owned XDG state. Upgrade mode requires this durable inventory:
+an old ID remains processed even after user deletion, so its absent target is
+preserved. A newly declared ID can be initialized once. Before acting on one
+new ID, the backend records a pending intent. On interruption, a safe existing
+target is preserved; an absent target is also conservatively marked processed
+and left absent, since it may have been created and then deliberately deleted.
+This record stores no user file bytes and grants no overwrite authority.
+Create-once items are non-essential starter or user state. Anything required
+for system correctness must use another ownership class.
 
 ## Application seeds
 

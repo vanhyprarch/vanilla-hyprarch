@@ -171,3 +171,64 @@ may rerun through the existing stage recovery paths. Ordinary development
 bootstrap still creates no installed identity and does not infer one from
 the selected Git ref. Development bootstrap also refuses a host that already
 has a release identity, so it cannot silently leave a stale release claim.
+
+## Upgrade-safe authority modes (release Phase 3)
+
+The system and create-once stages now accept `--lifecycle fresh|upgrade`;
+`fresh` remains the default used by `install.sh`. These are individual stage
+semantics, not a release updater. They never advance the installed
+`/usr/share/vanhyprarch/release.json` identity. A future transaction driver
+must supply a verified target source tree and invoke the stages in order.
+
+`system_integration.py --lifecycle upgrade plan|apply|validate` requires the
+prior root-private system state and SDDM provenance. Fresh apply records its
+official-package and system-owned-file inventory in the existing
+`/var/lib/vanhyprarch/system-integration-v1.json`. The prior inventory makes a
+missing old terminal fallback a drift conflict, while a target-only addition
+can be created. A local pending artifact intent lets apply resume an interrupted
+new-file publication; foreign pre-existing files, symlinks, wrong modes, and
+owners remain conflicts. Other future system-owned files need explicit
+authority code and inventory entries; ownership-v2 alone is not a generic root
+deployer. BlueZ's existing adoption provenance and the separate SDDM
+provenance remain authoritative. A changed BlueZ candidate still fails closed
+until an explicit update or migration path is reviewed.
+
+Upgrade may install newly required **official** packages with the existing
+`pacman -S --needed` path, including newly required dependency packages. It
+blocks pending Arch updates and rejects a package preview that would change
+any already installed package or whose new packages declare conflicts or
+replacements. This conservatively refuses package removal and unsupported
+replacement transactions. It neither
+refreshes sync databases, runs `-Syu`, upgrades the AUR `yay` package, nor
+removes packages omitted from the new manifest. Previously required packages
+that disappeared locally are drift. Service changes use only target-declared
+system units and compare their prior recorded policy; unrelated units are not
+touched. A missing formerly required Flathub remote or SDDM provenance is a
+conflict.
+
+`create_once.py --lifecycle upgrade plan|initialize|validate` requires
+`${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-lifecycle-v1.json`.
+Fresh initialization writes this user-owned mode-0600 `BACKEND_OWNED` record
+after processing all declared seeds and owner hooks. It contains sorted IDs,
+not user file bytes. Upgrade preserves an old processed item even if the user
+deleted it; only a target ID absent from the record is eligible for first
+initialization. Pre-existing safe user files remain untouched. A durable
+one-item pending intent precedes each new initialization. After interruption,
+an absent pending target is conservatively recorded as processed and left
+absent, because publication followed by user deletion cannot be distinguished
+from interruption before publication. This avoids recreating user-deleted
+state. Malformed or unsafe lifecycle state fails closed. Create-once items are
+non-essential starter or user state; required system-correctness artifacts must
+use another ownership class.
+
+The supported released upgrade history starts with a future fresh
+`v1.0.0-rc1` installation, which creates both lifecycle inventories. No
+retrospective adoption of pre-rc1 development installations is implemented.
+
+`managed_deploy.py update` already has the needed release-upgrade behavior:
+provenance-gated replacement, safe stale removal, foreign-content conflicts,
+local recovery, and read-only validation. The SDDM authority similarly uses
+its root-private provenance and local transaction for source updates. Neither
+needs a synthetic lifecycle flag. Release discovery, migrations, global update
+transaction/journal/lock, version advancement, UI action, and VM acceptance
+remain unimplemented.

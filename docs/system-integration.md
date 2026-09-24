@@ -84,6 +84,30 @@ The production CLI has no alternate-system-root switch. Tests inject a command
 runner, account resolver, and disposable filesystem root; their fake boundary
 rejects every command it does not explicitly model.
 
+## Release-upgrade stage mode
+
+The Python authority now accepts `--lifecycle upgrade` for `plan`, `apply`,
+and `validate`. The default `fresh` mode and pre-Python shell bootstrap retain
+their installation behavior. Upgrade requires prior root-private system state
+with the official-package and system-artifact inventory recorded by a completed
+fresh apply. It also requires the separate SDDM provenance. These records
+distinguish an old managed file that went missing from a target addition; the
+former is drift, while the latter can be created when no foreign target exists.
+An interrupted new-file publication has a local pending intent and can rerun.
+
+New official packages and their new dependencies may be installed only when
+the current Arch sync state has no pending upgrades. The read-only package
+preview must contain no already installed package and no new package declaring
+conflicts or replacements; both cases fail closed before installation. A
+missing package required by the old inventory is drift. Dropped
+manifest packages remain installed. Upgrade preserves `yay` without an AUR
+build or upgrade, and does not restore a missing formerly required Flathub
+remote as a fresh adoption. Service changes apply only to target-declared
+units after comparison with prior service-policy provenance. A changed BlueZ
+candidate remains a conflict until an explicit provenance-safe replacement
+path is designed. The stage does not advance the installed release identity
+or implement the release transaction.
+
 After the official `xdg-terminal-exec` package is verified, apply ensures the
 mode-0644 root-owned Foot fallback at
 `/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list`. Plan is
