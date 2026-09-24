@@ -24,7 +24,7 @@ class IdentityError(ValueError):
 
 
 class InstalledReleaseIdentity:
-    """One fresh-install commit marker; test roots are injected only in Python."""
+    """Privileged release commit marker; test roots are injected only in Python."""
 
     def __init__(self, root: Path = Path("/"), *, uid: int = 0, gid: int = 0,
                  fsync: Any = os.fsync) -> None:
@@ -160,6 +160,56 @@ class InstalledReleaseIdentity:
                 except OSError:
                     pass
             raise
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+
+    def upgrade_commit(self, expected: dict[str, Any], target_bytes: bytes) -> dict[str, Any]:
+        """Replace one exact installed source with verified target metadata bytes.
+
+        The release driver holds the update lock and verifies the target bundle.
+        A failure after replacement leaves the journal for terminal recovery.
+        """
+        if os.geteuid() != 0 and self.uid == 0:
+            raise IdentityError("release identity upgrade requires root")
+        if type(target_bytes) is not bytes or not 0 < len(target_bytes) <= contract.MAX_METADATA:
+            raise IdentityError("target release metadata bytes are invalid")
+        source = contract.parse_metadata(contract.metadata_bytes(expected))
+        target = contract.parse_metadata(target_bytes)
+        if contract.version_tuple(target["version"]) <= contract.version_tuple(source["version"]):
+            raise IdentityError("upgrade target must be newer than installed source")
+        self._parents(final_absent_ok=False)
+        if self.validate() != source:
+            raise IdentityError("installed release differs from expected source")
+        old_bytes = self.path.read_bytes()
+        if old_bytes != contract.metadata_bytes(source):
+            raise IdentityError("installed release bytes differ from expected source")
+        old_info = self._existing()
+        assert old_info is not None
+        staged: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=self.directory,
+                                             prefix=".release-upgrade-",
+                                             delete=False) as temporary:
+                staged = Path(temporary.name)
+                os.fchmod(temporary.fileno(), 0o644)
+                temporary.write(target_bytes)
+                temporary.flush()
+                self.fsync(temporary.fileno())
+                staged_info = os.fstat(temporary.fileno())
+                if (staged_info.st_uid, staged_info.st_gid) != (self.uid, self.gid):
+                    raise IdentityError("staged release identity has unsafe ownership")
+            current = self._existing()
+            if (current is None or (current.st_dev, current.st_ino) !=
+                    (old_info.st_dev, old_info.st_ino)
+                    or self.validate() != source or self.path.read_bytes() != old_bytes):
+                raise IdentityError("installed release changed before upgrade commit")
+            os.replace(staged, self.path)
+            staged = None
+            self.fsync_directory(self.directory)
+            if self.validate() != target or self.path.read_bytes() != target_bytes:
+                raise IdentityError("committed release identity differs from verified target")
+            return target
         finally:
             if staged is not None:
                 staged.unlink(missing_ok=True)

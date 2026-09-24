@@ -479,6 +479,17 @@ class OwnershipManifestTests(unittest.TestCase):
             self.assertEqual(artifact["mode"], "0600")
             self.assertNotIn("source", artifact)
 
+    def test_release_update_staging_is_root_controlled_and_user_readable(self) -> None:
+        identifier = self.document["release_update_staging"]
+        self.assertEqual(identifier, "release-update-staging")
+        artifact = self.by_id[identifier]
+        self.assertEqual(artifact["target"], "/var/lib/vanhyprarch-update/staging")
+        self.assertEqual(artifact["class"], "BACKEND_OWNED")
+        self.assertEqual(artifact["kind"], "tree")
+        self.assertEqual(artifact["mode"], "0755")
+        self.assertEqual(artifact["authority"], "vanhyprarch-release-update")
+        self.assertNotIn("source", artifact)
+
     def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
         for item in self.artifacts:
             if item["class"] in {"GENERATED", "RUNTIME", "PACKAGE_OWNED"}:

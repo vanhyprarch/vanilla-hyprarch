@@ -56,7 +56,10 @@ REQUIRED_FILES = {
     "release/release.toml", "release/build.py", "install.sh", "install/bootstrap",
     "install/release_identity.py",
     "install/system_integration.py", "install/managed_deploy.py",
-    "install/create_once.py", "packages/manifest-v1.toml",
+    "install/create_once.py", "install/sddm_login_integration.py",
+    "install/release_migrations.py", "install/update_journal.py",
+    "install/release_update.py", "release/migrations/registry.toml",
+    "packages/manifest-v1.toml",
     "deployment/ownership-v2.toml", "deployment/service-policy-v1.toml",
 }
 REQUIRED_EXECUTABLES = {"install/bootstrap"}

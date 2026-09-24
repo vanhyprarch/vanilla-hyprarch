@@ -83,6 +83,13 @@ lock at `/run/vanhyprarch/update.lock` prevents concurrent update mutations.
 Neither is a managed payload or user preference. Only the release update
 machinery may publish or clear the journal.
 
+The root-owned `release-update-staging` tree at
+`/var/lib/vanhyprarch-update/staging` retains the verified exact target
+bundle and source during an incomplete transaction. It is mode 0755 so the explicit
+target user can read release sources for managed/create-once authorities;
+users cannot write it. The local target driver removes the transaction tree
+after verified identity commit and durable journal clearing.
+
 ## Create-once seeds
 
 Files below `seeds/`, or executable sources declared as create-once generators,

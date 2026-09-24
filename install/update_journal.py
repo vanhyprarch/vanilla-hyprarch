@@ -425,3 +425,22 @@ class UpdateJournal(_RootPaths):
         self._file(self.path, 0o600)
         self.path.unlink()
         self._fsync_dir(self.path.parent)
+
+    def clear_committed_target(self, target: dict[str, Any]) -> None:
+        """Finish a ready transaction after identity commit survived a crash.
+
+        The old full installed record is no longer present. The retained journal
+        still binds its compact source and exact target artifact identity.
+        """
+        self._require_lock()
+        new = _metadata(target)
+        value = self.inspect()
+        if (value is None or value["target"] != _compact_target(new)
+                or value["phase"] != "ready-for-final-commit"
+                or value["pending_migration"] is not None):
+            raise JournalError("journal is not ready for exact committed-target clearing")
+        if self.identity.validate() != new:
+            raise JournalError("installed release does not match exact committed target")
+        self._file(self.path, 0o600)
+        self.path.unlink()
+        self._fsync_dir(self.path.parent)

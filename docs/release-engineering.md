@@ -1,9 +1,10 @@
-# Release engineering: offline contract and update primitives
+# Release engineering: offline contract and local target driver
 
 Status: offline release declaration, deterministic artifact builder, verifier,
-fresh-install identity publisher, upgrade-safe stages, migration runner, and
-durable update journal implemented. No release is published and no updater
-exists yet.
+fresh-install identity publisher, upgrade-safe stages, migration runner,
+durable journal, and local exact-target driver implemented. No release is
+published; discovery, download, installed updater, and menu action do not
+exist yet.
 
 ## Identity and authored declaration
 
@@ -230,9 +231,9 @@ retrospective adoption of pre-rc1 development installations is implemented.
 provenance-gated replacement, safe stale removal, foreign-content conflicts,
 local recovery, and read-only validation. The SDDM authority similarly uses
 its root-private provenance and local transaction for source updates. Neither
-needs a synthetic lifecycle flag. Release discovery, full transaction
-orchestration, version advancement, UI action, and VM acceptance remain
-unimplemented. The migration and journal primitives are described below.
+needs a synthetic lifecycle flag. Release discovery, installed update UI, and
+VM acceptance remain unimplemented. The migration and journal primitives are
+described below.
 
 ## Migration registry and durable journal (release Phase 4)
 
@@ -251,9 +252,9 @@ unregistered files. An empty registry is valid only when both levels are 0.
 The target declaration and optional verified metadata
 must agree. The runner accepts only regular mode-0644 implementation files
 under a safe target source tree, with bounded sizes and no symlinks. The
-future driver must verify the complete target artifact before giving its
-private extracted tree and metadata to the runner. Registry entries never
-contain shell commands. `release/release.toml` remains at level 0 with minimum
+local target driver verifies the complete target artifact before giving its
+root-controlled extracted tree and metadata to the runner. Registry entries
+never contain shell commands. `release/release.toml` remains at level 0 with minimum
 0; the production registry is empty. Fresh installs establish the target
 state directly and do not replay migrations. Production migration `0001` is
 reserved for a later rc2 change, not a no-op in rc1.
@@ -289,20 +290,77 @@ identity. A different target or source cannot replace an active journal.
 Phases are `applying`, `validating`, and `ready-for-final-commit`. Fixed
 checkpoint labels cover preflight completion, system integration, migrations,
 managed deployment, create-once, and final validation. They report the active
-stage; Phase 5 will decide stage order. Migration IDs, rather than checkpoint
+stage; the local driver fixes the stage order below. Migration IDs, rather than checkpoint
 labels, are the authority for completed migration progress. The journal does not
 claim a committed release. During an incomplete update, the installed
 `/usr/share/vanhyprarch/release.json` still names the **old** release and
 migration level; the journal alone records intermediate progress. Clearing is
 permitted only after the journal is ready and the installed identity validates
 as the exact target. If interruption happens after that commit but before
-clearing, the future driver can inspect the ready journal and clear it after
+clearing, the target driver inspects the ready journal and clears it after
 verifying the target identity. Phase 4 never performs the identity commit.
 
 The root-owned runtime lock is `/run/vanhyprarch/update.lock`, mode 0600 in a
 mode-0700 directory. A nonblocking `flock` allows one transaction at a time.
 The inode is retained; process death releases the lock while the durable
 journal remains for exact-target resume. Malformed or unsafe state fails
-closed and is never discarded automatically. The future Phase 5 driver owns
-release discovery, confirmation, stage orchestration, final validation, and
-the installed-identity commit.
+closed and is never discarded automatically.
+
+## Local exact-target update driver (release Phase 5)
+
+`install/release_update.py` has `plan`, `apply`, and `resume` commands. Plan and
+apply require absolute `--release-metadata` and `--release-artifact` paths plus
+an explicit `--target-user`; resume uses only the exact retained target named
+by the journal. Optional explicit XDG directory overrides support installations
+whose target user did not use the standard home-relative XDG paths. All three
+commands require root. No command contacts the network, discovers a release,
+chooses latest, or asks for final user confirmation.
+
+Plan validates the installed release identity, the complete target bundle via
+the Phase 1 verifier, upgrade compatibility, the migration chain, and all
+target authority plans. It uses temporary root-owned staging under `/run` for
+inspection and removes that preview; it does not change installed release
+state or create an update journal. Candidate upgrades stay within the same base version:
+`rc1 → rc2 → stable`. Stable installations accept only newer stable releases.
+The target must be newer, have the same supported architecture and protocol,
+and admit the source version and migration level. Development installations,
+same-version transitions, downgrades, and stable-to-candidate transitions fail.
+The release artifact contract now requires the migration registry, driver,
+journal primitive, and SDDM authority as tracked target-release files.
+
+Apply copies the locally supplied bundle into
+`/var/lib/vanhyprarch-update/staging/<artifact-sha256>/`, a root-owned mode-0755
+tree. The user may read the staged source for user-owned deployment, but cannot
+write it. This durable user-readable tree is separate from the mode-0700
+private journal directory. The archive and metadata are verified again after
+copying. Extraction occurs only after verification and creates regular files and directories with
+the archive's validated modes. Every resume re-verifies the retained archive,
+metadata, extracted bytes, modes, and ownership before running target code.
+The retained target is bounded by the Phase 1 artifact and expansion limits;
+it does not depend on the caller's original path after the journal begins.
+
+The driver holds the root runtime lock while mutating. It journals each stage
+before mutation and uses this order: migrations, system integration (including
+SDDM and service policy), managed deployment update, create-once upgrade, then
+complete target validation. Each authority is invoked from the verified target
+tree with its existing interface. System integration runs as root with the
+explicit target username; managed deployment and create-once run as that
+resolved non-root user with a fixed environment and explicit home/XDG paths.
+On resume, completed migration IDs remain skipped; an authority stage is
+validated before any repeat apply. The old installed release identity remains
+until every target authority validates.
+
+After full validation, the journal becomes `ready-for-final-commit`.
+`release_identity.py` then compares the exact expected source record and
+atomically replaces it with the exact verified target `release.json` bytes,
+fsyncs, and validates the result. Only then can the journal be durably cleared.
+If interruption occurs after identity replacement, resume recognizes the
+ready journal plus exact target identity, clears the journal, and removes
+staging without rerunning authorities. Ordinary success removes staging after
+journal clearing. If interrupted between clearing and staging removal, resume
+can remove only the staged bundle matching the already committed installed
+identity. Failures retain the journal and exact target material for diagnosis
+or explicit resume; there is no global rollback.
+
+An installed discovery/download bootstrap, release channel selection UI,
+Super+Space action, release publication, and VM acceptance remain future work.

@@ -7,6 +7,7 @@ create_once_transaction_state = "create-once-transaction-state"
 create_once_lifecycle_state = "create-once-lifecycle-state"
 release_update_journal = "release-update-journal"
 release_update_lock = "release-update-lock"
+release_update_staging = "release-update-staging"
 sddm_login_state = "sddm-login-state"
 
 [[initializer]]
@@ -671,6 +672,19 @@ status = "implemented"
 user_editable = false
 machine_specific = true
 notes = "Root-owned runtime flock inode; process death releases the lock without deleting durable update progress."
+
+[[artifact]]
+id = "release-update-staging"
+target = "/var/lib/vanhyprarch-update/staging"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "tree"
+mode = "0755"
+authority = "vanhyprarch-release-update"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Root-owned, user-readable exact target bundle and extracted tree for offline update resume; no user write permission."
 
 [[artifact]]
 id = "create-once-lifecycle-state"

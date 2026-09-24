@@ -7,7 +7,7 @@ deterministic exact-commit artifact builder, generated metadata, and
 pre-extraction verifier. Phase 2 adds an offline, root-owned installed release
 identity committed only after a fresh release installation validates. See
 [Release engineering](release-engineering.md). No tag, published release,
-upgrade path, or self-updater exists yet.
+installed updater, or user-facing upgrade path exists yet.
 
 Release Phase 3 adds explicit upgrade semantics to the existing system and
 create-once authorities. These stage modes do not orchestrate an upgrade or
@@ -15,7 +15,12 @@ advance installed release identity.
 
 Release Phase 4 adds an empty migration registry, a versioned migration
 runner, and a durable root-owned update journal with a runtime lock. They are
-primitives for a future driver; no complete update path exists yet.
+primitives for a local exact-target driver.
+
+Release Phase 5 adds that offline target-release driver: it verifies a supplied
+bundle, stages it durably, orchestrates existing upgrade-safe authorities,
+commits installed identity last, and supports exact-target resume. Discovery,
+download, release publication, and the Super+Space action remain future work.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
