@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-23.
+Snapshot date: 2026-09-24.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
@@ -567,7 +567,19 @@ at another monitor scale.
 Application, picker, tray, and content icons remain theme-resolved; Papirus is
 still the shell's icon-theme baseline for those external icons.
 
-Firefox, Foot, and Thunar are the selected browser, terminal, and file manager.
+Firefox, Foot, and Thunar remain the selected browser, terminal, and file manager.
+The repository baseline now also requires official Arch `gnome-text-editor` and
+`bazaar`. On a missing launcher state, the shell waits for the exact Firefox,
+Foot, Thunar, and Bazaar application IDs before saving that four-entry order.
+Existing valid or explicitly empty launcher state is not migrated to add
+Bazaar. GNOME Text Editor is neither pinned nor assigned a text MIME default.
+Both official packages were installed and launched on the development host.
+They appeared immediately in Super+Space Apps and the dock's Add picker, while
+the existing three-pin launcher file remained byte-for-byte unchanged. Bazaar
+initially showed a generic icon in the already-running Quickshell process;
+restarting Quickshell resolved its hicolor icon. Live icon-cache refresh is
+deferred to the separate app-discovery backlog.
+
 Hibernate is deliberately absent.
 
 Bluetooth availability is determined before pairing-agent startup by a cheap

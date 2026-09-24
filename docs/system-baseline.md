@@ -3,7 +3,7 @@
 This document defines the reusable Vanilla HyprArch base system. It describes
 project requirements, not a complete snapshot of every package installed on the
 development machine. Package names were revalidated against the available Arch
-repository metadata on 2026-09-22.
+repository metadata on 2026-09-24.
 
 The starting point is a working minimal Arch Linux installation with systemd,
 network access, a suitable kernel, firmware, and GPU drivers. Kernel, firmware,
@@ -180,9 +180,17 @@ belong in machine configuration.
 | Browser | `firefox` |
 | Terminal | `foot` |
 | File manager | `thunar` |
+| Graphical text editor | `gnome-text-editor` |
+| Graphical application store | `bazaar` |
 | Image viewer | `imv` |
 | Media player | `mpv` |
 | Graphical audio control | `pavucontrol` (recommended, installed by default) |
+
+Both new applications are direct, required, unpinned packages from the official
+Arch `extra` repository. Installing GNOME Text Editor does not assign it as the
+default for text files or pin it to the dock. The fresh dock launcher order is
+Firefox, Foot, Thunar, Bazaar. Launcher state is user-owned after its first
+seed; existing pins, including an explicitly empty list, are preserved.
 
 `dunst` is the required package/D-Bus-activated notification daemon, so a fresh
 install does not depend on accidental host software. Phase 3 will add minimal

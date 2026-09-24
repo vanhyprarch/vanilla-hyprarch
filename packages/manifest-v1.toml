@@ -81,6 +81,15 @@ owner = "aur-bootstrap"
 reason = "Provides the mandatory Arch build toolchain for non-root AUR builds."
 
 [[package]]
+name = "bazaar"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides a graphical application store and the final fresh launcher target."
+
+[[package]]
 name = "bluez"
 source = "official"
 role = "required"
@@ -198,6 +207,15 @@ default_install = true
 direct = true
 owner = "source-and-aur-bootstrap"
 reason = "Provides the initial source acquisition path and yay source dependency."
+
+[[package]]
+name = "gnome-text-editor"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Provides a graphical text editor on fresh Vanilla systems."
 
 [[package]]
 name = "gnupg"

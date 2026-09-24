@@ -105,15 +105,14 @@ Scope {
         if (applications.length === 0)
             return
 
-        const names = [["Firefox"], ["Foot"], ["Thunar File Manager", "Thunar"]]
-        const lookupNames = ["firefox", "foot", "thunar"]
+        const defaultIds = ["firefox", "foot", "thunar", "io.github.kolunmi.Bazaar"]
         const defaults = []
-        for (let i = 0; i < names.length; ++i) {
-            let entry = applications.find(app => names[i].some(name => app.name.toLowerCase() === name.toLowerCase()))
-            if (!entry)
-                entry = DesktopEntries.heuristicLookup(lookupNames[i])
-            if (entry && applications.includes(entry) && !defaults.some(item => item.desktopId === entry.id))
-                defaults.push({ desktopId: entry.id, customIcon: "" })
+        for (const desktopId of defaultIds) {
+            const entry = DesktopEntries.byId(desktopId)
+            // A missing entry may still be loading. Never save a partial first seed.
+            if (!entry || entry.id !== desktopId || !applications.includes(entry))
+                return
+            defaults.push({ desktopId: entry.id, customIcon: "" })
         }
 
         state.launchers = defaults

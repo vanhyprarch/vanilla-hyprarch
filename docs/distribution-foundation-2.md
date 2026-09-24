@@ -120,8 +120,11 @@ configuration.
 ## Default applications and MIME ownership
 
 The deliberate packages are Firefox for web content, Thunar for directories,
-imv for images, and mpv for media. Inspection of installed package metadata and
-the current official imv file list identifies the primary desktop IDs as
+imv for images, and mpv for media. GNOME Text Editor and Bazaar are additional
+direct official baseline applications; neither changes this create-once MIME
+seed. GNOME Text Editor is not assigned as the default text editor. Inspection
+of installed package metadata and the current official imv file list identifies
+the primary desktop IDs as
 `firefox.desktop`, `thunar.desktop`, `imv.desktop`, and `mpv.desktop`.
 
 Phase 3 defines a deliberately small MIME coverage set and revalidates those

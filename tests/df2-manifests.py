@@ -46,6 +46,7 @@ NON_DEPLOYABLE_CLASSES = {
 }
 REQUIRED_DEFAULT = {
     "7zip",
+    "bazaar",
     "bluez",
     "bubblewrap",
     "curl",
@@ -55,6 +56,7 @@ REQUIRED_DEFAULT = {
     "firefox",
     "flatpak",
     "foot",
+    "gnome-text-editor",
     "grim",
     "gvfs",
     "gtk3",
@@ -269,15 +271,19 @@ class PackageManifestTests(unittest.TestCase):
 
     def test_direct_fresh_install_application_decisions_are_present(self) -> None:
         for name, owner in {
+            "bazaar": "default-applications",
             "dunst": "notifications",
+            "gnome-text-editor": "default-applications",
             "imv": "default-applications",
             "mpv": "default-applications",
             "pipewire-jack": "audio",
         }.items():
             item = self.by_name[name]
+            self.assertEqual(item["source"], "official")
             self.assertEqual(item["owner"], owner)
             self.assertEqual(item["role"], "required")
             self.assertTrue(item["default_install"])
+            self.assertTrue(item["direct"])
 
     @unittest.skipUnless(CHECK_REPOSITORIES, "optional local Arch database validation")
     def test_official_names_exist_in_local_arch_databases(self) -> None:
@@ -531,6 +537,15 @@ class ServicePolicyTests(unittest.TestCase):
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
+    def test_new_applications_do_not_change_mime_defaults(self) -> None:
+        baseline = (REPOSITORY / "docs/system-baseline.md").read_text(encoding="utf-8")
+        current = (REPOSITORY / "docs/current-state.md").read_text(encoding="utf-8")
+        mime_seed = (REPOSITORY / "seeds/home/.config/mimeapps.list").read_text(encoding="utf-8")
+        for package in ("gnome-text-editor", "bazaar"):
+            self.assertIn(f"`{package}`", baseline)
+            self.assertIn(f"`{package}`", current)
+        self.assertNotIn("org.gnome.TextEditor.desktop", mime_seed)
+
     def test_removed_flat_manifests_have_no_live_references(self) -> None:
         forbidden = {
             "packages/official.txt",

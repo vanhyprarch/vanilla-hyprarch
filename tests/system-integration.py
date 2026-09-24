@@ -363,6 +363,28 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertIn(("package-preserve", "mpv"), actions)
         self.assertIn(("aur-bootstrap", "yay"), actions)
 
+    def test_full_rerun_installs_new_default_applications(self) -> None:
+        engine = self.fixture.adopt_everything()
+        state = self.fixture.state()
+        state["installed"] = sorted(set(state["installed"]) - {"bazaar", "gnome-text-editor"})
+        save_json(self.fixture.runner_state, state)
+
+        plan = engine.plan()
+        install_items = {item.subject for item in plan.items if item.action == "package-install"}
+        self.assertEqual(install_items, {"bazaar", "gnome-text-editor"})
+
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        transactions = [
+            entry["argv"]
+            for entry in self.fixture.state()["log"][before:]
+            if entry["argv"][:5] == ["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--"]
+        ]
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(set(transactions[0][5:]), {"bazaar", "gnome-text-editor"})
+        self.assertTrue({"bazaar", "gnome-text-editor"} <= set(self.fixture.state()["installed"]))
+        self.assertFalse(engine.plan().changes)
+
     def test_plan_is_zero_write_to_system_root(self) -> None:
         def snapshot() -> list[tuple[str, int, int, str]]:
             result = []

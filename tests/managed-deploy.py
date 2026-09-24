@@ -1106,7 +1106,7 @@ class DocumentationAndBoundaryTests(unittest.TestCase):
         )
         for expected in (
             "`VANILLA_MANAGED`",
-            "plan/install/update/validate",
+            "plan/install/update/reconcile/validate",
             "renameat2(RENAME_EXCHANGE)",
             "partial` ledger",
             "`recovery-required`",

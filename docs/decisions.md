@@ -139,6 +139,11 @@ The deliberate defaults are:
 - mpv for media playback
 - Papirus for shell icons
 
+The 2026-09-24 baseline addition installs GNOME Text Editor and Bazaar from
+official Arch packages. It does not make GNOME Text Editor the text MIME
+default or a dock pin. The four fresh dock pins are Firefox, Foot, Thunar,
+then Bazaar. Existing user pin state is preserved.
+
 The shell declares Papirus through its root icon-theme pragma. System-control
 icons use Papirus full-color assets where appropriate; tray icons may be tinted
 with the shell accent. Missing icons should be addressed through the icon policy
