@@ -371,7 +371,7 @@ if [ "$release_mode" = true ]; then
     release_identity=$source_root/install/release_identity.py
     [ -f "$release_identity" ] && [ ! -L "$release_identity" ] || \
         fail "release archive lacks identity publisher"
-    resolved_revision=$("$sudo_command" "$python_command" "$release_identity" preflight \
+    resolved_revision=$("$sudo_command" "$python_command" -B "$release_identity" preflight \
         --metadata "$metadata" --artifact "$archive" --source-root "$source_root") || \
         fail "release identity preflight failed"
     case "$resolved_revision" in
@@ -395,10 +395,10 @@ create_once_stage validate || fail "create-once validation failed"
 system_stage validate || fail "system integration validation failed"
 
 if [ "$release_mode" = true ]; then
-    "$sudo_command" "$python_command" "$release_identity" commit \
+    "$sudo_command" "$python_command" -B "$release_identity" commit \
         --metadata "$metadata" --artifact "$archive" --source-root "$source_root" || \
         fail "release identity commit failed; installation is not complete"
-    "$sudo_command" "$python_command" "$release_identity" validate || \
+    "$sudo_command" "$python_command" -B "$release_identity" validate || \
         fail "installed release identity validation failed"
 fi
 

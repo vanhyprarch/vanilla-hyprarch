@@ -145,16 +145,16 @@ class Fixture:
                 esac
                 exit
             fi
-            if [ "${2##*/}" = release_identity.py ]; then
-                key=release-$3
+            if [ "$2" = -B ] && [ "${3##*/}" = release_identity.py ]; then
+                key=release-$4
                 printf 'stage:%s\n' "$key" >> "$INSTALL_FIXTURE_EVENTS"
                 [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ] || exit 1
-                case "$3" in
+                case "$4" in
                     preflight)
                         [ ! -e "$INSTALL_FIXTURE_RELEASE_RECORD" ] || exit 99
                         printf '%s\n' "$INSTALL_FIXTURE_REVISION"
                         ;;
-                    commit) cp "$5" "$INSTALL_FIXTURE_RELEASE_RECORD" ;;
+                    commit) cp "$6" "$INSTALL_FIXTURE_RELEASE_RECORD" ;;
                     validate) [ -f "$INSTALL_FIXTURE_RELEASE_RECORD" ] ;;
                     *) exit 98 ;;
                 esac
@@ -688,6 +688,16 @@ class InstallBootstrapTests(unittest.TestCase):
         self.assertIn('/usr/bin/rm -rf -- "$temporary_root"', cleanup)
         self.assertNotIn("sudo_command", cleanup)
         self.assertNotIn("sudo rm", wrapper)
+        self.assertEqual(
+            wrapper.count(
+                '"$sudo_command" "$python_command" -B "$release_identity"'
+            ),
+            3,
+        )
+        self.assertNotIn(
+            '"$sudo_command" "$python_command" "$release_identity"',
+            wrapper,
+        )
 
     def test_wrapper_does_not_duplicate_authoritative_inventories(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
