@@ -471,6 +471,10 @@ class InstalledCommandTests(unittest.TestCase):
         self.assertEqual(self.authority.plan(lifecycle="fresh"), "create")
         self.authority.apply(lifecycle="fresh")
         self.authority.validate()
+        state = json.loads(self.authority.state.read_text())
+        self.assertEqual(state["schema"], 2)
+        self.assertEqual(state["update_protocol"], 1)
+        self.assertEqual(set(state), {"schema", "sha256", "update_protocol"})
         self.assertEqual(stat.S_IMODE(self.authority.target.stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE(self.authority.state.stat().st_mode), 0o600)
         self.assertEqual(self.authority.plan(lifecycle="upgrade"), "preserve")
@@ -511,7 +515,7 @@ class InstalledCommandTests(unittest.TestCase):
 
     def test_corrupt_provenance_and_unsafe_parent_fail_closed(self):
         self.authority.apply(lifecycle="fresh")
-        self.authority.state.write_text('{"schema":1,"schema":1}')
+        self.authority.state.write_text('{"schema":2,"schema":2}')
         with self.assertRaises(BootstrapIntegrationError):
             self.authority.plan(lifecycle="upgrade")
         self.authority.state.unlink()

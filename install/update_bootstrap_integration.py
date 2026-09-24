@@ -19,6 +19,8 @@ FILES = (
     "install/release_migrations.py", "release/build.py",
 )
 SHEBANG = b"#!/usr/bin/python3\n"
+STATE_SCHEMA = 2
+UPDATE_PROTOCOL = 1
 
 
 class BootstrapIntegrationError(ValueError):
@@ -115,10 +117,14 @@ class BootstrapIntegration:
                 value = json.loads(source.read(257), object_pairs_hook=_pairs)
         except (UnicodeError, json.JSONDecodeError) as error:
             raise BootstrapIntegrationError(f"invalid updater provenance: {error}") from error
-        digest = value.get("sha256") if (type(value) is dict
-                                         and set(value) == {"schema", "sha256"}
-                                         and type(value.get("schema")) is int
-                                         and value["schema"] == 1) else None
+        digest = value.get("sha256") if (
+            type(value) is dict
+            and set(value) == {"schema", "sha256", "update_protocol"}
+            and type(value.get("schema")) is int
+            and value["schema"] == STATE_SCHEMA
+            and type(value.get("update_protocol")) is int
+            and value["update_protocol"] == UPDATE_PROTOCOL
+        ) else None
         if type(digest) is not str or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise BootstrapIntegrationError("invalid updater provenance")
         return digest
@@ -187,7 +193,11 @@ class BootstrapIntegration:
         if self._installed() != desired:
             raise BootstrapIntegrationError("installed updater publication differs")
         if self._state() != desired:
-            data = (json.dumps({"schema": 1, "sha256": desired}, sort_keys=True) + "\n").encode()
+            data = (json.dumps(
+                {"schema": STATE_SCHEMA, "sha256": desired,
+                 "update_protocol": UPDATE_PROTOCOL},
+                sort_keys=True,
+            ) + "\n").encode()
             self._publish(self.state, data, 0o600)
         self.validate()
 

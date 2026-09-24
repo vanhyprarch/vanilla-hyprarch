@@ -1,4 +1,8 @@
 schema = 1
 
-# v1.0.0-rc1 is a fresh-install baseline at migration level 0.
-# The first production migration will be introduced for a later release.
+[[migration]]
+id = 1
+name = "update-bootstrap-state-v2"
+path = "release/migrations/0001-update-bootstrap-state-v2.py"
+scope = "BACKEND_OWNED updater provenance"
+touches_user_state = false

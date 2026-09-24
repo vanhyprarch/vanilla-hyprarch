@@ -150,11 +150,18 @@ class Fixture(unittest.TestCase):
 
 
 class RegistryTests(Fixture):
-    def test_production_rc1_registry_is_empty_at_level_zero(self) -> None:
+    def test_production_rc2_registry_contains_first_migration(self) -> None:
         registry = MigrationRegistry(PROJECT)
-        self.assertEqual(registry.declaration["migration_level"], 0)
+        self.assertEqual(registry.declaration["version"], "v1.0.0-rc2")
+        self.assertEqual(registry.declaration["minimum_installed_version"], "v1.0.0-rc1")
+        self.assertEqual(registry.declaration["migration_level"], 1)
         self.assertEqual(registry.declaration["minimum_migration_level"], 0)
-        self.assertEqual(registry.entries, {})
+        self.assertEqual(sorted(registry.entries), [1])
+        self.assertEqual(
+            registry.entries[1]["path"],
+            "release/migrations/0001-update-bootstrap-state-v2.py",
+        )
+        self.assertFalse(registry.entries[1]["touches_user_state"])
 
     def test_empty_registry_requires_zero_migration_level(self) -> None:
         target = self.target(1, minimum_level=1)
