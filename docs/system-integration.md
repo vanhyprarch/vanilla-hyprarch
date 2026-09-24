@@ -84,6 +84,12 @@ The production CLI has no alternate-system-root switch. Tests inject a command
 runner, account resolver, and disposable filesystem root; their fake boundary
 rejects every command it does not explicitly model.
 
+After the official `xdg-terminal-exec` package is verified, apply ensures the
+mode-0644 root-owned Foot fallback at
+`/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list`. Plan is
+read-only, validate requires the exact file, and an already-correct file is
+preserved. Symlinks, unsafe parents, or conflicting content fail closed.
+
 ## Arch and package preflight
 
 The supported base is Arch Linux x86_64. The stage reads the package-owned

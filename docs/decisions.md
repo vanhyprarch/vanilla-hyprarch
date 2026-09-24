@@ -1124,3 +1124,17 @@ absence of provenance selects fresh `install`, valid complete provenance
 selects `update`, and partial provenance retains its recorded operation. The
 shell never parses or guesses provenance, while malformed or drifted ownership
 continues to fail closed in the Python authority.
+
+## ADR-043: Store Default Apps choices in desktop-standard user files
+
+**Status:** Accepted
+**Date:** 2026-09-24
+
+Super+Space Default Apps uses MIME Apps for Browser and `text/plain` Text
+Editor, and the official Arch `xdg-terminal-exec` resolver for Terminal. The
+terminal specification is still proposed; its Foot compatibility condition is
+recorded in [Compatibility](compatibility.md). A low-priority Vanilla system
+fallback chooses Foot only when higher-priority terminal preferences do not.
+The panel reads effective defaults and edits only explicitly selected user
+values. Its candidate IDs come from desktop-entry metadata and are joined to
+Quickshell's existing application model, without a second stored catalog.

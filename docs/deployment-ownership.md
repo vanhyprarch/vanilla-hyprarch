@@ -75,6 +75,12 @@ seeding. A short-lived backend-owned transaction intent
 allows killed create publication to recover without treating user edits as
 replaceable state; it conveys no ongoing ownership of created bytes.
 
+Default Apps treats `mimeapps.list` and `xdg-terminals.list` as user-owned.
+Explicit choices perform narrow, validated edits; managed deployment never
+replaces either file. The Foot preference in
+`/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list` is a separate
+Vanilla-managed system fallback below user and administrator preferences.
+
 The Hyprland machine seed contains one portable catch-all monitor rule. Any
 output without a more specific machine rule uses its preferred mode, automatic
 position, and Scale 1. This fallback is machine-owned and is not a

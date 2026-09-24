@@ -70,18 +70,20 @@ It is created at `$XDG_CONFIG_HOME/mpv/mpv.conf` only when absent. Physical
 validation on an SDR-only display remains required.
 
 The MIME seed contains only `[Default Applications]`. It deliberately maps
-Firefox to HTTP, HTTPS, and HTML; Thunar to directories; imv to JPEG, PNG,
-WebP, GIF, and SVG; and mpv to MP4, Matroska, WebM, MP3/MPEG audio, FLAC, Ogg,
-and Opus. Desktop IDs are `firefox.desktop`, `thunar.desktop`, `imv.desktop`,
-and `mpv.desktop`. The selected types are advertised by current package or
-upstream desktop metadata. The seed does not add associations or claim every
-format those applications can open.
+Firefox to HTTP, HTTPS, and HTML; GNOME Text Editor to `text/plain`; Thunar to
+directories; imv to JPEG, PNG, WebP, GIF, and SVG; and mpv to MP4, Matroska,
+WebM, MP3/MPEG audio, FLAC, Ogg, and Opus. Desktop IDs are `firefox.desktop`,
+`org.gnome.TextEditor.desktop`, `thunar.desktop`, `imv.desktop`, and
+`mpv.desktop`. The selected types are advertised by current package or upstream
+desktop metadata. The seed does not add associations or claim every format
+those applications can open.
 
 The [MIME Applications specification](https://specifications.freedesktop.org/mime-apps/latest-single/)
 also recognizes user files at `$XDG_DATA_HOME/applications` and desktop-specific
 `*-mimeapps.list` files. Any safe existing user file in those locations prevents
-seeding; an unsafe one is a conflict. Vanilla never creates a competing default
-file, merges associations, or calls `xdg-mime` against the user.
+seeding; an unsafe one is a conflict. Create-once never creates a competing
+default file or merges associations. Later explicit Default Apps choices use
+the separate narrow user-owned preference backend.
 
 ## XDG directories and owner hooks
 

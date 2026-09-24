@@ -101,6 +101,7 @@ REQUIRED_DEFAULT = {
     "xdg-desktop-portal",
     "xdg-desktop-portal-gtk",
     "xdg-desktop-portal-hyprland",
+    "xdg-terminal-exec",
     "xdg-user-dirs",
     "xdg-utils",
     "xkeyboard-config",
@@ -473,6 +474,7 @@ class OwnershipManifestTests(unittest.TestCase):
             {item["target"].rsplit("/", 1)[-1] for item in commands},
             {
                 "vanhyprarch-appearance",
+                "vanhyprarch-default-apps",
                 "vanhyprarch-dictation",
                 "vanhyprarch-idle",
                 "vanhyprarch-keyboard-sync",
@@ -572,7 +574,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         for package in ("gnome-text-editor", "bazaar"):
             self.assertIn(f"`{package}`", baseline)
             self.assertIn(f"`{package}`", current)
-        self.assertNotIn("org.gnome.TextEditor.desktop", mime_seed)
+        self.assertIn("text/plain=org.gnome.TextEditor.desktop;", mime_seed)
 
     def test_removed_flat_manifests_have_no_live_references(self) -> None:
         forbidden = {

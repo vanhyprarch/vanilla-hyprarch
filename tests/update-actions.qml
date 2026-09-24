@@ -57,7 +57,7 @@ ShellRoot {
         repeat: false
         onTriggered: {
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Style,Additional system components,Power",
+                === "Apps,Install,Remove,Update,Style,Default Apps,Additional system components,Power",
                 "root section order is wrong")
             root.check(updateActions.actions.map(action => action.label).join(",")
                 === "System,Flatpak", "Update action order is wrong")

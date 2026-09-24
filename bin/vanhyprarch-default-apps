@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""Read and narrowly change XDG application defaults for Super+Space."""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+
+import gi
+
+gi.require_version("Gio", "2.0")
+gi.require_version("GioUnix", "2.0")
+from gi.repository import Gio, GioUnix  # noqa: E402
+
+
+BROWSER_TYPES = ("text/html", "x-scheme-handler/http", "x-scheme-handler/https")
+EDITOR_TYPES = ("text/plain",)
+TYPES = {"browser": BROWSER_TYPES, "editor": EDITOR_TYPES}
+ID_RE = re.compile(r"^[A-Za-z0-9_.+-]+\.desktop$")
+SECTION_RE = re.compile(r"^\s*\[([^\]\r\n]+)\]\s*$")
+MAX_FILE = 1024 * 1024
+
+
+class DefaultAppsError(Exception):
+    pass
+
+
+def config_home() -> Path:
+    raw = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    path = Path(raw)
+    if not path.is_absolute():
+        raise DefaultAppsError("XDG_CONFIG_HOME must be absolute")
+    return path
+
+
+def desktop_names() -> list[str]:
+    result = []
+    for value in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":"):
+        name = value.lower()
+        if re.fullmatch(r"[a-z0-9_-]+", name) and name not in result:
+            result.append(name)
+    return result
+
+
+def safe_directory(path: Path, *, create: bool = False) -> None:
+    parts = path.parts
+    current = Path(parts[0])
+    home = Path.home()
+    beneath_home = path == home or home in path.parents
+    for part in parts[1:]:
+        current /= part
+        try:
+            info = os.lstat(current)
+        except FileNotFoundError:
+            if not create or current != path:
+                raise DefaultAppsError(f"missing configuration parent: {current}")
+            os.mkdir(current, 0o755)
+            info = os.lstat(current)
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            raise DefaultAppsError(f"unsafe configuration directory: {current}")
+        trusted_prefix = (beneath_home and current != home and home not in current.parents)
+        if current == Path("/tmp") and info.st_mode & stat.S_ISVTX:
+            trusted_prefix = True
+        if not trusted_prefix and info.st_uid not in (0, os.getuid()):
+            raise DefaultAppsError(f"unexpected directory owner: {current}")
+        if info.st_mode & 0o022 and not (
+            info.st_mode & stat.S_ISVTX and (info.st_uid == 0 or current == Path("/tmp"))
+        ):
+            raise DefaultAppsError(f"writable configuration parent: {current}")
+    if os.lstat(path).st_uid != os.getuid():
+        raise DefaultAppsError(f"configuration directory is not user-owned: {path}")
+
+
+def read_file(path: Path) -> tuple[bytes | None, int]:
+    safe_directory(path.parent)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None, 0o644
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise DefaultAppsError(f"unsafe user configuration: {path}")
+        if info.st_size > MAX_FILE:
+            raise DefaultAppsError(f"configuration is too large: {path}")
+        data = os.read(fd, MAX_FILE + 1)
+        if len(data) > MAX_FILE:
+            raise DefaultAppsError(f"configuration is too large: {path}")
+        return data, stat.S_IMODE(info.st_mode)
+    finally:
+        os.close(fd)
+
+
+def parsed_mime(data: bytes | None) -> tuple[list[str], int, dict[str, int], str]:
+    try:
+        lines = (data or b"").decode("utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError as error:
+        raise DefaultAppsError("MIME configuration is not UTF-8") from error
+    section = ""
+    section_count = 0
+    start = len(lines)
+    keys = {}
+    for index, line in enumerate(lines):
+        body = line.rstrip("\r\n")
+        match = SECTION_RE.fullmatch(body)
+        if match:
+            section = match.group(1)
+            if section == "Default Applications":
+                section_count += 1
+                if section_count > 1:
+                    raise DefaultAppsError("duplicate [Default Applications] section")
+                start = index + 1
+            continue
+        if body.lstrip().startswith("["):
+            raise DefaultAppsError("malformed MIME section header")
+        if section == "Default Applications" and body.strip() and not body.lstrip().startswith(("#", ";")) and "=" not in body:
+            raise DefaultAppsError("malformed MIME default line")
+        if section == "Default Applications" and not body.lstrip().startswith(("#", ";")) and "=" in body:
+            key = body.split("=", 1)[0].strip()
+            if key in keys:
+                raise DefaultAppsError(f"duplicate MIME default: {key}")
+            keys[key] = index
+    newline = "\r\n" if b"\r\n" in (data or b"") else "\n"
+    return lines, start, keys, newline
+
+
+def mime_change(data: bytes | None, category: str, desktop_id: str) -> bytes:
+    lines, start, keys, newline = parsed_mime(data)
+    replacements = {key: desktop_id + ";" for key in TYPES[category]}
+    if start == len(lines) and not any(SECTION_RE.fullmatch(line.rstrip("\r\n")) and
+            SECTION_RE.fullmatch(line.rstrip("\r\n")).group(1) == "Default Applications" for line in lines):
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            lines[-1] += newline
+        lines.append("[Default Applications]" + newline)
+        start = len(lines)
+    for key, index in keys.items():
+        if key in replacements:
+            old = lines[index]
+            ending = "\r\n" if old.endswith("\r\n") else "\n" if old.endswith("\n") else ""
+            prefix = old[:old.index("=") + 1]
+            lines[index] = prefix + replacements.pop(key) + ending
+    if replacements and start > 0 and not lines[start - 1].endswith(("\n", "\r")):
+        lines[start - 1] += newline
+    for key, value in replacements.items():
+        lines.insert(start, f"{key}={value}{newline}")
+        start += 1
+    return "".join(lines).encode("utf-8")
+
+
+def terminal_change(data: bytes | None, desktop_id: str) -> bytes:
+    try:
+        lines = (data or b"").decode("utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError as error:
+        raise DefaultAppsError("terminal list is not UTF-8") from error
+    newline = "\r\n" if b"\r\n" in (data or b"") else "\n"
+    for line in lines:
+        value = line.strip()
+        if (value and not value.startswith("#")
+                and not value.startswith("/")
+                and re.fullmatch(r"[+-]?[A-Za-z0-9_.+-]+\.desktop(?::[A-Za-z0-9_.-]+)?", value) is None):
+            raise DefaultAppsError("malformed terminal preference line")
+    if sum(line.strip() == desktop_id for line in lines) > 1:
+        raise DefaultAppsError("duplicate selected terminal preference")
+    for line in lines:
+        value = line.strip()
+        if value == desktop_id:
+            lines.remove(line)
+            break
+    position = 0
+    while position < len(lines) and (
+        not lines[position].strip() or lines[position].lstrip().startswith("#")
+    ):
+        position += 1
+    if position > 0 and not lines[position - 1].endswith(("\n", "\r")):
+        lines[position - 1] += newline
+    lines.insert(position, desktop_id + newline)
+    return "".join(lines).encode("utf-8")
+
+
+def target_for(category: str) -> Path:
+    base = config_home()
+    suffix = "mimeapps.list" if category in TYPES else "xdg-terminals.list"
+    for desktop in desktop_names():
+        candidate = base / f"{desktop}-{suffix}"
+        data, _ = read_file(candidate)
+        if data is None:
+            continue
+        if category == "terminal":
+            return candidate
+        _, _, keys, _ = parsed_mime(data)
+        if any(key in keys for key in TYPES[category]):
+            return candidate
+    return base / suffix
+
+
+def installed() -> dict[str, GioUnix.DesktopAppInfo]:
+    result = {}
+    for app in Gio.AppInfo.get_all():
+        desktop_id = app.get_id()
+        if desktop_id and ID_RE.fullmatch(desktop_id) and app.should_show():
+            result[desktop_id] = app
+    return result
+
+
+def candidates(category: str, apps: dict) -> list[str]:
+    if category == "terminal" and shutil.which("xdg-terminal-exec") is None:
+        return []
+    strict_terminal = os.environ.get("XTE_EXECARG_COMPAT", "").lower() in (
+        "0", "false", "no", "off"
+    )
+    result = []
+    for desktop_id, app in apps.items():
+        if category in TYPES:
+            if all(mime in (app.get_supported_types() or []) for mime in TYPES[category]):
+                result.append(desktop_id)
+        elif category == "terminal" and isinstance(app, GioUnix.DesktopAppInfo):
+            categories = (app.get_string("Categories") or "").split(";")
+            if "TerminalEmulator" in categories and (
+                app.get_string("X-TerminalArgExec") is not None
+                or desktop_id == "foot.desktop" and not strict_terminal
+            ):
+                result.append(desktop_id)
+    return sorted(result)
+
+
+def effective() -> dict[str, object]:
+    browser = []
+    for mime in BROWSER_TYPES:
+        app = Gio.AppInfo.get_default_for_type(mime, False)
+        browser.append(app.get_id() if app else None)
+    editor = Gio.AppInfo.get_default_for_type("text/plain", False)
+    try:
+        # The resolver writes a cache even for --print-id. Disable it without
+        # letting its disabled-cache cleanup touch the user's real cache.
+        resolver_env = dict(os.environ)
+        resolver_env["XTE_CACHE_ENABLED"] = "0"
+        resolver_env["XDG_CACHE_HOME"] = os.path.join(
+            "/tmp",
+            ".vanhyprarch-default-apps-no-cache-" + secrets.token_hex(16),
+        )
+        terminal = subprocess.run(["xdg-terminal-exec", "--print-id"],
+            capture_output=True, text=True, check=False, timeout=10,
+            env=resolver_env)
+        terminal_id = terminal.stdout.strip() if terminal.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        terminal_id = None
+    return {
+        "browser": browser[0] if browser[0] and len(set(browser)) == 1 else
+            "mixed" if len(set(browser)) > 1 else None,
+        "terminal": terminal_id if terminal_id and ID_RE.fullmatch(terminal_id) else None,
+        "editor": editor.get_id() if editor else None,
+    }
+
+
+def status() -> dict[str, object]:
+    apps = installed()
+    return {"version": 1, "effective": effective(), "candidates": {
+        category: candidates(category, apps) for category in ("browser", "terminal", "editor")
+    }}
+
+
+def publish(path: Path, data: bytes, mode: int) -> None:
+    fd, name = tempfile.mkstemp(prefix=".vanhyprarch-default-apps-", dir=path.parent)
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(os.dup(fd), "wb", closefd=True) as stream:
+            stream.write(data)
+            stream.flush()
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.replace(name, path)
+        directory_fd = os.open(path.parent, os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if os.path.lexists(name):
+            os.unlink(name)
+
+
+def select(category: str, desktop_id: str) -> dict[str, object]:
+    if category not in ("browser", "terminal", "editor") or not ID_RE.fullmatch(desktop_id):
+        raise DefaultAppsError("invalid category or desktop ID")
+    if desktop_id not in candidates(category, installed()):
+        raise DefaultAppsError("application is not eligible for this category")
+    base = config_home()
+    safe_directory(base, create=True)
+    lock_path = base / ".vanhyprarch-default-apps.lock"
+    lock = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    try:
+        lock_info = os.fstat(lock)
+        if (not stat.S_ISREG(lock_info.st_mode) or lock_info.st_uid != os.getuid()
+                or lock_info.st_nlink != 1 or stat.S_IMODE(lock_info.st_mode) != 0o600):
+            raise DefaultAppsError("unsafe operation lock")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        path = target_for(category)
+        old, mode = read_file(path)
+        new = terminal_change(old, desktop_id) if category == "terminal" else mime_change(old, category, desktop_id)
+        try:
+            if read_file(path)[0] != old:
+                raise DefaultAppsError("configuration changed during selection")
+            if old != new:
+                publish(path, new, mode)
+            actual = effective()[category]
+            if actual != desktop_id:
+                raise DefaultAppsError(f"effective {category} remains {actual or 'unavailable'}")
+        except Exception as error:
+            current, _ = read_file(path)
+            if current == old:
+                raise
+            if current == new and old != new:
+                if old is None:
+                    os.unlink(path)
+                else:
+                    publish(path, old, mode)
+            else:
+                raise DefaultAppsError("verification failed and configuration changed concurrently") from error
+            raise
+        return status()
+    finally:
+        os.close(lock)
+
+
+def main(argv: list[str]) -> int:
+    try:
+        if argv == ["status"]:
+            value = status()
+        elif len(argv) == 3 and argv[0] == "select":
+            value = select(argv[1], argv[2])
+        else:
+            raise DefaultAppsError("usage: vanhyprarch-default-apps status | select CATEGORY DESKTOP_ID")
+        print(json.dumps(value, separators=(",", ":")))
+        return 0
+    except (DefaultAppsError, OSError) as error:
+        print(f"vanhyprarch-default-apps: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

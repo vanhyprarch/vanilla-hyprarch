@@ -12,6 +12,7 @@ Scope {
     required property RemoveActions removeActions
     required property UpdateActions updateActions
     required property SystemComponentsActions systemComponentsActions
+    property DefaultAppsActions defaultAppsActions: null
     required property ZigScreensaverActions zigScreensaverActions
     required property PowerActions powerActions
 
@@ -19,6 +20,7 @@ Scope {
     property string activeScreenName: ""
     property string currentSection: "root"
     property string currentComponentId: ""
+    property string currentDefaultCategory: ""
     property string componentSubview: ""
     property string languageDraftMessage: ""
     property string searchText: ""
@@ -65,6 +67,14 @@ Scope {
         },
         {
             kind: "section",
+            sectionId: "default-apps",
+            label: "Default Apps",
+            detail: "Choose browser, terminal, and text editor",
+            icon: "preferences-desktop-default-applications",
+            keywords: ["default", "browser", "terminal", "text", "editor"]
+        },
+        {
+            kind: "section",
             sectionId: "components",
             label: "Additional system components",
             detail: "Install and configure optional Vanilla HyprArch components",
@@ -94,6 +104,7 @@ Scope {
 
         currentSection = "root"
         currentComponentId = ""
+        currentDefaultCategory = ""
         componentSubview = ""
         searchText = ""
         pendingPowerAction = ""
@@ -104,6 +115,7 @@ Scope {
         isOpen = false
         currentSection = "root"
         currentComponentId = ""
+        currentDefaultCategory = ""
         componentSubview = ""
         searchText = ""
         pendingPowerAction = ""
@@ -122,6 +134,9 @@ Scope {
         } else if (componentSubview !== "") {
             componentSubview = ""
             languageDraftMessage = ""
+        } else if (currentDefaultCategory !== "") {
+            currentDefaultCategory = ""
+            searchText = ""
         } else if (currentComponentId !== "") {
             currentComponentId = ""
             searchText = ""
@@ -136,11 +151,15 @@ Scope {
     function enterSection(sectionId: string): void {
         if (sectionId !== "apps" && sectionId !== "install"
                 && sectionId !== "remove" && sectionId !== "update"
-                && sectionId !== "style" && sectionId !== "components"
+                && sectionId !== "style" && sectionId !== "default-apps"
+                && sectionId !== "components"
                 && sectionId !== "power")
             return
         currentSection = sectionId
+        currentDefaultCategory = ""
         searchText = ""
+        if (sectionId === "default-apps" && defaultAppsActions)
+            defaultAppsActions.refresh()
         if (sectionId === "remove")
             removeActions.refreshPackages()
     }
@@ -390,6 +409,69 @@ Scope {
                 ? "the current mode's backgrounds" : "backgrounds"),
             icon: "preferences-desktop-wallpaper"
         }]
+    }
+
+    function defaultEntry(desktopId: string): var {
+        if (!desktopId)
+            return null
+        const applications = DesktopEntries.applications.values
+        for (const entry of applications) {
+            const id = entry.id.endsWith(".desktop") ? entry.id : entry.id + ".desktop"
+            if (id === desktopId)
+                return entry
+        }
+        return DesktopEntries.byId(desktopId.endsWith(".desktop")
+            ? desktopId.slice(0, -8) : desktopId)
+    }
+
+    function defaultCategoryEntries(query: string): var {
+        const descriptions = [
+            { id: "browser", label: "Browser", icon: "web-browser" },
+            { id: "terminal", label: "Terminal", icon: "utilities-terminal" },
+            { id: "editor", label: "Text Editor", icon: "accessories-text-editor" }
+        ]
+        const result = []
+        for (const category of descriptions) {
+            const effective = defaultAppsActions
+                ? defaultAppsActions.effective[category.id] : null
+            const app = defaultEntry(effective)
+            const detail = defaultAppsActions && !defaultAppsActions.ready
+                ? "Checking defaults…" : effective === "mixed" ? "Mixed"
+                : app ? app.name : "No available default"
+            if (query !== "" && matchRank(category.label,
+                    normalize(category.label + " " + detail), query) < 0)
+                continue
+            result.push({ kind: "defaultCategory", categoryId: category.id,
+                label: category.label, detail: detail, icon: category.icon })
+        }
+        return result
+    }
+
+    function defaultCandidateEntries(query: string): var {
+        if (!defaultAppsActions)
+            return []
+        const category = currentDefaultCategory
+        const eligible = defaultAppsActions.candidates[category] || []
+        const activeId = defaultAppsActions.effective[category]
+        const result = []
+        for (const desktopId of eligible) {
+            const entry = defaultEntry(desktopId)
+            if (!entry || query !== "" && matchRank(entry.name,
+                    normalize(entry.name + " " + entry.id), query) < 0)
+                continue
+            result.push({ kind: "defaultCandidate", categoryId: category,
+                desktopId: desktopId, label: entry.name,
+                detail: desktopId === activeId ? "Current default" : "Choose as default",
+                icon: entry.icon || "application-x-executable",
+                active: desktopId === activeId })
+        }
+        result.sort(function(left, right) {
+            const order = left.label.toLocaleLowerCase().localeCompare(
+                right.label.toLocaleLowerCase())
+            return order !== 0 ? order : left.desktopId < right.desktopId ? -1
+                : left.desktopId > right.desktopId ? 1 : 0
+        })
+        return result
     }
 
     function componentCatalogEntries(query: string): var {
@@ -781,6 +863,9 @@ Scope {
             return updateEntries(query)
         if (currentSection === "style")
             return styleEntries(query)
+        if (currentSection === "default-apps")
+            return currentDefaultCategory === ""
+                ? defaultCategoryEntries(query) : defaultCandidateEntries(query)
         if (currentSection === "components") {
             if (currentComponentId === "local-dictation")
                 return dictationEntries()
@@ -846,6 +931,16 @@ Scope {
         case "chooseBackground":
             backgroundPickerRequested()
             close()
+            break
+        case "defaultCategory":
+            currentDefaultCategory = entry.categoryId
+            searchText = ""
+            if (defaultAppsActions)
+                defaultAppsActions.refresh()
+            break
+        case "defaultCandidate":
+            if (defaultAppsActions)
+                defaultAppsActions.select(entry.categoryId, entry.desktopId)
             break
         case "component":
             openComponent(entry.componentId)

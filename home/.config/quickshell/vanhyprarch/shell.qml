@@ -68,6 +68,10 @@ ShellRoot {
         id: systemComponentsActions
     }
 
+    DefaultAppsActions {
+        id: defaultAppsActions
+    }
+
     ZigScreensaverActions {
         id: zigScreensaverActions
 
@@ -83,6 +87,7 @@ ShellRoot {
         removeActions: removeActions
         updateActions: updateActions
         systemComponentsActions: systemComponentsActions
+        defaultAppsActions: defaultAppsActions
         zigScreensaverActions: zigScreensaverActions
         powerActions: powerActions
         onBackgroundPickerRequested: backgroundPicker.open()

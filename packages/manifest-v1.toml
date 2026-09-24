@@ -665,6 +665,15 @@ owner = "desktop-portals"
 reason = "Provides Hyprland screen capture and sharing portal interfaces."
 
 [[package]]
+name = "xdg-terminal-exec"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "default-applications"
+reason = "Resolves the user's preferred terminal through XDG terminal lists."
+
+[[package]]
 name = "xdg-user-dirs"
 source = "official"
 role = "required"

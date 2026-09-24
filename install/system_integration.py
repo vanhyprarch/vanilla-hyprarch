@@ -48,6 +48,8 @@ FLATHUB_NAME = "flathub"
 FLATHUB_URL = "https://dl.flathub.org/repo/"
 FLATPAK_SYSTEM_EXPORT_ID = "flatpak-system-application-exports"
 FLATPAK_SYSTEM_EXPORT_PATH = "/var/lib/flatpak/exports/share/applications"
+TERMINAL_FALLBACK_PATH = "/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list"
+TERMINAL_FALLBACK_SOURCE = "system/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list"
 AUR_YAY_ORIGIN = "https://aur.archlinux.org/yay.git"
 PACKAGE_NAME = re.compile(r"^[a-z0-9@._+:-]+$")
 DEPENDENCY_NAME = re.compile(r"^([a-z0-9@._+:-]+)")
@@ -170,6 +172,7 @@ class SystemPlan:
                 "sddm-conflict",
                 "sddm-recovery-required",
                 "flatpak-exports-conflict",
+                "terminal-fallback-conflict",
             }
         )
 
@@ -182,6 +185,7 @@ class SystemPlan:
             "service-preserve",
             "flathub-preserve",
             "flatpak-exports-preserve",
+            "terminal-fallback-preserve",
             "display-manager-state-preserve",
             "default-target-preserve",
             "sddm-system-preserve",
@@ -325,6 +329,13 @@ class SystemIntegration:
         if target != "/etc/bluetooth/main.conf" or not isinstance(source, str):
             raise IntegrationError("unexpected BlueZ adoption mapping")
         self.bluez_record = adopted[0]
+        terminal = [item for item in self.ownership_manifest.get("artifact", [])
+                    if item.get("id") == "terminal-fallback"]
+        if (len(terminal) != 1 or terminal[0].get("target") != TERMINAL_FALLBACK_PATH
+                or terminal[0].get("source") != TERMINAL_FALLBACK_SOURCE
+                or terminal[0].get("class") != "VANILLA_MANAGED_SYSTEM"
+                or terminal[0].get("mode") != "0644"):
+            raise IntegrationError("terminal fallback ownership declaration is invalid")
         exports = [item for item in self.ownership_manifest.get("artifact", [])
                    if item.get("id") == FLATPAK_SYSTEM_EXPORT_ID]
         if (len(exports) != 1 or exports[0].get("target") != FLATPAK_SYSTEM_EXPORT_PATH
@@ -883,6 +894,63 @@ class SystemIntegration:
             raise IntegrationError("Flatpak must be installed before export scaffolding")
         self._inspect_flatpak_exports(create=True)
 
+    def _terminal_fallback_status(self, *, create: bool = False) -> PlanItem:
+        source = self._safe_source_file(TERMINAL_FALLBACK_SOURCE, "terminal fallback")
+        content = source.read_bytes()
+        if content != b"foot.desktop\n":
+            raise IntegrationError("terminal fallback source is not the reviewed Foot preference")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        directory = os.open(self.system_root, flags)
+        try:
+            parts = Path(TERMINAL_FALLBACK_PATH).parts[1:]
+            for part in parts[:-1]:
+                try:
+                    info = os.stat(part, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    if not create:
+                        return PlanItem("terminal-fallback-create", TERMINAL_FALLBACK_PATH)
+                    os.mkdir(part, 0o755, dir_fd=directory)
+                    info = os.stat(part, dir_fd=directory, follow_symlinks=False)
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != self.root_uid
+                        or info.st_gid != self.root_gid
+                        or info.st_mode & 0o022):
+                    raise IntegrationError(f"unsafe terminal fallback parent: {part}")
+                next_directory = os.open(part, flags, dir_fd=directory)
+                os.close(directory)
+                directory = next_directory
+            name = parts[-1]
+            try:
+                info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                if not create:
+                    return PlanItem("terminal-fallback-create", TERMINAL_FALLBACK_PATH)
+                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+                             0o644, dir_fd=directory)
+                try:
+                    os.fchmod(fd, 0o644)
+                    with os.fdopen(os.dup(fd), "wb", closefd=True) as stream:
+                        stream.write(content)
+                        stream.flush()
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                os.fsync(directory)
+                info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != self.root_uid
+                    or info.st_gid != self.root_gid or stat.S_IMODE(info.st_mode) != 0o644):
+                raise IntegrationError("terminal fallback target has unsafe type, owner, or mode")
+            fd = os.open(name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory)
+            try:
+                if os.read(fd, len(content) + 1) != content:
+                    raise IntegrationError("terminal fallback target has conflicting content")
+            finally:
+                os.close(fd)
+            return PlanItem("terminal-fallback-preserve", TERMINAL_FALLBACK_PATH)
+        except OSError as error:
+            raise IntegrationError(f"terminal fallback inspection failed: {error}") from error
+        finally:
+            os.close(directory)
+
     def plan(self) -> SystemPlan:
         self._require_root_integration("plan")
         transaction = self._read_transaction()
@@ -900,6 +968,10 @@ class SystemIntegration:
         else:
             items.append(PlanItem("flathub-add", FLATHUB_NAME, "after the planned flatpak package installation"))
         items.append(self._flatpak_exports_status())
+        try:
+            items.append(self._terminal_fallback_status())
+        except IntegrationError as error:
+            items.append(PlanItem("terminal-fallback-conflict", TERMINAL_FALLBACK_PATH, str(error)))
         hyprland_install_planned = any(
             item.action == "package-install" and item.subject == "hyprland"
             for item in package_items
@@ -1523,6 +1595,9 @@ class SystemIntegration:
             self._apply_bluez()
             self._apply_flatpak()
             self._ensure_flatpak_exports()
+            if "xdg-terminal-exec" not in self._read_installed_packages():
+                raise IntegrationError("xdg-terminal-exec must precede the Foot fallback")
+            self._terminal_fallback_status(create=True)
             self._apply_sddm_login()
             self._apply_services()
             self.validate()
@@ -1551,6 +1626,8 @@ class SystemIntegration:
         exports = self._flatpak_exports_status()
         if exports.action != "flatpak-exports-preserve":
             raise IntegrationError("Flatpak system export scaffolding is invalid: " + exports.detail)
+        if self._terminal_fallback_status().action != "terminal-fallback-preserve":
+            raise IntegrationError("terminal fallback is missing")
         self._validate_sddm_login()
         for unit, desired in self.desired_system_services.items():
             current = self._service_state(unit)

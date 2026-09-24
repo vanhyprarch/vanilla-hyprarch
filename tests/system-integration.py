@@ -345,6 +345,52 @@ class IntegrationTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.fixture.close()
 
+    def test_terminal_fallback_plan_apply_validate_and_preserve(self) -> None:
+        engine = self.fixture.engine()
+        target = self.fixture.root / MODULE.TERMINAL_FALLBACK_PATH.lstrip("/")
+        self.assertEqual(engine._terminal_fallback_status().action, "terminal-fallback-create")
+        self.assertFalse(target.exists())
+        engine.apply()
+        self.assertEqual(target.read_bytes(), b"foot.desktop\n")
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
+        before = (target.stat().st_ino, target.stat().st_mtime_ns)
+        engine.apply()
+        self.assertEqual((target.stat().st_ino, target.stat().st_mtime_ns), before)
+        target.unlink()
+        with self.assertRaisesRegex(IntegrationError, "terminal fallback is missing"):
+            engine.validate()
+
+    def test_terminal_fallback_follows_package_and_rejects_conflicts(self) -> None:
+        engine = self.fixture.engine()
+        target = self.fixture.root / MODULE.TERMINAL_FALLBACK_PATH.lstrip("/")
+        state = self.fixture.state()
+        state["installed"].remove("xdg-terminal-exec")
+        save_json(self.fixture.runner_state, state)
+        original = engine._terminal_fallback_status
+
+        def checked(*, create: bool = False):
+            if create:
+                self.assertIn("xdg-terminal-exec", self.fixture.state()["installed"])
+            return original(create=create)
+
+        with mock.patch.object(engine, "_terminal_fallback_status", side_effect=checked):
+            engine.apply()
+        self.assertTrue(target.is_file())
+        target.unlink()
+        target.symlink_to(self.fixture.root / "home/tester")
+        self.assertIn("terminal-fallback-conflict", {item.action for item in engine.plan().items})
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+        target.unlink()
+        parent = target.parent
+        parent.rmdir()
+        parent.write_bytes(b"not a directory")
+        self.assertIn("terminal-fallback-conflict", {item.action for item in engine.plan().items})
+        parent.unlink()
+        parent.symlink_to(self.fixture.root / "home/tester", target_is_directory=True)
+        with self.assertRaises(IntegrationError):
+            engine.apply()
+
     def test_flatpak_export_scaffold_plan_apply_validate_and_preserve(self) -> None:
         engine = self.fixture.engine()
         destination = self.fixture.root / MODULE.FLATPAK_SYSTEM_EXPORT_PATH.lstrip("/")

@@ -19,6 +19,7 @@ and removable local mitigations. Package selection belongs in
 | Qt | 6.11.2 (`qt6-base 6.11.2-3`) | Main Quickshell runtime |
 | `vanhyprarch-zig-player` | optional v0.1.1, Linux x86_64 | Native layer-shell renderer; canonical member hashes and required Wayland/glibc libraries are validated before capability publication. Idle continuity and input routing validated; physical two-monitor testing pending. |
 | Foot | 1.28.0 (`foot 1.28.0-2`) | Default terminal for interactive Install/Remove/Update operations; a shared helper retains final output until Enter without `--hold` |
+| xdg-terminal-exec | 0.14.3-2 official Arch Extra package (installed and validated) | Proposed default-terminal resolver for Default Apps; Foot fallback and explicit user selection validated on the real host |
 | pacman | 7.1.0 (`pacman 7.1.0.r9.g54d9411-2`) | Local installed-package catalog and authoritative removal transaction semantics |
 | yay | 13.0.1 (`yay 13.0.1-1`) | Interactive repository/AUR installation, removal, and full-system update wrapper |
 | Flatpak | 1.18.2 (`flatpak 1:1.18.2-1`) | Locally validated official package for interactive app/runtime updates; required but not version-pinned |
@@ -36,6 +37,25 @@ and removable local mitigations. Package selection belongs in
 This is a tested rolling-release snapshot, not a dependency lock or a claim
 that other versions are incompatible. External release artifacts are pinned
 separately when required.
+
+## Proposed default-terminal compatibility
+
+The official Arch `xdg-terminal-exec` 0.14.3-2 package implements a proposed,
+not finalized, freedesktop terminal-default specification. Its documented data
+search includes `/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list`.
+The official Foot 1.28.0-2 desktop entry advertises `TerminalEmulator` but
+lacks `X-TerminalArgExec`; the resolver's default compatibility mode accepts
+it. An isolated run of the packaged executable with the Vanilla fallback
+returned `foot.desktop` from `--print-id` and `foot -e /usr/bin/true` from
+`--print-cmd`. Foot documents `-e` as compatible. Strict resolver mode would
+reject that entry. Retest these probes after resolver or Foot desktop-entry
+upgrades; remove the compatibility allowance when Foot advertises the proposed
+argument key or the finalized standard changes eligibility.
+
+This resolver normally writes its own cache even for `--print-id`. Default Apps
+disables resolver caching for readback and gives its cleanup an unused random
+path under `/tmp`, so opening the panel does not create, replace, or remove the
+user's cache. Retest this behavior when the resolver changes its cache rules.
 
 ## Hyprland dock-popup layer animation boundary
 

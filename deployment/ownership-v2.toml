@@ -294,6 +294,20 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+id = "default-apps-command"
+source = "bin/vanhyprarch-default-apps"
+target = "$HOME/.local/bin/vanhyprarch-default-apps"
+class = "VANILLA_MANAGED"
+component = "default-applications"
+kind = "file"
+mode = "0755"
+validators = ["python-compile"]
+authority = "vanilla-hyprarch"
+status = "implemented"
+user_editable = false
+machine_specific = false
+
+[[artifact]]
 id = "appearance-command"
 source = "bin/vanhyprarch-appearance"
 target = "$HOME/.local/bin/vanhyprarch-appearance"
@@ -819,6 +833,72 @@ authority = "vanhyprarch-dictation"
 status = "implemented"
 user_editable = false
 machine_specific = false
+
+[[artifact]]
+id = "terminal-user-list"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/xdg-terminals.list"
+class = "USER_OWNED"
+component = "default-applications"
+kind = "file"
+mode = "0644"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "The Default Apps backend edits only the selected terminal preference; desktop-specific user lists are also respected."
+
+[[artifact]]
+id = "terminal-hyprland-user-list"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hyprland-xdg-terminals.list"
+class = "USER_OWNED"
+component = "default-applications"
+kind = "file"
+mode = "0644"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Existing desktop-specific user terminal preference may be narrowly edited when it outranks the generic list."
+
+[[artifact]]
+id = "mimeapps-hyprland-user-list"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/hyprland-mimeapps.list"
+class = "USER_OWNED"
+component = "default-applications"
+kind = "file"
+mode = "0644"
+authority = "user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Existing desktop-specific MIME default overrides remain user-owned and are edited only on explicit selection."
+
+[[artifact]]
+id = "default-apps-operation-lock"
+target = "${XDG_CONFIG_HOME:-$HOME/.config}/.vanhyprarch-default-apps.lock"
+class = "BACKEND_OWNED"
+component = "default-applications"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-default-apps"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Created only on explicit selection; status and panel opening remain zero-write."
+
+[[artifact]]
+id = "terminal-fallback"
+source = "system/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list"
+target = "/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list"
+class = "VANILLA_MANAGED_SYSTEM"
+component = "default-applications"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-system-integration"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Low-priority Hyprland fallback; user and administrator xdg-terminal-exec lists take precedence."
 
 [[artifact]]
 id = "hyprland-session-entry"

@@ -49,6 +49,7 @@ image/svg+xml=imv.desktop;
 image/webp=imv.desktop;
 inode/directory=thunar.desktop;
 text/html=firefox.desktop;
+text/plain=org.gnome.TextEditor.desktop;
 video/mp4=mpv.desktop;
 video/webm=mpv.desktop;
 video/x-matroska=mpv.desktop;
@@ -924,7 +925,8 @@ class ManifestContractTests(unittest.TestCase):
         self.assertNotIn("[Added Associations]", text)
         self.assertEqual(
             {value.rstrip(";") for line in text.splitlines() if "=" in line for value in [line.split("=", 1)[1]]},
-            {"firefox.desktop", "thunar.desktop", "imv.desktop", "mpv.desktop"},
+            {"firefox.desktop", "thunar.desktop", "imv.desktop", "mpv.desktop",
+             "org.gnome.TextEditor.desktop"},
         )
 
 

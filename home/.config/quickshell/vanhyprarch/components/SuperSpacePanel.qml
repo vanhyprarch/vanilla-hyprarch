@@ -154,6 +154,11 @@ CenteredOverlay {
             root.focusPrimaryControl()
         }
 
+        function onCurrentDefaultCategoryChanged(): void {
+            root.resetSelection()
+            root.focusPrimaryControl()
+        }
+
         function onComponentSubviewChanged(): void {
             root.resetSelection()
             root.focusPrimaryControl()
@@ -276,6 +281,9 @@ CenteredOverlay {
                         ? "Search update actions"
                     : root.controller.currentSection === "style"
                         ? "Search style actions"
+                    : root.controller.currentSection === "default-apps"
+                        ? root.controller.currentDefaultCategory === ""
+                            ? "Search default categories" : "Search applications"
                     : root.controller.currentSection === "components"
                         ? "Search optional components"
                     : root.controller.currentSection === "power"
@@ -332,6 +340,11 @@ CenteredOverlay {
                         ? "Remove packages"
                     : root.controller.currentSection === "update" ? "Update"
                     : root.controller.currentSection === "style" ? "Style"
+                    : root.controller.currentSection === "default-apps"
+                        ? root.controller.currentDefaultCategory === "browser" ? "Browser"
+                        : root.controller.currentDefaultCategory === "terminal" ? "Terminal"
+                        : root.controller.currentDefaultCategory === "editor" ? "Text Editor"
+                        : "Default Apps"
                     : root.controller.currentSection === "components"
                         ? root.controller.componentSubview === "model" ? "Choose a model"
                         : root.controller.componentSubview === "languages" ? "Languages"
@@ -476,6 +489,10 @@ CenteredOverlay {
                     ? "No matching update actions"
                 : root.controller.currentSection === "style"
                     ? "No matching style actions"
+                : root.controller.currentSection === "default-apps"
+                    ? root.controller.currentDefaultCategory === ""
+                        ? "No matching default categories"
+                        : "No eligible installed applications"
                 : root.controller.currentSection === "components"
                     ? root.controller.systemComponentsActions.errorMessage !== ""
                         ? root.controller.systemComponentsActions.errorMessage
@@ -514,6 +531,13 @@ CenteredOverlay {
                                 ? "1 installed package"
                                 : root.controller.visibleEntries.length
                                     + " installed packages"
+                : root.controller.currentSection === "default-apps"
+                    ? root.controller.defaultAppsActions
+                        && root.controller.defaultAppsActions.errorMessage !== ""
+                        ? root.controller.defaultAppsActions.errorMessage
+                        : root.controller.defaultAppsActions
+                            && root.controller.defaultAppsActions.busy
+                            ? "Checking defaults…" : "Enter or click to choose"
                 : root.controller.currentSection === "components"
                     ? root.controller.systemComponentsActions.operationRunning
                             || root.controller.zigScreensaverActions.operationRunning
@@ -524,7 +548,10 @@ CenteredOverlay {
                     ? "1 result"
                     : root.controller.visibleEntries.length + " results"
             textFormat: Text.PlainText
-            color: root.theme.textMuted
+            color: root.controller.currentSection === "default-apps"
+                    && root.controller.defaultAppsActions
+                    && root.controller.defaultAppsActions.errorMessage !== ""
+                ? root.theme.danger : root.theme.textMuted
             font.pixelSize: root.metrics.captionFontSize
             horizontalAlignment: Text.AlignRight
             verticalAlignment: Text.AlignVCenter

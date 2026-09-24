@@ -190,17 +190,21 @@ belong in machine configuration.
 | Media player | `mpv` |
 | Graphical audio control | `pavucontrol` (recommended, installed by default) |
 
-Both new applications are direct, required, unpinned packages from the official
-Arch `extra` repository. Installing GNOME Text Editor does not assign it as the
-default for text files or pin it to the dock. The fresh dock launcher order is
+GNOME Text Editor and Bazaar are direct, required, unpinned packages from the
+official Arch `extra` repository. The fresh MIME seed assigns GNOME Text Editor
+to `text/plain`; it is not pinned to the dock. The fresh dock launcher order is
 Firefox, Foot, Thunar, Bazaar. Launcher state is user-owned after its first
 seed; existing pins, including an explicitly empty list, are preserved.
 
 `dunst` is the required package/D-Bus-activated notification daemon, so a fresh
-install does not depend on accidental host software. Phase 3 will add minimal
+install does not depend on accidental host software. Phase 3 supplies minimal
 create-once mpv and MIME seeds. Existing `$XDG_CONFIG_HOME/mpv/mpv.conf` and
 `$XDG_CONFIG_HOME/mimeapps.list` files are always preserved without automatic
 merge.
+
+`xdg-terminal-exec` is a direct required official package for the Default Apps
+terminal resolver. Vanilla supplies a low-priority Hyprland Foot fallback under
+`/usr/local/share/xdg-terminal-exec`; user terminal lists take precedence.
 
 Thunar integration uses `gvfs` for trash and normal session mounting,
 `tumbler` for image thumbnails, and `thunar-archive-plugin` with `xarchiver`

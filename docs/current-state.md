@@ -579,13 +579,23 @@ The repository baseline now also requires official Arch `gnome-text-editor` and
 `bazaar`. On a missing launcher state, the shell waits for the exact Firefox,
 Foot, Thunar, and Bazaar application IDs before saving that four-entry order.
 Existing valid or explicitly empty launcher state is not migrated to add
-Bazaar. GNOME Text Editor is neither pinned nor assigned a text MIME default.
+Bazaar. GNOME Text Editor is not pinned; the fresh MIME seed now assigns it
+only to `text/plain`. Existing user MIME files are preserved.
 Both official packages were installed and launched on the development host.
 They appeared immediately in Super+Space Apps and the dock's Add picker, while
 the existing three-pin launcher file remained byte-for-byte unchanged. Bazaar
 initially showed a generic icon in the already-running Quickshell process;
 restarting Quickshell resolved its hicolor icon. Live icon-cache refresh is
 deferred to the separate app-discovery backlog.
+
+The new Super+Space Default Apps section is implemented in the repository with
+Browser, Terminal, and Text Editor. It reads effective XDG defaults and writes
+only explicit user choices. Real-host acceptance confirmed Firefox, Foot, and
+GNOME Text Editor as the effective values, zero-write panel opening, the
+official `xdg-terminal-exec` package and Foot fallback, and explicit selections
+through MIME Apps and the user terminal list. Standards-aware `xdg-open`
+launches were verified for a text file and an HTTPS URL. Managed deployment
+validated 22 artifacts. See [Default Apps](default-apps.md).
 
 Hibernate is deliberately absent.
 

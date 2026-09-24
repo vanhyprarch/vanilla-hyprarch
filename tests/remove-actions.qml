@@ -136,7 +136,7 @@ ShellRoot {
             }).length === 0, "option-like input became a yay target")
 
             root.check(superSpace.sections.map(section => section.label).join(",")
-                === "Apps,Install,Remove,Update,Style,Additional system components,Power",
+                === "Apps,Install,Remove,Update,Style,Default Apps,Additional system components,Power",
                 "root section order is wrong")
 
             for (const section of ["apps", "install", "update", "power"]) {

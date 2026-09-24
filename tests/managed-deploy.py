@@ -303,6 +303,7 @@ class ManifestConsumptionTests(FixtureTestCase):
             [item.identifier for item in engine.artifacts],
             [
                 "appearance-command",
+                "default-apps-command",
                 "dictation-command",
                 "dictation-resources",
                 "hypridle-config",

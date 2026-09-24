@@ -223,6 +223,15 @@ size. Each file is created only when absent, becomes user-owned immediately,
 and is never overwritten or merged automatically. Existing standards-defined
 user MIME configuration also suppresses the MIME seed.
 
+The seed's fresh defaults are Firefox for HTML/HTTP/HTTPS and GNOME Text Editor
+for `text/plain`. Existing users receive no MIME migration.
+
+System integration installs the official `xdg-terminal-exec` package before
+ensuring Vanilla's low-priority Foot fallback at
+`/usr/local/share/xdg-terminal-exec/hyprland-xdg-terminals.list`. User and
+administrator terminal lists outrank it. Default Apps selection writes only
+the chosen user preference; opening the panel does not initialize a file.
+
 The same internal initializer publishes the machine and override seeds with
 no-clobber semantics, invokes `xdg-user-dirs-update` only when its configuration
 is absent, and delegates Appearance and Power & Idle defaults to their owning
