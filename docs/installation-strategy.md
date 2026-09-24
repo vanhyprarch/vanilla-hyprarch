@@ -80,8 +80,11 @@ the artifact before extraction and commits the exact published metadata to
 `/usr/share/vanhyprarch/release.json` only after all authoritative validation.
 The command above and arbitrary `VANHYPRARCH_REF` installs remain unreleased
 and leave that record absent. They refuse an existing installed release identity
-to avoid a stale claim. Public release acquisition/publication is not
-implemented yet.
+to avoid a stale claim. The system stage installs the root-owned
+`/usr/local/bin/vanhyprarch-update` command on release and development paths;
+it refuses updates while the installed release identity is absent. Manual
+GitHub release discovery and verified target-driver handoff are implemented.
+Fresh-install release acquisition and GitHub publication remain future work.
 
 The exact orchestrated sequence is:
 

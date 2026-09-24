@@ -59,6 +59,7 @@ REQUIRED_FILES = {
     "install/create_once.py", "install/sddm_login_integration.py",
     "install/release_migrations.py", "install/update_journal.py",
     "install/release_update.py", "release/migrations/registry.toml",
+    "install/update_bootstrap.py", "install/update_bootstrap_integration.py",
     "packages/manifest-v1.toml",
     "deployment/ownership-v2.toml", "deployment/service-policy-v1.toml",
 }

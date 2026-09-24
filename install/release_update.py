@@ -63,7 +63,9 @@ class TargetUser:
     def resolve(cls, name: str, *, system_root: Path = Path("/"),
                 xdg_config: Path | None = None, xdg_data: Path | None = None,
                 xdg_state: Path | None = None, xdg_cache: Path | None = None) -> "TargetUser":
-        if not name or name == "root" or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for char in name):
+        if (not name or len(name) > 32 or name == "root"
+                or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+                       for char in name)):
             raise UpdateError("preflight failed", "an explicit non-root target username is required")
         try:
             account = pwd.getpwnam(name)
@@ -543,7 +545,8 @@ class ReleaseUpdate:
             if bundle.metadata != plan.target:
                 raise UpdateError("transaction mismatch", "staged target differs from preflight")
             try:
-                self.journal.begin(plan.source, bundle.metadata)
+                self.journal.begin(plan.source, bundle.metadata,
+                                   target_user=self.user.name)
             except Exception:
                 if self.journal.inspect() is None:
                     self.store.remove_committed(bundle)
@@ -574,6 +577,8 @@ class ReleaseUpdate:
                     raise UpdateError("transaction mismatch", "committed staging differs from installed release")
                 self.store.remove_committed(bundle)
                 return installed
+            if state["target_user"] != self.user.name:
+                raise UpdateError("transaction mismatch", "active journal belongs to a different target user")
             try:
                 bundle = self.store.resume(state["target"]["artifact_sha256"])
             except Exception as error:
@@ -593,7 +598,8 @@ class ReleaseUpdate:
                     or installed["migration_level"] != state["source"]["migration_level"]):
                 raise UpdateError("transaction mismatch", "installed source differs from active journal")
             self._compatible(installed, bundle.metadata)
-            self.journal.begin(installed, bundle.metadata, resume=True)
+            self.journal.begin(installed, bundle.metadata, resume=True,
+                               target_user=self.user.name)
             try:
                 return self._run_transaction(installed, bundle)
             except UpdateError as error:

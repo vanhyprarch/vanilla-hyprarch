@@ -1,9 +1,9 @@
-# Release engineering: offline contract and local target driver
+# Release engineering: contract and installed manual updater
 
 Status: offline release declaration, deterministic artifact builder, verifier,
 fresh-install identity publisher, upgrade-safe stages, migration runner,
-durable journal, and local exact-target driver implemented. No release is
-published; discovery, download, installed updater, and menu action do not
+durable journal, local exact-target driver, and installed manual updater
+implemented. No release is published; the Super+Space menu action does not
 exist yet.
 
 ## Identity and authored declaration
@@ -282,10 +282,13 @@ publication, file and directory fsync. Its exact schema is `schema = 1`,
 `source` (`version`, `commit`, `artifact_sha256`, `migration_level`), `target`
 (`version`, `commit`, `artifact_sha256`, `update_protocol`,
 `minimum_migration_level`, `migration_level`), `phase`, `checkpoint`, ordered
-`completed_migrations`, and nullable `pending_migration`. It stores no URLs.
+`completed_migrations`, nullable `pending_migration`, and `target_user`. The
+driver records the explicit validated username; the low-level journal fixture
+API also permits null. It stores no URLs.
 The source and target fields are derived from strict Phase 1 metadata; journal
 initialization also compares the proposed source to the Phase 2 installed
-identity. A different target or source cannot replace an active journal.
+identity. A different target, source, or target user cannot replace an active
+journal.
 
 Phases are `applying`, `validating`, and `ready-for-final-commit`. Fixed
 checkpoint labels cover preflight completion, system integration, migrations,
@@ -362,5 +365,60 @@ can remove only the staged bundle matching the already committed installed
 identity. Failures retain the journal and exact target material for diagnosis
 or explicit resume; there is no global rollback.
 
-An installed discovery/download bootstrap, release channel selection UI,
-Super+Space action, release publication, and VM acceptance remain future work.
+The installed discovery/download bootstrap follows below. The Super+Space
+action, release publication, and VM acceptance remain future work.
+
+## Installed manual updater (release Phase 6)
+
+The system-integration authority installs `/usr/local/bin/vanhyprarch-update`
+as a root-owned mode-0755 regular executable Python archive. It contains the
+fixed acquisition envelope and the existing release verifier, identity, journal,
+and staging primitives. Root-private mode-0600 provenance at
+`/var/lib/vanhyprarch/update-bootstrap-v1.json` guards replacement in later
+releases. Fresh release installs include the command. Development installs may
+also include it, but it refuses automatic release updates while installed
+`release.json` is absent. The command does not use a source checkout.
+
+The distribution authority is fixed in the bootstrap as
+`vanhyprarch/vanilla-hyprarch`. The command queries GitHub's published Releases
+API pages, never `/releases/latest`, and orders validated Vanilla versions
+locally. A stable installation considers newer stable versions only. A candidate
+considers later candidates and the final stable of the same base version. It
+requires GitHub's release `immutable` flag to be true, a matching prerelease
+flag, and exactly one `release.json` plus one version-derived artifact asset.
+Publishing rc1 must enable GitHub immutable releases; a mutable release is not
+an automatic update source. The flag is GitHub's assertion, not an independent
+cryptographic signature or proof about an external mirror.
+
+HTTPS acquisition uses fixed-repository asset URLs from the release object,
+at most three redirects from a fixed GitHub asset URL to
+`release-assets.githubusercontent.com`, no API-listing redirects, a 20-second
+timeout, private `/run` downloads,
+and the Phase 1 limits: 4 KiB metadata and 512 MiB compressed artifact.
+On 2026-09-24, a public `cli/cli` release checksum asset returned one HTTPS
+302 from `github.com` to `release-assets.githubusercontent.com`, then HTTP 200.
+If GitHub changes that delivery host, the allowlist requires a reviewed change.
+The GitHub listing is limited to 8 MiB per page, five 100-release pages, and
+500 inspected releases. Pagination URLs are constructed for the fixed API;
+remote `Link` URLs are never followed.
+The artifact streams to disk and is checked for exact size, SHA-256, safe archive
+members, and embedded declaration agreement before target code executes.
+The authenticated target is extracted into a temporary root-owned, non-user-
+writable `/run` preview. The command runs that tree's `release_update.py plan`,
+then shows the installed/available versions, validated short summary, locally
+derived release-notes URL, concise plan, and default-No confirmation. On Yes it
+invokes that same verified target driver's `apply`; Phase 5 independently
+reverifies the bundle and retains its own durable staging before mutation.
+
+The command checks the durable journal before any network call. An active
+transaction binds it to the retained digest and the original explicit target
+username. It verifies the retained bundle, creates a fresh safe `/run`
+execution copy, and invokes the target driver's
+`resume`. This also handles identity-committed journal cleanup. After a journal
+was cleared but exact committed staging remains, it invokes Phase 5's orphan
+cleanup path. A malformed journal or retained bundle fails closed. The manual
+command crosses sudo once, passing a resolved explicit target username; root
+invocation requires `--target-user` and never infers it from HOME or cwd.
+
+The Super+Space menu action, background checks, release publication, production
+migration `0001`, and VM acceptance remain unimplemented.

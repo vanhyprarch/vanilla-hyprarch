@@ -383,6 +383,20 @@ class DriverTests(DriverFixture):
             self.driver.plan(other_json, other_archive)
         self.assertEqual(context.exception.kind, "transaction mismatch")
 
+    def test_resume_rejects_different_target_user_before_authorities(self) -> None:
+        self.authority.fail_before = "system-integration"
+        with self.assertRaises(UpdateError):
+            self.driver.apply(self.target_json, self.target_archive)
+        other = TargetUser("other", self.user.uid, self.user.gid, self.user.home,
+                           self.user.groups)
+        different = ReleaseUpdate(other, root=self.root, uid=os.getuid(),
+                                  gid=os.getgid(), testing=True,
+                                  authority=self.authority)
+        calls = list(self.authority.calls)
+        with self.assertRaisesRegex(UpdateError, "different target user"):
+            different.resume()
+        self.assertEqual(self.authority.calls, calls)
+
     def test_development_missing_identity_rejected(self) -> None:
         self.identity_path.unlink()
         with self.assertRaises(IdentityError):

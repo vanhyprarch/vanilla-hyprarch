@@ -6,8 +6,7 @@ The offline release contract now includes an authored candidate declaration,
 deterministic exact-commit artifact builder, generated metadata, and
 pre-extraction verifier. Phase 2 adds an offline, root-owned installed release
 identity committed only after a fresh release installation validates. See
-[Release engineering](release-engineering.md). No tag, published release,
-installed updater, or user-facing upgrade path exists yet.
+[Release engineering](release-engineering.md). No tag or published release exists yet.
 
 Release Phase 3 adds explicit upgrade semantics to the existing system and
 create-once authorities. These stage modes do not orchestrate an upgrade or
@@ -19,8 +18,10 @@ primitives for a local exact-target driver.
 
 Release Phase 5 adds that offline target-release driver: it verifies a supplied
 bundle, stages it durably, orchestrates existing upgrade-safe authorities,
-commits installed identity last, and supports exact-target resume. Discovery,
-download, release publication, and the Super+Space action remain future work.
+commits installed identity last, and supports exact-target resume. Phase 6 adds
+the manually invoked, root-owned `vanhyprarch-update` command for fixed-repository
+GitHub discovery, bounded acquisition, and verified target-driver handoff.
+Release publication and the Super+Space action remain future work.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.

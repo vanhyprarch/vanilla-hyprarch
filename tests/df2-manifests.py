@@ -490,6 +490,22 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertEqual(artifact["authority"], "vanhyprarch-release-update")
         self.assertNotIn("source", artifact)
 
+    def test_installed_update_bootstrap_is_privileged_backend_state(self) -> None:
+        identifier = self.document["release_update_bootstrap"]
+        self.assertEqual(identifier, "release-update-bootstrap")
+        artifact = self.by_id[identifier]
+        self.assertEqual(artifact["target"], "/usr/local/bin/vanhyprarch-update")
+        self.assertEqual(artifact["class"], "BACKEND_OWNED")
+        self.assertEqual(artifact["kind"], "file")
+        self.assertEqual(artifact["mode"], "0755")
+        self.assertEqual(artifact["authority"], "vanhyprarch-system-integration")
+        self.assertNotIn("source", artifact)
+        state = self.by_id[self.document["release_update_bootstrap_state"]]
+        self.assertEqual(state["target"], "/var/lib/vanhyprarch/update-bootstrap-v1.json")
+        self.assertEqual(state["class"], "BACKEND_OWNED")
+        self.assertEqual(state["mode"], "0600")
+        self.assertNotIn("source", state)
+
     def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
         for item in self.artifacts:
             if item["class"] in {"GENERATED", "RUNTIME", "PACKAGE_OWNED"}:

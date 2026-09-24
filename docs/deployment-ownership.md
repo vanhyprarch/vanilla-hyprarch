@@ -90,6 +90,12 @@ target user can read release sources for managed/create-once authorities;
 users cannot write it. The local target driver removes the transaction tree
 after verified identity commit and durable journal clearing.
 
+System integration also owns the root-owned executable archive
+`/usr/local/bin/vanhyprarch-update` and its private
+`/var/lib/vanhyprarch/update-bootstrap-v1.json` provenance. The archive is a
+regular mode-0755 command generated from tracked bootstrap and verifier modules;
+only the system authority may replace it after checking prior provenance.
+
 ## Create-once seeds
 
 Files below `seeds/`, or executable sources declared as create-once generators,

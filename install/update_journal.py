@@ -11,6 +11,7 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -35,8 +36,9 @@ CHECKPOINTS = (
 PHASES = ("applying", "validating", "ready-for-final-commit")
 JOURNAL_KEYS = {
     "schema", "source", "target", "phase", "checkpoint",
-    "completed_migrations", "pending_migration",
+    "completed_migrations", "pending_migration", "target_user",
 }
+TARGET_USER = re.compile(r"[A-Za-z0-9._-]{1,32}\Z", re.ASCII)
 SOURCE_KEYS = {"version", "commit", "artifact_sha256", "migration_level"}
 TARGET_KEYS = {
     "version", "commit", "artifact_sha256", "update_protocol",
@@ -107,6 +109,10 @@ def validate_record(value: object) -> dict[str, Any]:
         raise JournalError("invalid journal schema")
     if type(value["schema"]) is not int or value["schema"] != SCHEMA:
         raise JournalError("unsupported journal schema")
+    user = value["target_user"]
+    if user is not None and (type(user) is not str or user == "root"
+                             or TARGET_USER.fullmatch(user) is None):
+        raise JournalError("invalid journal target user")
     source, target = value["source"], value["target"]
     if type(source) is not dict or set(source) != SOURCE_KEYS:
         raise JournalError("invalid journal source identity")
@@ -332,8 +338,12 @@ class UpdateJournal(_RootPaths):
             os.close(descriptor)
             temporary.unlink(missing_ok=True)
 
-    def begin(self, source: dict[str, Any], target: dict[str, Any], *, resume: bool = False) -> dict:
+    def begin(self, source: dict[str, Any], target: dict[str, Any], *, resume: bool = False,
+              target_user: str | None = None) -> dict:
         self._require_lock()
+        if target_user is not None and (type(target_user) is not str or target_user == "root"
+                                        or TARGET_USER.fullmatch(target_user) is None):
+            raise JournalError("invalid transaction target user")
         old, new = _identities(source, target)
         installed = self.identity.validate()
         if installed != _metadata(source):
@@ -344,13 +354,15 @@ class UpdateJournal(_RootPaths):
                 raise JournalError("active update journal requires explicit resume")
             if existing["source"] != old or existing["target"] != new:
                 raise JournalError("active journal is bound to a different source or target")
+            if existing["target_user"] != target_user:
+                raise JournalError("active journal is bound to a different target user")
             return existing
         if resume:
             raise JournalError("no active journal exists to resume")
         value = {
             "schema": SCHEMA, "source": old, "target": new, "phase": "applying",
             "checkpoint": "preflight-complete", "completed_migrations": [],
-            "pending_migration": None,
+            "pending_migration": None, "target_user": target_user,
         }
         self._publish(value, initial=True)
         return value

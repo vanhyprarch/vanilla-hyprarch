@@ -419,6 +419,16 @@ class JournalTests(Fixture):
             with self.assertRaisesRegex(JournalError, "installed release"):
                 self.journal.begin(bad_source, target, resume=True)
 
+    def test_target_user_is_durable_transaction_identity(self) -> None:
+        target = self.target(1)
+        with self.journal.lock.acquire():
+            record = self.journal.begin(SOURCE, target, target_user="alice")
+            self.assertEqual(record["target_user"], "alice")
+            with self.assertRaisesRegex(JournalError, "different target user"):
+                self.journal.begin(SOURCE, target, resume=True, target_user="bob")
+            self.assertEqual(self.journal.begin(SOURCE, target, resume=True,
+                                                target_user="alice"), record)
+
     def test_source_mismatch_and_incompatible_target_fail_before_creation(self) -> None:
         target = self.target(1)
         bad_source = copy.deepcopy(SOURCE)

@@ -34,6 +34,7 @@ from sddm_login_integration import (
     START_HYPRLAND_PATH,
     TargetUser as SddmTargetUser,
 )
+from update_bootstrap_integration import BootstrapIntegration, BootstrapIntegrationError
 
 
 SCHEMA_VERSION = 1
@@ -175,6 +176,7 @@ class SystemPlan:
                 "sddm-recovery-required",
                 "flatpak-exports-conflict",
                 "terminal-fallback-conflict",
+                "update-bootstrap-conflict",
             }
         )
 
@@ -188,6 +190,7 @@ class SystemPlan:
             "flathub-preserve",
             "flatpak-exports-preserve",
             "terminal-fallback-preserve",
+            "update-bootstrap-preserve",
             "display-manager-state-preserve",
             "default-target-preserve",
             "sddm-system-preserve",
@@ -1059,6 +1062,10 @@ class SystemIntegration:
         finally:
             os.close(directory)
 
+    def _update_bootstrap(self) -> BootstrapIntegration:
+        return BootstrapIntegration(self.source_root, self.system_root,
+                                    uid=self.root_uid, gid=self.root_gid)
+
     def plan(self) -> SystemPlan:
         self._require_root_integration("plan")
         baseline = self._upgrade_baseline() if self.lifecycle == "upgrade" else None
@@ -1081,6 +1088,13 @@ class SystemIntegration:
             items.append(self._terminal_fallback_status())
         except IntegrationError as error:
             items.append(PlanItem("terminal-fallback-conflict", TERMINAL_FALLBACK_PATH, str(error)))
+        try:
+            action = self._update_bootstrap().plan(lifecycle=self.lifecycle)
+            items.append(PlanItem("update-bootstrap-" + action,
+                                  "/usr/local/bin/vanhyprarch-update"))
+        except BootstrapIntegrationError as error:
+            items.append(PlanItem("update-bootstrap-conflict",
+                                  "/usr/local/bin/vanhyprarch-update", str(error)))
         hyprland_install_planned = any(
             item.action == "package-install" and item.subject == "hyprland"
             for item in package_items
@@ -1764,6 +1778,7 @@ class SystemIntegration:
                     }
                     self._write_state(state)
             self._terminal_fallback_status(create=True)
+            self._update_bootstrap().apply(lifecycle=self.lifecycle)
             self._apply_sddm_login()
             self._apply_services()
             self.validate(require_inventory_current=False)
@@ -1796,6 +1811,10 @@ class SystemIntegration:
             raise IntegrationError("Flatpak system export scaffolding is invalid: " + exports.detail)
         if self._terminal_fallback_status().action != "terminal-fallback-preserve":
             raise IntegrationError("terminal fallback is missing")
+        try:
+            self._update_bootstrap().validate()
+        except BootstrapIntegrationError as error:
+            raise IntegrationError(f"installed update bootstrap is invalid: {error}") from error
         self._validate_sddm_login()
         for unit, desired in self.desired_system_services.items():
             current = self._service_state(unit)

@@ -8,6 +8,8 @@ create_once_lifecycle_state = "create-once-lifecycle-state"
 release_update_journal = "release-update-journal"
 release_update_lock = "release-update-lock"
 release_update_staging = "release-update-staging"
+release_update_bootstrap = "release-update-bootstrap"
+release_update_bootstrap_state = "release-update-bootstrap-state"
 sddm_login_state = "sddm-login-state"
 
 [[initializer]]
@@ -685,6 +687,32 @@ status = "implemented"
 user_editable = false
 machine_specific = true
 notes = "Root-owned, user-readable exact target bundle and extracted tree for offline update resume; no user write permission."
+
+[[artifact]]
+id = "release-update-bootstrap"
+target = "/usr/local/bin/vanhyprarch-update"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0755"
+authority = "vanhyprarch-system-integration"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Root-owned executable archive with provenance-gated replacement; includes the fixed acquisition envelope and offline verifier."
+
+[[artifact]]
+id = "release-update-bootstrap-state"
+target = "/var/lib/vanhyprarch/update-bootstrap-v1.json"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-system-integration"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Private root-owned SHA-256 provenance for atomic updater command replacement."
 
 [[artifact]]
 id = "create-once-lifecycle-state"
