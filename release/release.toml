@@ -1,0 +1,10 @@
+schema = 1
+version = "v1.0.0-rc1"
+channel = "candidate"
+architecture = "x86_64"
+update_protocol = 1
+minimum_migration_level = 0
+migration_level = 0
+summary = "First Vanilla HyprArch release candidate for fresh-install and upgrade validation."
+
+# Omit minimum_installed_version until a prior Vanilla release is supported.
