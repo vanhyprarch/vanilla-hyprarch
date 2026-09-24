@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQml.Models
 import Quickshell
 
 DockPopup {
@@ -24,6 +25,28 @@ DockPopup {
             root.contentItem.forceActiveFocus()
     }
 
+    SortFilterProxyModel {
+        id: sortedApplications
+        model: DesktopEntries.applications
+
+        sorters: FunctionSorter {
+            component RoleData: QtObject {
+                property DesktopEntry modelData
+            }
+
+            function sort(left: RoleData, right: RoleData): int {
+                const leftEntry = left.modelData
+                const rightEntry = right.modelData
+                const nameOrder = leftEntry.name.toLocaleLowerCase().localeCompare(
+                    rightEntry.name.toLocaleLowerCase())
+                if (nameOrder !== 0)
+                    return nameOrder
+                return leftEntry.id < rightEntry.id ? -1
+                    : leftEntry.id > rightEntry.id ? 1 : 0
+            }
+        }
+    }
+
     PanelSurface {
         anchors.fill: parent
         metrics: root.metrics
@@ -32,11 +55,12 @@ DockPopup {
 
         ListView {
             id: applicationsView
+            objectName: "appPickerApplicationsView"
 
             anchors.fill: parent
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            model: DesktopEntries.applications
+            model: sortedApplications
 
             VerticalScrollIndicator {
                 view: applicationsView
