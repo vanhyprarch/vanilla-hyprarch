@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import "ClockDate.js" as ClockDate
 
 Item {
     id: root
@@ -92,9 +93,9 @@ Item {
         Text {
             width: parent.width
             height: root.dateFontSize + root.metrics.dockClockLinePadding
-            text: Qt.formatDateTime(clock.date, "dd/MM")
+            text: ClockDate.formatDate(clock.date)
             color: root.textColor
-            font.pixelSize: root.dateFontSize
+            font.pixelSize: root.weekdayFontSize
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.NoWrap
