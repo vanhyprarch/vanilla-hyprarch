@@ -618,6 +618,19 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+id = "installed-release-identity"
+target = "/usr/share/vanhyprarch/release.json"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0644"
+authority = "vanhyprarch-release-identity"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Root-owned public commit marker, copied from verified release metadata only after fresh-install validation; no ordinary managed deployment or manual edits."
+
+[[artifact]]
 id = "managed-deployment-provenance"
 target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/managed-deployment-v1.json"
 class = "BACKEND_OWNED"

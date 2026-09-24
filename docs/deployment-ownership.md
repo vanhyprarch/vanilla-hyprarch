@@ -64,6 +64,13 @@ The separate `sddm-login-state` artifact is a mode-0700 root-private
 binding. Its provenance and transaction files are mode `0600`; neither Phase 2
 user deployment nor Phase 4 package/service integration consumes that state.
 
+The `installed-release-identity` artifact is root-owned public
+`BACKEND_OWNED` state at `/usr/share/vanhyprarch/release.json`. Only the
+privileged release-identity publisher may write it after all fresh-install
+validations. It is copied from verified release metadata, never from a managed
+repository source file. Manual edits invalidate it; user managed deployment,
+create-once initialization, and development bootstrap do not write it.
+
 ## Create-once seeds
 
 Files below `seeds/`, or executable sources declared as create-once generators,

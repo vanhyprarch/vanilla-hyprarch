@@ -443,6 +443,15 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertEqual(provenance["mode"], "0600")
         self.assertNotIn("source", provenance)
 
+    def test_installed_release_identity_is_privileged_backend_state(self) -> None:
+        identity = self.by_id["installed-release-identity"]
+        self.assertEqual(identity["target"], "/usr/share/vanhyprarch/release.json")
+        self.assertEqual(identity["class"], "BACKEND_OWNED")
+        self.assertEqual(identity["authority"], "vanhyprarch-release-identity")
+        self.assertEqual(identity["mode"], "0644")
+        self.assertFalse(identity["user_editable"])
+        self.assertNotIn("source", identity)
+
     def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
         for item in self.artifacts:
             if item["class"] in {"GENERATED", "RUNTIME", "PACKAGE_OWNED"}:
@@ -660,10 +669,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertRegex(df2_decisions, r"permanent build/bootstrap package\s+baseline")
         self.assertIn("Git is therefore not required merely to obtain Vanilla", installation)
         self.assertRegex(installation, r"permanent build/bootstrap package\s+baseline")
-        self.assertRegex(
-            installation,
-            r"Release\s+instructions must fetch `install\.sh` from a pinned tag",
-        )
+        self.assertIn("ref-based bootstrap is a development installation", installation)
+        self.assertIn("already verified, extracted release tree", installation)
 
 
 if __name__ == "__main__":

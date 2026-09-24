@@ -1,8 +1,8 @@
-# Release engineering: Phase 1 contract
+# Release engineering: offline contract and fresh-install identity
 
-Status: offline release declaration, deterministic artifact builder, and
-verifier implemented. No release is published, installed release identity or
-updater exists yet.
+Status: offline release declaration, deterministic artifact builder, verifier,
+and fresh-install identity publisher implemented. No release is published and
+no updater exists yet.
 
 ## Identity and authored declaration
 
@@ -117,8 +117,57 @@ before Python's tar parser can consume oversized extended records.
 
 Phase 1 establishes commit/tag identity at build time and SHA-256 consistency
 at verification time. It does not authenticate a release independently of its
-metadata publisher. GitHub immutable publication, discovery, installed
-identity, migrations, update execution, signatures, and VM acceptance belong
-to later phases. An offline verifier cannot establish that a supplied commit
+metadata publisher. GitHub immutable publication, discovery, migrations,
+update execution, signatures, and VM acceptance belong to later phases. An
+offline verifier cannot establish that a supplied commit
 SHA is trusted; it can establish that the artifact matches the supplied
 strict metadata and embedded declaration.
+
+## Installed identity and fresh-install handoff
+
+`/usr/share/vanhyprarch/release.json` is the only supported installed Vanilla
+release identity. It is a root:root mode-0644 regular file in a root-owned,
+non-user-writable directory. Its bytes are copied exactly from the verified
+published `release.json`; the installer does not reconstruct its fields. The
+record contains the complete published schema above, including the artifact
+name, size, and SHA-256. Manual editing invalidates the record. It is
+`BACKEND_OWNED` by the privileged release-identity publisher, outside ordinary
+managed user-file deployment.
+
+`install/release_identity.py validate` checks the file, parents, ownership,
+mode, and complete Phase 1 schema offline. `validate --allow-absent` reports
+`unreleased/development` when no record exists. This is the intentional state
+of a `main` or arbitrary-ref development installation, not a guessed version.
+The validator needs neither Git nor network access; its code is carried by a
+release source tree, while the installed record remains source-independent.
+
+The existing `install.sh` default remains the development bootstrap. Fresh
+release mode requires both `--release-metadata /absolute/release.json` and
+`--release-artifact /absolute/vanhyprarch-VERSION.tar.gz`, with `install.sh`
+invoked as a regular file from an already verified, extracted release tree.
+That earlier verification is the acquisition handoff; Phase 2 does not
+download or discover a published release. If the target lacks Python, the
+existing narrow Python bootstrap runs from that verified tree. The installer
+then re-verifies private copies with the Phase 1 verifier **before extracting
+or executing the supplied archive**, and uses the newly extracted tree for
+the authoritative install stages. The verified installer and verifier bytes
+must match the extracted copies.
+
+Release mode performs a read-only privileged identity preflight before the
+system stage. After system integration, managed deployment, create-once
+initialization, and all three final validations succeed, it alone calls the
+privileged identity commit and validates the installed record. The publisher
+checks the artifact and metadata again, validates the extracted declaration,
+stages exact metadata bytes with fsync, creates the installed file atomically
+without clobbering an existing path, fsyncs the containing directory, and
+checks the published bytes and schema. A failure never prints installation
+success. There is no global rollback.
+
+Fresh release installation refuses **any** existing release identity, even
+if its bytes match. This avoids silently defining reinstall or upgrade
+semantics in Phase 2; recovery or reinstall of a previously committed release
+remains a future lifecycle decision. An incomplete install before the marker
+may rerun through the existing stage recovery paths. Ordinary development
+bootstrap still creates no installed identity and does not infer one from
+the selected Git ref. Development bootstrap also refuses a host that already
+has a release identity, so it cannot silently leave a stale release claim.

@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -26,6 +27,13 @@ assert MANAGED_SPEC is not None and MANAGED_SPEC.loader is not None
 MANAGED = importlib.util.module_from_spec(MANAGED_SPEC)
 sys.modules[MANAGED_SPEC.name] = MANAGED
 MANAGED_SPEC.loader.exec_module(MANAGED)
+RELEASE_SPEC = importlib.util.spec_from_file_location(
+    "install_bootstrap_release_contract", REPOSITORY / "release/build.py"
+)
+assert RELEASE_SPEC is not None and RELEASE_SPEC.loader is not None
+RELEASE = importlib.util.module_from_spec(RELEASE_SPEC)
+sys.modules[RELEASE_SPEC.name] = RELEASE
+RELEASE_SPEC.loader.exec_module(RELEASE)
 
 
 def executable(path: Path, content: str) -> None:
@@ -129,6 +137,29 @@ class Fixture:
                 [ "${INSTALL_FIXTURE_FAIL-}" != sudo-check ]
                 exit
             fi
+            if [ "$1" = /usr/bin/test ]; then
+                case "$2" in
+                    -e) [ -e "$INSTALL_FIXTURE_RELEASE_RECORD" ] ;;
+                    -L) [ -L "$INSTALL_FIXTURE_RELEASE_RECORD" ] ;;
+                    *) exit 97 ;;
+                esac
+                exit
+            fi
+            if [ "${2##*/}" = release_identity.py ]; then
+                key=release-$3
+                printf 'stage:%s\n' "$key" >> "$INSTALL_FIXTURE_EVENTS"
+                [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ] || exit 1
+                case "$3" in
+                    preflight)
+                        [ ! -e "$INSTALL_FIXTURE_RELEASE_RECORD" ] || exit 99
+                        printf '%s\n' "$INSTALL_FIXTURE_REVISION"
+                        ;;
+                    commit) cp "$5" "$INSTALL_FIXTURE_RELEASE_RECORD" ;;
+                    validate) [ -f "$INSTALL_FIXTURE_RELEASE_RECORD" ] ;;
+                    *) exit 98 ;;
+                esac
+                exit
+            fi
             [ "$#" -eq 4 ] && [ "$3" = --target-user ] &&
                 [ "$4" = fixture-user ] || exit 92
             operation=$2
@@ -159,6 +190,7 @@ class Fixture:
             fi
             script=${1##*/}
             case "$script" in
+                build.py) exec /usr/bin/python "$@" ;;
                 managed_deploy.py)
                     [ "$2" = --source-root ] && [ -n "$3" ] &&
                         [ "$4" = --release-id ] &&
@@ -218,6 +250,7 @@ class Fixture:
         fail: str | None = None,
         source_fail: str | None = None,
         managed_conflict: bool = False,
+        release_commit: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = {
             "HOME": str(self.home),
@@ -241,7 +274,8 @@ class Fixture:
             "VANHYPRARCH_INSTALL_TEST_TARGET_UID": str(self.target_uid),
             "INSTALL_FIXTURE_EVENTS": str(self.events),
             "INSTALL_FIXTURE_ARCHIVE": str(self.archive),
-            "INSTALL_FIXTURE_REVISION": REVISION,
+            "INSTALL_FIXTURE_REVISION": release_commit or REVISION,
+            "INSTALL_FIXTURE_RELEASE_RECORD": str(self.root / "installed-release.json"),
             "INSTALL_FIXTURE_MANAGED_STATE": str(self.root / "managed-state"),
             "INSTALL_FIXTURE_TEMP_ROOT_RECORD": str(self.root / "temp-root"),
             "INSTALL_FIXTURE_SYSTEM_EXPORTS": str(self.root / "system-exports-ready"),
@@ -263,6 +297,35 @@ class Fixture:
             stderr=subprocess.PIPE,
             check=False,
         )
+
+    def release_bundle(self) -> tuple[Path, Path, str]:
+        repo = self.root / "release-source"
+        repo.mkdir()
+        required = RELEASE.REQUIRED_FILES | {"release/build.py", "install/release_identity.py"}
+        for name in required:
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if name in {"install.sh", "release/build.py", "release/release.toml",
+                        "install/release_identity.py"}:
+                shutil.copy2(REPOSITORY / name, target)
+            elif name == "install/bootstrap":
+                shutil.copy2(self.root / "fixture-source" /
+                             f"vanilla-hyprarch-{REVISION}" / name, target)
+            else:
+                target.write_text(f"fixture {name}\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        environment = dict(os.environ, GIT_AUTHOR_DATE="1700000000 +0000",
+                           GIT_COMMITTER_DATE="1700000000 +0000")
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture",
+                        "-c", "user.email=fixture@example.invalid", "commit", "-qm",
+                        "release fixture"], env=environment, check=True)
+        commit = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+        bundle = self.root / "release-bundle"
+        bundle.mkdir()
+        metadata, artifact = RELEASE.build(repo, commit, bundle)
+        return metadata, artifact, commit
 
     def stages(self) -> list[str]:
         return [
@@ -316,6 +379,72 @@ class InstallBootstrapTests(unittest.TestCase):
         result = fixture.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(fixture.downloaded_temporary_root().exists())
+        self.assertFalse((fixture.root / "installed-release.json").exists())
+
+    def test_release_mode_commits_exact_metadata_last(self) -> None:
+        fixture = self.fixture()
+        metadata, artifact, commit = fixture.release_bundle()
+        result = fixture.run("--yes", "--release-metadata", str(metadata),
+                             "--release-artifact", str(artifact), release_commit=commit)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((fixture.root / "installed-release.json").read_bytes(),
+                         metadata.read_bytes())
+        stages = fixture.stages()
+        self.assertLess(stages.index("release-preflight"), stages.index("system-plan"))
+        self.assertLess(stages.index("system-validate"), stages.index("release-commit"))
+        self.assertLess(stages.index("release-commit"), stages.index("release-validate"))
+        self.assertEqual(fixture.curl_calls(), [])
+
+    def test_development_install_refuses_existing_release_identity(self) -> None:
+        fixture = self.fixture()
+        (fixture.root / "installed-release.json").write_text("existing", encoding="utf-8")
+        result = fixture.run("--yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("development-over-release is unsupported", result.stderr)
+        self.assertEqual(fixture.curl_calls(), [])
+        self.assertNotIn("system-plan", fixture.stages())
+
+    def test_release_mode_failed_stages_never_commit_identity(self) -> None:
+        for stage in ("system-apply", "managed-apply", "create-once-apply",
+                      "managed-validate", "create-once-validate", "system-validate"):
+            with self.subTest(stage=stage):
+                fixture = Fixture()
+                try:
+                    metadata, artifact, commit = fixture.release_bundle()
+                    result = fixture.run("--yes", "--release-metadata", str(metadata),
+                                         "--release-artifact", str(artifact),
+                                         release_commit=commit, fail=stage)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse((fixture.root / "installed-release.json").exists())
+                    self.assertNotIn("release-commit", fixture.stages())
+                    self.assertNotIn("installation validated successfully", result.stdout)
+                finally:
+                    fixture.close()
+
+    def test_release_mode_publication_failure_does_not_claim_success(self) -> None:
+        fixture = self.fixture()
+        metadata, artifact, commit = fixture.release_bundle()
+        result = fixture.run("--yes", "--release-metadata", str(metadata),
+                             "--release-artifact", str(artifact),
+                             release_commit=commit, fail="release-commit")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((fixture.root / "installed-release.json").exists())
+        self.assertNotIn("installation validated successfully", result.stdout)
+
+    def test_release_mode_rejects_integrity_failure_and_existing_identity(self) -> None:
+        fixture = self.fixture()
+        metadata, artifact, commit = fixture.release_bundle()
+        artifact.write_bytes(artifact.read_bytes() + b"bad")
+        failed = fixture.run("--yes", "--release-metadata", str(metadata),
+                             "--release-artifact", str(artifact), release_commit=commit)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertNotIn("system-plan", fixture.stages())
+        artifact.write_bytes(artifact.read_bytes()[:-3])
+        (fixture.root / "installed-release.json").write_bytes(metadata.read_bytes())
+        conflict = fixture.run("--yes", "--release-metadata", str(metadata),
+                               "--release-artifact", str(artifact), release_commit=commit)
+        self.assertNotEqual(conflict.returncode, 0)
+        self.assertNotIn("system-plan", fixture.stages())
 
     def test_failed_install_source_cleanup_is_user_removable(self) -> None:
         fixture = self.fixture()

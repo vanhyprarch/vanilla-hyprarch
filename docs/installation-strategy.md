@@ -69,9 +69,19 @@ sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubuserconten
 
 The wrapper defaults to repository `vanhyprarch/vanilla-hyprarch` and ref
 `main`. `VANHYPRARCH_REF=<tag-or-commit>` overrides the simple ref. It displays
-the requested ref, resolved commit SHA, and downloaded archive SHA-256. Release
-instructions must fetch `install.sh` from a pinned tag and set that same tag as
-`VANHYPRARCH_REF`; moving `main` is development-only.
+the requested ref, resolved commit SHA, and downloaded archive SHA-256. This
+ref-based bootstrap is a development installation, even when the ref names a
+tag; moving `main` is development-only.
+
+Phase 2 adds a separate **fresh release** input mode to `install.sh`: an
+already verified, extracted release tree supplies its installer, with absolute
+`--release-metadata` and `--release-artifact` inputs. The installer re-verifies
+the artifact before extraction and commits the exact published metadata to
+`/usr/share/vanhyprarch/release.json` only after all authoritative validation.
+The command above and arbitrary `VANHYPRARCH_REF` installs remain unreleased
+and leave that record absent. They refuse an existing installed release identity
+to avoid a stale claim. Public release acquisition/publication is not
+implemented yet.
 
 The exact orchestrated sequence is:
 

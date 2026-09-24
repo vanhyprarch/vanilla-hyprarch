@@ -2,10 +2,12 @@
 
 Snapshot date: 2026-09-24.
 
-The Phase 1 offline release contract now includes an authored candidate
-declaration, deterministic exact-commit artifact builder, generated metadata,
-and pre-extraction verifier. See [Release engineering](release-engineering.md).
-No tag, published release, installed version record, or self-updater exists yet.
+The offline release contract now includes an authored candidate declaration,
+deterministic exact-commit artifact builder, generated metadata, and
+pre-extraction verifier. Phase 2 adds an offline, root-owned installed release
+identity committed only after a fresh release installation validates. See
+[Release engineering](release-engineering.md). No tag, published release,
+upgrade path, or self-updater exists yet.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.

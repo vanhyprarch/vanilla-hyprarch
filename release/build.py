@@ -53,7 +53,8 @@ DECLARATION_KEYS = {
 METADATA_KEYS = DECLARATION_KEYS | {"commit", "artifact"}
 ARTIFACT_KEYS = {"name", "size", "sha256"}
 REQUIRED_FILES = {
-    "release/release.toml", "install.sh", "install/bootstrap",
+    "release/release.toml", "release/build.py", "install.sh", "install/bootstrap",
+    "install/release_identity.py",
     "install/system_integration.py", "install/managed_deploy.py",
     "install/create_once.py", "packages/manifest-v1.toml",
     "deployment/ownership-v2.toml", "deployment/service-policy-v1.toml",
