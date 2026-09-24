@@ -9,152 +9,169 @@ Scope {
 
     readonly property var launchers: state.ready ? state.launchers : []
     readonly property bool ready: state.ready
+    readonly property bool editable: state.ready && !storage.running
+    readonly property string errorMessage: state.errorMessage
+    readonly property string statePath: Quickshell.statePath("launchers.json")
+    readonly property string helper: Quickshell.shellDir
+        + "/helpers/vanhyprarch_launcher_state"
 
     function contains(desktopId: string): bool {
         return launchers.some(launcher => launcher.desktopId === desktopId)
     }
 
     function addLauncher(desktopId: string): bool {
-        if (!ready || contains(desktopId) || DesktopEntries.byId(desktopId) === null)
+        if (!editable || contains(desktopId) || DesktopEntries.byId(desktopId) === null)
             return false
-
-        state.launchers = launchers.concat([{ desktopId: desktopId, customIcon: "" }])
-        persist()
+        storage.startOperation("edit", [state.revision, "add", desktopId])
         return true
     }
 
     function removeLauncher(desktopId: string): bool {
-        if (!ready || !contains(desktopId))
+        if (!editable || !contains(desktopId))
             return false
-
-        state.launchers = launchers.filter(launcher => launcher.desktopId !== desktopId)
-        persist()
+        storage.startOperation("edit", [state.revision, "remove", desktopId])
         return true
     }
 
     function moveLauncher(desktopId: string, targetIndex: int): bool {
-        if (!ready || targetIndex < 0 || targetIndex >= launchers.length)
+        if (!editable || targetIndex < 0 || targetIndex >= launchers.length)
             return false
-
         const sourceIndex = launchers.findIndex(launcher => launcher.desktopId === desktopId)
         if (sourceIndex < 0 || sourceIndex === targetIndex)
             return false
-
-        const nextLaunchers = launchers.slice()
-        const launcher = nextLaunchers.splice(sourceIndex, 1)[0]
-        nextLaunchers.splice(targetIndex, 0, launcher)
-        state.launchers = nextLaunchers
-        persist()
+        storage.startOperation("edit", [state.revision, "move", desktopId,
+            String(targetIndex)])
         return true
     }
 
-    function persist(): void {
-        // FileView can replay a completed write into its adapter. Keep live state separate.
-        jsonData.launchers = state.launchers
-        stateFile.writeAdapter()
-    }
-
-    // Preserve unknown fields for future launcher metadata, and keep unresolved IDs.
-    function normalizeLaunchers(value): var {
-        if (!Array.isArray(value))
-            return null
-
-        const result = []
-        for (const launcher of value) {
-            if (!launcher || typeof launcher !== "object" || Array.isArray(launcher)
-                    || typeof launcher.desktopId !== "string" || launcher.desktopId.trim() === "")
-                continue
-            if (result.some(item => item.desktopId === launcher.desktopId))
-                continue
-            result.push(Object.assign({}, launcher, {
-                customIcon: typeof launcher.customIcon === "string" ? launcher.customIcon : ""
-            }))
-        }
-        // An explicitly empty list is valid; a nonempty list with no valid entries is not.
-        return value.length > 0 && result.length === 0 ? null : result
-    }
-
-    function loadConfiguration(): void {
-        if (state.ready)
+    function inspectState(allowSeed: bool): void {
+        if (storage.running)
             return
-
-        let saved = null
-        try {
-            saved = JSON.parse(stateFile.text())
-        } catch (error) {
-            // Invalid JSON is treated like an uninitialized configuration.
-        }
-        const normalized = normalizeLaunchers(saved ? saved.launchers : null)
-        if (normalized === null) {
-            state.needsSeed = true
-            seedDefaults()
-            return
-        }
-
-        state.launchers = normalized
-        state.ready = true
-        if (JSON.stringify(normalized) !== JSON.stringify(saved.launchers))
-            persist()
+        state.ready = false
+        state.needsSeed = false
+        storage.allowSeed = allowSeed
+        storage.startOperation("inspect", [])
     }
+
+    function retry(): void { inspectState(false) }
 
     function seedDefaults(): void {
-        if (!state.needsSeed || state.ready)
+        if (!state.needsSeed || state.ready || storage.running)
             return
-
         const applications = DesktopEntries.applications.values
         if (applications.length === 0)
             return
-
-        const defaultIds = ["firefox", "foot", "thunar", "io.github.kolunmi.Bazaar"]
-        const defaults = []
-        for (const desktopId of defaultIds) {
+        for (const desktopId of ["firefox", "foot", "thunar", "io.github.kolunmi.Bazaar"]) {
             const entry = DesktopEntries.byId(desktopId)
             // A missing entry may still be loading. Never save a partial first seed.
             if (!entry || entry.id !== desktopId || !applications.includes(entry))
                 return
-            defaults.push({ desktopId: entry.id, customIcon: "" })
+        }
+        state.needsSeed = false
+        storage.startOperation("seed", [])
+    }
+
+    function finishOperation(kind: string, allowSeed: bool,
+            exitCode: int, output: string): void {
+        let result
+        try {
+            result = JSON.parse(output)
+            if (exitCode !== 0 || !result || typeof result.status !== "string")
+                throw new Error("invalid helper response")
+        } catch (error) {
+            state.ready = false
+            state.errorMessage = "Could not inspect launcher state"
+            return
         }
 
-        state.launchers = defaults
-        state.needsSeed = false
-        state.ready = true
-        persist()
+        if (result.status === "valid" && Array.isArray(result.launchers)
+                && typeof result.revision === "string") {
+            state.launchers = result.launchers
+            state.revision = result.revision
+            state.needsSeed = false
+            state.errorMessage = ""
+            state.ready = true
+            return
+        }
+        state.ready = false
+        state.revision = ""
+        if (result.status === "absent" && kind === "inspect") {
+            if (allowSeed) {
+                state.errorMessage = ""
+                state.needsSeed = true
+                Qt.callLater(root.seedDefaults)
+            } else {
+                state.errorMessage = "Launcher state file is missing"
+            }
+        } else if (result.status === "conflict" && kind === "seed") {
+            // The seed is no-clobber. Classify the file that won the race.
+            state.needsSeed = false
+            Qt.callLater(() => root.inspectState(true))
+        } else {
+            state.needsSeed = false
+            state.errorMessage = typeof result.message === "string"
+                ? result.message : "Launcher state could not be loaded"
+        }
     }
 
     QtObject {
         id: state
         property bool ready: false
         property bool needsSeed: false
+        property string revision: ""
+        property string errorMessage: ""
         property var launchers: []
     }
 
     Connections {
         target: DesktopEntries.applications
-        function onValuesChanged(): void {
-            // The index emits changes for individual entries while scanning.
-            Qt.callLater(root.seedDefaults)
-        }
+        function onValuesChanged(): void { Qt.callLater(root.seedDefaults) }
     }
 
-    FileView {
-        id: stateFile
+    Component.onCompleted: inspectState(true)
 
-        path: Quickshell.statePath("launchers.json")
-        atomicWrites: true
-        onLoaded: Qt.callLater(root.loadConfiguration)
-        onLoadFailed: error => {
-            if (error === FileViewError.FileNotFound) {
-                state.needsSeed = true
-                Qt.callLater(root.seedDefaults)
-            } else {
-                console.warn("Cannot load launcher configuration:", FileViewError.toString(error))
+    Process {
+        id: storage
+        property string kind: ""
+        property string output: ""
+        property bool exited: false
+        property bool collected: false
+        property int code: -1
+        property bool allowSeed: false
+
+        function startOperation(nextKind: string, arguments: var): void {
+            if (running)
+                return
+            kind = nextKind
+            output = ""
+            exited = false
+            collected = false
+            code = -1
+            command = [root.helper, nextKind, root.statePath].concat(arguments)
+            running = true
+        }
+
+        function complete(): void {
+            if (!exited || !collected)
+                return
+            const completedKind = kind
+            kind = ""
+            root.finishOperation(completedKind, allowSeed, code, output)
+        }
+
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: {
+                storage.output = text
+                storage.collected = true
+                storage.complete()
             }
         }
-        onSaveFailed: error => console.warn("Cannot save launcher configuration:", FileViewError.toString(error))
 
-        JsonAdapter {
-            id: jsonData
-            property var launchers: []
+        onExited: function(exitCode) {
+            storage.code = exitCode
+            storage.exited = true
+            storage.complete()
         }
     }
 }

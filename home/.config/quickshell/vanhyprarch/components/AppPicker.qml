@@ -74,7 +74,7 @@ DockPopup {
                 readonly property bool alreadyAdded:
                     root.launcherStore.contains(modelData.id)
                 readonly property bool canAdd:
-                    root.launcherStore.ready && !alreadyAdded
+                    root.launcherStore.editable && !alreadyAdded
 
                 width: applicationsView.width
                     - root.metrics.scrollIndicatorGutter

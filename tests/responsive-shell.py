@@ -151,6 +151,7 @@ class ResponsiveShellStaticTests(unittest.TestCase):
         expected = {
             "AppPicker.qml": "Math.min(root.maximumPanelHeight,",
             "LauncherContextMenu.qml": "actionsColumn.implicitHeight",
+            "LauncherStateDiagnostic.qml": "content.implicitHeight",
             "MonthCalendar.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
             "AudioPanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",
             "BluetoothPanel.qml": "content.implicitHeight + root.metrics.panelPadding * 2",

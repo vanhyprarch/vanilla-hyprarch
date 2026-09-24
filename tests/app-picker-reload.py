@@ -57,6 +57,7 @@ Item {
             """import QtQuick
 QtObject {
     property bool ready: true
+    property bool editable: true
     function contains(desktopId: string): bool { return false }
     function addLauncher(desktopId: string): bool { return true }
 }

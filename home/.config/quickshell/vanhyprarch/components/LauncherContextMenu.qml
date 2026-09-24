@@ -94,7 +94,7 @@ DockPopup {
             }
 
             ContextActionRow {
-                enabled: root.desktopEntry !== null
+                enabled: root.desktopEntry !== null && root.launcherStore.editable
                 primaryText: root.pinned ? "Remove from dock" : "Pin to dock"
                 onActivated: {
                     if (root.pinned)

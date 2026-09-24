@@ -1,0 +1,320 @@
+#!/usr/bin/python
+# SPDX-License-Identifier: GPL-2.0-only
+"""Safe, launcher-specific storage for Quickshell's user-owned pin list."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import stat
+import sys
+from pathlib import Path
+
+
+MAX_SIZE = 1024 * 1024
+DEFAULT_IDS = ("firefox", "foot", "thunar", "io.github.kolunmi.Bazaar")
+UID = os.getuid()
+DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+READ_FLAGS = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+
+
+class Unsafe(Exception):
+    pass
+
+
+class Malformed(Exception):
+    pass
+
+
+class Conflict(Exception):
+    pass
+
+
+def answer(status: str, **fields: object) -> None:
+    print(json.dumps({"status": status, **fields}, separators=(",", ":")))
+
+
+def state_parts(raw: str) -> tuple[Path, int]:
+    target = Path(raw)
+    state_home = Path(os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state"))
+    if not target.is_absolute() or not state_home.is_absolute() or ".." in target.parts or ".." in state_home.parts:
+        raise Unsafe("Invalid launcher-state path")
+    parts = target.parts
+    base = state_home.parts
+    if parts[:len(base)] != base or parts[len(base):len(base) + 2] != ("quickshell", "by-shell") \
+            or len(parts) != len(base) + 4 or not parts[-2] or parts[-1] != "launchers.json":
+        raise Unsafe("Launcher-state path is outside Quickshell state")
+    return target, len(base)
+
+
+def open_parent(target: Path, state_depth: int, create: bool = False) -> int:
+    fd = os.open("/", DIR_FLAGS)
+    try:
+        for depth, part in enumerate(target.parts[1:-1], 1):
+            try:
+                metadata = os.stat(part, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                parent = os.fstat(fd)
+                # A new state root may be created under a user-owned parent,
+                # or directly under a sticky shared directory such as /tmp.
+                if parent.st_uid != UID and not (
+                    depth == state_depth - 1 and parent.st_mode & stat.S_ISVTX
+                ):
+                    raise Unsafe("Unsafe launcher-state parent")
+                os.mkdir(part, 0o700, dir_fd=fd)
+                metadata = os.stat(part, dir_fd=fd, follow_symlinks=False)
+            if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                raise Unsafe("Unsafe launcher-state parent")
+            if (depth >= state_depth - 1 and metadata.st_uid != UID) or (
+                metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                and not metadata.st_mode & stat.S_ISVTX
+            ):
+                raise Unsafe("Unsafe launcher-state parent permissions")
+            next_fd = os.open(part, DIR_FLAGS, dir_fd=fd)
+            opened = os.fstat(next_fd)
+            if (opened.st_dev, opened.st_ino, opened.st_uid) != (
+                metadata.st_dev, metadata.st_ino, metadata.st_uid
+            ):
+                os.close(next_fd)
+                raise Unsafe("Launcher-state parent changed during inspection")
+            os.close(fd)
+            fd = next_fd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise Malformed("Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def finite_float(raw: str) -> float:
+    value = float(raw)
+    if not math.isfinite(value):
+        raise Malformed("Unrepresentable JSON number")
+    return value
+
+
+def reject_constant(raw: str) -> None:
+    raise Malformed("Non-JSON numeric value")
+
+
+def decode(data: bytes) -> dict:
+    try:
+        document = json.loads(data.decode("utf-8"), object_pairs_hook=unique_pairs,
+                              parse_float=finite_float,
+                              parse_constant=reject_constant)
+    except (UnicodeError, ValueError, Malformed) as error:
+        raise Malformed("Invalid launcher JSON") from error
+    if not isinstance(document, dict) or not isinstance(document.get("launchers"), list):
+        raise Malformed("Invalid launcher schema")
+    seen = set()
+    for item in document["launchers"]:
+        if not isinstance(item, dict) or not isinstance(item.get("desktopId"), str) \
+                or not item["desktopId"].strip():
+            raise Malformed("Invalid launcher entry")
+        desktop_id = item["desktopId"]
+        if desktop_id in seen:
+            raise Malformed("Duplicate desktop ID")
+        seen.add(desktop_id)
+        if "customIcon" in item and not isinstance(item["customIcon"], str):
+            raise Malformed("Invalid custom icon")
+    return document
+
+
+def fingerprint(data: bytes, metadata: os.stat_result) -> str:
+    identity = f"{metadata.st_dev}:{metadata.st_ino}:{metadata.st_size}:{metadata.st_mtime_ns}:{metadata.st_ctime_ns}:".encode()
+    return hashlib.sha256(identity + data).hexdigest()
+
+
+def read_at(parent_fd: int) -> tuple[bytes, os.stat_result]:
+    try:
+        metadata = os.stat("launchers.json", dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        raise
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != UID or metadata.st_nlink != 1 \
+            or metadata.st_size > MAX_SIZE:
+        raise Unsafe("Unsafe launcher-state file")
+    fd = os.open("launchers.json", READ_FLAGS, dir_fd=parent_fd)
+    try:
+        opened = os.fstat(fd)
+        if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino) \
+                or not stat.S_ISREG(opened.st_mode) or opened.st_uid != UID:
+            raise Unsafe("Launcher-state file changed during read")
+        data = b""
+        while len(data) <= MAX_SIZE:
+            block = os.read(fd, min(65536, MAX_SIZE + 1 - len(data)))
+            if not block:
+                break
+            data += block
+        after = os.fstat(fd)
+        if len(data) > MAX_SIZE or (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        ) != (
+            opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns
+        ):
+            raise Unsafe("Launcher-state file changed during read")
+        current = os.stat("launchers.json", dir_fd=parent_fd, follow_symlinks=False)
+        if (current.st_dev, current.st_ino, current.st_uid) != (
+            opened.st_dev, opened.st_ino, opened.st_uid
+        ):
+            raise Unsafe("Launcher-state path changed during read")
+        return data, opened
+    finally:
+        os.close(fd)
+
+
+def inspect(target: Path, depth: int) -> None:
+    try:
+        parent_fd = open_parent(target, depth)
+    except FileNotFoundError:
+        answer("absent")
+        return
+    try:
+        try:
+            data, metadata = read_at(parent_fd)
+        except FileNotFoundError:
+            verify_parent(target, depth, parent_fd)
+            answer("absent")
+            return
+        verify_parent(target, depth, parent_fd)
+        try:
+            document = decode(data)
+        except Malformed as error:
+            answer("malformed", message=str(error))
+            return
+        answer("valid", launchers=document["launchers"], revision=fingerprint(data, metadata))
+    finally:
+        os.close(parent_fd)
+
+
+def verify_parent(target: Path, depth: int, parent_fd: int) -> None:
+    current_fd = open_parent(target, depth)
+    try:
+        current = os.fstat(current_fd)
+        original = os.fstat(parent_fd)
+        if (current.st_dev, current.st_ino) != (original.st_dev, original.st_ino):
+            raise Unsafe("Launcher-state parent changed during operation")
+    finally:
+        os.close(current_fd)
+
+
+def publish(target: Path, depth: int, parent_fd: int, data: bytes,
+            expected: str | None) -> None:
+    if len(data) > MAX_SIZE:
+        raise Malformed("Launcher state is too large")
+    # The temporary file is private and on the destination filesystem.
+    name = f".launchers.{os.getpid()}.{os.urandom(8).hex()}"
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+                 0o600, dir_fd=parent_fd)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        verify_parent(target, depth, parent_fd)
+        if expected is None:
+            try:
+                os.link(name, "launchers.json", src_dir_fd=parent_fd,
+                        dst_dir_fd=parent_fd, follow_symlinks=False)
+            except FileExistsError as error:
+                raise Conflict("Launcher state appeared during seed") from error
+            os.unlink(name, dir_fd=parent_fd)
+        else:
+            current, metadata = read_at(parent_fd)
+            if fingerprint(current, metadata) != expected:
+                raise Conflict("Launcher state changed outside Vanilla")
+            os.replace(name, "launchers.json", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        os.fsync(parent_fd)
+        verify_parent(target, depth, parent_fd)
+        replacement, _ = read_at(parent_fd)
+        if replacement != data:
+            raise Conflict("Launcher state changed during publication")
+    finally:
+        try:
+            os.unlink(name, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
+
+
+def seed(target: Path, depth: int) -> None:
+    parent_fd = open_parent(target, depth, create=True)
+    try:
+        data = json.dumps({"launchers": [{"desktopId": item, "customIcon": ""}
+                                         for item in DEFAULT_IDS]}, separators=(",", ":")).encode() + b"\n"
+        publish(target, depth, parent_fd, data, None)
+    finally:
+        os.close(parent_fd)
+    inspect(target, depth)
+
+
+def edit(target: Path, depth: int, revision: str, action: str, desktop_id: str,
+         target_index: str = "") -> None:
+    if not desktop_id.strip():
+        raise Malformed("Invalid desktop ID")
+    parent_fd = open_parent(target, depth)
+    try:
+        data, metadata = read_at(parent_fd)
+        if fingerprint(data, metadata) != revision:
+            raise Conflict("Launcher state changed outside Vanilla")
+        document = decode(data)
+        launchers = document["launchers"]
+        index = next((i for i, item in enumerate(launchers)
+                      if item["desktopId"] == desktop_id), -1)
+        if action == "add" and index < 0:
+            launchers.append({"desktopId": desktop_id, "customIcon": ""})
+        elif action == "remove" and index >= 0:
+            launchers.pop(index)
+        elif action == "move" and index >= 0:
+            try:
+                destination = int(target_index)
+            except ValueError as error:
+                raise Malformed("Invalid launcher position") from error
+            if destination < 0 or destination >= len(launchers):
+                raise Malformed("Invalid launcher position")
+            launchers.insert(destination, launchers.pop(index))
+        else:
+            raise Conflict("Launcher edit is no longer applicable")
+        replacement = json.dumps(document, ensure_ascii=False, allow_nan=False,
+                                 separators=(",", ":")).encode() + b"\n"
+        publish(target, depth, parent_fd, replacement, revision)
+    finally:
+        os.close(parent_fd)
+    inspect(target, depth)
+
+
+def main() -> None:
+    try:
+        if len(sys.argv) < 3:
+            raise Malformed("Invalid launcher-state command")
+        command = sys.argv[1]
+        target, depth = state_parts(sys.argv[2])
+        if command == "inspect" and len(sys.argv) == 3:
+            inspect(target, depth)
+        elif command == "seed" and len(sys.argv) == 3:
+            seed(target, depth)
+        elif command == "edit" and len(sys.argv) in (6, 7):
+            edit(target, depth, sys.argv[3], sys.argv[4], sys.argv[5],
+                 sys.argv[6] if len(sys.argv) == 7 else "")
+        else:
+            raise Malformed("Invalid launcher-state command")
+    except Conflict as error:
+        answer("conflict", message=str(error))
+    except Malformed as error:
+        answer("malformed", message=str(error))
+    except (Unsafe, OSError) as error:
+        answer("unsafe", message=str(error))
+
+
+if __name__ == "__main__":
+    main()

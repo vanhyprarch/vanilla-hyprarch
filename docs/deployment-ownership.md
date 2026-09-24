@@ -37,6 +37,14 @@ state remain intentionally distinct even where version 2 groups their update
 behavior more directly. Artifact `authority`, `component`, `status`, `kind`,
 and mode fields preserve the narrower owner and lifecycle.
 
+The Quickshell `launchers.json` artifact remains `USER_OWNED`. Its private
+launcher helper creates it only when genuinely absent and only after all four
+fresh default desktop IDs resolve. Existing malformed or ambiguous files are
+preserved and reported; duplicate desktop IDs are ambiguous. Unresolved app
+IDs remain valid user state. Retry rereads after manual repair and never resets.
+Symlinks, non-regular targets, unsafe parents, and unexpected ownership are
+refused rather than followed or automatically repaired.
+
 Development mode may use repository symlinks intentionally. Installed mode is
 always regular files and must not retain a runtime dependency on Git, a
 worktree, or the source path.

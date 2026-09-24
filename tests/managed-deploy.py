@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
 
 
@@ -340,7 +340,9 @@ class ManifestConsumptionTests(FixtureTestCase):
         self.assertEqual(quickshell.directory_mode, 0o755)
         self.assertEqual(quickshell.file_mode, 0o644)
         self.assertEqual(quickshell.executable_mode, 0o755)
-        self.assertEqual(len(quickshell.executable), 3)
+        self.assertEqual(len(quickshell.executable), 4)
+        self.assertIn(PurePosixPath("helpers/vanhyprarch_launcher_state"),
+                      quickshell.executable)
 
     def test_duplicate_target_is_rejected(self) -> None:
         path = self.fixture.release_a / "deployment/ownership-v2.toml"

@@ -179,6 +179,7 @@ expected_consumers='AppPicker.qml
 AudioPanel.qml
 BluetoothPanel.qml
 LauncherContextMenu.qml
+LauncherStateDiagnostic.qml
 MonitorPanel.qml
 MonthCalendar.qml
 NetworkPanel.qml

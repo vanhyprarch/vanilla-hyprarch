@@ -195,6 +195,8 @@ official Arch `extra` repository. The fresh MIME seed assigns GNOME Text Editor
 to `text/plain`; it is not pinned to the dock. The fresh dock launcher order is
 Firefox, Foot, Thunar, Bazaar. Launcher state is user-owned after its first
 seed; existing pins, including an explicitly empty list, are preserved.
+Malformed or ambiguous existing launcher state is preserved and reported, not
+seeded over. An unavailable application's desktop ID remains valid saved state.
 
 `dunst` is the required package/D-Bus-activated notification daemon, so a fresh
 install does not depend on accidental host software. Phase 3 supplies minimal

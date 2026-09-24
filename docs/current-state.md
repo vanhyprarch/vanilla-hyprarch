@@ -581,6 +581,14 @@ Foot, Thunar, and Bazaar application IDs before saving that four-entry order.
 Existing valid or explicitly empty launcher state is not migrated to add
 Bazaar. GNOME Text Editor is not pinned; the fresh MIME seed now assigns it
 only to `text/plain`. Existing user MIME files are preserved.
+Only a genuinely absent launcher file permits this complete first seed.
+Existing malformed or ambiguous state, including duplicate desktop IDs, is
+preserved byte-for-byte and shown through the dock's `?` diagnostic control;
+Retry rereads the file after manual repair and never resets it. Unresolved
+desktop IDs are valid saved pins: the dock temporarily omits them and restores
+them in saved order when desktop-entry discovery finds them again. The launcher
+storage helper rejects symlinks, non-regular files, unsafe parents, and wrong
+ownership rather than following or repairing those paths.
 Both official packages were installed and launched on the development host.
 They appeared immediately in Super+Space Apps and the dock's Add picker, while
 the existing three-pin launcher file remained byte-for-byte unchanged. Bazaar

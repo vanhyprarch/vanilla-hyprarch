@@ -343,6 +343,20 @@ Item {
     }
     onOpenUnpinnedDesktopIdsChanged: reconcileRuntimeOrder()
     Component.onCompleted: reconcileRuntimeOrder()
+    onVisibleChanged: {
+        if (!visible)
+            launcherStateDiagnostic.requestedVisible = false
+    }
+
+    Connections {
+        target: root.store
+        function onErrorMessageChanged(): void {
+            if (root.store.errorMessage !== "") {
+                appPicker.requestedVisible = false
+                launcherContextMenu.requestedVisible = false
+            }
+        }
+    }
 
     implicitWidth: contentWidth
     implicitHeight: content.implicitHeight
@@ -400,6 +414,7 @@ Item {
 
             Item {
                 id: addButton
+                objectName: "launcherAddControl"
 
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: root.buttonSize
@@ -407,7 +422,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "+"
+                    text: root.store.errorMessage !== "" ? "?" : "+"
                     color: root.textColor
                     font.pixelSize: root.metrics.dockAddGlyphSize
                 }
@@ -416,7 +431,12 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.focusCoordinator.toggleDockWindow(appPicker)
+                    onClicked: {
+                        if (root.store.errorMessage !== "")
+                            root.focusCoordinator.toggleDockWindow(launcherStateDiagnostic)
+                        else
+                            root.focusCoordinator.toggleDockWindow(appPicker)
+                    }
                 }
             }
 
@@ -517,6 +537,16 @@ Item {
         metrics: root.metrics
         popupAnchorItem: appPickerPopupAnchor
         launcherStore: root.store
+        targetScreen: root.targetScreen
+        focusCoordinator: root.focusCoordinator
+    }
+
+    LauncherStateDiagnostic {
+        id: launcherStateDiagnostic
+        theme: root.theme
+        metrics: root.metrics
+        launcherStore: root.store
+        popupAnchorItem: appPickerPopupAnchor
         targetScreen: root.targetScreen
         focusCoordinator: root.focusCoordinator
     }
