@@ -150,7 +150,7 @@ class ReleaseContractTests(unittest.TestCase):
 
     def test_authored_declaration_current_values(self) -> None:
         current = RELEASE.parse_declaration((PROJECT / "release/release.toml").read_bytes())
-        self.assertEqual(current["version"], "v1.0.0-rc2")
+        self.assertEqual(current["version"], "v1.0.0-rc3")
         self.assertEqual(current["channel"], "candidate")
         self.assertEqual(current["minimum_installed_version"], "v1.0.0-rc1")
         self.assertEqual(current["minimum_migration_level"], 0)

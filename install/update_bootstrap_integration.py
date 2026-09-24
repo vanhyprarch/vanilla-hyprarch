@@ -101,7 +101,7 @@ class BootstrapIntegration:
                 archive.writestr(item, data)
         return output.getvalue()
 
-    def _state(self) -> str | None:
+    def _state(self, *, allow_legacy: bool = False) -> str | None:
         if not self._parents(self.state):
             return None
         try:
@@ -117,14 +117,23 @@ class BootstrapIntegration:
                 value = json.loads(source.read(257), object_pairs_hook=_pairs)
         except (UnicodeError, json.JSONDecodeError) as error:
             raise BootstrapIntegrationError(f"invalid updater provenance: {error}") from error
-        digest = value.get("sha256") if (
+        legacy = (
+            type(value) is dict
+            and set(value) == {"schema", "sha256"}
+            and type(value.get("schema")) is int
+            and value["schema"] == 1
+        )
+        current = (
             type(value) is dict
             and set(value) == {"schema", "sha256", "update_protocol"}
             and type(value.get("schema")) is int
             and value["schema"] == STATE_SCHEMA
             and type(value.get("update_protocol")) is int
             and value["update_protocol"] == UPDATE_PROTOCOL
-        ) else None
+        )
+        if legacy and not allow_legacy:
+            raise BootstrapIntegrationError("legacy updater provenance requires migration")
+        digest = value.get("sha256") if legacy or current else None
         if type(digest) is not str or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise BootstrapIntegrationError("invalid updater provenance")
         return digest
@@ -146,7 +155,8 @@ class BootstrapIntegration:
 
     def plan(self, *, lifecycle: str) -> str:
         desired = hashlib.sha256(self.build()).hexdigest()
-        prior, installed = self._state(), self._installed()
+        prior = self._state(allow_legacy=(lifecycle == "upgrade"))
+        installed = self._installed()
         if installed == desired:
             if prior is None and lifecycle == "upgrade":
                 raise BootstrapIntegrationError("upgrade lacks installed updater provenance")

@@ -1,9 +1,9 @@
 schema = 1
-version = "v1.0.0-rc2"
+version = "v1.0.0-rc3"
 channel = "candidate"
 architecture = "x86_64"
 update_protocol = 1
 minimum_installed_version = "v1.0.0-rc1"
 minimum_migration_level = 0
 migration_level = 1
-summary = "Second Vanilla HyprArch release candidate validating production upgrades and migrations."
+summary = "Third Vanilla HyprArch release candidate fixing RC1 upgrade planning compatibility."

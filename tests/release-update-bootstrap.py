@@ -493,6 +493,16 @@ class InstalledCommandTests(unittest.TestCase):
         newer.apply(lifecycle="upgrade")
         newer.validate()
 
+    def test_upgrade_plan_accepts_rc1_provenance_until_migration(self):
+        self.authority.apply(lifecycle="fresh")
+        state = json.loads(self.authority.state.read_text())
+        self.authority.state.write_text(
+            json.dumps({"schema": 1, "sha256": state["sha256"]}, sort_keys=True) + "\n"
+        )
+        self.assertEqual(self.authority.plan(lifecycle="upgrade"), "preserve")
+        with self.assertRaisesRegex(BootstrapIntegrationError, "requires migration"):
+            self.authority.validate()
+
     def test_publication_modes_do_not_depend_on_umask(self):
         old = os.umask(0o077)
         try:

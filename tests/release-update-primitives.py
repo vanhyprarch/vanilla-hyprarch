@@ -152,7 +152,7 @@ class Fixture(unittest.TestCase):
 class RegistryTests(Fixture):
     def test_production_rc2_registry_contains_first_migration(self) -> None:
         registry = MigrationRegistry(PROJECT)
-        self.assertEqual(registry.declaration["version"], "v1.0.0-rc2")
+        self.assertEqual(registry.declaration["version"], "v1.0.0-rc3")
         self.assertEqual(registry.declaration["minimum_installed_version"], "v1.0.0-rc1")
         self.assertEqual(registry.declaration["migration_level"], 1)
         self.assertEqual(registry.declaration["minimum_migration_level"], 0)
