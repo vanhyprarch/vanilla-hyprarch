@@ -1,8 +1,9 @@
-# Release engineering: offline contract and fresh-install identity
+# Release engineering: offline contract and update primitives
 
 Status: offline release declaration, deterministic artifact builder, verifier,
-and fresh-install identity publisher implemented. No release is published and
-no updater exists yet.
+fresh-install identity publisher, upgrade-safe stages, migration runner, and
+durable update journal implemented. No release is published and no updater
+exists yet.
 
 ## Identity and authored declaration
 
@@ -229,6 +230,79 @@ retrospective adoption of pre-rc1 development installations is implemented.
 provenance-gated replacement, safe stale removal, foreign-content conflicts,
 local recovery, and read-only validation. The SDDM authority similarly uses
 its root-private provenance and local transaction for source updates. Neither
-needs a synthetic lifecycle flag. Release discovery, migrations, global update
-transaction/journal/lock, version advancement, UI action, and VM acceptance
-remain unimplemented.
+needs a synthetic lifecycle flag. Release discovery, full transaction
+orchestration, version advancement, UI action, and VM acceptance remain
+unimplemented. The migration and journal primitives are described below.
+
+## Migration registry and durable journal (release Phase 4)
+
+Semantic versions identify releases; ascending integer IDs identify state
+transitions. `release/migrations/registry.toml` has `schema = 1` and ordered
+`[[migration]]` entries. Each entry requires integer `id`, short `name`, exact
+`release/migrations/NNNN-name.py` path, concise `scope`, and Boolean
+`touches_user_state`. An entry touching `USER_OWNED` or create-once state also
+requires explicit `user_state_preservation` and `user_state_conflict` text.
+These declarations make authority reviewable; they do not sandbox trusted
+release code. Migration code must follow the existing ownership rules.
+
+The registry contains exactly the chain from `minimum_migration_level + 1`
+through `migration_level`, with no duplicates, gaps, reordered entries, or
+unregistered files. An empty registry is valid only when both levels are 0.
+The target declaration and optional verified metadata
+must agree. The runner accepts only regular mode-0644 implementation files
+under a safe target source tree, with bounded sizes and no symlinks. The
+future driver must verify the complete target artifact before giving its
+private extracted tree and metadata to the runner. Registry entries never
+contain shell commands. `release/release.toml` remains at level 0 with minimum
+0; the production registry is empty. Fresh installs establish the target
+state directly and do not replay migrations. Production migration `0001` is
+reserved for a later rc2 change, not a no-op in rc1.
+
+Each migration Python file exposes `plan(context) -> list[str]`,
+`apply(context) -> None`, and `validate(context) -> bool`. `plan` and
+`validate` must be read-only. The context supplies the system root, verified
+release root, source and target identities, numeric ID, and declared scope.
+The runner plans immediately before applying
+each migration, requires its ID to be journaled as pending first, then calls
+apply and validate. Only a true validation result permits completion. On
+resume, a pending migration is validated first; if already valid it is marked
+complete without reapplying. Otherwise its read-only plan and idempotent or
+recovery-aware apply run before validation. Foreign or ambiguous state must
+raise and leave the pending record intact. Ordinary managed replacement and
+stale cleanup remain with the existing deployment authority.
+
+`install/update_journal.py` provides Python APIs for inspection, initialization,
+exact-match resume, applying checkpoints, migration progress, phase changes,
+and final clearing. The journal is
+`/var/lib/vanhyprarch/update/journal.json`, a root:root mode-0600 regular file
+inside a root:root mode-0700 directory. It is bounded to 16 KiB, uses strict
+JSON with duplicate-key rejection, safe path/owner/mode checks, atomic
+publication, file and directory fsync. Its exact schema is `schema = 1`,
+`source` (`version`, `commit`, `artifact_sha256`, `migration_level`), `target`
+(`version`, `commit`, `artifact_sha256`, `update_protocol`,
+`minimum_migration_level`, `migration_level`), `phase`, `checkpoint`, ordered
+`completed_migrations`, and nullable `pending_migration`. It stores no URLs.
+The source and target fields are derived from strict Phase 1 metadata; journal
+initialization also compares the proposed source to the Phase 2 installed
+identity. A different target or source cannot replace an active journal.
+
+Phases are `applying`, `validating`, and `ready-for-final-commit`. Fixed
+checkpoint labels cover preflight completion, system integration, migrations,
+managed deployment, create-once, and final validation. They report the active
+stage; Phase 5 will decide stage order. Migration IDs, rather than checkpoint
+labels, are the authority for completed migration progress. The journal does not
+claim a committed release. During an incomplete update, the installed
+`/usr/share/vanhyprarch/release.json` still names the **old** release and
+migration level; the journal alone records intermediate progress. Clearing is
+permitted only after the journal is ready and the installed identity validates
+as the exact target. If interruption happens after that commit but before
+clearing, the future driver can inspect the ready journal and clear it after
+verifying the target identity. Phase 4 never performs the identity commit.
+
+The root-owned runtime lock is `/run/vanhyprarch/update.lock`, mode 0600 in a
+mode-0700 directory. A nonblocking `flock` allows one transaction at a time.
+The inode is retained; process death releases the lock while the durable
+journal remains for exact-target resume. Malformed or unsafe state fails
+closed and is never discarded automatically. The future Phase 5 driver owns
+release discovery, confirmation, stage orchestration, final validation, and
+the installed-identity commit.

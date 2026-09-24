@@ -5,6 +5,8 @@ runtime_source_independent = true
 managed_deployment_provenance = "managed-deployment-provenance"
 create_once_transaction_state = "create-once-transaction-state"
 create_once_lifecycle_state = "create-once-lifecycle-state"
+release_update_journal = "release-update-journal"
+release_update_lock = "release-update-lock"
 sddm_login_state = "sddm-login-state"
 
 [[initializer]]
@@ -643,6 +645,32 @@ status = "implemented"
 user_editable = false
 machine_specific = false
 notes = "Artifact hashes and release provenance only; never stores preferences or runtime state."
+
+[[artifact]]
+id = "release-update-journal"
+target = "/var/lib/vanhyprarch/update/journal.json"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-update-journal"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Root-private exact source/target update progress; retained across interruption until a verified target release commit permits clearing."
+
+[[artifact]]
+id = "release-update-lock"
+target = "/run/vanhyprarch/update.lock"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-update-journal"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Root-owned runtime flock inode; process death releases the lock without deleting durable update progress."
 
 [[artifact]]
 id = "create-once-lifecycle-state"

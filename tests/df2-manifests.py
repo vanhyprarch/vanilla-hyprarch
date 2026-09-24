@@ -348,10 +348,11 @@ class OwnershipManifestTests(unittest.TestCase):
             self.assertIs(type(item["user_editable"]), bool)
             self.assertIs(type(item["machine_specific"]), bool)
             target = item["target"]
+            allowed_roots = ("$HOME/", "${XDG_", "/etc/", "/usr/", "/var/lib/")
+            if item["class"] == "BACKEND_OWNED":
+                allowed_roots += ("/run/",)
             self.assertTrue(
-                target.startswith(
-                    ("$HOME/", "${XDG_", "/etc/", "/usr/", "/var/lib/")
-                ),
+                target.startswith(allowed_roots),
                 target,
             )
             self.assertNotIn(";", target)
@@ -462,6 +463,21 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertEqual(lifecycle["authority"], "vanhyprarch-create-once")
         self.assertEqual(lifecycle["mode"], "0600")
         self.assertNotIn("source", lifecycle)
+
+    def test_release_update_journal_and_lock_are_privileged_backend_state(self) -> None:
+        for key, identifier, target in (
+            ("release_update_journal", "release-update-journal",
+             "/var/lib/vanhyprarch/update/journal.json"),
+            ("release_update_lock", "release-update-lock",
+             "/run/vanhyprarch/update.lock"),
+        ):
+            self.assertEqual(self.document[key], identifier)
+            artifact = self.by_id[identifier]
+            self.assertEqual(artifact["target"], target)
+            self.assertEqual(artifact["class"], "BACKEND_OWNED")
+            self.assertEqual(artifact["authority"], "vanhyprarch-update-journal")
+            self.assertEqual(artifact["mode"], "0600")
+            self.assertNotIn("source", artifact)
 
     def test_generated_runtime_and_package_paths_are_never_deployable(self) -> None:
         for item in self.artifacts:

@@ -76,6 +76,13 @@ The `create-once-lifecycle-state` artifact is mode-0600 target-user-owned
 so release upgrades preserve deliberate user deletion. Only the create-once
 authority writes it; it contains no user content and is not managed deployment.
 
+The `release-update-journal` and `release-update-lock` artifacts are privileged
+root-owned `BACKEND_OWNED` state. The journal persists exact release and
+migration progress at `/var/lib/vanhyprarch/update/journal.json`; the runtime
+lock at `/run/vanhyprarch/update.lock` prevents concurrent update mutations.
+Neither is a managed payload or user preference. Only the release update
+machinery may publish or clear the journal.
+
 ## Create-once seeds
 
 Files below `seeds/`, or executable sources declared as create-once generators,

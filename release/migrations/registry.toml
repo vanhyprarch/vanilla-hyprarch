@@ -1,0 +1,4 @@
+schema = 1
+
+# v1.0.0-rc1 is a fresh-install baseline at migration level 0.
+# The first production migration will be introduced for a later release.
