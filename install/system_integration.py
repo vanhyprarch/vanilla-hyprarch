@@ -46,6 +46,8 @@ DISPLAY_MANAGER_ALIAS = "/etc/systemd/system/display-manager.service"
 SDDM_UNIT_TARGET = "/usr/lib/systemd/system/sddm.service"
 FLATHUB_NAME = "flathub"
 FLATHUB_URL = "https://dl.flathub.org/repo/"
+FLATPAK_SYSTEM_EXPORT_ID = "flatpak-system-application-exports"
+FLATPAK_SYSTEM_EXPORT_PATH = "/var/lib/flatpak/exports/share/applications"
 AUR_YAY_ORIGIN = "https://aur.archlinux.org/yay.git"
 PACKAGE_NAME = re.compile(r"^[a-z0-9@._+:-]+$")
 DEPENDENCY_NAME = re.compile(r"^([a-z0-9@._+:-]+)")
@@ -167,6 +169,7 @@ class SystemPlan:
                 "recovery-required",
                 "sddm-conflict",
                 "sddm-recovery-required",
+                "flatpak-exports-conflict",
             }
         )
 
@@ -178,6 +181,7 @@ class SystemPlan:
             "bluez-preserve",
             "service-preserve",
             "flathub-preserve",
+            "flatpak-exports-preserve",
             "display-manager-state-preserve",
             "default-target-preserve",
             "sddm-system-preserve",
@@ -321,6 +325,15 @@ class SystemIntegration:
         if target != "/etc/bluetooth/main.conf" or not isinstance(source, str):
             raise IntegrationError("unexpected BlueZ adoption mapping")
         self.bluez_record = adopted[0]
+        exports = [item for item in self.ownership_manifest.get("artifact", [])
+                   if item.get("id") == FLATPAK_SYSTEM_EXPORT_ID]
+        if (len(exports) != 1 or exports[0].get("target") != FLATPAK_SYSTEM_EXPORT_PATH
+                or exports[0].get("class") != "EXTERNAL_OWNED"
+                or exports[0].get("kind") != "tree"
+                or exports[0].get("authority") != "flatpak"
+                or exports[0].get("mode") != "0755"
+                or "source" in exports[0]):
+            raise IntegrationError("Flatpak system export scaffold declaration is invalid")
         services = self.service_manifest.get("service", [])
         names: set[str] = set()
         for service in services:
@@ -811,6 +824,65 @@ class SystemIntegration:
             return PlanItem("flathub-conflict", FLATHUB_NAME, "same-named system remote has unexpected or duplicate configuration")
         return PlanItem("flathub-preserve", FLATHUB_NAME, FLATHUB_URL)
 
+    def _inspect_flatpak_exports(self, *, create: bool = False) -> bool:
+        """Inspect only directory components; never enter Flatpak's contents."""
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        descriptor = None
+        try:
+            descriptor = os.open(self.system_root, flags)
+            for part in Path(FLATPAK_SYSTEM_EXPORT_PATH).parts[1:]:
+                try:
+                    details = os.stat(part, dir_fd=descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    if not create:
+                        return False
+                    try:
+                        os.mkdir(part, 0o755, dir_fd=descriptor)
+                        created = True
+                    except FileExistsError:
+                        created = False
+                    details = os.stat(part, dir_fd=descriptor, follow_symlinks=False)
+                else:
+                    created = False
+                if (not stat.S_ISDIR(details.st_mode) or details.st_uid != self.root_uid
+                        or details.st_gid != self.root_gid
+                        or details.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
+                    raise IntegrationError(f"unsafe Flatpak system export directory component: {part}")
+                next_descriptor = os.open(part, flags, dir_fd=descriptor)
+                try:
+                    if created:
+                        os.fchmod(next_descriptor, 0o755)
+                        os.fsync(descriptor)
+                    elif stat.S_IMODE(details.st_mode) & 0o005 != 0o005:
+                        raise IntegrationError(
+                            f"Flatpak system export directory is not readable/traversable: {part}"
+                        )
+                except BaseException:
+                    os.close(next_descriptor)
+                    raise
+                os.close(descriptor)
+                descriptor = next_descriptor
+            return True
+        except OSError as error:
+            raise IntegrationError(f"cannot inspect Flatpak system export directories: {error}") from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+    def _flatpak_exports_status(self) -> PlanItem:
+        try:
+            exists = self._inspect_flatpak_exports()
+        except IntegrationError as error:
+            return PlanItem("flatpak-exports-conflict", FLATPAK_SYSTEM_EXPORT_PATH, str(error))
+        return PlanItem("flatpak-exports-preserve" if exists else "flatpak-exports-create",
+                        FLATPAK_SYSTEM_EXPORT_PATH)
+
+    def _ensure_flatpak_exports(self) -> None:
+        installed, _ = self._base_preflight()
+        if "flatpak" not in installed:
+            raise IntegrationError("Flatpak must be installed before export scaffolding")
+        self._inspect_flatpak_exports(create=True)
+
     def plan(self) -> SystemPlan:
         self._require_root_integration("plan")
         transaction = self._read_transaction()
@@ -827,6 +899,7 @@ class SystemIntegration:
             items.append(self._flatpak_status())
         else:
             items.append(PlanItem("flathub-add", FLATHUB_NAME, "after the planned flatpak package installation"))
+        items.append(self._flatpak_exports_status())
         hyprland_install_planned = any(
             item.action == "package-install" and item.subject == "hyprland"
             for item in package_items
@@ -1449,6 +1522,7 @@ class SystemIntegration:
             self._bootstrap_yay()
             self._apply_bluez()
             self._apply_flatpak()
+            self._ensure_flatpak_exports()
             self._apply_sddm_login()
             self._apply_services()
             self.validate()
@@ -1474,6 +1548,9 @@ class SystemIntegration:
         flatpak = self._flatpak_status()
         if flatpak.action != "flathub-preserve":
             raise IntegrationError("system Flathub is invalid: " + flatpak.detail)
+        exports = self._flatpak_exports_status()
+        if exports.action != "flatpak-exports-preserve":
+            raise IntegrationError("Flatpak system export scaffolding is invalid: " + exports.detail)
         self._validate_sddm_login()
         for unit, desired in self.desired_system_services.items():
             current = self._service_state(unit)

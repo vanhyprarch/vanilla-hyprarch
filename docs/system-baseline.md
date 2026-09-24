@@ -158,6 +158,10 @@ name fails closed instead of being rewritten. User remotes and installed
 Flatpak applications are outside bootstrap ownership; the bootstrap neither
 removes them nor installs any application automatically.
 
+Before first graphical login, the bootstrap ensures the system and target-user
+Flatpak application export directories exist. They are Flatpak-owned export
+scaffolding for live first-install discovery, not Vanilla-managed app content.
+
 ## Keyboard and session defaults
 
 Hyprland's native `input.numlock_by_default` option is enabled. Num Lock is

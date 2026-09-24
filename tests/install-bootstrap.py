@@ -138,7 +138,13 @@ class Fixture:
                 key=system-$operation
             fi
             printf 'stage:%s\n' "$key" >> "$INSTALL_FIXTURE_EVENTS"
-            [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ]
+            [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ] || exit 1
+            if [ "$key" = system-apply ]; then
+                : > "$INSTALL_FIXTURE_SYSTEM_EXPORTS"
+            elif [ "$key" = system-validate ]; then
+                [ -f "$INSTALL_FIXTURE_SYSTEM_EXPORTS" ] &&
+                    [ -f "$INSTALL_FIXTURE_USER_EXPORTS" ] || exit 1
+            fi
             """,
         )
         executable(
@@ -192,7 +198,13 @@ class Fixture:
                 *) key=unexpected-python-call ;;
             esac
             printf 'stage:%s\n' "$key" >> "$INSTALL_FIXTURE_EVENTS"
-            [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ]
+            [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ] || exit 1
+            if [ "$key" = create-once-apply ]; then
+                [ -f "$INSTALL_FIXTURE_SYSTEM_EXPORTS" ] || exit 1
+                : > "$INSTALL_FIXTURE_USER_EXPORTS"
+            elif [ "$key" = create-once-validate ]; then
+                [ -f "$INSTALL_FIXTURE_USER_EXPORTS" ] || exit 1
+            fi
             """,
         )
         executable(self.pacman, "#!/bin/sh\nexit 0\n")
@@ -232,6 +244,8 @@ class Fixture:
             "INSTALL_FIXTURE_REVISION": REVISION,
             "INSTALL_FIXTURE_MANAGED_STATE": str(self.root / "managed-state"),
             "INSTALL_FIXTURE_TEMP_ROOT_RECORD": str(self.root / "temp-root"),
+            "INSTALL_FIXTURE_SYSTEM_EXPORTS": str(self.root / "system-exports-ready"),
+            "INSTALL_FIXTURE_USER_EXPORTS": str(self.root / "user-exports-ready"),
         }
         if fail is not None:
             environment["INSTALL_FIXTURE_FAIL"] = fail
@@ -339,6 +353,9 @@ class InstallBootstrapTests(unittest.TestCase):
         fixture = self.fixture()
         result = fixture.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((fixture.root / "system-exports-ready").is_file())
+        self.assertTrue((fixture.root / "user-exports-ready").is_file())
+        self.assertIn("installation validated successfully", result.stdout)
         relevant = [
             stage
             for stage in fixture.stages()

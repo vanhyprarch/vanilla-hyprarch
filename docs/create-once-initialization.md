@@ -85,6 +85,16 @@ file, merges associations, or calls `xdg-mime` against the user.
 
 ## XDG directories and owner hooks
 
+The target-user stage also ensures
+`${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications`
+exists before first login. It creates only missing user-owned mode-0755
+directory components, preserves safe existing directories exactly, and rejects
+unsafe path components. This repeatable scaffold has no create-once content
+receipt: Flatpak owns the exports, including any symlinked desktop files, and
+the initializer never inspects or changes their contents. Plan is read-only;
+validate requires the directory. An explicit `XDG_DATA_HOME` selects that
+location without creating the default path.
+
 When `user-dirs.dirs` is absent, the initializer invokes the package-owned
 `xdg-user-dirs-update` in the isolated target environment. If the file exists,
 it does not invoke the tool: localized/custom paths remain unchanged. This

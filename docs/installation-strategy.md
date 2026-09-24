@@ -112,6 +112,8 @@ The shared bootstrap and its delegated stages:
   package manifest;
 - after installing the required unpinned `flatpak` package, invoke
   `install/configure-flatpak` to establish the required system Flathub remote;
+- ensure the system and target-user Flatpak application export directories
+  before first login so Quickshell can watch the first Flatpak installation;
 - deploy managed home configuration without personal paths and initialize
   create-once machine and override seeds only when their targets are absent;
 - deploy the main `vanhyprarch` named Quickshell configuration;
@@ -283,6 +285,13 @@ It first inspects enabled system remotes. An existing `flathub` pointing to
 same-named remote with another URL fails closed and is not modified. After an
 add, the component verifies the resulting name and URL. It never deletes or
 rewrites user remotes, resets Flatpak state, or installs Flatpak applications.
+
+The root system stage ensures `/var/lib/flatpak/exports/share/applications`
+only after `flatpak` is installed. The target-user initialization stage ensures
+`${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications`.
+These are empty directory scaffolds for Flatpak-owned exports, not managed
+application content. Existing safe directories and their contents are preserved.
+Both stages validate the directories before bootstrap success and first login.
 
 ## Optional dictation installation
 

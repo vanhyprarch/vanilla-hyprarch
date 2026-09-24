@@ -155,6 +155,18 @@ def write_minimal_release(root: Path) -> None:
             machine_specific = false
 
             [[artifact]]
+            id = "flatpak-user-application-exports"
+            target = "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications"
+            class = "EXTERNAL_OWNED"
+            component = "flatpak"
+            kind = "tree"
+            mode = "0755"
+            authority = "flatpak"
+            status = "implemented"
+            user_editable = false
+            machine_specific = false
+
+            [[artifact]]
             id = "transaction"
             target = "${XDG_STATE_HOME:-$HOME/.local/state}/vanhyprarch/create-once-transaction-v1"
             class = "BACKEND_OWNED"
@@ -223,7 +235,7 @@ class MinimalCreateOnceTests(unittest.TestCase):
         plan = self.initializer().plan()
         after = sorted(str(path.relative_to(self.fixture.root)) for path in self.fixture.root.rglob("*"))
         self.assertEqual(before, after)
-        self.assertEqual([item.action for item in plan], ["create"])
+        self.assertEqual([item.action for item in plan], ["create", "create"])
 
     def test_create_exact_mode_and_idempotence(self) -> None:
         previous = os.umask(0o077)
@@ -337,6 +349,69 @@ class ActualManifestTests(unittest.TestCase):
 
     def initializer(self) -> CreateOnceInitializer:
         return CreateOnceInitializer(source_root=REPOSITORY, target=self.fixture.target)
+
+    def test_flatpak_user_export_scaffold_creation_preservation_and_validation(self) -> None:
+        initializer = self.initializer()
+        destination = self.fixture.data / "flatpak/exports/share/applications"
+        with self.assertRaisesRegex(ConflictError, "Flatpak user export directory is missing"):
+            initializer.validate()
+        before = sorted((str(path.relative_to(self.fixture.root)), path.lstat().st_ino,
+                         path.lstat().st_mtime_ns) for path in self.fixture.root.rglob("*"))
+        self.assertEqual(initializer._flatpak_exports().action, "create")
+        self.assertEqual(before, sorted((str(path.relative_to(self.fixture.root)), path.lstat().st_ino,
+                                         path.lstat().st_mtime_ns) for path in self.fixture.root.rglob("*")))
+        self.assertEqual(initializer._flatpak_exports(create=True).action, "preserve-existing")
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o755)
+        self.assertEqual(destination.stat().st_uid, os.getuid())
+        destination.chmod(0o700)
+        exported = destination / "org.example.App.desktop"
+        exported.write_bytes(b"example")
+        link = destination / "org.example.Link.desktop"
+        link.symlink_to(exported.name)
+        saved = [(path.lstat().st_ino, path.lstat().st_mtime_ns, path.lstat().st_mode)
+                 for path in (destination, exported, link)]
+        self.assertEqual(initializer._flatpak_exports(create=True).action, "preserve-existing")
+        self.assertEqual(saved, [(path.lstat().st_ino, path.lstat().st_mtime_ns,
+                                  path.lstat().st_mode) for path in (destination, exported, link)])
+        self.assertEqual(exported.read_bytes(), b"example")
+        self.assertEqual(link.readlink(), Path(exported.name))
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o700)
+
+    def test_flatpak_user_export_scaffold_rejects_unsafe_components(self) -> None:
+        initializer = self.initializer()
+        destination = self.fixture.data / "flatpak/exports/share/applications"
+        destination.parent.mkdir(parents=True)
+        destination.symlink_to(self.fixture.home)
+        with self.assertRaises((SafetyError, ConflictError)):
+            initializer._flatpak_exports(create=True)
+        destination.unlink()
+        destination.write_text("not a directory")
+        with self.assertRaises((SafetyError, ConflictError)):
+            initializer._flatpak_exports(create=True)
+        destination.unlink()
+        destination.parent.rmdir()
+        destination.parent.write_text("not a directory")
+        with self.assertRaises((SafetyError, ConflictError)):
+            initializer._flatpak_exports(create=True)
+        destination.parent.unlink()
+        destination.parent.symlink_to(self.fixture.home)
+        with self.assertRaises((SafetyError, ConflictError)):
+            initializer._flatpak_exports(create=True)
+        destination.parent.unlink()
+        with mock.patch.object(os, "getuid", return_value=os.getuid() + 1):
+            with self.assertRaises((SafetyError, ConflictError)):
+                initializer._flatpak_exports(create=True)
+
+    def test_flatpak_user_export_scaffold_respects_xdg_override(self) -> None:
+        override = self.fixture.root / "other-data"
+        override.mkdir(mode=0o700)
+        with mock.patch.dict(os.environ, {"HOME": str(self.fixture.home),
+                                      "XDG_DATA_HOME": str(override)}, clear=False):
+            target = InitTarget.from_environment()
+        initializer = CreateOnceInitializer(source_root=REPOSITORY, target=target)
+        initializer._flatpak_exports(create=True)
+        self.assertTrue((override / "flatpak/exports/share/applications").is_dir())
+        self.assertFalse((self.fixture.home / ".local/share/flatpak").exists())
 
     def initialize(self) -> list:
         with mock.patch.dict(os.environ, {"PATH": self.path}, clear=False):

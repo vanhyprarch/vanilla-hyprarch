@@ -892,6 +892,26 @@ Retest the rendered foreground and the internal icon-image import after a Qt
 upgrade. Replace this boundary when a supported public Qt or Quickshell image
 API provides the same exact monochrome recoloring without luminance retention.
 
+## Quickshell first Flatpak export discovery boundary
+
+**Affected component:** Quickshell 0.3.1
+
+Its DesktopEntries monitor installs filesystem watches only for application
+directories already present when it starts. On a fresh Flatpak installation,
+`/var/lib/flatpak/exports/share/applications` can be created with the first
+export; the running shell then misses that first application until restart.
+The controlled reinstall with the directory already present produced a live
+`valuesChanged` about 126 ms after the desktop file appeared.
+
+The installer ensures the standard system and XDG-aware user Flatpak export
+application directories before first graphical login. It changes no QML,
+DesktopEntries model, or Flatpak content. An offscreen fixture starts with an
+empty export directory and verifies that an exported desktop file appears in
+the same Quickshell process
+([fixture](../tests/flatpak-live-discovery.py)). Retest after a Quickshell
+upgrade; remove this scaffold requirement only if its watcher follows creation of
+previously absent application directories.
+
 ## Quickshell Bluetooth pairing-agent boundary
 
 **Affected component:** Quickshell 0.3.1 with BlueZ 5.87

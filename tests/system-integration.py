@@ -345,6 +345,100 @@ class IntegrationTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.fixture.close()
 
+    def test_flatpak_export_scaffold_plan_apply_validate_and_preserve(self) -> None:
+        engine = self.fixture.engine()
+        destination = self.fixture.root / MODULE.FLATPAK_SYSTEM_EXPORT_PATH.lstrip("/")
+        before = sorted((str(path.relative_to(self.fixture.root)), path.lstat().st_ino,
+                         path.lstat().st_mtime_ns) for path in self.fixture.root.rglob("*"))
+        self.assertEqual(engine._flatpak_exports_status().action, "flatpak-exports-create")
+        self.assertIn("flatpak-exports-create", {item.action for item in engine.plan().items})
+        self.assertEqual(before, sorted((str(path.relative_to(self.fixture.root)), path.lstat().st_ino,
+                                         path.lstat().st_mtime_ns) for path in self.fixture.root.rglob("*")))
+        engine._ensure_flatpak_exports()
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o755)
+        self.assertEqual((destination.stat().st_uid, destination.stat().st_gid),
+                         (engine.root_uid, engine.root_gid))
+        exported = destination / "org.example.App.desktop"
+        exported.write_bytes(b"[Desktop Entry]\nName=Example\n")
+        link = destination / "org.example.Link.desktop"
+        link.symlink_to(exported.name)
+        saved = [(path.lstat().st_ino, path.lstat().st_mtime_ns, path.lstat().st_mode)
+                 for path in (destination, exported, link)]
+        engine._ensure_flatpak_exports()
+        self.assertEqual(saved, [(path.lstat().st_ino, path.lstat().st_mtime_ns,
+                                  path.lstat().st_mode) for path in (destination, exported, link)])
+        self.assertEqual(exported.read_bytes(), b"[Desktop Entry]\nName=Example\n")
+        self.assertEqual(link.readlink(), Path(exported.name))
+        self.assertEqual(engine._flatpak_exports_status().action, "flatpak-exports-preserve")
+
+    def test_flatpak_export_scaffold_is_required_for_full_validation(self) -> None:
+        engine = self.fixture.adopt_everything()
+        destination = self.fixture.root / MODULE.FLATPAK_SYSTEM_EXPORT_PATH.lstrip("/")
+        destination.rmdir()
+        with self.assertRaisesRegex(IntegrationError, "scaffolding"):
+            engine.validate()
+
+    def test_flatpak_export_scaffold_follows_package_install_before_sddm(self) -> None:
+        engine = self.fixture.adopt_everything()
+        destination = self.fixture.root / MODULE.FLATPAK_SYSTEM_EXPORT_PATH.lstrip("/")
+        destination.rmdir()
+        state = self.fixture.state()
+        state["installed"].remove("flatpak")
+        save_json(self.fixture.runner_state, state)
+        calls: list[str] = []
+        original_exports = engine._ensure_flatpak_exports
+        original_sddm = engine._apply_sddm_login
+
+        def ensure_exports() -> None:
+            self.assertIn("flatpak", self.fixture.state()["installed"])
+            self.assertEqual(engine._flatpak_status().action, "flathub-preserve")
+            calls.append("exports")
+            original_exports()
+
+        def apply_sddm() -> None:
+            self.assertTrue(destination.is_dir())
+            calls.append("sddm")
+            original_sddm()
+
+        with mock.patch.object(engine, "_ensure_flatpak_exports", side_effect=ensure_exports), \
+                mock.patch.object(engine, "_apply_sddm_login", side_effect=apply_sddm):
+            engine.apply()
+        self.assertEqual(calls, ["exports", "sddm"])
+
+    def test_flatpak_export_scaffold_requires_package_and_rejects_unsafe_paths(self) -> None:
+        engine = self.fixture.engine()
+        destination = self.fixture.root / MODULE.FLATPAK_SYSTEM_EXPORT_PATH.lstrip("/")
+        state = self.fixture.state()
+        state["installed"].remove("flatpak")
+        save_json(self.fixture.runner_state, state)
+        with self.assertRaisesRegex(IntegrationError, "must be installed"):
+            engine._ensure_flatpak_exports()
+        self.assertFalse(destination.exists())
+        state["installed"].append("flatpak")
+        save_json(self.fixture.runner_state, state)
+        parent = destination.parent
+        parent.mkdir(parents=True)
+        destination.symlink_to(self.fixture.root / "home/tester")
+        self.assertEqual(engine._flatpak_exports_status().action, "flatpak-exports-conflict")
+        with self.assertRaises(IntegrationError):
+            engine._ensure_flatpak_exports()
+        destination.unlink()
+        destination.write_text("not a directory")
+        with self.assertRaises(IntegrationError):
+            engine._ensure_flatpak_exports()
+        destination.unlink()
+        parent.rmdir()
+        parent.write_text("not a directory")
+        with self.assertRaises(IntegrationError):
+            engine._ensure_flatpak_exports()
+        parent.unlink()
+        parent.symlink_to(self.fixture.root / "home/tester")
+        with self.assertRaises(IntegrationError):
+            engine._ensure_flatpak_exports()
+        parent.unlink()
+        engine.root_uid += 1
+        self.assertEqual(engine._flatpak_exports_status().action, "flatpak-exports-conflict")
+
     def test_manifest_drives_default_and_excluded_packages(self) -> None:
         engine = self.fixture.engine()
         self.assertIn("pavucontrol", engine.official_default_packages)

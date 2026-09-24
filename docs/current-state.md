@@ -502,6 +502,13 @@ write, adds the system remote idempotently when absent, and fails closed rather
 than changing a same-named remote with an unexpected URL. It never installs a
 Flatpak application.
 
+The shared bootstrap prepares the standard system and XDG-aware user Flatpak
+application export directories before first login. This is empty
+Flatpak-owned scaffolding so Quickshell 0.3.1 can watch the first exported
+desktop file; it does not manage exported applications or change discovery.
+The offscreen first-export check passed; real-host first-install acceptance
+remains pending.
+
 The Super+Space and Keyboard Shortcuts surfaces open centered in the focused
 monitor's usable desktop region to the right of its persistent dock, as
 independent per-screen layer surfaces. Dock-owned panels use monitor-bound

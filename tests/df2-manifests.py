@@ -33,6 +33,7 @@ OWNERSHIP_CLASSES = {
     "GENERATED",
     "RUNTIME",
     "PACKAGE_OWNED",
+    "EXTERNAL_OWNED",
     "ADOPTED_PRIVILEGED",
     "OPTIONAL_COMPONENT_PAYLOAD",
 }
@@ -42,6 +43,7 @@ NON_DEPLOYABLE_CLASSES = {
     "GENERATED",
     "RUNTIME",
     "PACKAGE_OWNED",
+    "EXTERNAL_OWNED",
     "OPTIONAL_COMPONENT_PAYLOAD",
 }
 REQUIRED_DEFAULT = {
@@ -404,6 +406,32 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertEqual(self.by_id["user-hyprland-override"]["class"], "CREATE_ONCE_USER")
         self.assertEqual(self.by_id["mpv-config"]["class"], "CREATE_ONCE_USER")
         self.assertEqual(self.by_id["mimeapps-config"]["class"], "CREATE_ONCE_USER")
+
+    def test_flatpak_export_scaffolds_have_external_ownership(self) -> None:
+        policy = self.classes["EXTERNAL_OWNED"]
+        self.assertFalse(policy["deployable"])
+        self.assertEqual(policy["install_action"], "ensure-directory-only")
+        self.assertEqual(policy["update_action"], "preserve")
+        expected = {
+            "flatpak-system-application-exports": "/var/lib/flatpak/exports/share/applications",
+            "flatpak-user-application-exports":
+                "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications",
+        }
+        for identifier, target in expected.items():
+            record = self.by_id[identifier]
+            self.assertEqual(record["target"], target)
+            self.assertEqual(record["class"], "EXTERNAL_OWNED")
+            self.assertEqual(record["authority"], "flatpak")
+            self.assertEqual(record["kind"], "tree")
+            self.assertEqual(record["mode"], "0755")
+            self.assertNotIn("source", record)
+        for document in ("installation-strategy.md", "system-integration.md",
+                         "compatibility.md"):
+            self.assertIn(expected["flatpak-system-application-exports"],
+                          (REPOSITORY / "docs" / document).read_text())
+        for document in ("installation-strategy.md", "create-once-initialization.md"):
+            self.assertIn(expected["flatpak-user-application-exports"],
+                          (REPOSITORY / "docs" / document).read_text())
 
     def test_managed_deployment_provenance_is_backend_owned(self) -> None:
         identifier = self.document["managed_deployment_provenance"]

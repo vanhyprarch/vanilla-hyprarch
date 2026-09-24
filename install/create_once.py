@@ -38,6 +38,10 @@ SUPPORTED_SCHEMA = 2
 TRANSACTION_VERSION = 1
 TEST_MODE_ENV = "VANHYPRARCH_CREATE_ONCE_TESTING"
 TEST_FAULT_ENV = "VANHYPRARCH_CREATE_ONCE_TEST_FAULT_AT"
+FLATPAK_USER_EXPORT_ID = "flatpak-user-application-exports"
+FLATPAK_USER_EXPORT_TARGET = (
+    "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications"
+)
 
 
 class InitializationError(Exception):
@@ -230,6 +234,28 @@ class CreateOnceInitializer:
             raise ManifestError(f"invalid ownership manifest: {error}") from error
         self._load_manifest()
 
+    def _flatpak_exports(self, *, create: bool = False) -> Result:
+        destination, root = self.target.xdg.resolve(FLATPAK_USER_EXPORT_TARGET)
+        relative_parts = destination.relative_to(root).parts
+        components = [root]
+        components.extend(root.joinpath(*relative_parts[:index])
+                          for index in range(1, len(relative_parts) + 1))
+        for current in components:
+            try:
+                metadata = os.lstat(current)
+            except FileNotFoundError:
+                if not create:
+                    return Result("create", FLATPAK_USER_EXPORT_ID, str(destination),
+                                  "Flatpak export directory is absent")
+                _ensure_directory(destination, root, 0o755)
+                return self._flatpak_exports()
+            if (not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid()
+                    or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                    or stat.S_IMODE(metadata.st_mode) & 0o500 != 0o500):
+                raise ConflictError(f"unsafe Flatpak user export directory component: {current}")
+        return Result("preserve-existing", FLATPAK_USER_EXPORT_ID, str(destination),
+                      "safe Flatpak export directory exists")
+
     def _source_path(self, relative: PurePosixPath) -> Path:
         path = self.source_root.joinpath(*relative.parts)
         if not _inside(path, self.source_root):
@@ -292,6 +318,14 @@ class CreateOnceInitializer:
                 )
             )
         self.seeds.sort(key=lambda item: item.identifier)
+        exports = self.records.get(FLATPAK_USER_EXPORT_ID, {})
+        if (exports.get("target") != FLATPAK_USER_EXPORT_TARGET
+                or exports.get("class") != "EXTERNAL_OWNED"
+                or exports.get("kind") != "tree"
+                or exports.get("authority") != "flatpak"
+                or exports.get("mode") != "0755"
+                or "source" in exports):
+            raise ManifestError("Flatpak user export scaffold declaration is invalid")
         hooks = self.manifest.get("initializer", [])
         if not isinstance(hooks, list):
             raise ManifestError("initializer declarations must be tables")
@@ -749,7 +783,7 @@ class CreateOnceInitializer:
                     "initialize must recover the interrupted operation",
                 )
             ]
-        results: list[Result] = []
+        results: list[Result] = [self._flatpak_exports()]
         for artifact in self.seeds:
             self._source_path(artifact.source)
             destination, root = self.target.xdg.resolve(artifact.target)
@@ -779,6 +813,7 @@ class CreateOnceInitializer:
         recovered = self.recover()
         if recovered is not None:
             results.append(recovered)
+        results.append(self._flatpak_exports(create=True))
         for artifact in self.seeds:
             results.append(self._create_seed(artifact))
         for hook in self.hooks:
@@ -788,7 +823,10 @@ class CreateOnceInitializer:
     def validate(self) -> list[Result]:
         if self._transaction_exists():
             raise ConflictError("create-once recovery is required")
-        results: list[Result] = []
+        exports = self._flatpak_exports()
+        if exports.action != "preserve-existing":
+            raise ConflictError("Flatpak user export directory is missing")
+        results: list[Result] = [exports]
         for artifact in self.seeds:
             destination, _ = self.target.xdg.resolve(artifact.target)
             if _lexists(destination):

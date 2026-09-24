@@ -176,6 +176,14 @@ An absent stable `flathub` is added from the canonical descriptor, an exact
 same-named configuration fails closed. No user remote, beta remote, or Flatpak
 application is changed.
 
+After the official `flatpak` package and system Flathub are available, the
+root stage ensures `/var/lib/flatpak/exports/share/applications` exists as
+root-owned mode-0755 directory scaffolding. Plan only reports its state;
+validation requires it. Existing safe directories are preserved without mode,
+owner, timestamp, or content changes. Symlinked, non-directory, inaccessible,
+or unexpectedly owned path components fail closed. Flatpak owns exported
+desktop files and all other content; this stage does not inspect descendants.
+
 Phase 5 Slice 3 defines the supported default-system policy as:
 
 - enable `NetworkManager.service`;
@@ -216,16 +224,18 @@ file fsync, atomic replacement, and parent-directory fsync.
 
 Mutating invocations recover a known incomplete local transaction before new
 work. Normal order is Arch preflight, official packages, yay, BlueZ adoption,
-Flathub, service policy, and final validation. Pacman and Flatpak retain their
-own transaction semantics; there is deliberately no global rollback. A later
-failure leaves earlier successful stages in known state, and a rerun queries
+Flathub, Flatpak export scaffolding, service policy, and final validation.
+Pacman and Flatpak retain their own transaction semantics; there is
+deliberately no global rollback. A later failure leaves earlier successful
+stages in known state, and a rerun queries
 reality and converges.
 
 `plan` performs no writes and reports recovery as required rather than acting.
 `validate` is read-only and requires every default official package, valid yay,
-known BlueZ adoption, exact system Flathub, and declared system enablement. A
-second successful `apply` performs no package transaction, yay rebuild, BlueZ
-rewrite, Flathub mutation, service mutation, or provenance rewrite.
+known BlueZ adoption, exact system Flathub, safe Flatpak export scaffolding,
+and declared system enablement. A second successful `apply` performs no package
+transaction, yay rebuild, BlueZ rewrite, Flathub mutation, service mutation,
+or provenance rewrite.
 
 ## Acceptance boundary
 

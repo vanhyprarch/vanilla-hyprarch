@@ -92,6 +92,13 @@ install_action = "install-package-only"
 update_action = "package-manager"
 
 [[ownership_class]]
+name = "EXTERNAL_OWNED"
+deployable = false
+source_policy = "forbidden"
+install_action = "ensure-directory-only"
+update_action = "preserve"
+
+[[ownership_class]]
 name = "ADOPTED_PRIVILEGED"
 deployable = true
 source_policy = "required"
@@ -494,6 +501,32 @@ authority = "vanilla-hyprarch"
 status = "implemented"
 user_editable = false
 machine_specific = false
+
+[[artifact]]
+id = "flatpak-system-application-exports"
+target = "/var/lib/flatpak/exports/share/applications"
+class = "EXTERNAL_OWNED"
+component = "flatpak"
+kind = "tree"
+mode = "0755"
+authority = "flatpak"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Installer ensures only empty directory scaffolding before first login; Flatpak owns all future exports and contents."
+
+[[artifact]]
+id = "flatpak-user-application-exports"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications"
+class = "EXTERNAL_OWNED"
+component = "flatpak"
+kind = "tree"
+mode = "0755"
+authority = "flatpak"
+status = "implemented"
+user_editable = false
+machine_specific = false
+notes = "Target-user stage ensures only empty directory scaffolding; Flatpak owns all future exports and contents."
 
 [[artifact]]
 id = "power-idle-preference"
