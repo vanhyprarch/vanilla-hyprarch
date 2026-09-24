@@ -290,8 +290,11 @@ Dictation is not a responsibility of the normal baseline bootstrap. An
 explicit opt-in runs the independently deployed `vanhyprarch-dictation`
 manager, also reached through the compatibility entry point
 `install/dictation/install`. Missing `gnupg` or `wtype` package deltas from the
-non-default `dictation` component in `packages/manifest-v1.toml` are offered through a visible
-interactive pacman transaction. The component refuses root,
+non-default `dictation` component in `packages/manifest-v1.toml` are offered
+through an explicit terminal `[y/N]` confirmation for the exact package list.
+After consent, the manager runs `sudo pacman -S --needed --noconfirm --` with
+inherited terminal output, so package progress and errors remain visible
+without a second pacman confirmation. The component refuses root,
 unsupported architectures, CPUs without the x86-64-v3 features required by
 the chosen AVX2 artifact, missing dependencies, symlink destinations, invalid
 signatures, unexpected fingerprints, checksum mismatches, and version

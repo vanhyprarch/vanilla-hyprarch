@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import tomllib
@@ -612,23 +613,70 @@ class DictationManagerTest(unittest.TestCase):
         module = load_manager_module()
         events: list[str] = []
 
-        def fake_run(*_args, **_kwargs):
-            events.append("blocking-package-operation")
-            return subprocess.CompletedProcess([], 0, "", "")
+        def consent(_prompt):
+            events.append("consent")
+            return "yes"
+
+        def fake_install(packages):
+            events.append("install: " + ", ".join(packages))
 
         with mock.patch.object(module, "dependency_state",
                 side_effect=(["gnupg", "wtype"], [])), \
                 mock.patch.object(module.sys.stdin, "isatty", return_value=True), \
-                mock.patch("builtins.input", return_value="yes"), \
+                mock.patch("builtins.input", side_effect=consent), \
                 mock.patch.object(module, "progress",
                     side_effect=lambda message: events.append(message)), \
-                mock.patch.object(module, "run", side_effect=fake_run):
+                mock.patch.object(module, "install_official_packages", side_effect=fake_install):
             module.ensure_dependencies()
 
         self.assertEqual(events, [
+            "consent",
             "Installing optional official dependencies: gnupg, wtype...",
-            "blocking-package-operation",
+            "install: gnupg, wtype",
         ])
+
+    def test_official_package_install_is_visible_and_noninteractive_after_consent(self) -> None:
+        module = load_manager_module()
+        argv = ["/usr/bin/sudo", "/usr/bin/pacman", "-S", "--needed",
+            "--noconfirm", "--", "gnupg", "wtype"]
+        with mock.patch.object(module.subprocess, "run", return_value=
+                subprocess.CompletedProcess(argv, 0, None, None)) as invoke:
+            module.install_official_packages(["gnupg", "wtype"])
+        invoke.assert_called_once_with(argv, text=True, capture_output=False,
+            check=False, timeout=None, env=None)
+
+        with mock.patch.object(module.subprocess, "run", return_value=
+                subprocess.CompletedProcess(argv, 23, None, None)) as invoke:
+            with self.assertRaisesRegex(module.ManagerError, "sudo failed: status 23"):
+                module.install_official_packages(["gnupg", "wtype"])
+        invoke.assert_called_once()
+
+    def test_visible_command_output_reaches_parent_terminal(self) -> None:
+        command = textwrap.dedent(f"""\
+            import runpy
+            import sys
+            manager = runpy.run_path({str(MANAGER)!r}, run_name="dictation_test")
+            manager["run"]([sys.executable, "-c",
+                "import sys; print('package progress'); "
+                "print('package error', file=sys.stderr); sys.exit(7)"],
+                capture_output=False)
+        """)
+        result = subprocess.run([sys.executable, "-c", command],
+            text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("package progress", result.stdout)
+        self.assertIn("package error", result.stderr)
+        self.assertIn("failed: status 7", result.stderr)
+
+    def test_declining_optional_packages_installs_nothing(self) -> None:
+        module = load_manager_module()
+        with mock.patch.object(module, "dependency_state", return_value=["wtype"]), \
+                mock.patch.object(module.sys.stdin, "isatty", return_value=True), \
+                mock.patch("builtins.input", return_value=""), \
+                mock.patch.object(module, "install_official_packages") as install:
+            with self.assertRaisesRegex(module.ManagerError, "install them first"):
+                module.ensure_dependencies()
+        install.assert_not_called()
 
     def test_production_manifest_and_catalog_are_exact(self) -> None:
         binary_document = tomllib.loads((RESOURCES / "binaries.toml").read_text())
@@ -844,24 +892,39 @@ class DictationManagerTest(unittest.TestCase):
                 {**nvidia_evidence, field: False}, nvidia),
                 f"NVIDIA common evidence unexpectedly ignored {field}")
 
-    def test_vulkan_prerequisite_install_uses_exact_visible_argv(self) -> None:
+    def test_vulkan_prerequisite_install_uses_shared_package_helper(self) -> None:
         module = load_manager_module()
         missing = {"state": "missing-prerequisites", "missing_packages":
             ["vulkan-icd-loader", "vulkan-radeon"]}
         ready = {**missing, "state": "ready", "missing_packages": []}
         events: list[Any] = []
 
-        def record_run(argv, **_kwargs):
-            events.append(list(argv))
-            return subprocess.CompletedProcess(argv, 0, "", "")
+        def consent(_prompt):
+            events.append("consent")
+            return "yes"
+
+        def record_install(packages):
+            events.append(list(packages))
 
         with mock.patch.object(module.sys.stdin, "isatty", return_value=True), \
-                mock.patch("builtins.input", return_value="yes"), \
-                mock.patch.object(module, "run", side_effect=record_run), \
+                mock.patch("builtins.input", side_effect=consent), \
+                mock.patch.object(module, "install_official_packages",
+                    side_effect=record_install), \
                 mock.patch.object(module, "vulkan_capability", return_value=ready):
             self.assertEqual(module.ensure_vulkan_prerequisites(missing), ready)
-        self.assertEqual(events, [["/usr/bin/sudo", "/usr/bin/pacman", "-S",
-            "--needed", "--", "vulkan-icd-loader", "vulkan-radeon"]])
+        self.assertEqual(events, ["consent", ["vulkan-icd-loader", "vulkan-radeon"]])
+
+    def test_declining_vulkan_packages_installs_nothing(self) -> None:
+        module = load_manager_module()
+        missing = {"state": "missing-prerequisites",
+            "missing_packages": ["vulkan-radeon"]}
+        with mock.patch.object(module.sys.stdin, "isatty", return_value=True), \
+                mock.patch("builtins.input", return_value="n"), \
+                mock.patch.object(module, "install_official_packages") as install:
+            with self.assertRaisesRegex(module.ManagerError,
+                    "install the reported official Vulkan requirements first"):
+                module.ensure_vulkan_prerequisites(missing)
+        install.assert_not_called()
 
     def test_systemd_pid_parsing_fails_closed(self) -> None:
         module = load_manager_module()

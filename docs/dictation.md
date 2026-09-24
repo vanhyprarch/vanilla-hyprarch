@@ -110,8 +110,10 @@ places those resources under
 `${XDG_DATA_HOME:-$HOME/.local/share}/vanhyprarch/dictation/`; it never depends
 on a checkout path.
 
-If `gnupg` or `wtype` is absent, installation offers the exact official package
-transaction visibly and lets pacman handle authentication. After every payload
+If `gnupg` or `wtype` is absent, installation asks for consent to the exact
+official package list, then runs pacman with `--noconfirm` and inherited terminal
+output. Sudo still handles authentication. Vulkan requirements use the same
+package-install path after their own consent prompt. After every payload
 and the user unit are verified and installed, the manager reloads the systemd
 user-unit catalog, starts `vanhyprarch-voxtype.service`, and requires bounded
 healthy extended status before publishing the component marker or reporting

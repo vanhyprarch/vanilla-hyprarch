@@ -407,16 +407,23 @@ def executable(env_name: str, default: str) -> str:
 
 
 def run(argv: Sequence[str], *, check: bool = True, timeout: float | None = None,
-        env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        env: dict[str, str] | None = None, capture_output: bool = True) -> subprocess.CompletedProcess[str]:
     try:
-        result = subprocess.run(list(argv), text=True, capture_output=True, check=False,
+        result = subprocess.run(list(argv), text=True, capture_output=capture_output, check=False,
             timeout=timeout, env=env)
     except (OSError, subprocess.TimeoutExpired) as error:
         fail(f"could not run {argv[0]}: {error}")
     if check and result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or f"status {result.returncode}"
+        detail = (result.stderr or "").strip() or (result.stdout or "").strip() or f"status {result.returncode}"
         fail(f"{Path(argv[0]).name} failed: {detail}")
     return result
+
+
+def install_official_packages(packages: Sequence[str]) -> None:
+    # Both callers obtain explicit consent for this exact list before invoking us.
+    # Inherit the terminal so pacman progress and failures remain visible.
+    run(["/usr/bin/sudo", "/usr/bin/pacman", "-S", "--needed", "--noconfirm",
+        "--", *packages], capture_output=False)
 
 
 def cpu_features(required: Sequence[str] = ("avx2", "fma", "bmi1", "bmi2", "f16c", "movbe")) -> None:
@@ -477,7 +484,7 @@ def ensure_dependencies() -> None:
     if answer not in ("y", "yes"):
         fail(f"install them first with: sudo pacman -S --needed {packages}")
     progress("Installing optional official dependencies: " + ", ".join(missing) + "...")
-    run(["/usr/bin/sudo", "/usr/bin/pacman", "-S", "--needed", "--", *missing])
+    install_official_packages(missing)
     if dependency_state():
         fail("optional dependency installation completed but required executables remain unavailable")
 
@@ -608,7 +615,7 @@ def ensure_vulkan_prerequisites(capability: dict[str, Any]) -> dict[str, Any]:
         if answer not in ("y", "yes"):
             fail("install the reported official Vulkan requirements first")
         progress("Installing Vulkan requirements: " + ", ".join(missing) + "...")
-        run(["/usr/bin/sudo", "/usr/bin/pacman", "-S", "--needed", "--", *missing])
+        install_official_packages(missing)
         capability = vulkan_capability()
     if capability["state"] != "ready":
         fail("Vulkan runtime requirements are not ready")
