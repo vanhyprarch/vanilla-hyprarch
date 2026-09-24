@@ -582,8 +582,13 @@ class DocumentationConsistencyTests(unittest.TestCase):
         )
         self.assertIn("Arch Linux x86_64", document)
         self.assertIn("fresh-install or archinstall-derived", document)
-        self.assertIn("must not depend on", document)
-        self.assertIn("future tagged release archive", document)
+        self.assertIn("exact-commit GitHub source archive with curl", document)
+        self.assertRegex(
+            document,
+            r"Installed runtime files are regular copies\s+and do not depend on "
+            r"Git, the extracted source, a worktree, or its absolute\s+source path",
+        )
+        self.assertIn("future pinned tag archives", document)
         self.assertIn("never silently performs `pacman -Syu`", document)
         self.assertIn("unsupported partial upgrade", document)
         self.assertIn("Official `sddm` is required", document)
@@ -606,11 +611,14 @@ class DocumentationConsistencyTests(unittest.TestCase):
             self.assertIn("does not", document)
         self.assertIn("`go` is not a direct Vanilla", package_policy)
         self.assertIn("declare `go` directly", df2_decisions)
-        self.assertIn("pre-bootstrap acquisition prerequisite", df2_decisions)
-        self.assertIn("permanent build/bootstrap package baseline", df2_decisions)
-        self.assertIn("pre-bootstrap acquisition prerequisite", installation)
-        self.assertIn("permanent build/bootstrap package baseline", installation)
-        self.assertRegex(installation, r"future tagged\s+release archive")
+        self.assertIn("`git` is not an acquisition prerequisite", df2_decisions)
+        self.assertRegex(df2_decisions, r"permanent build/bootstrap package\s+baseline")
+        self.assertIn("Git is therefore not required merely to obtain Vanilla", installation)
+        self.assertRegex(installation, r"permanent build/bootstrap package\s+baseline")
+        self.assertRegex(
+            installation,
+            r"Release\s+instructions must fetch `install\.sh` from a pinned tag",
+        )
 
 
 if __name__ == "__main__":
