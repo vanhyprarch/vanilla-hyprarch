@@ -2,8 +2,10 @@
 
 Snapshot date: 2026-09-25.
 
-The authored declaration now prepares `v1.0.0` stable. Immutable candidate
-releases rc1, rc2, and rc3 are published; stable is not yet tagged or published.
+The immutable `v1.0.0` stable release is published at
+`8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The authored declaration on
+`main` now targets the unpublished `v1.0.1-rc1` patch candidate. Immutable
+candidate releases rc1, rc2, and rc3 remain historical.
 The offline release contract includes a deterministic exact-commit
 artifact builder, pre-extraction verifier, and root-owned installed identity
 committed only after fresh release installation validates. See
@@ -27,8 +29,12 @@ passed, and a real rc1 installation upgraded directly to rc3 through the public
 updater. Migration 0001, installed identity, journal/staging cleanup, and rc3
 post-reboot smoke acceptance passed. Rc2 remains an immutable historical
 candidate with a pre-migration planning defect; rc3 corrects that defect.
-Stable retains direct rc1 upgrade support and migration level 1. Fresh stable
-installation and rc1/rc3-to-stable acceptance remain pending.
+The published stable release retains direct rc1 upgrade support and migration
+level 1. Real v1.0.0 fresh release-mode installation from Arch Minimal passed,
+including absent-Python bootstrap. Direct public updates rc1-to-stable with
+migration 0001 and rc3-to-stable with zero migrations passed. Post-reboot
+graphical acceptance, system/user failed-unit checks, installed identity, and
+journal/staging cleanup passed.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.

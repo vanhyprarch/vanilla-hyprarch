@@ -1,9 +1,9 @@
 schema = 1
-version = "v1.0.0"
-channel = "stable"
+version = "v1.0.1-rc1"
+channel = "candidate"
 architecture = "x86_64"
 update_protocol = 1
 minimum_installed_version = "v1.0.0-rc1"
 minimum_migration_level = 0
 migration_level = 1
-summary = "First stable release of Vanilla HyprArch."
+summary = "Patch release candidate following Vanilla HyprArch v1.0.0."

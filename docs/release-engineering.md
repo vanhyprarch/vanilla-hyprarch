@@ -3,8 +3,10 @@
 Status: offline release declaration, deterministic artifact builder, verifier,
 fresh-install identity publisher, upgrade-safe stages, migration runner,
 durable journal, local exact-target driver, and installed manual updater
-implemented. Super+Space exposes the manual updater. Immutable rc1, rc2, and
-rc3 candidates are published; `v1.0.0` stable is the prepared, unpublished target.
+implemented. Super+Space exposes the manual updater. `v1.0.0` stable is
+published, immutable, and accepted for fresh installation and direct rc1/rc3
+upgrades. `main` targets unpublished `v1.0.1-rc1`; rc1, rc2, and rc3 remain
+historical candidates.
 
 ## Identity and authored declaration
 
@@ -73,21 +75,23 @@ Strict publication mode additionally requires the exact existing tag to name
 the release version and resolve to that same commit:
 
 ```text
-python release/build.py build --commit FULL_40_HEX_SHA --tag v1.0.0-rc1 --output-dir OUTPUT_DIR
+python release/build.py build --commit FULL_40_HEX_SHA --tag v1.0.0 --output-dir OUTPUT_DIR
 ```
 
 `--repo PATH` is available for offline fixture repositories. The command never
-creates a tag. A build requires a commit containing the declaration. Committing
-this Phase 1 contract does not create the `v1.0.0-rc1` tag or publish a release.
+creates a tag. A build requires a commit containing the declaration. The
+published `v1.0.0` tag remains bound to
+`8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`; subsequent `main` commits
+use the next repository target declaration.
 
 Verify both published files without Git, network, extraction, or execution:
 
 ```text
-python release/build.py verify OUTPUT_DIR/release.json OUTPUT_DIR/vanhyprarch-v1.0.0-rc1.tar.gz
+python release/build.py verify OUTPUT_DIR/release.json OUTPUT_DIR/vanhyprarch-v1.0.0.tar.gz
 ```
 
-Future update code should import and call the same strict metadata and archive
-verifier before executing any release-supplied code.
+The installed updater calls the same strict metadata and archive verifier
+before executing release-supplied code.
 
 ## Verifier boundary and bounds
 
@@ -120,7 +124,7 @@ before Python's tar parser can consume oversized extended records.
 Phase 1 establishes commit/tag identity at build time and SHA-256 consistency
 at verification time. It does not authenticate a release independently of its
 metadata publisher. GitHub immutable publication, discovery, migrations,
-update execution, signatures, and VM acceptance belong to later phases. An
+update execution, and VM acceptance are separate implemented layers. An
 offline verifier cannot establish that a supplied commit
 SHA is trusted; it can establish that the artifact matches the supplied
 strict metadata and embedded declaration.
@@ -254,12 +258,14 @@ must agree. The runner accepts only regular mode-0644 implementation files
 under a safe target source tree, with bounded sizes and no symlinks. The
 local target driver verifies the complete target artifact before giving its
 root-controlled extracted tree and metadata to the runner. Registry entries
-never contain shell commands. The prepared stable declaration has minimum level
-0 and target level 1; the production registry contains migration `0001`, which
-upgrades rc1 updater provenance from schema 1 to schema 2. A real rc1-to-rc3
-update physically validated it. Fresh installations establish level 1 and schema
-2 directly without replaying the migration. Rc3-to-stable needs no migration;
-rc1-to-stable runs `0001` directly. Stable adds no new migration.
+never contain shell commands. The published `v1.0.0` release and current
+unpublished `v1.0.1-rc1` repository target both have minimum level 0 and target
+level 1; the production registry contains migration `0001`, which upgrades rc1
+updater provenance from schema 1 to schema 2. Real rc1-to-rc3 and
+rc1-to-stable updates physically validated it. Fresh installations establish
+level 1 and schema 2 directly without replaying the migration. Rc3-to-stable
+needs no migration; rc1-to-stable runs `0001` directly. The current repository
+target adds no new migration.
 
 Each migration Python file exposes `plan(context) -> list[str]`,
 `apply(context) -> None`, and `validate(context) -> bool`. `plan` and
@@ -370,8 +376,9 @@ can remove only the staged bundle matching the already committed installed
 identity. Failures retain the journal and exact target material for diagnosis
 or explicit resume; there is no global rollback.
 
-The installed discovery/download bootstrap follows below. Candidate release
-publication and rc1-to-rc3 VM acceptance passed; stable acceptance is pending.
+The installed discovery/download bootstrap follows below. Published `v1.0.0`
+passed real fresh installation, direct rc1/rc3 updates, and post-reboot smoke
+acceptance.
 
 ## Installed manual updater (release Phase 6)
 
@@ -429,7 +436,7 @@ Super+Space → Update → Vanilla HyprArch launches the installed command throu
 the existing supervised terminal helper, with a fixed direct argument vector
 and no QML-side sudo or release logic. The same action appears on development
 installations; the updater refuses automatic release updates without an
-installed release identity. Real rc1-to-rc3 public-updater acceptance, migration
-`0001`, and post-reboot smoke testing passed. Stable fresh-install and direct
-rc1/rc3 upgrade acceptance are pending. Background checks and stable publication
-remain future work.
+installed release identity. Real rc1-to-rc3 public-updater acceptance and
+published `v1.0.0` fresh-install and direct rc1/rc3 upgrade acceptance passed,
+including migration `0001` where required and post-reboot smoke testing.
+Background update checks remain future work.

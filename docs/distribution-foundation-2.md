@@ -57,7 +57,7 @@ manifest-driven implementation executable, while system integration needs Git
 for the approved non-root yay build. Installed runtime files are regular copies
 and do not depend on Git, the extracted source, a worktree, or its absolute
 source path. The same separation supports both the development `main` archive
-and future pinned tag archives without changing runtime layout.
+and published verified release bundles without changing runtime layout.
 
 ## Package and component decisions
 

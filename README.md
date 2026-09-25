@@ -1,7 +1,12 @@
 # Vanilla HyprArch
 
-> **Status: v1.0.0 stable in preparation.** The published rc1, rc2, and rc3
-> candidates are historical; stable has not been published.
+> **Current stable release: [v1.0.0](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.0).**
+> It is published and immutable. `main` now targets the unpublished
+> `v1.0.1-rc1` patch candidate.
+
+Real v1.0.0 acceptance passed: a fresh release-mode install from Arch Minimal,
+direct public updates from rc1 with migration 0001 and from rc3 with zero
+migrations, and post-reboot graphical and system/user-service checks.
 
 Vanilla HyprArch is a small, incremental desktop configuration layer for a
 standard Arch Linux installation. Its philosophy is **Arch vanilla + Hyprland
@@ -71,11 +76,38 @@ Matrix, Doom, and Game of Life.
   `small.en` model, a two-minute recording maximum, and official-repository
   `wtype`.
 
-## Installation status
+## Install stable
 
-The shared post-install bootstrap is implemented for the narrow initial target:
-a fresh Arch Minimal x86_64 installation with Internet access, a normal user,
-sudo, and pacman. Run this development command as that normal user:
+On a fresh Arch Minimal x86_64 installation with Internet access, run these
+commands as the normal target user, not root. The two downloads are the
+published v1.0.0 release assets:
+
+```bash
+set -e
+sudo pacman -Syu --needed curl
+bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.0.XXXXXXXX")
+cd "$bundle_dir"
+curl -fL --proto '=https' --tlsv1.2 -o release.json https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.0/release.json
+curl -fL --proto '=https' --tlsv1.2 -o vanhyprarch-v1.0.0.tar.gz https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.0/vanhyprarch-v1.0.0.tar.gz
+sha256sum -c <<'SHA256'
+6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c  release.json
+de57673385f961b233bdae95731ba9e7a3bfef32ce5f44851143dafff0bcb0c9  vanhyprarch-v1.0.0.tar.gz
+SHA256
+tar -xzf vanhyprarch-v1.0.0.tar.gz
+"$PWD/vanhyprarch-v1.0.0/install.sh" \
+  --release-metadata "$PWD/release.json" \
+  --release-artifact "$PWD/vanhyprarch-v1.0.0.tar.gz"
+```
+
+The installer can bootstrap Python when it is absent. It verifies the bundle
+again before installation and commits the stable installed release identity
+only after validation succeeds. Reboot afterward to enter the SDDM login.
+The public updater supports direct upgrades from v1.0.0-rc1 to v1.0.0; rc3 to
+v1.0.0 was also validated. Intermediate candidates are not required.
+
+## Install development from main
+
+Run this separate development command as the normal target user:
 
 ```bash
 sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/main/install.sh)
@@ -84,11 +116,11 @@ sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubuserconten
 It resolves `main` to an exact commit, downloads that commit's source archive,
 and delegates package/system integration, managed deployment, create-once
 initialization, SDDM integration, and validation to their existing
-authoritative stages. `install.sh --yes` suppresses the single confirmation.
-`VANHYPRARCH_REF=<tag-or-commit>` selects another simple ref. This ref-based
-command remains a development installation even when the ref is a release tag.
-Fresh release mode instead requires a verified local `release.json` and archive;
-see [release engineering](docs/release-engineering.md).
+authoritative stages. This path leaves installed release identity absent and
+is not equivalent to the published stable installation. `install.sh --yes`
+suppresses the single confirmation. `VANHYPRARCH_REF=<tag-or-commit>` selects
+another simple ref; even a release tag remains a development installation when
+used through this ref-based path. See [release engineering](docs/release-engineering.md).
 Reruns select managed `install` or `update` through the deployment authority's
 provenance-aware `reconcile` operation; create-once content remains no-clobber.
 
@@ -145,10 +177,7 @@ actions remain visible in Additional system components.
 
 ## Current limitations
 
-The `v1.0.0` stable release is being prepared and has not yet passed its fresh
-stable installation and direct-upgrade acceptance. The shared post-install
-bootstrap, public manual updater, and migration 0001 are implemented. The
-optional archinstall first-reboot entry point is still pending. User-owned
+The optional archinstall first-reboot entry point is still pending. User-owned
 files remain protected by their ownership class.
 
 The Appearance foundation and visual Background Picker are integrated with the

@@ -501,10 +501,13 @@ class InstalledCommandTests(unittest.TestCase):
             json.dumps({"schema": 1, "sha256": state["sha256"]}, sort_keys=True) + "\n"
         )
         registry = MigrationRegistry(PROJECT)
-        self.assertEqual(registry.declaration["version"], "v1.0.0")
-        self.assertEqual(registry.declaration["channel"], "stable")
+        self.assertEqual(registry.declaration["version"], "v1.0.1-rc1")
+        self.assertEqual(registry.declaration["channel"], "candidate")
+        # The published stable target remains a historical upgrade fixture.
         target = contract.parse_metadata(contract.metadata_bytes({
             **registry.declaration,
+            "version": "v1.0.0", "channel": "stable",
+            "summary": "First stable release of Vanilla HyprArch.",
             "commit": "2" * 40,
             "artifact": {"name": contract.artifact_name("v1.0.0"),
                          "size": 1, "sha256": "2" * 64},

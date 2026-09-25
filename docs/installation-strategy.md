@@ -7,7 +7,8 @@ managed-file, create-once, accepted system-integration, and SDDM stages. The
 repository-root `install.sh` now provides their thin shared post-install orchestration;
 the optional archinstall entry point does not exist yet.
 
-The repository now prepares `v1.0.0` stable; `main` remains a development ref.
+The immutable `v1.0.0` stable release is published and accepted; `main` is a
+development ref targeting unpublished `v1.0.1-rc1`.
 Its Hyprland files express portable managed, create-once machine, and user-override
 ownership. The public wrapper does not duplicate those lifecycles: each
 existing stage retains its own manifests, provenance, conflict handling, and
@@ -84,19 +85,24 @@ to avoid a stale claim. The system stage installs the root-owned
 `/usr/local/bin/vanhyprarch-update` command on release and development paths;
 it refuses updates while the installed release identity is absent. Manual
 GitHub release discovery and verified target-driver handoff are implemented.
-Fresh release installation uses the local verified bundle mode above. Candidate
-releases rc1, rc2, and rc3 are published; stable publication and stable
-fresh-install acceptance remain pending. The supported stable target keeps
-direct rc1 upgrades, running migration 0001; rc3 upgrades require no migration.
+Fresh v1.0.0 installation uses the published `release.json` and
+`vanhyprarch-v1.0.0.tar.gz` through the verified local bundle mode; the exact
+normal-user commands and checksums are in the [README](../README.md#install-stable).
+Real fresh release-mode installation from Arch Minimal passed. Candidate
+releases rc1, rc2, and rc3 are historical; rc2 remains an immutable broken
+candidate. Direct rc1-to-stable public updating passed with migration 0001,
+and rc3-to-stable passed with zero migrations. No intermediate candidate is
+required.
 
 The exact orchestrated sequence is:
 
 ```text
 host/user/sudo validation
-  -> resolve ref and acquire exact-commit archive
+  -> acquire exact-commit development archive or supplied verified release bundle
   -> install/bootstrap plan (only when Python is absent)
   -> one user confirmation
   -> sudo install/bootstrap bootstrap-python (only when absent)
+  -> release mode: verify bundle, extract, and preflight installed identity
   -> sudo install/bootstrap plan
   -> sudo install/bootstrap apply
   -> managed_deploy.py plan reconcile
@@ -106,6 +112,7 @@ host/user/sudo validation
   -> managed_deploy.py validate
   -> create_once.py validate
   -> sudo install/bootstrap validate
+  -> release mode: commit and validate installed release identity
 ```
 
 The final privileged validation includes SDDM login payload validation. A
