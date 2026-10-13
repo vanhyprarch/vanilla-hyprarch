@@ -696,7 +696,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
             r"Installed runtime files are regular copies\s+and do not depend on "
             r"Git, the extracted source, a worktree, or its absolute\s+source path",
         )
-        self.assertIn("future pinned tag archives", document)
+        self.assertIn("published verified release bundles", document)
         self.assertIn("never silently performs `pacman -Syu`", document)
         self.assertIn("unsupported partial upgrade", document)
         self.assertIn("Official `sddm` is required", document)
