@@ -115,6 +115,37 @@ survives three reloads. Retest the preliminary sorter only after Quickshell or
 Qt changes its QML sorter destruction behavior; the local projection can be
 removed if an upstream model sorter survives that regression test.
 
+## XWayland fractional-scaling boundary
+
+**Affected components:** Hyprland 0.56.2 (`hyprland 0.56.2-4`) and XWayland
+24.1.14 (`xorg-xwayland 24.1.14-1`)
+
+On the rebuilt development host, the user reproduced pixelated KeePassXC text
+and UI at fractional Scale 1.25 and reported that enabling
+`xwayland.force_zero_scaling` corrected it. The audit's read-only installed
+`hyprctl -j getoption xwayland:force_zero_scaling` confirmed a Boolean option;
+the [0.56.2 registration](https://github.com/hyprwm/Hyprland/blob/v0.56.2/src/config/values/ConfigValues.cpp)
+and [0.56 Lua documentation](https://wiki.hypr.land/0.56.0/Configuring/Advanced-and-Cool/XWayland/)
+confirm the supported `hl.config({ xwayland = { force_zero_scaling = true } })`
+form.
+
+The managed core supplies this global XWayland default before preserved machine
+configuration and user overrides. It forces XWayland window Scale 1 on scaled
+outputs, including integer scaling; applications may need their own toolkit
+sizing. Crisp rendering alone does not prove correct UI size. The mitigation
+does not set toolkit environment variables or change native Wayland/monitor
+scaling, and a later user override can explicitly select `false`.
+
+The inert Lua fixtures in `tests/deployment-ownership.py` check the actual
+Boolean assignment, seed separation, and later override precedence. Full-chain
+Hyprland verification must remain inside Bubblewrap because callbacks may run.
+The user's physical correction is evidence for the option, not acceptance of
+the newly managed payload; that acceptance and publication remain pending.
+Retest parsing, rendering, UI size, pointer/dialog alignment, and mixed-scale
+output movement after Hyprland or XWayland upgrades. Reconsider removal only
+when the default upstream scaling path is demonstrably crisp and correctly
+sized on the affected applications without regressing native Wayland clients.
+
 ## Hyprland Lua import boundary
 
 **Affected component:** Hyprland 0.56.2

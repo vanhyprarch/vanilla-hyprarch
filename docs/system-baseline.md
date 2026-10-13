@@ -162,6 +162,18 @@ Before first graphical login, the bootstrap ensures the system and target-user
 Flatpak application export directories exist. They are Flatpak-owned export
 scaffolding for live first-install discovery, not Vanilla-managed app content.
 
+## XWayland scaling default
+
+The managed Hyprland core sets `xwayland.force_zero_scaling = true` through
+`hl.config()` to avoid compositor resampling of XWayland applications on
+fractionally scaled displays. Crisp rendering does not guarantee suitable
+toolkit/UI sizing; application scaling remains toolkit-specific. Native Wayland
+scaling and monitor Scale are outside this setting's scope. The later user
+override may explicitly set it to `false`. No toolkit scaling environment
+variables or create-once seeds are changed. This is an unpublished repository
+default; managed-payload physical acceptance remains pending. See
+[Compatibility](compatibility.md#xwayland-fractional-scaling-boundary).
+
 ## Keyboard and session defaults
 
 Hyprland's native `input.numlock_by_default` option is enabled. Num Lock is

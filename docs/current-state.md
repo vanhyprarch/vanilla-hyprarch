@@ -117,6 +117,15 @@ connector, mode, scale, bit-depth, color-management, keyboard-layout, or
 device rule. The loader resolves XDG configuration paths and uses four ordered
 absolute `require()` calls.
 
+The unpublished v1.0.1 repository core now supplies
+`xwayland.force_zero_scaling = true` as managed policy for crisp XWayland
+rendering on fractionally scaled displays. Toolkit/UI sizing remains separate,
+and later user overrides remain effective. The user reported physical success
+with KeePassXC on Hyprland 0.56.2-4 and XWayland 24.1.14-1; acceptance of this
+managed payload remains pending. This change has not been deployed to the
+rebuilt development host's genuine v1.0.0 release installation or published.
+See [Compatibility](compatibility.md#xwayland-fractional-scaling-boundary).
+
 The controlled live migration now runs the managed loader, core, and bindings
 as regular files. Its machine-owned file preserves the development machine's
 explicit `DP-1` profile but contains no global XKB preference. The user

@@ -198,6 +198,14 @@ hl.gesture({
     action = "workspace",
 })
 
+-- XWayland scaling ------------------------------------------------------------
+
+hl.config({
+    xwayland = {
+        force_zero_scaling = true,
+    },
+})
+
 -- Window rules ----------------------------------------------------------------
 
 local suppressMaximizeRule = hl.window_rule({

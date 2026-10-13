@@ -305,6 +305,87 @@ io.write(table.concat(loaded, "\n"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("XDG_CONFIG_HOME must be an absolute path", result.stderr)
 
+    def xwayland_scaling_assignments(
+        self, *paths: Path, config_home: Path | None = None
+    ) -> list[str]:
+        harness = r'''
+local function inert()
+    return setmetatable({}, {
+        __index = function() return inert() end,
+        __call = function() return inert() end,
+    })
+end
+
+hl = inert()
+hl.exec_cmd = function() error("session commands must remain inert") end
+hl.config = function(options)
+    local value = options.xwayland and options.xwayland.force_zero_scaling
+    if value ~= nil then
+        io.write(type(value), ":", tostring(value), "\n")
+    end
+end
+require = function(path) return assert(loadfile(path))() end
+for _, path in ipairs(arg) do
+    assert(loadfile(path))()
+end
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = subprocess.run(
+                ["/usr/bin/lua", "-", *(str(path) for path in paths)],
+                input=harness,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                shell=False,
+                env={
+                    "HOME": str(root / "home"),
+                    "XDG_CONFIG_HOME": str(config_home or root / "config"),
+                    "XDG_DATA_HOME": str(root / "data"),
+                },
+                timeout=5,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.splitlines()
+
+    def test_managed_xwayland_scaling_default_is_boolean_true(self) -> None:
+        self.assertEqual(self.xwayland_scaling_assignments(CORE_PATH), ["boolean:true"])
+
+    def test_create_once_seeds_do_not_assign_xwayland_scaling(self) -> None:
+        for seed in (MACHINE_SEED, OVERRIDE_SEED):
+            with self.subTest(seed=seed):
+                self.assertEqual(self.xwayland_scaling_assignments(seed), [])
+
+    def test_xwayland_scaling_user_override_remains_effective(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "config"
+            sources = {
+                "hypr/vanhyprarch/core.lua": CORE_PATH,
+                "hypr/vanhyprarch/bindings.lua": BINDINGS_PATH,
+                "vanhyprarch/machine/hyprland.lua": MACHINE_SEED,
+                "vanhyprarch/overrides/hyprland.lua": OVERRIDE_SEED,
+            }
+            for relative, source in sources.items():
+                target = config / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+
+            self.assertEqual(
+                self.xwayland_scaling_assignments(LOADER_PATH, config_home=config),
+                ["boolean:true"],
+            )
+            override = config / "vanhyprarch/overrides/hyprland.lua"
+            override.write_text(
+                OVERRIDE_HEADER
+                + '\nhl.config({ xwayland = { force_zero_scaling = false } })\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self.xwayland_scaling_assignments(LOADER_PATH, config_home=config),
+                ["boolean:true", "boolean:false"],
+            )
+
     def test_complete_hyprland_chain_verifies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
