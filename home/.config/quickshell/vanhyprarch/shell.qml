@@ -154,6 +154,8 @@ ShellRoot {
     PanelWindow {
         id: dockWindow
 
+        // Appearance applies the authoritative palette before setting ready.
+        visible: appearanceController.ready
         screen: screenScope.modelData
 
         anchors {

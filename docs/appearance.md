@@ -6,6 +6,30 @@ The global Quickshell `AppearanceController` consumes the strict status from
 that controller. `Theme.qml` remains the visual palette projection and does not
 persist a separate choice.
 
+The persistent dock maps only after the controller has applied its first valid
+backend status and set `ready`. Its first visible frame therefore uses the
+persisted mode rather than `Theme.qml`'s provisional Light palette. This is a
+readiness dependency, with no timer or second preference reader. Runtime mode
+changes keep the dock mapped. A valid status with external reconciliation
+errors still supplies the desired palette; an unreadable or invalid status
+leaves the dock unmapped until a valid status is available.
+
+An offscreen startup probe with the real backend on Quickshell 0.3.2,
+Qt 6.12.0, and Hyprland 0.56.2 observed the original first frame using Light
+while the controller was unready; persisted Dark arrived about 725 ms later.
+The defect was the dock's unconditional mapping before palette readiness.
+
+`python tests/appearance-startup.py` exercises the production dock visibility
+binding with real Theme/controller components in an offscreen rendered window
+and a gated mock backend. It covers persisted Light and Dark, the first frame,
+runtime switching, external reconciliation failure, and invalid status.
+Managed deployment and the native same-process Quickshell reload passed on the
+development desktop; Dark status and the rendered dock were verified. The user
+confirmed physical logout/login acceptance in both Dark and Light: the dock
+appears directly with the saved palette, without an opposite-palette flash,
+unexpected color transition, or visible startup delay. Runtime switching also
+passed.
+
 The durable version-1 preference is
 `${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json`. It records the
 current mode plus one relative wallpaper selection for Light and one for Dark.

@@ -163,6 +163,13 @@ default without creating preference state. Create-once initialization supplies
 Foot's corresponding 12-point file, or uses an existing valid explicit size
 when migrating a system whose Foot file is absent.
 
+The dock now waits for the global Appearance controller's first valid status
+before mapping, so its first visible frame uses the persisted Light/Dark mode.
+The palette is applied before readiness; runtime switching and preference
+ownership remain unchanged. Physical logout/login acceptance passed in both
+Dark and Light, with no palette flash, unexpected transition, or visible startup
+delay. See [Appearance](appearance.md).
+
 ## Session startup — IMPLEMENTED AND VM-ACCEPTED
 
 The supported display-manager path is
