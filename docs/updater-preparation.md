@@ -8,7 +8,8 @@ No preparation or VM execution has been accepted yet.
 **EXECUTION BLOCKED:** GitHub public release access remains unavailable. The
 definitive payload must be rebuilt from a later explicitly approved exact commit
 containing secure ServerPlan distribution, independently signed manifests, and
-the completed updater fallback. Commit `76ba358` and the hashes below are
+configured production public trust pins. Phase 2 implements authenticated fallback
+in source/tests but deliberately leaves trust unconfigured. Commit `76ba358` and the hashes below are
 preliminary regression/reproducibility records only: **NOT approved for VM or
 production installation**. Do not execute the administrative procedure yet.
 
@@ -16,6 +17,14 @@ production installation**. Do not execute the administrative procedure yet.
 bootstrap provenance. It does not execute an update, install packages, publish
 a release identity, deploy desktop files, or advance migrations. It reuses
 `BootstrapIntegration.plan(lifecycle="upgrade")`, `apply(...)`, and `validate()`.
+The new payload carries provenance schema 3 with an uninitialized distribution
+marker; the authentic original backup remains schema 2. Preparation still writes
+only its original two components and preserves release identity/migration state.
+The first signed updater invocation creates its separate rollback ledger before
+discovery. After that operation begins (or ledger initialization is interrupted),
+updater-only restoration is refused; use signed exact-target recovery instead.
+If only acquisition was attempted, retry the prepared updater; an active journal
+resumes its exact retained target. VM acceptance can instead restore its snapshot.
 The small in-memory payload adapter supplies bytes from the existing,
 deterministic zipapp packager; it introduces no updater format or trust protocol.
 
@@ -83,6 +92,12 @@ Before any administrator command below:
 - Complete and accept the signed ServerPlan distribution and updater fallback,
   approve the later source commit, and rebuild/verify the definitive payload.
   Obtain separate VM execution authorization. These prerequisites are pending.
+- Require the official Arch `minisign` package before preparation. The tool performs
+  read-only package/executable and packaged-root signature/expiry checks; it never
+  installs a verifier or obtains trust keys from ServerPlan. Complete a normal
+  administrator-owned Arch upgrade first if necessary; then `sudo pacman -S --needed minisign`
+  is the ordinary official-package installation path. Do not run it as part of
+  development tooling tests. No real preparation is authorized by this runbook.
 - Snapshot a genuine v1.0.0 VM, including its system and user disks. Retain a
   separate copy of its original updater, provenance, and release metadata.
 - Verify the immutable v1.0.0 release source/asset through the trusted release

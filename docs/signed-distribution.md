@@ -1,16 +1,18 @@
-# Signed distribution protocol 1 — offline foundation
+# Signed distribution protocol 1
 
-Status: Phase 1 implementation, isolated tests only. No production trust anchor,
-signing key, installed verifier, network fallback, hosted metadata, or installed
-security-state changes. Existing release installation and updater behavior remain
-as documented in [release engineering](release-engineering.md). Completion of
-this foundation does **not** authorize the one-time updater preparation payload
-or publication of v1.0.1.
+Status: Phase 1 foundation and Phase 2 updater integration implemented in source
+and isolated tests, not deployed. Production trust is deliberately unconfigured;
+there are no production keys, hosted signed metadata, or live security-state
+changes. Completing this implementation does **not** authorize preparation or
+publication. See [release engineering](release-engineering.md) for historical
+v1.0.0 behavior and [preparation](updater-preparation.md) for the VM release gate.
 
 `/dist/v1` names **distribution protocol 1**, independently of product versions
 such as `v1.0.1` and the existing product `update_protocol = 1`.
-`release/distribution.py` is an offline library and local publisher CLI. It is
-outside the installed updater and package baseline in this phase.
+`release/distribution.py` is the shared verifier and offline publisher library.
+The updater zipapp includes it, the public `release/trust.json` record, and
+`install/signed_distribution.py`. Official Arch `minisign` is now required in
+the package baseline. This implementation phase installed no packages.
 
 ## Encoding, signatures, and trust
 
@@ -52,6 +54,15 @@ checks the root's self-signature using that pinned key, and validates its clock
 interval. There is no default production key, trust-on-first-use, or live key
 generation. SHA-256 alone establishes integrity, not publisher authentication.
 
+The packaged canonical `release/trust.json` has exactly `schema: 1`,
+`public_key`, `root_sha256`, and `root` (base64 of the initial signed root
+envelope). The checked-in values are all `null` except the schema: an explicit
+unconfigured development placeholder. Release acquisition and real preparation
+reject it. Phase 3 must supply independently approved public pins; no client
+obtains an initial key from a transport. Private signing material is never
+packaged. An initialized updater's initial anchor is immutable across normal
+replacement; use the authenticated rotation chain for later keys.
+
 ## Exact wire schemas
 
 The common header has exactly four fields, all mandatory:
@@ -78,11 +89,12 @@ cannot be represented.
 | `root_version` | counter; initial trust loading accepts only `1` |
 | `previous_root_sha256` | `null` for version 1; predecessor payload digest for later versions |
 | `public_key` | one native public key as specified above |
-| `issued_at`, `expires_at` | UTC timestamp strings; explicit root interval, separate from catalog policy |
+| `issued_at`, `expires_at` | UTC timestamps exactly five calendar years apart, separate from catalog policy |
 | `channel_floors` | exact object `stable`, `candidate`, each a minimum sequence counter |
 
-Root records use the envelope below, proposed path `roots/1.json`. Phase 1 can
-validate the shape of a later root, but cannot adopt it or reset trust/state.
+Root records use the envelope below, path `roots/NUMBER.json`. Initial trust
+loading accepts only root 1. Later roots require the sequential, dual-signed
+rotation validation below; a self-signed replacement cannot reset trust/state.
 
 **Immutable release manifest**, maximum 16 KiB: common header with
 `kind = release`, plus:
@@ -107,7 +119,8 @@ The client checks catalog bindings, the manifest's native signature, exact
 verifier before any extraction/execution. The immutable files are
 `releases/VERSION/manifest.json` and detached `manifest.json.sig`, with assets
 below the same release directory. Manifests do not expire: a fresh signed catalog
-must authorize their use. Phase 1 verifies manifests against its one pinned root.
+must authorize their use. Retained authenticated historical roots may verify
+old immutable manifests only when the current signed catalog binds their bytes.
 
 **Channel catalog payload**, maximum 256 KiB: common header with
 `kind = catalog`, plus:
@@ -137,9 +150,9 @@ candidate catalogs can contain candidates and final promotions.
 | `signatures` | array of 1–2 records, each exactly `key_id` and `minisign` |
 
 `minisign` is the native ASCII signature file as a JSON string, maximum 4 KiB.
-Duplicate signers fail. Initial root and current catalog verification require
-exactly the pinned signer; the two-record envelope capacity reserves future
-dual-signature root rotation, not current multi-key acceptance. Catalogs are
+Duplicate signers fail. The initial root and current catalog require exactly
+their pinned/current signer. A rotated root requires both the previous and new
+key signatures over the same payload. Catalogs are
 single self-contained objects at `channels/stable.json` and
 `channels/candidate.json`; there is no detached channel signature/pointer race.
 Envelope/signature bytes themselves may vary without changing the authenticated
@@ -150,8 +163,8 @@ payload; rollback/equivocation compares the canonical **payload** digest.
 `verify_catalog` requires an explicit prior serialized security state and
 returns immutable authenticated payload bytes plus a proposed successor state.
 It rejects rollback/equivocation before returning a selectable catalog. The
-caller must durably commit the proposed state before using that selection in
-Phase 2; Phase 1 has no installed-state store or default filesystem target.
+updater durably commits the proposed state before using that selection or
+running target code. The library's pure state functions perform no live writes.
 
 `select_release` chooses the highest strictly newer catalog version consistent
 with the installed identity. Stable installations cannot opt into candidates.
@@ -180,17 +193,85 @@ Root-pinned channel floors protect initial fetch; persistent observations protec
 later fetches. Unobserved historical equivocation cannot be detected without an
 independent transparency mechanism, outside this scope.
 
-State transitions are pure: interruption while validating cannot partially
-modify prior state. The future privileged store must reuse the existing update
-lock, root-private ownership/parent checks, bounded no-symlink reads, a temporary
-file on the same filesystem, file fsync, atomic rename, and directory fsync.
-It must reject missing/corrupt state after initialization, never auto-reset
-floors, and commit authenticated observations before package/code mutation.
-At a crash boundary the old or new complete state is recovered; exact-target
-release-update resume must retain its authenticated target. The future store's
-write/crash tests remain Phase 2 work; pure-state tests do not prove disk
-durability. State deletion/rollback by a privileged attacker or disk snapshot
+State transitions are pure. The privileged store publishes one root-private,
+mode-0600 `/var/lib/vanhyprarch/distribution-security-v1.json` under the existing
+update lock, with bounded no-symlink/single-link reads, ownership checks,
+same-filesystem temporary files, file fsync, atomic publication, and directory
+fsync. The canonical outer ledger has exactly `schema: 1`, `roots` (at most 16
+base64 dual-signed rotations), `state` (the schema above), and `authorization`
+(`null` or the proof below), bounded at 12 MiB. Root chain and counters change
+together in this one file. Missing/corrupt initialized state never resets.
+
+Updater provenance schema 3 retains `schema`, `sha256`, `update_protocol` and
+adds `distribution_anchor_sha256` and boolean `distribution_initialized`.
+The existing bootstrap authority converts its proven schema-2 record during
+updater replacement; the release migration level/registry do not change.
+The preparation tool still publishes only its original two components.
+On first signed invocation, the updater verifies the packaged anchor and writes
+an empty ledger durably, then marks initialization in provenance, before any
+network request. If interrupted between those writes, only the exact empty
+seed is recognized; unexplained contents fail closed. Once marked initialized,
+an absent ledger requires explicit administrative recovery. Normal updater
+replacement preserves the marker and rejects initial-anchor changes in preflight.
+
+Before running any target code, the ledger retains `authorization` with exactly
+`catalog`, `manifest`, `signature`, `metadata` (base64 exact signed/verified bytes),
+`authenticated_at` (integer UTC seconds no later than the clock high-water), and
+`updater` (the complete validated original schema-3 provenance record, without a
+publication intent). The latter independently records the original updater hash,
+initial root pin, and initialization marker before target code can replace them.
+This root-private acceptance receipt is checked against immutable bindings and
+the exact journal/retained artifact identity. New plan/apply requests recheck
+current expiry. An existing transaction can resume offline using its recorded
+valid authorization time even after catalog/root expiry; it cannot select another
+target or use this exception for a new update. Missing/tampered authorization
+blocks resume before target code. Uncommitted staging without a journal blocks
+discovery and requires explicit exact-target recovery. Identity-last commit,
+terminal cleanup, and target-user journal binding remain the existing driver's
+authority. State deletion/rollback by a privileged attacker or disk snapshot
 cannot be solved solely by local counters.
+
+### Interrupted updater/provenance publication
+
+Executable and provenance publication are atomic per file, not as a pair. An
+initialized signed updater replacement now writes a durable intent **before**
+replacing the executable. The existing provenance file temporarily retains its
+original five schema-3 fields plus exactly `publication`, with `journal` (the
+complete validated transaction snapshot) and `replacement_sha256`. This bounded
+record is at most 20 KiB. The snapshot must describe the active target user's
+`applying` / `system-integration` stage, with all migrations completed. The
+existing target driver holds the update lock across its authority subprocess;
+the authority requires that held lock and verifies the exact retained source.
+Normal completed provenance still has only its original five fields.
+
+Supported states are intent plus original executable, intent plus replacement
+executable, and completed replacement plus matching final provenance. A mismatch
+without intent is never inferred to be an interrupted update. On restart, before
+discovery or target-driver execution, the bootstrap holds the same update lock,
+requires the exact unchanged journal/source identity/user, verifies retained
+archive/tree and canonical metadata bytes, and reauthenticates the recorded
+signed authorization. It compares the original provenance against the independent
+ledger receipt, reconstructs the replacement zipapp without importing target
+modules, and requires its full hash and public trust record to match the intent
+and preserved anchor. Only then may `BootstrapIntegration.apply(upgrade)` finish
+the pair. Final provenance and executable are revalidated, then strict security
+startup and the existing exact-target resume continue. Repeated interruption is
+safe; missing or substituted evidence fails closed. Recovery changes no ledger
+floors, bindings, clock state, release identity, or user-owned state itself.
+
+The execution boundary remains the trusted OS and root-owned publisher: the
+previous updater authenticates replacement code **before publishing or executing
+it**. Restart checks use independently retained root-private evidence, not the
+new executable's claim about its own hash. This is not a secure-boot mechanism
+and cannot defend against a privileged attacker replacing executable code and
+disabling its checks. No downloaded verifier, unsigned rescue mode, or alternate
+root is introduced. An unexplained historical mismatch still needs separately
+authenticated administrative recovery.
+
+`tests/updater-publication.py` exercises real signed zipapps in temporary roots,
+SIGKILL before/between/after component writes, interrupted recovery, expiry,
+corruption, and concurrent invocation, including the authority's direct-script
+subprocess import context. No installed system or live updater is used.
 
 ## Expiration and clocks — approved 365-day catalog policy
 
@@ -223,13 +304,16 @@ caller-controlled skew is bounded at five minutes and defaults to zero; expiry
 uses the greater of current time and the saved high-water, so skew cannot extend
 an expired catalog. Expiry/clock checks run again at use.
 
-Root validity remains **a separate pending production decision**. The existing
-schema requires an explicit finite root expiry and rejects expired roots; this
-is an existing protocol assumption, not a selected root lifetime. There is no
-default root lifetime or 365-day root ceiling. Decide root lifetime, custody, and
-authenticated expiry recovery before pinning a production root. No production
-root/key exists yet; longer test-root intervals are test fixtures only. Initial
-trust pins and future rotation rules below are unchanged.
+Root validity is **five UTC calendar years**, independently of catalog lifetime.
+Preserve month, day, and time on the fifth anniversary, clamping February 29 to
+February 28 when the target year is not leap. The interval can therefore span
+different numbers of seconds; it is never `5 * 365 days`. The root builder
+defaults to that exact expiry and rejects a different signed interval. New
+acquisition rejects an expired root at the exact expiry second. Rotation must be
+accepted while the current root is still valid. After expiry, new acquisition
+requires separately authenticated administrative recovery; there is no automatic
+trust reset. Existing exact-target transaction recovery is the bounded exception
+described above. No production root/key has been created.
 
 | Catalog lifetime option | Security and operation |
 | --- | --- |
@@ -245,9 +329,10 @@ and expiry; a network attacker can withhold new metadata until expiry but cannot
 create authenticated updates. A bad local clock fails closed; do not silently
 set it using untrusted transport headers.
 
-## Future root rotation rules
+## Root rotation validation
 
-Rotation is a protocol requirement, not an implemented production workflow:
+Phase 2 implements chain validation/acquisition, not production signing or
+publication workflows:
 
 1. Accept exactly current root version + 1, with the exact previous canonical
    root payload SHA-256, project, and distribution protocol.
@@ -260,8 +345,7 @@ Rotation is a protocol requirement, not an implemented production workflow:
 4. New catalogs use the current key/root. Historical immutable manifests require
    a retained authenticated historical-root chain and an exact binding in a
    current-key-authenticated catalog. Historical keys cannot sign new catalogs.
-   Implement and test this policy before rotating or retiring production keys;
-   Phase 1 deliberately rejects adoption of later roots.
+   The integration tests cover current-key catalogs binding old-key manifests.
 5. Root expiry recovery must authenticate continuity, not skip signatures or
    reset state. Compromise of the sole root requires a separately authenticated
    administrative trust repair; self-signed replacement is insufficient.
@@ -279,7 +363,7 @@ commit, not dirty working-tree contents. All following commands are local;
 outputs refuse existing destinations and should be built in a scratch directory:
 
 ```text
-python -m release.distribution root --public-key PUBLIC_KEY --issued-at UTC_TIME --expires-at UTC_TIME --output ROOT_PAYLOAD
+python -m release.distribution root --public-key PUBLIC_KEY --issued-at UTC_TIME --output ROOT_PAYLOAD
 python -m release.distribution manifest --metadata RELEASE_JSON --archive ARCHIVE --root-version 1 --output MANIFEST
 python -m release.distribution sign --input MANIFEST --secret-key PRIVATE_KEY_FILE --public-key PUBLIC_KEY --output MANIFEST_SIGNATURE
 python -m release.distribution catalog --channel candidate --sequence SEQUENCE --root-version 1 --issued-at UTC_TIME --release MANIFEST MANIFEST_SIGNATURE --output CATALOG_PAYLOAD
@@ -287,8 +371,8 @@ python -m release.distribution sign --input CATALOG_PAYLOAD --secret-key PRIVATE
 ```
 
 Catalog publication defaults to 365 days after `--issued-at`; use an explicit
-`--expires-at UTC_TIME` for a shorter interval. Root creation still requires an
-explicit `--expires-at` under its separate policy.
+`--expires-at UTC_TIME` for a shorter interval. Root creation defaults to its
+five-calendar-year expiry; an explicit root expiry must match that policy.
 
 Sign a root payload with `sign --envelope` as well. These are command templates,
 not authorization to generate or publish production metadata. Minisign opens
@@ -308,19 +392,38 @@ MINISIGN=/absolute/verified/minisign PYTHONDONTWRITEBYTECODE=1 python tests/sign
 The executable override is local test configuration, never remotely supplied.
 Missing Minisign fails the suite rather than skipping signature coverage.
 
-## Phase 2 boundaries
+## Fixed transports and Phase 3 publication gate
 
-Still required: transport acquisition/fallback, privileged durable trust/state
-ownership, updater packaging and trust-anchor delivery, authenticated bootstrap
-handoff/resume, official Minisign installation prerequisite, publisher artifact
-freeze/reuse enforcement, static publication operations, and full Proxmox upgrade
-acceptance from genuine v1.0.0. No phase-1 command deploys or updates anything.
+The primary is GitHub, with automatic ServerPlan fallback. Channel/root/manifest
+replica paths are fixed under
+`https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/distribution-v1/vanilla-hyprarch/`;
+GitHub artifacts use the fixed repository's version-derived release asset URLs.
+ServerPlan uses `https://vanhyprarch.it/dist/v1/vanilla-hyprarch/` for all protocol
+files. No metadata branch is created or published by Phase 2. Unsigned indexes,
+remote URLs, and GitHub listing/immutability assertions are not discovery authority.
+Official package downloads remain pacman's responsibility.
 
-Future GitHub and ServerPlan endpoints are untrusted replicas. HTTP 404/network
-failure may permit another transport; authentication, equivocation, rollback,
-identity, or digest failures must never trigger an unsigned/lower-trust bypass.
-There is no GitHub branch or public-GitHub availability requirement in Phase 1.
-Real ServerPlan acceptance must work without publicly accessible GitHub.
+HTTP 401/403/404/408/429/5xx, connection failure, timeout, TLS unavailability, and
+interrupted/truncated transfers permit the other endpoint. Invalid URLs,
+redirects, excessive sizes, signatures, canonical JSON, protocol/identity/hash
+mismatches, expiry, equivocation, and rollback block rather than trying another
+catalog. A missing artifact can be retried only with the same authenticated
+descriptors. Both transports unavailable is an error, never “up to date”.
+Only an authenticated fresh catalog with no eligible target reports that status.
+
+Requests retain HTTPS validation, a 20-second timeout, no inherited proxies,
+bounded downloads, and at most three GitHub-asset redirects to the existing
+CDN allowlist without credentials/cookies. Static ServerPlan/raw-metadata
+redirects are refused. Actual ServerPlan hosting/rename behavior remains a
+Phase 3 acceptance requirement. Tests exercise real transport code with GitHub
+HTTP 404 and complete signed ServerPlan fixtures; public GitHub is not needed.
+
+Still required: separately approved offline production key custody/generation,
+public trust-pin delivery in an approved exact source commit, publisher artifact
+freeze/reuse enforcement, static publication, a rebuilt verified preparation
+payload, and snapshotted Proxmox acceptance from genuine v1.0.0. Production
+preparation checks official Minisign and the packaged root signature before
+changing its two files; it never installs the package or keys itself.
 
 Static publication must upload immutable assets, verify them, publish immutable
 manifest/signature files, verify them, then atomically replace the self-contained

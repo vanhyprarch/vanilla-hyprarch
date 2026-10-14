@@ -48,15 +48,17 @@ preliminary `76ba358` payload lacks that functionality and is not approved for
 VM or production installation. Rebuild from a later approved exact commit, then
 obtain separate VM authorization and snapshotted Proxmox lifecycle acceptance.
 
-The [signed distribution protocol foundation](signed-distribution.md) is now
-implemented for offline testing: strict canonical root/release/catalog objects,
-native Minisign authentication, authenticated release selection, and pure
-rollback-state transitions. Stable/candidate catalog publication defaults and
-the protocol-v1 acceptance ceiling are 365 days (31,536,000 seconds); shorter
-validity is supported and production root lifetime remains undecided.
-Production trust/key creation, durable installed
-state, transport fallback, hosting publication, and Proxmox acceptance remain
-pending. No installed updater behavior or preparation approval changes yet.
+The [signed distribution protocol](signed-distribution.md) now includes Phase 2
+updater integration in source and isolated tests: native Minisign authentication,
+fixed GitHub/ServerPlan fallback, durable rollback state, root rotation validation,
+and signed exact-target recovery. Catalog default/maximum lifetime remains 365
+days (31,536,000 seconds); roots use five UTC calendar years. Minisign is a required
+official baseline package. Interrupted updater/provenance replacement uses a
+root-private write-ahead intent, independent original-provenance receipt, and
+authenticated exact-target recovery; real zipapp/SIGKILL tests cover restart
+between the two publications. This work is undeployed: the public trust record is
+unconfigured, production keys/hosting publication do not exist, and real updater
+preparation and Proxmox lifecycle acceptance remain blocked pending Phase 3.
 
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).

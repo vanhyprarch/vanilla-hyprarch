@@ -8,11 +8,12 @@ published, immutable, and accepted for fresh installation and direct rc1/rc3
 upgrades. `main` targets unpublished `v1.0.1-rc1`; rc1, rc2, and rc3 remain
 historical candidates.
 
-The separate [signed distribution protocol foundation](signed-distribution.md)
-adds offline Minisign-authenticated release manifests and channel catalogs using
-this existing generated release identity. It is not yet wired into installed
-acquisition/update paths; independent publisher authentication, ServerPlan
-fallback, and installed anti-rollback persistence still require that integration.
+The [signed distribution protocol](signed-distribution.md) adds source-level
+Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
+state, and signed recovery using this existing generated release identity.
+It remains undeployed and production trust is deliberately unconfigured. Public
+key custody, static signed publication, definitive preparation, and Proxmox
+acceptance remain release gates.
 
 ## Identity and authored declaration
 
@@ -389,6 +390,12 @@ passed real fresh installation, direct rc1/rc3 updates, and post-reboot smoke
 acceptance.
 
 ## Installed manual updater (release Phase 6)
+
+The acquisition details in this section describe the immutable published
+v1.0.0 updater and its historical acceptance. The current source replaces its
+GitHub-listing discovery with the independently authenticated protocol described
+in [signed distribution](signed-distribution.md). That candidate has not been
+installed or exercised against a real release on the development host.
 
 The system-integration authority installs `/usr/local/bin/vanhyprarch-update`
 as a root-owned mode-0755 regular executable Python archive. It contains the

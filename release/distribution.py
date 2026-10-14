@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import calendar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -29,6 +30,7 @@ SCHEMA = 1
 SECONDS_PER_DAY = 86400
 DEFAULT_CATALOG_LIFETIME = 365 * SECONDS_PER_DAY
 MAX_CATALOG_LIFETIME = 365 * SECONDS_PER_DAY
+ROOT_YEARS = 5
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 MAX_ROOT = 16 * 1024
 MAX_MANIFEST = 16 * 1024
@@ -142,6 +144,15 @@ def _interval(value: dict[str, Any]) -> tuple[int, int]:
     issued, expires = timestamp(value["issued_at"]), timestamp(value["expires_at"])
     require(issued < expires, "invalid validity interval")
     return issued, expires
+
+
+def root_expiration(issued_at: str) -> str:
+    """Five UTC calendar years; Feb 29 maps to Feb 28 in a non-leap year."""
+    issued = EPOCH + timedelta(seconds=timestamp(issued_at))
+    year = issued.year + ROOT_YEARS
+    require(year <= 9999, "root expiration is outside timestamp range")
+    day = min(issued.day, calendar.monthrange(year, issued.month)[1])
+    return issued.replace(year=year, day=day).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass(frozen=True)
@@ -265,6 +276,8 @@ def _root(value: dict[str, Any]) -> None:
         sha(value["previous_root_sha256"])
     public_key_id(value["public_key"])
     _interval(value)
+    require(value["expires_at"] == root_expiration(value["issued_at"]),
+            "root lifetime must be five UTC calendar years")
     fields(value["channel_floors"], CHANNELS)
     for floor in value["channel_floors"].values():
         integer(floor)
@@ -389,6 +402,25 @@ class TrustedRoot:
         clock.validate(value)
         return cls(payload)
 
+    def rotate(self, data: bytes, *, minisign: Minisign, clock: Clock) -> TrustedRoot:
+        payload, signatures = _open_envelope(data)
+        value, old = validate_object(payload), self.value
+        require(value["kind"] == "root" and value["root_version"] == old["root_version"] + 1,
+                "root rotation must advance exactly one version")
+        require(value["previous_root_sha256"] == digest(self.payload), "root predecessor mismatch")
+        old_key, new_key = old["public_key"], value["public_key"]
+        require(old_key != new_key, "root rotation requires a new key")
+        require(set(signatures) == {public_key_id(old_key), public_key_id(new_key)},
+                "root rotation requires old and new signatures")
+        for key in (old_key, new_key):
+            minisign.verify(payload, signatures[public_key_id(key)], key)
+        require(timestamp(value["issued_at"]) >= timestamp(old["issued_at"]), "root issuance rollback")
+        require(all(value["channel_floors"][name] >= old["channel_floors"][name]
+                    for name in CHANNELS), "root sequence floor rollback")
+        clock.validate(old)
+        clock.validate(value)
+        return TrustedRoot(payload)
+
 
 @dataclass(frozen=True)
 class VerifiedCatalog:
@@ -424,7 +456,8 @@ def verify_catalog(data: bytes, root: TrustedRoot, *, channel: str,
 
 def verify_release(manifest: bytes, signature: bytes, release_json: bytes,
                    catalog: VerifiedCatalog, version: str, root: TrustedRoot,
-                   *, minisign: Minisign, clock: Clock) -> dict[str, Any]:
+                   *, minisign: Minisign, clock: Clock,
+                   manifest_root: TrustedRoot | None = None) -> dict[str, Any]:
     trusted, channel = root.value, catalog.value
     require(catalog.root_sha256 == digest(root.payload), "catalog trust-root mismatch")
     clock.validate(trusted)
@@ -437,9 +470,13 @@ def verify_release(manifest: bytes, signature: bytes, release_json: bytes,
     _matches(entry["manifest"], manifest)
     _matches(entry["signature"], signature)
     value = validate_object(manifest)
-    require(value["kind"] == "release" and value["root_version"] == trusted["root_version"],
+    signing_root = (manifest_root or root).value
+    require(value["kind"] == "release" and value["root_version"] == signing_root["root_version"]
+            and signing_root["root_version"] <= trusted["root_version"],
             "wrong manifest or root")
-    minisign.verify(manifest, signature, trusted["public_key"])
+    # Historical roots are supplied only from the authenticated rotation chain;
+    # their manifests require the exact binding in the current signed catalog.
+    minisign.verify(manifest, signature, signing_root["public_key"])
     _matches(value["release_json"], release_json)
     identity = _identity(decode(release_json, contract.MAX_METADATA))
     require(identity == value["release"] and identity["version"] == version,
@@ -552,11 +589,13 @@ def advance_state(state: bytes, catalog: VerifiedCatalog, root: TrustedRoot,
     return result
 
 
-def make_root(public_key: str, *, issued_at: str, expires_at: str,
-              stable_floor: int = 1, candidate_floor: int = 1) -> bytes:
-    result = canonical({**header("root"), "root_version": 1, "previous_root_sha256": None,
+def make_root(public_key: str, *, issued_at: str, expires_at: str | None = None,
+              stable_floor: int = 1, candidate_floor: int = 1,
+              root_version: int = 1, previous_root_sha256: str | None = None) -> bytes:
+    result = canonical({**header("root"), "root_version": root_version,
+                        "previous_root_sha256": previous_root_sha256,
                         "public_key": public_key, "issued_at": issued_at,
-                        "expires_at": expires_at,
+                        "expires_at": root_expiration(issued_at) if expires_at is None else expires_at,
                         "channel_floors": {"stable": stable_floor, "candidate": candidate_floor}})
     validate_object(result)
     return result
@@ -639,8 +678,8 @@ def main() -> int:
     sign.add_argument("--envelope", action="store_true")
     for command in (root, catalog):
         command.add_argument("--issued-at", required=True)
-        command.add_argument("--expires-at", required=command is root,
-                             help="explicit UTC expiry; catalogs default to 365 days after issuance")
+        command.add_argument("--expires-at",
+                             help="UTC expiry; roots use five calendar years, catalogs default to 365 days")
     for command in (manifest, catalog):
         command.add_argument("--root-version", type=int, required=True)
     for command in (root, manifest, catalog, sign):

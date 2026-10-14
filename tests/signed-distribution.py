@@ -30,7 +30,7 @@ SPEC.loader.exec_module(FIXTURE)
 ISSUED = "2026-01-01T00:00:00Z"
 EXPIRES = "2026-02-01T00:00:00Z"
 # A deliberately longer TEST-ONLY root interval is independent of catalog policy.
-ROOT_EXPIRES = "2028-01-01T00:00:00Z"
+ROOT_EXPIRES = "2031-01-01T00:00:00Z"
 CLOCK = D.Clock(D.timestamp("2026-01-02T00:00:00Z"))
 
 
@@ -669,13 +669,12 @@ class SignedDistributionTests(unittest.TestCase):
         with self.assertRaises(D.DistributionError):
             D.make_catalog("candidate", 1, [], root_version=1, issued_at="9999-12-31T00:00:00Z")
 
-    def test_root_lifetime_remains_explicit_and_independent(self):
+    def test_root_lifetime_is_five_calendar_years_and_independent(self):
         root = self.root.value
         self.assertGreater(D.timestamp(root["expires_at"]) - D.timestamp(root["issued_at"]),
                            D.MAX_CATALOG_LIFETIME)
         CLOCK.validate(root)
-        with self.assertRaises(TypeError):
-            D.make_root(self.public, issued_at=ISSUED)
+        self.assertEqual(D.make_root(self.public, issued_at=ISSUED), self.root_payload)
 
     def test_clock_rollback_rejected_after_365_day_catalog_acceptance(self):
         payload = D.make_catalog("candidate", 1, [], root_version=1, issued_at=ISSUED)
@@ -806,12 +805,41 @@ class SignedDistributionTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(invalid.exists())
 
-    def test_local_cli_root_still_requires_explicit_expiration(self):
+    def test_local_cli_root_defaults_to_five_calendar_years(self):
         output = self.work / "root"
         result = self.cli("root", "--public-key", self.public, "--issued-at", ISSUED, "--output", output)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--expires-at", result.stderr)
-        self.assertFalse(output.exists())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(D.validate_object(output.read_bytes())["expires_at"], ROOT_EXPIRES)
+
+    def test_root_calendar_arithmetic_and_leap_day_clamping(self):
+        for issued, expiry in (("2024-02-29T12:34:56Z", "2029-02-28T12:34:56Z"),
+                               ("2023-02-28T12:34:56Z", "2028-02-28T12:34:56Z"),
+                               ("2031-03-15T12:34:56Z", "2036-03-15T12:34:56Z")):
+            self.assertEqual(D.root_expiration(issued), expiry)
+        with self.assertRaises(D.DistributionError):
+            D.root_expiration("9996-01-01T00:00:00Z")
+
+    def test_root_non_policy_interval_rejected(self):
+        for expiry in ("2030-12-31T23:59:59Z", "2031-01-01T00:00:01Z", "2027-01-01T00:00:00Z"):
+            self.reject(self.changed(self.root_payload, expires_at=expiry))
+
+    def test_root_expiry_boundary(self):
+        clock = D.Clock(D.timestamp(ROOT_EXPIRES) - 1)
+        D.TrustedRoot.initial(self.root_envelope, pinned_public_key=self.public,
+                              pinned_root_sha256=D.digest(self.root_payload), minisign=self.minisign, clock=clock)
+        with self.assertRaises(D.DistributionError):
+            D.TrustedRoot.initial(self.root_envelope, pinned_public_key=self.public,
+                                  pinned_root_sha256=D.digest(self.root_payload), minisign=self.minisign,
+                                  clock=D.Clock(clock.now + 1))
+
+    def test_root_rotation_requires_both_keys_and_preserves_floors(self):
+        payload = D.make_root(self.keys[1][1], issued_at=ISSUED, root_version=2,
+                               previous_root_sha256=D.digest(self.root_payload))
+        signatures = [(public, self.minisign.sign(payload, secret, public)) for secret, public in self.keys]
+        rotated = self.root.rotate(D.envelope(payload, signatures), minisign=self.minisign, clock=CLOCK)
+        self.assertEqual(rotated.value["root_version"], 2)
+        with self.assertRaises(D.DistributionError):
+            self.root.rotate(D.envelope(payload, signatures[:1]), minisign=self.minisign, clock=CLOCK)
 
     def test_local_cli_rejects_incorrect_signing_layout_and_symlinks(self):
         source = self.work / "catalog"

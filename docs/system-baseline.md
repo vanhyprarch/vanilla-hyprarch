@@ -29,6 +29,12 @@ All official package names in the current manifest were verified as available
 from the local Arch repository databases. The manifest is deliberately not an
 installed-package snapshot.
 
+`minisign` is a required, default-installed official package for independently
+authenticated Vanilla updates. The signed updater invokes upstream Minisign;
+it does not implement Ed25519 itself or install a verifier from an update mirror.
+Existing v1.0.0 installations must install the official package through the normal
+Arch package path before their separately authorized one-time updater preparation.
+
 `wayland` is independently fundamental to the baseline Wayland desktop rather
 than being retained for the optional player. `curl` is explicit because the
 pinned component manager invokes its command-line client; neither dependency

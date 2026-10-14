@@ -714,6 +714,19 @@ machine_specific = false
 notes = "Root-owned executable archive with provenance-gated replacement; includes the fixed acquisition envelope and offline verifier."
 
 [[artifact]]
+id = "distribution-security-state"
+target = "/var/lib/vanhyprarch/distribution-security-v1.json"
+class = "BACKEND_OWNED"
+component = "distribution"
+kind = "file"
+mode = "0600"
+authority = "vanhyprarch-signed-distribution"
+status = "implemented"
+user_editable = false
+machine_specific = true
+notes = "Root-private signed root chain, rollback floors, immutable release bindings, and exact-target authorization; atomically published under the existing update lock. Missing initialized state is never reset."
+
+[[artifact]]
 id = "release-update-bootstrap-state"
 target = "/var/lib/vanhyprarch/update-bootstrap-v1.json"
 class = "BACKEND_OWNED"
@@ -724,7 +737,7 @@ authority = "vanhyprarch-system-integration"
 status = "implemented"
 user_editable = false
 machine_specific = true
-notes = "Private root-owned SHA-256 provenance for atomic updater command replacement."
+notes = "Private root-owned SHA-256 provenance and distribution-initialization marker; schema 3 preserves security state and a temporary exact-transaction publication intent through interrupted updater replacement."
 
 [[artifact]]
 id = "create-once-lifecycle-state"

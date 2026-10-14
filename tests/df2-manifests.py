@@ -76,6 +76,7 @@ REQUIRED_DEFAULT = {
     "libxkbcommon",
     "sddm",
     "mesa",
+    "minisign",
     "mpv",
     "networkmanager",
     "noto-fonts",
@@ -265,6 +266,16 @@ class PackageManifestTests(unittest.TestCase):
         self.assertIs(item["direct"], True)
         self.assertEqual(item["owner"], "session-autostart")
         self.assertNotIn("component", item)
+
+    def test_minisign_is_required_official_release_authentication(self) -> None:
+        item = self.by_name["minisign"]
+        self.assertEqual(item["source"], "official")
+        self.assertEqual(item["role"], "required")
+        self.assertTrue(item["default_install"])
+        self.assertTrue(item["direct"])
+        self.assertEqual(item["owner"], "release-authentication")
+        self.assertNotIn("component", item)
+
 
     def test_keyring_is_required_official_secret_service(self) -> None:
         item = self.by_name["gnome-keyring"]
@@ -492,6 +503,15 @@ class OwnershipManifestTests(unittest.TestCase):
         self.assertEqual(provenance["authority"], "vanhyprarch-managed-deploy")
         self.assertEqual(provenance["mode"], "0600")
         self.assertNotIn("source", provenance)
+
+    def test_distribution_security_ledger_is_privileged_backend_state(self) -> None:
+        item = self.by_id["distribution-security-state"]
+        self.assertEqual(item["class"], "BACKEND_OWNED")
+        self.assertEqual(item["target"], "/var/lib/vanhyprarch/distribution-security-v1.json")
+        self.assertEqual(item["authority"], "vanhyprarch-signed-distribution")
+        self.assertEqual(item["mode"], "0600")
+        self.assertIs(item["user_editable"], False)
+        self.assertNotIn("source", item)
 
     def test_installed_release_identity_is_privileged_backend_state(self) -> None:
         identity = self.by_id["installed-release-identity"]

@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 
 sys.dont_write_bytecode = True
 PROJECT = Path(__file__).resolve().parents[1]
@@ -47,12 +48,16 @@ if __name__ == "__main__" and os.getuid() == 0:
         raise SystemExit(1)
 
 sys.path.insert(0, str(PROJECT))
-from install.update_bootstrap_integration import BootstrapIntegration, FILES, TARGET, STATE
+from install.update_bootstrap_integration import (BootstrapIntegration, FILES, TARGET, STATE,
+                                                 provenance_bytes, payload_trust)
 from install.release_identity import InstalledReleaseIdentity
 from install.release_update import TargetUser, STAGE_RELATIVE
 from install.update_journal import UpdateJournal
 from install.secret_service_preflight import capture_context, context_environment
 from release import build as contract
+from release import distribution as distribution
+from install.signed_distribution import SECURITY
+from install.signed_distribution import decoded
 
 ORIGINAL_COMMIT = "8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb"
 ORIGINAL_UPDATER = "13435389ce2e8d2e89d081ddab96b6f8287ccb58213d9a2c23b3b8fc6b9fb54d"
@@ -87,7 +92,7 @@ def pairs(items):
 
 
 def provenance(payload):
-    return encoded({"schema": 2, "sha256": digest(payload), "update_protocol": 1})
+    return provenance_bytes(payload)
 
 
 def protected_bundle(metadata, artifact):
@@ -253,9 +258,35 @@ class Preparation:
         require(len(data) <= limit, "preparation file exceeds bound")
         return data
 
+    def prerequisites(self):
+        """Read-only official verifier and pinned-root checks before real preparation."""
+        trust = payload_trust(self.payload)
+        require(trust is not None and trust["root_sha256"] is not None,
+                "preparation payload lacks a configured production trust anchor")
+        executable = Path("/usr/bin/minisign")
+        require(executable.is_file() and not executable.is_symlink(),
+                "official Arch minisign must be installed before updater preparation")
+        self.api._dir(executable.parent)
+        info = executable.stat()
+        require(info.st_uid == 0 and not info.st_mode & 0o022 and info.st_mode & 0o111,
+                "Minisign executable ownership or mode is unsafe")
+        subprocess.run(["/usr/bin/pacman", "-Q", "minisign"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        distribution.TrustedRoot.initial(decoded(trust["root"], distribution.MAX_ENVELOPE),
+            pinned_public_key=trust["public_key"], pinned_root_sha256=trust["root_sha256"],
+            minisign=distribution.Minisign(), clock=distribution.Clock(int(time.time())))
+
     def quiet(self):
         self.api._dir(self.root / "run")
         require(self.journal.inspect() is None, "release journal exists: use exact-target release recovery")
+        record = self.api._record()
+        require(not record or not record.get("distribution_initialized"),
+                "signed updater has begun operation: updater-only preparation/rollback is unsafe")
+        security_path = self.root / SECURITY
+        require(not os.path.lexists(security_path),
+                "distribution security state exists: use signed updater recovery")
+        if self.root == Path("/"):
+            self.prerequisites()
         for relative in GUARDS:
             path = self.root / relative
             require(self.api._parents(path) or not os.path.lexists(path), "unsafe transaction parent")

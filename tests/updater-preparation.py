@@ -42,12 +42,24 @@ class Interrupted(Exception):
 class PreparationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        global APPROVED
         cls.workspace = tempfile.TemporaryDirectory(prefix="vanhyprarch-preparation-test-")
         cls.base = Path(cls.workspace.name)
         cls.source = cls.base / "source"
         subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(PROJECT),
                         str(cls.source)], check=True)
         git(cls.source, "checkout", "--quiet", "--detach", APPROVED)
+        # Synthetic isolated candidate, never an approved real preparation
+        # payload. The real builder still requires a clean authenticated commit.
+        for name in prep.FILES:
+            destination = cls.source / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(PROJECT / name, destination)
+        git(cls.source, "config", "user.name", "Fixture")
+        git(cls.source, "config", "user.email", "fixture@example.invalid")
+        git(cls.source, "add", "--", *prep.FILES)
+        git(cls.source, "commit", "-qm", "isolated signed updater fixture")
+        APPROVED = git(cls.source, "rev-parse", "HEAD")
         git(cls.source, "remote", "set-url", "origin", "https://github.com/vanhyprarch/vanilla-hyprarch.git")
         cls.output = cls.base / "bundle"
         cls.output.mkdir()
@@ -141,10 +153,40 @@ class PreparationTests(unittest.TestCase):
         authority = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(authority)
         self.assertEqual(self.operation.payload, authority.BootstrapIntegration(self.source).build())
-        self.assertEqual(prep.digest(self.operation.payload),
-                         "4adcff509dcd55ab97373b595252c96bc13e08be1326807610624fdac91e5369")
         self.assertEqual(self.report["updater_sha256"], prep.digest(self.operation.payload))
         self.assertEqual(self.report["provenance_sha256"], prep.digest(prep.provenance(self.operation.payload)))
+
+    def test_historical_preliminary_packager_golden_is_preserved(self):
+        commit = "76ba35807ae01197011017b119206316dff3796b"
+        source = self.root / "historical-packager"
+        module_path = source / "install/update_bootstrap_integration.py"
+        module_path.parent.mkdir(parents=True)
+        module_path.write_bytes(subprocess.check_output([
+            "git", "-C", str(self.source), "show", f"{commit}:install/update_bootstrap_integration.py"]))
+        spec = importlib.util.spec_from_file_location("historical_packager", module_path)
+        historical = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(historical)
+        for name in historical.FILES:
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(subprocess.check_output(["git", "-C", str(self.source), "show", f"{commit}:{name}"]))
+        self.assertEqual(prep.digest(historical.BootstrapIntegration(source).build()),
+                         "4adcff509dcd55ab97373b595252c96bc13e08be1326807610624fdac91e5369")
+
+    def test_security_initialization_blocks_updater_only_rollback(self):
+        self.operation.apply(authorized=True)
+        state = json.loads((self.root / prep.STATE).read_bytes())
+        state.update(distribution_initialized=True, distribution_anchor_sha256="0" * 64)
+        (self.root / prep.STATE).write_bytes(prep.encoded(state))
+        with self.assertRaisesRegex(ValueError, "begun operation"):
+            self.operation.apply(authorized=True, restore=True)
+
+    def test_partial_security_initialization_requires_signed_recovery(self):
+        self.operation.apply(authorized=True)
+        (self.root / prep.SECURITY).write_bytes(b"opaque interrupted security fixture")
+        (self.root / prep.SECURITY).chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "security state exists"):
+            self.operation.apply(authorized=True, restore=True)
 
     def test_wrong_source_commit_rejected(self):
         with self.assertRaisesRegex(ValueError, "approved"):

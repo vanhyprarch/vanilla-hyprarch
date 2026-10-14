@@ -381,6 +381,15 @@ owner = "graphics"
 reason = "Provides hardware-neutral graphics userspace without choosing a vendor Vulkan ICD."
 
 [[package]]
+name = "minisign"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "release-authentication"
+reason = "Verifies independently signed release manifests and channel catalogs using upstream Ed25519 tooling."
+
+[[package]]
 name = "mpv"
 source = "official"
 role = "required"
