@@ -227,6 +227,14 @@ archive engines; Arch base supplies tar, gzip, bzip2, and xz. `p7zip` is
 forbidden, while RAR, `thunar-volman`, `gvfs-mtp`, and video thumbnails remain
 optional/later.
 
+`gvfs-smb` is a required default official Arch package alongside `gvfs`. It
+provides the standard GVfs SMB/CIFS backend so Thunar can open
+`smb://server/share` through its location bar. Pacman resolves `smbclient` and
+other transitive dependencies; Vanilla adds no mounts, credentials, server
+configuration, or services. See the [Arch package](https://archlinux.org/packages/extra/x86_64/gvfs-smb/).
+Direct URI access is the baseline; automatic network-server discovery is not
+guaranteed by this package alone.
+
 ## Audio
 
 The audio baseline is PipeWire with WirePlumber:

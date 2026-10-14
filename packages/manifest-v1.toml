@@ -246,6 +246,15 @@ owner = "file-management"
 reason = "Provides Thunar trash and normal user-session volume mounting."
 
 [[package]]
+name = "gvfs-smb"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "file-management"
+reason = "Provides standard SMB URI browsing in Thunar through the GVfs SMB/CIFS backend."
+
+[[package]]
 name = "gtk3"
 source = "official"
 role = "required"

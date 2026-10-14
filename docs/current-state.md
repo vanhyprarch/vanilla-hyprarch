@@ -629,6 +629,12 @@ Application, picker, tray, and content icons remain theme-resolved; Papirus is
 still the shell's icon-theme baseline for those external icons.
 
 Firefox, Foot, and Thunar remain the selected browser, terminal, and file manager.
+The baseline now requires official Arch `gvfs-smb` alongside `gvfs` for standard
+Thunar `smb://server/share` access. The existing manifest-driven system stage
+selects the backend without custom mounts, credentials, or user configuration.
+The user confirmed official-package installation and real-share authentication
+and directory browsing on the development desktop without custom mounts,
+scripts, or NAS-specific configuration; see [System baseline](system-baseline.md).
 The repository baseline now also requires official Arch `gnome-text-editor` and
 `bazaar`. On a missing launcher state, the shell waits for the exact Firefox,
 Foot, Thunar, and Bazaar application IDs before saving that four-entry order.
