@@ -76,22 +76,33 @@ class BootstrapIntegration:
         return True
 
     def build(self) -> bytes:
+        contents = {}
+        for name in FILES:
+            path = self.source / name
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 * 1024:
+                raise BootstrapIntegrationError(f"unsafe updater source: {name}")
+            for parent in path.relative_to(self.source).parents:
+                if parent == Path("."):
+                    break
+                if (self.source / parent).is_symlink():
+                    raise BootstrapIntegrationError(f"symlinked updater source: {name}")
+            contents[name] = path.read_bytes()
+        return self.package_files(contents)
+
+    @staticmethod
+    def package_files(sources: dict[str, bytes]) -> bytes:
+        """Same deterministic zipapp, also usable from a verified release archive."""
+        if (set(sources) != set(FILES)
+                or any(type(data) is not bytes or len(data) > 1024 * 1024
+                       for data in sources.values())):
+            raise BootstrapIntegrationError("invalid updater source set")
         output = io.BytesIO()
         output.write(SHEBANG)
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
             contents = {"__main__.py": b"from install.update_bootstrap import main\nraise SystemExit(main())\n",
                         "install/__init__.py": b"", "release/__init__.py": b""}
-            for name in FILES:
-                path = self.source / name
-                info = path.lstat()
-                if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 * 1024:
-                    raise BootstrapIntegrationError(f"unsafe updater source: {name}")
-                for parent in path.relative_to(self.source).parents:
-                    if parent == Path("."):
-                        break
-                    if (self.source / parent).is_symlink():
-                        raise BootstrapIntegrationError(f"symlinked updater source: {name}")
-                contents[name] = path.read_bytes()
+            contents.update(sources)
             # Phase 4 modules have direct-script imports; include those names as
             # top-level aliases without changing their installed release APIs.
             contents["release_identity.py"] = contents["install/release_identity.py"]

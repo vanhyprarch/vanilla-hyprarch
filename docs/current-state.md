@@ -39,6 +39,15 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
+The v1.0.1 legacy-updater transition now has a standalone, one-time
+[administrative preparation tool and VM runbook](updater-preparation.md).
+It prepares only the updater/provenance pair while preserving genuine v1.0.0
+identity and migration state. Execution is blocked pending secure ServerPlan
+distribution with independently signed manifests and updater fallback. The
+preliminary `76ba358` payload lacks that functionality and is not approved for
+VM or production installation. Rebuild from a later approved exact commit, then
+obtain separate VM authorization and snapshotted Proxmox lifecycle acceptance.
+
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).
 

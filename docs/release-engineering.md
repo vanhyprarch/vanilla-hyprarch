@@ -442,3 +442,14 @@ installed release identity. Real rc1-to-rc3 public-updater acceptance and
 published `v1.0.0` fresh-install and direct rc1/rc3 upgrade acceptance passed,
 including migration `0001` where required and post-reboot smoke testing.
 Background update checks remain future work.
+
+### One-time administrative updater preparation
+
+The standalone [preparation tool and runbook](updater-preparation.md) reuse the
+bootstrap authority to replace only the updater and matching provenance, with
+verified private backups, explicit authorization, and guarded recovery. Installed
+v1.0.0 identity and migration state remain unchanged. Execution is blocked until
+signed ServerPlan distribution and updater fallback are complete and a definitive
+payload is rebuilt from a later approved exact commit. The preliminary `76ba358`
+payload is not approved for VM or production use. Snapshotted Proxmox acceptance
+must precede any production preparation; no preparation has been executed.
