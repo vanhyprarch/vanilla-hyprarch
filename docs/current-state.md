@@ -635,6 +635,12 @@ selects the backend without custom mounts, credentials, or user configuration.
 The user confirmed official-package installation and real-share authentication
 and directory browsing on the development desktop without custom mounts,
 scripts, or NAS-specific configuration; see [System baseline](system-baseline.md).
+The baseline now also requires official Arch `gvfs-mtp` for standard Android USB
+file transfer in Thunar, with package-owned D-Bus activation of the MTP monitor.
+No custom mounting or phone-specific rules are added. The user confirmed
+official-package installation and successful Android USB/MTP access in Thunar
+after rebooting the development desktop; the phone was not visible in the
+initial post-install session. See [System baseline](system-baseline.md).
 The repository baseline now also requires official Arch `gnome-text-editor` and
 `bazaar`. On a missing launcher state, the shell waits for the exact Firefox,
 Foot, Thunar, and Bazaar application IDs before saving that four-entry order.

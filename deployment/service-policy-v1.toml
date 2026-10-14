@@ -102,6 +102,15 @@ default_install = true
 startup_owner = "dbus"
 
 [[service]]
+name = "gvfs-mtp-volume-monitor.service"
+scope = "user"
+owner = "package"
+policy = "dbus-activation"
+default_install = true
+startup_owner = "dbus"
+notes = "The packaged GVfs MTP volume monitor is activated on demand; never explicitly enable it."
+
+[[service]]
 name = "dunst.service"
 scope = "user"
 owner = "package"

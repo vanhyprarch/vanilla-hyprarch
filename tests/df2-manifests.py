@@ -61,6 +61,7 @@ REQUIRED_DEFAULT = {
     "gnome-text-editor",
     "grim",
     "gvfs",
+    "gvfs-mtp",
     "gvfs-smb",
     "gtk3",
     "hypridle",
@@ -263,6 +264,17 @@ class PackageManifestTests(unittest.TestCase):
         self.assertEqual(item["owner"], "file-management")
         self.assertNotIn("component", item)
 
+    def test_mtp_backend_is_required_official_file_management(self) -> None:
+        item = self.by_name["gvfs-mtp"]
+        self.assertEqual(item["source"], "official")
+        self.assertEqual(item["role"], "required")
+        self.assertIs(item["default_install"], True)
+        self.assertIs(item["direct"], True)
+        self.assertEqual(item["owner"], "file-management")
+        self.assertNotIn("component", item)
+        for name in ("android-tools", "android-udev", "gvfs-gphoto2", "libmtp"):
+            self.assertNotIn(name, self.by_name)
+
     def test_archive_stack_and_exclusions_are_frozen(self) -> None:
         expected = {
             "thunar",
@@ -278,7 +290,6 @@ class PackageManifestTests(unittest.TestCase):
         self.assertTrue(expected <= self.names(default_install=True))
         self.assertTrue(FORBIDDEN_DIRECT_PACKAGES.isdisjoint(self.by_name))
         self.assertNotIn("thunar-volman", self.by_name)
-        self.assertNotIn("gvfs-mtp", self.by_name)
         self.assertNotIn("ffmpegthumbnailer", self.by_name)
         self.assertNotIn("unrar", self.by_name)
 
@@ -623,6 +634,7 @@ class ServicePolicyTests(unittest.TestCase):
             "xdg-desktop-portal.service",
             "xdg-desktop-portal-hyprland.service",
             "xdg-desktop-portal-gtk.service",
+            "gvfs-mtp-volume-monitor.service",
             "dunst.service",
         ):
             self.assertEqual(self.by_name[name]["policy"], "dbus-activation")

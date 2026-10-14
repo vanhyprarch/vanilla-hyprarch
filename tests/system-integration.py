@@ -563,6 +563,34 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertFalse(engine.validate().blockers)
         self.assertFalse(engine.plan().changes)
 
+    def test_mtp_backend_plan_install_validate_and_preserve(self) -> None:
+        engine = self.fixture.adopt_everything()
+        state = self.fixture.state()
+        state["installed"].remove("gvfs-mtp")
+        save_json(self.fixture.runner_state, state)
+
+        plan = engine.plan()
+        self.assertFalse(plan.blockers)
+        self.assertEqual(
+            {item.subject for item in plan.items if item.action == "package-install"},
+            {"gvfs-mtp"},
+        )
+        self.assertIn(("package-preserve", "gvfs"),
+                      {(item.action, item.subject) for item in plan.items})
+        with self.assertRaisesRegex(IntegrationError, "gvfs-mtp"):
+            engine.validate()
+
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        commands = [entry["argv"] for entry in self.fixture.state()["log"][before:]]
+        transactions = [argv for argv in commands
+                        if argv[:5] == ["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--"]]
+        self.assertEqual(transactions,
+                         [["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--", "gvfs-mtp"]])
+        self.assertFalse(any("gvfs-mtp-volume-monitor.service" in argv for argv in commands))
+        self.assertFalse(engine.validate().blockers)
+        self.assertFalse(engine.plan().changes)
+
     def test_plan_is_zero_write_to_system_root(self) -> None:
         def snapshot() -> list[tuple[str, int, int, str]]:
             result = []

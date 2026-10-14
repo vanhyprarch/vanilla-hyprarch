@@ -224,7 +224,7 @@ Thunar integration uses `gvfs` for trash and normal session mounting,
 `tumbler` for image thumbnails, and `thunar-archive-plugin` with `xarchiver`
 for archive actions. `7zip`, `zip`, `unzip`, and `zstd` complete the explicit
 archive engines; Arch base supplies tar, gzip, bzip2, and xz. `p7zip` is
-forbidden, while RAR, `thunar-volman`, `gvfs-mtp`, and video thumbnails remain
+forbidden, while RAR, `thunar-volman`, and video thumbnails remain
 optional/later.
 
 `gvfs-smb` is a required default official Arch package alongside `gvfs`. It
@@ -234,6 +234,18 @@ other transitive dependencies; Vanilla adds no mounts, credentials, server
 configuration, or services. See the [Arch package](https://archlinux.org/packages/extra/x86_64/gvfs-smb/).
 Direct URI access is the baseline; automatic network-server discovery is not
 guaranteed by this package alone.
+
+`gvfs-mtp` is a required default official Arch package for Android USB file
+transfer in Thunar. Pacman supplies `libmtp` transitively, including its standard
+udev rules. The packaged `gvfs-mtp-volume-monitor.service` uses D-Bus activation;
+Vanilla does not enable it separately. No USB debugging, ADB, `android-tools`,
+`android-udev`, `gvfs-gphoto2`, custom mounts, or phone-specific rules are required
+by this integration. See the [Arch package](https://archlinux.org/packages/extra/x86_64/gvfs-mtp/).
+For physical acceptance, connect an unlocked phone with a data-capable USB cable,
+select File Transfer/MTP on the phone, and use its Thunar sidebar entry to browse
+and copy a small test file in both directions. Eject/unmount before unplugging.
+The user confirmed successful Android USB/MTP access on the development desktop
+after reboot; the phone had not appeared in the initial post-install session.
 
 ## Audio
 

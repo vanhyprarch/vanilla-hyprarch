@@ -246,6 +246,15 @@ owner = "file-management"
 reason = "Provides Thunar trash and normal user-session volume mounting."
 
 [[package]]
+name = "gvfs-mtp"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "file-management"
+reason = "Provides standard Android USB file transfer in Thunar through the GVfs MTP backend."
+
+[[package]]
 name = "gvfs-smb"
 source = "official"
 role = "required"
