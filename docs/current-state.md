@@ -209,6 +209,18 @@ Hyprland starts these processes on `hyprland.start`:
 5. `qs -n -c vanhyprarch`
 6. `vanhyprarch-voxtype.service`, only when the exact optional-component
    marker is installed
+7. one ordered XDG Autostart command: validate the required session environment,
+   publish `DISPLAY`, `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`,
+   `XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`, and `PATH` to D-Bus activation and
+   the systemd user manager, then exec required official `dex --autostart`
+   with `/usr/bin/xdg-terminal-exec` for terminal entries. Missing context or
+   publication failure skips dex and logs under `vanhyprarch-autostart`.
+
+The dex path exists only in `hyprland.start`; configuration reload does not
+process autostart entries again. Existing startup children remain independent.
+No systemd autostart target or Quickshell startup path is added. Package
+installation, managed deployment, and physical login/reload/login acceptance
+passed; the results are recorded in the [system baseline](system-baseline.md).
 
 The official `hyprpolkitagent` package provides graphical PolicyKit
 authentication for GUI applications that require privileged authorization.

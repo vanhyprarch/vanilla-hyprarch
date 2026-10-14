@@ -100,6 +100,42 @@ Quickshell upgrade or any material `IpcHandler` lifecycle change. The backend's
 notification remains bounded and nonfatal, and startup plus the 30-second
 authoritative refresh remain recovery paths if IPC is unavailable.
 
+## Dex XDG Autostart boundary
+
+**Affected components:** Hyprland 0.56.2 and official Arch dex 0.10.1-1.
+
+Hyprland's installed-version executor publishes graphical environment through
+an asynchronous spawn; independent `hl.exec_cmd()` calls do not wait for that
+publication. The managed dex command therefore publishes its explicit six
+variables through `dbus-update-activation-environment --systemd` and waits for
+success before execing dex. Missing required context or failure logs and skips
+autostart. The existing Lua start event supplies the once-per-session boundary;
+the configuration-reload callback remains separate. This changes no other
+startup child's lifecycle. Retest the publication ordering after Hyprland
+updates; remove the explicit publication only if an upstream completion
+guarantee covers both activation environments before the Lua start callback.
+
+The inspected dex package supports directory precedence and the standard entry
+filters, but treats `XDG_CURRENT_DESKTOP` as a single string rather than splitting
+colon-separated identities. Vanilla's SDDM session currently supplies the single
+`Hyprland` value. Do not spoof GNOME or rewrite a user's desktop identity to
+make an entry eligible. Missing name-based `TryExec` currently skips the entry
+with a dex error rather than a quiet result. Desktop-specific autostart phases
+are not dependency ordering. `tests/xdg-autostart.py` exercises harmless entries,
+terminal arguments, startup/reload separation, and publication failure.
+Retest these limitations after dex updates or a session-desktop identity change;
+retain upstream parsing instead of adding a local replacement.
+
+On the audited development host, dex's fresh package preview also adds
+`man-db`, `less`, and `libpipeline`. `man-db` declares conflicts/replacement for
+`man`, which no installed package currently provides. Fresh provisioning uses
+normal pacman resolution. The existing release-upgrade stage conservatively
+rejects any new resolved package with conflict/replacement metadata; it can
+therefore block this addition on an older installation lacking `man-db`.
+This dex change does not relax that gate. Review the actual target-release
+upgrade plan before release acceptance; an already-installed compatible
+`man-db` is preserved and removes this particular package-preview blocker.
+
 ## AppPicker sorter teardown on Quickshell reload
 
 **Affected components:** Quickshell 0.3.1 and Qt 6.11.2

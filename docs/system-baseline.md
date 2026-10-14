@@ -247,6 +247,41 @@ and copy a small test file in both directions. Eject/unmount before unplugging.
 The user confirmed successful Android USB/MTP access on the development desktop
 after reboot; the phone had not appeared in the initial post-install session.
 
+## XDG Autostart
+
+Required official `dex` processes standard application autostart entries once
+per new Hyprland session. The managed Lua start handler uses one ordered shell
+command to check and publish the six named graphical/session variables
+`DISPLAY`, `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`,
+`XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`, and `PATH` through
+`dbus-update-activation-environment --systemd`, then exec dex. It never imports
+the whole environment. Failed publication or missing required context logs a
+non-sensitive error under `vanhyprarch-autostart` and prevents dex execution.
+The command's post-publication boundary is the place for a later upstream
+session handoff; no keyring integration is implemented here.
+
+Dex reads the user and system XDG autostart directories, honors same-filename
+precedence and `Hidden`, `OnlyShowIn`, `NotShowIn`, and `TryExec`, and delegates
+`Terminal=true` entries through the existing `xdg-terminal-exec` resolver.
+`XDG_CURRENT_DESKTOP` remains the inherited desktop identity. Configuration
+reload never runs dex; no systemd autostart target or second startup owner is
+introduced. Autostart entries remain user/package-owned and are never seeded,
+edited, or parsed by Vanilla. See [compatibility](compatibility.md#dex-xdg-autostart-boundary).
+
+`python tests/xdg-autostart.py` tests the real Lua start/reload hooks with inert
+commands and upstream dex with harmless isolated entries. The upstream-entry
+tests require installed dex; they explicitly skip when it is absent.
+An explicit `--dex PATH` can instead test an official package executable in a
+disposable directory without installing it or processing live autostart files.
+Automated regression tests passed with official dex 0.10.1-1, now installed
+on the development host. Managed core deployment passed validation of all
+23 artifacts; existing session processes and protected user/create-once state
+were preserved. The user confirmed physical acceptance: the disposable probe
+recorded one invocation after the first graphical login, still one after a
+Hyprland configuration reload, and two cumulatively after the second login.
+Session digests differed and all environment-validation booleans were true.
+The user was instructed to remove the temporary acceptance desktop entry.
+
 ## Audio
 
 The audio baseline is PipeWire with WirePlumber:

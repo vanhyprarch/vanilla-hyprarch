@@ -591,6 +591,26 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertFalse(engine.validate().blockers)
         self.assertFalse(engine.plan().changes)
 
+    def test_dex_plan_install_validate_and_preserve(self) -> None:
+        engine = self.fixture.adopt_everything()
+        state = self.fixture.state()
+        state["installed"].remove("dex")
+        save_json(self.fixture.runner_state, state)
+        self.assertEqual(
+            {item.subject for item in engine.plan().items if item.action == "package-install"},
+            {"dex"},
+        )
+        with self.assertRaisesRegex(IntegrationError, "dex"):
+            engine.validate()
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        transactions = [entry["argv"] for entry in self.fixture.state()["log"][before:]
+                        if entry["argv"][:5] == ["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--"]]
+        self.assertEqual(transactions,
+                         [["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--", "dex"]])
+        self.assertFalse(engine.validate().blockers)
+        self.assertFalse(engine.plan().changes)
+
     def test_plan_is_zero_write_to_system_root(self) -> None:
         def snapshot() -> list[tuple[str, int, int, str]]:
             result = []

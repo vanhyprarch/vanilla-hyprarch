@@ -155,6 +155,15 @@ owner = "monitor"
 reason = "Provides conditional DDC/CI brightness control; unsupported hardware remains a no-op."
 
 [[package]]
+name = "dex"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "session-autostart"
+reason = "Processes standard XDG Autostart entries once per new Hyprland session."
+
+[[package]]
 name = "dunst"
 source = "official"
 role = "required"

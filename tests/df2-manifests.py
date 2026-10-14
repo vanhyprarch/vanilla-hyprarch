@@ -53,6 +53,7 @@ REQUIRED_DEFAULT = {
     "bubblewrap",
     "curl",
     "ddcutil",
+    "dex",
     "dunst",
     "file",
     "firefox",
@@ -254,6 +255,15 @@ class PackageManifestTests(unittest.TestCase):
         self.assertTrue(component["external_payload"])
         self.assertFalse(component["installed_compiler_required"])
         self.assertNotIn("zig", self.by_name)
+
+    def test_dex_is_required_official_session_autostart(self) -> None:
+        item = self.by_name["dex"]
+        self.assertEqual(item["source"], "official")
+        self.assertEqual(item["role"], "required")
+        self.assertIs(item["default_install"], True)
+        self.assertIs(item["direct"], True)
+        self.assertEqual(item["owner"], "session-autostart")
+        self.assertNotIn("component", item)
 
     def test_smb_backend_is_required_official_file_management(self) -> None:
         item = self.by_name["gvfs-smb"]

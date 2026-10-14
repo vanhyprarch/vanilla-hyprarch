@@ -158,6 +158,10 @@ The shared bootstrap and its delegated stages:
   enabling `bluetooth.service`, preserving exact rollback material if an
   existing administrator configuration would be replaced;
 - preserve the documented startup owner for each session process;
+- install required official `dex`; the managed Hyprland start hook publishes
+  its named graphical/session environment before processing XDG Autostart once.
+  Preserve all user/package autostart entries and do not enable a competing
+  systemd autostart target;
 - deploy the reviewed official wallpaper payload under XDG data, then invoke
   the Appearance one-shot asset bootstrap; only a user with no durable
   initialization evidence receives the current starter files and newly

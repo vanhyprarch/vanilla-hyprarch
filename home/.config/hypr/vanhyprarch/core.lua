@@ -58,6 +58,22 @@ hl.on("hyprland.start", function ()
     if dictationComponentInstalled() then
         hl.exec_cmd("systemctl --user start vanhyprarch-voxtype.service")
     end
+
+    -- Hyprland's own environment publication is asynchronous. Keep this
+    -- publication and XDG Autostart in one ordered, startup-only command.
+    hl.exec_cmd([[
+if [ -z "${DISPLAY:-}" ] || [ -z "${WAYLAND_DISPLAY:-}" ] ||
+   [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || [ -z "${XDG_CURRENT_DESKTOP:-}" ] ||
+   [ -z "${XDG_SESSION_TYPE:-}" ] || [ -z "${PATH:-}" ]; then
+    /usr/bin/logger -t vanhyprarch-autostart -p user.err -- 'Missing required session environment; XDG Autostart skipped'
+    exit 1
+fi
+if ! /usr/bin/dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE PATH; then
+    /usr/bin/logger -t vanhyprarch-autostart -p user.err -- 'Environment publication failed; XDG Autostart skipped'
+    exit 1
+fi
+exec /usr/bin/dex --autostart --term /usr/bin/xdg-terminal-exec
+]])
 end)
 
 -- Runtime keyboard projection must be reconciled after a full config reparse.
