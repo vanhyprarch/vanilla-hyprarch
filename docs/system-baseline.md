@@ -254,11 +254,13 @@ per new Hyprland session. The managed Lua start handler uses one ordered shell
 command to check and publish the six named graphical/session variables
 `DISPLAY`, `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`,
 `XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`, and `PATH` through
-`dbus-update-activation-environment --systemd`, then exec dex. It never imports
+`dbus-update-activation-environment --systemd`, attempts the upstream GNOME
+Keyring secrets handoff, then execs dex. It never imports
 the whole environment. Failed publication or missing required context logs a
 non-sensitive error under `vanhyprarch-autostart` and prevents dex execution.
-The command's post-publication boundary is the place for a later upstream
-session handoff; no keyring integration is implemented here.
+The post-publication handoff is synchronous; failure logs a non-sensitive
+diagnostic and still starts dex. Existing independent startup children remain
+unchanged. Secret Service availability is not a dependency for unrelated apps.
 
 Dex reads the user and system XDG autostart directories, honors same-filename
 precedence and `Hidden`, `OnlyShowIn`, `NotShowIn`, and `TryExec`, and delegates
@@ -281,6 +283,41 @@ recorded one invocation after the first graphical login, still one after a
 Hyprland configuration reload, and two cumulatively after the second login.
 Session digests differed and all environment-validation booleans were true.
 The user was instructed to remove the temporary acceptance desktop entry.
+
+## Persistent Secret Service
+
+Required official `gnome-keyring` provides `org.freedesktop.secrets` and
+`pam_gnome_keyring.so`. Arch's SDDM password-login PAM defaults already include
+authentication, password-change, and `auto_start` hooks; Vanilla verifies their
+boundary and never owns or edits `/etc/pam.d/sddm`. A login keyring whose password
+matches the SDDM login password can be unlocked automatically. Autologin or a
+mismatched keyring password does not provide this guarantee.
+
+The installer-only `install/secret_service_preflight.py` runs as the target
+user before package provisioning with explicit discovery paths captured in
+that user's invocation before sudo. Missing, mismatched, or invalid context
+blocks provisioning; the stage never substitutes inherited sudo XDG variables.
+It rejects configured competing providers, competing registrations or bus
+ownership, and ambiguous inputs. KeePassXC's package `Provides` declaration
+does not imply a conflict; its `FdoSecrets/Enabled` preference remains untouched
+and disabled by default. No password manager is removed or reconfigured.
+
+After environment publication, the existing Lua start command invokes upstream
+`gnome-keyring-daemon --start --components=secrets` synchronously, discards its
+environment and diagnostic output without evaluation, and logs command failure
+without stopping dex. This attempts initialization; it does not prove an unlocked
+persistent login collection. That is a separate physical acceptance check.
+The upstream control socket/singleton reuses PAM's daemon. Package-managed
+service, socket, D-Bus registrations, and desktop entries remain intact; no
+manual unit enablement or additional startup callback is introduced. Keyrings
+under XDG data are `USER_OWNED` and remain outside deployment and initialization.
+KeePassXC is a personally installed optional application, absent from Vanilla's
+package manifest; no settings are changed and it is never autostarted by Vanilla.
+See [Secret Service acceptance](secret-service.md) for the native Nextcloud
+credential backend and physical login/reboot procedure. Development acceptance
+passed: after a full reboot, native Nextcloud launched automatically, retained
+authentication without prompting, and displayed synchronized status. The live
+metadata probe confirmed the unlocked persistent login collection and one daemon.
 
 ## Audio
 

@@ -35,6 +35,7 @@ from sddm_login_integration import (
     TargetUser as SddmTargetUser,
 )
 from update_bootstrap_integration import BootstrapIntegration, BootstrapIntegrationError
+from secret_service_preflight import context_environment, ProviderError
 
 
 SCHEMA_VERSION = 1
@@ -177,6 +178,7 @@ class SystemPlan:
                 "flatpak-exports-conflict",
                 "terminal-fallback-conflict",
                 "update-bootstrap-conflict",
+                "secret-service-conflict",
             }
         )
 
@@ -196,6 +198,7 @@ class SystemPlan:
             "sddm-system-preserve",
             "sddm-generated-preserve",
             "sddm-state-preserve",
+            "secret-service-preserve",
         }
         return tuple(item for item in self.items if item.action not in preserved and item not in self.blockers)
 
@@ -237,10 +240,12 @@ class SystemIntegration:
         root_identity: tuple[int, int] = (0, 0),
         testing: bool = False,
         lifecycle: str = "fresh",
+        target_context: dict | None = None,
     ) -> None:
         if lifecycle not in {"fresh", "upgrade"}:
             raise IntegrationError("lifecycle must be fresh or upgrade")
         self.lifecycle = lifecycle
+        self.target_context = target_context
         self.source_root = source_root.resolve()
         self.system_root = system_root.resolve()
         self.runner = runner or SubprocessRunner()
@@ -461,6 +466,58 @@ class SystemIntegration:
                 raise IntegrationError("official package transaction declares conflicts or replacements; "
                                        "run Update → System or review the package change: "
                                        + ", ".join(unsafe_relations))
+
+    def _secret_service_status(self) -> PlanItem:
+        # Probe as the target user, never the provisioning root's bus/settings.
+        try:
+            context_environment(self.target_context, self.target_user.uid, self.target_user.home)
+        except ProviderError:
+            return PlanItem("secret-service-conflict", "target-user-context",
+                            "explicit verified target-user XDG context required; capture before sudo")
+        pam = self._system_path("/etc/pam.d/sddm")
+        try:
+            if pam.exists():
+                if pam.is_symlink() or not pam.is_file():
+                    raise ValueError("unsafe SDDM PAM file")
+                rows = [line.split("#", 1)[0].split() for line in pam.read_text().splitlines()]
+                for phase, option in (("auth", None), ("session", "auto_start"),
+                                      ("password", "use_authtok")):
+                    stack = next((index for index, row in enumerate(rows)
+                                  if row == [phase, "include", "system-login"]), None)
+                    if stack is None or not any(
+                            len(row) >= 3 and row[0].lstrip("-") == phase
+                            and row[1:3] == ["optional", "pam_gnome_keyring.so"]
+                            and (option is None or option in row[3:])
+                            for row in rows[stack + 1:]):
+                        raise ValueError("missing SDDM PAM keyring hook")
+            elif "sddm" in self._read_installed_packages():
+                raise ValueError("missing SDDM PAM file")
+        except (OSError, ValueError):
+            return PlanItem("secret-service-conflict", "sddm-pam",
+                            "SDDM PAM keyring boundary is absent or ambiguous; do not take ownership")
+        helper = self._safe_source_file("install/secret_service_preflight.py", "Secret Service preflight")
+        result = self._run(["/usr/bin/python", str(helper), "preflight", "--context-json",
+                            json.dumps(self.target_context)], user=self.target_user)
+        if result.returncode:
+            return PlanItem("secret-service-conflict", "org.freedesktop.secrets",
+                            "competing or ambiguous provider; preserve user state and review as the target user")
+        try:
+            status = json.loads(result.stdout)
+            if (set(status) != {"provider", "current_owner", "configured_provider"}
+                    or status["provider"] not in {"none", "gnome-keyring"}
+                    or status["current_owner"] not in {"none", "no-session", "gnome-keyring"}
+                    or status["configured_provider"] != "none"):
+                raise ValueError("unexpected provider result")
+        except (ValueError, TypeError):
+            return PlanItem("secret-service-conflict", "org.freedesktop.secrets",
+                            "provider inspection returned an ambiguous result")
+        return PlanItem("secret-service-preserve", "org.freedesktop.secrets",
+                        f"provider={status['provider']}; current_owner={status['current_owner']}; configured_provider=none")
+
+    def _require_secret_service(self) -> None:
+        status = self._secret_service_status()
+        if status.action != "secret-service-preserve":
+            raise IntegrationError("Secret Service preflight blocked: " + status.detail)
 
     def _package_plan(self) -> tuple[list[PlanItem], set[str], tuple[str, ...]]:
         installed, pending = self._base_preflight()
@@ -1074,6 +1131,7 @@ class SystemIntegration:
             return SystemPlan((PlanItem("recovery-required", transaction["kind"], transaction.get("phase", "unknown")),))
         package_items, installed, pending = self._package_plan()
         items = package_items
+        items.append(self._secret_service_status())
         items.append(self._yay_status(installed))
         if "bluez" in installed:
             items.append(self._bluez_classification())
@@ -1162,6 +1220,7 @@ class SystemIntegration:
             )
 
     def _install_official_packages(self, installed: set[str]) -> None:
+        self._require_secret_service()
         missing = [name for name in self.official_default_packages if name not in installed]
         self._resolve_official(missing)
         if missing:
@@ -1797,6 +1856,7 @@ class SystemIntegration:
         missing = sorted(set(self.official_default_packages) - installed)
         if missing:
             raise IntegrationError("missing official default packages: " + ", ".join(missing))
+        self._require_secret_service()
         yay = self._yay_status(installed)
         if yay.action != "aur-preserve":
             raise IntegrationError("yay baseline is invalid: " + yay.detail)
@@ -1843,6 +1903,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--lifecycle", choices=("fresh", "upgrade"), default="fresh")
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--target-user", required=True)
+    parser.add_argument("--target-context-json", help="provider discovery paths captured before privilege escalation")
     return parser
 
 
@@ -1851,6 +1912,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         integration = SystemIntegration(source_root=arguments.source_root,
                                         target_username=arguments.target_user,
+                                        target_context=json.loads(arguments.target_context_json) if arguments.target_context_json else None,
                                         lifecycle=arguments.lifecycle)
         if arguments.operation == "plan":
             plan = integration.plan()
@@ -1860,7 +1922,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan = integration.validate()
         print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
         return 2 if plan.blockers else 0
-    except IntegrationError as error:
+    except (IntegrationError, ValueError) as error:
         print(f"system integration: {error}", file=sys.stderr)
         return 1
 

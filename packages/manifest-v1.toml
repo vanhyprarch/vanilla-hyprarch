@@ -218,6 +218,15 @@ owner = "source-and-aur-bootstrap"
 reason = "Provides the initial source acquisition path and yay source dependency."
 
 [[package]]
+name = "gnome-keyring"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "secret-service"
+reason = "Provides persistent Secret Service and the package-owned SDDM PAM login-keyring unlock module."
+
+[[package]]
 name = "gnome-text-editor"
 source = "official"
 role = "required"

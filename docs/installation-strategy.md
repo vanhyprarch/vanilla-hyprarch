@@ -159,9 +159,17 @@ The shared bootstrap and its delegated stages:
   existing administrator configuration would be replaced;
 - preserve the documented startup owner for each session process;
 - install required official `dex`; the managed Hyprland start hook publishes
-  its named graphical/session environment before processing XDG Autostart once.
+  its named graphical/session environment, attempts the GNOME Keyring secrets
+  handoff, then processes XDG Autostart once even if that handoff fails.
   Preserve all user/package autostart entries and do not enable a competing
   systemd autostart target;
+- preflight Secret Service as the target user before package mutation; install
+  required official `gnome-keyring` only when existing providers are compatible.
+  Preserve Arch SDDM PAM, upstream service/socket activation, KeePassXC settings,
+  and user keyrings; never seed passwords or enable competing daemons;
+- capture the invoking user's provider-discovery XDG paths before sudo and pass
+  them explicitly through the existing bootstrap/system stage. Reject missing
+  or unverifiable context; never reconstruct it from root's environment;
 - deploy the reviewed official wallpaper payload under XDG data, then invoke
   the Appearance one-shot asset bootstrap; only a user with no durable
   initialization evidence receives the current starter files and newly

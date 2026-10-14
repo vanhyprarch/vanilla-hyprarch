@@ -574,6 +574,18 @@ user_editable = false
 machine_specific = false
 
 [[artifact]]
+id = "login-keyrings"
+target = "${XDG_DATA_HOME:-$HOME/.local/share}/keyrings"
+class = "USER_OWNED"
+component = "secret-service"
+kind = "tree"
+authority = "gnome-keyring-and-user"
+status = "implemented"
+user_editable = true
+machine_specific = false
+notes = "Created and unlocked only by upstream GNOME Keyring/PAM. Never seed, read contents, replace, migrate, or delete user keyrings."
+
+[[artifact]]
 id = "appearance-preference"
 target = "${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/appearance.json"
 class = "USER_OWNED"

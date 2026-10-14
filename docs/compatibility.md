@@ -136,6 +136,52 @@ This dex change does not relax that gate. Review the actual target-release
 upgrade plan before release acceptance; an already-installed compatible
 `man-db` is preserved and removes this particular package-preview blocker.
 
+## GNOME Keyring direct-session boundary
+
+**Affected components:** Arch GNOME Keyring 1:51.1-1, SDDM 0.21.0-7,
+Hyprland 0.56.2, dex 0.10.1-1, KeePassXC 2.7.12-5.
+
+The inspected official GNOME Keyring archive matches the Extra sync database
+hash. It supplies the missing PAM module, a secrets D-Bus registration invoking
+`--start --foreground --components=secrets`, and package-owned user service and
+control socket. Its desktop entries use
+`OnlyShowIn=GNOME;Unity;MATE;Cinnamon;`, so dex under the inherited `Hyprland`
+identity does not perform the PAM session handoff. Arch's installed SDDM PAM
+file is package-pristine and already contains the required hooks.
+The official package's install hook enables its global user control socket;
+Vanilla adds no independent enablement.
+
+Upstream [daemon initialization](https://github.com/GNOME/gnome-keyring/blob/51.1/daemon/gkd-main.c)
+uses `--start` to synchronously initialize an existing login daemon through
+its control socket and singleton. Vanilla calls only
+`--start --components=secrets`, after environment publication and before dex,
+without a custom session helper. It never uses `--replace`, evaluates daemon
+output, enables units, or handles a login password. Failure logs and still runs
+dex; successful command completion does not prove that the login keyring is
+unlocked. Installer-only provider preflight preserves alternatives and blocks
+ambiguity before package mutation. KeePassXC's inspected binary and upstream settings use
+`FdoSecrets/Enabled`, default false; package capability metadata is insufficient
+evidence of a configured provider.
+
+The previous shared-helper design was rejected before deployment: an unrelated
+invalid registration could suppress all dex autostart, and clearing XDG context
+at the privilege boundary could miss a configured competing provider. The
+correction uses explicit pre-sudo target-user context and direct upstream login
+initialization. Tests cover both reproduced boundaries and failure isolation.
+Retest context forwarding across bootstrap and release-driver updates. Older
+installed updater code that lacks this context handoff must not provision this
+addition by guessing defaults: its target plan blocks. Resolving that legacy
+handoff is a release gate, separate from the existing `man-db`/`man` follow-up;
+it does not block controlled development deployment of the managed Lua core.
+
+Retest package activation, PAM token/unlock behavior, daemon reuse and
+readiness, desktop-entry eligibility, and provider settings after these
+components change. Remove the explicit handoff only when an upstream session
+owner guarantees completed PAM initialization before credential consumers in
+the supported direct SDDM/Hyprland session. Physical password-login and native
+Nextcloud reboot acceptance passed on the development host; repeat these checks
+when the relevant components change. See [Secret Service](secret-service.md).
+
 ## AppPicker sorter teardown on Quickshell reload
 
 **Affected components:** Quickshell 0.3.1 and Qt 6.11.2

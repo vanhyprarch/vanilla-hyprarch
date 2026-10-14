@@ -31,6 +31,7 @@ from install.release_migrations import (  # noqa: E402
 )
 from install.update_journal import JournalError, UpdateJournal  # noqa: E402
 from install.update_journal import _identities  # noqa: E402
+from install.secret_service_preflight import context_environment, ProviderError
 
 
 STAGE_RELATIVE = Path("var/lib/vanhyprarch-update/staging")
@@ -58,11 +59,13 @@ class TargetUser:
     xdg_data: Path | None = None
     xdg_state: Path | None = None
     xdg_cache: Path | None = None
+    provider_context: dict | None = None
 
     @classmethod
     def resolve(cls, name: str, *, system_root: Path = Path("/"),
                 xdg_config: Path | None = None, xdg_data: Path | None = None,
-                xdg_state: Path | None = None, xdg_cache: Path | None = None) -> "TargetUser":
+                xdg_state: Path | None = None, xdg_cache: Path | None = None,
+                provider_context: dict | None = None) -> "TargetUser":
         if (not name or len(name) > 32 or name == "root"
                 or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
                        for char in name)):
@@ -82,13 +85,22 @@ class TargetUser:
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != account.pw_uid
                 or info.st_mode & 0o022 or actual_home.resolve() != actual_home):
             raise UpdateError("preflight failed", "target home has unsafe type, owner, or mode")
+        if provider_context is not None:
+            try:
+                values = context_environment(provider_context, account.pw_uid, home)
+            except ProviderError as error:
+                raise UpdateError("preflight failed", str(error)) from error
+            for explicit, key in ((xdg_config, "XDG_CONFIG_HOME"), (xdg_data, "XDG_DATA_HOME")):
+                if explicit is not None and str(explicit) != values[key]:
+                    raise UpdateError("preflight failed", "explicit XDG paths disagree with target-user context")
+            xdg_config, xdg_data = Path(values["XDG_CONFIG_HOME"]), Path(values["XDG_DATA_HOME"])
         overrides = (xdg_config, xdg_data, xdg_state, xdg_cache)
         for path in overrides:
             if path is not None and (not path.is_absolute() or ".." in path.parts
                                      or path.resolve(strict=False) != path):
                 raise UpdateError("preflight failed", "XDG directory override is unsafe")
         return cls(name, account.pw_uid, account.pw_gid, home,
-                   tuple(os.getgrouplist(name, account.pw_gid)), *overrides)
+                   tuple(os.getgrouplist(name, account.pw_gid)), *overrides, provider_context)
 
 
 @dataclass(frozen=True)
@@ -363,6 +375,8 @@ class AuthorityRunner:
             command = [python, f"{root}/install/system_integration.py", operation,
                        "--lifecycle", "upgrade", "--source-root", root,
                        "--target-user", user.name]
+            if user.provider_context is not None and (bundle.tree / "install/secret_service_preflight.py").is_file():
+                command += ["--target-context-json", json.dumps(user.provider_context)]
             user_arguments: dict[str, Any] = {}
             environment = {"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1"}
         elif stage == "managed-deployment":
@@ -620,6 +634,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--xdg-data-home", type=Path)
     parser.add_argument("--xdg-state-home", type=Path)
     parser.add_argument("--xdg-cache-home", type=Path)
+    parser.add_argument("--target-context-json")
     arguments = parser.parse_args(argv)
     if arguments.operation != "resume" and (arguments.release_metadata is None or arguments.release_artifact is None):
         parser.error("plan/apply require --release-metadata and --release-artifact")
@@ -629,7 +644,8 @@ def main(argv: list[str] | None = None) -> int:
         user = TargetUser.resolve(arguments.target_user, xdg_config=arguments.xdg_config_home,
                                   xdg_data=arguments.xdg_data_home,
                                   xdg_state=arguments.xdg_state_home,
-                                  xdg_cache=arguments.xdg_cache_home)
+                                  xdg_cache=arguments.xdg_cache_home,
+                                  provider_context=json.loads(arguments.target_context_json) if arguments.target_context_json else None)
         driver = ReleaseUpdate(user)
         if arguments.operation == "plan":
             print(json.dumps(driver.plan(arguments.release_metadata, arguments.release_artifact).as_dict(), indent=2))
@@ -639,7 +655,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Vanilla HyprArch update complete: {target['version']}")
         return 0
     except (UpdateError, IdentityError, JournalError, MigrationError,
-            contract.ReleaseError, OSError, subprocess.SubprocessError) as error:
+            contract.ReleaseError, OSError, ValueError, subprocess.SubprocessError) as error:
         kind = error.kind if isinstance(error, UpdateError) else "preflight failed"
         print(f"Vanilla HyprArch {kind}: {error}", file=sys.stderr)
         return 1

@@ -26,8 +26,15 @@ esac
 shift
 
 target_user=
+target_context=
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --target-context-json)
+            [ "$#" -ge 2 ] || usage
+            [ -z "$target_context" ] || usage
+            target_context=$2
+            shift 2
+            ;;
         --target-user)
             [ "$#" -ge 2 ] || usage
             [ -z "$target_user" ] || usage
@@ -155,5 +162,8 @@ fi
 [ "$effective_uid" = 0 ] || \
     fail "full system-integration $operation requires root privileges; rerun with sudo"
 
-exec "$python_command" "$system_integration" "$operation" \
-    --source-root "$source_root" --target-user "$target_user"
+set -- "$operation" --source-root "$source_root" --target-user "$target_user"
+if [ -n "$target_context" ]; then
+    set -- "$@" --target-context-json "$target_context"
+fi
+exec "$python_command" "$system_integration" "$@"

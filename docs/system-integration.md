@@ -86,6 +86,32 @@ rejects every command it does not explicitly model.
 
 ## Release-upgrade stage mode
 
+Secret Service provisioning runs an installer-only read-only `preflight`
+from `install/secret_service_preflight.py` as the target user before official package
+mutation, including fresh and upgrade paths. Plan and validate also expose
+conflicts. The probe inspects KeePassXC's `FdoSecrets/Enabled`, standard/XDG and
+configured D-Bus service directories, activation availability, and current bus
+ownership without activating a provider or reading keyring contents. Package
+`Provides` metadata is not a provider decision. Competing or ambiguous state
+blocks provisioning; no existing provider registration, password manager,
+keyring, or PAM file is rewritten. Missing SDDM PAM hooks or unsupported hook
+ordering also block instead of acquiring PAM ownership. A fresh installation
+without SDDM can install its official defaults first; validation then checks
+the hooks. The probe is never invoked during graphical startup. See
+[Secret Service](secret-service.md) for the session boundary and physical acceptance.
+
+Provider discovery requires explicit `--target-context-json` invocation data
+captured as the target user before sudo. The context contains only UID, account
+HOME, XDG config/data homes and data search paths, and an optional provider
+configuration path. Identity, required keys, and absolute paths are validated
+before the probe; the same payload crosses `runuser`. Root/sudo environment
+variables are ignored. Fresh installation and the user-launched updater forward
+this context through existing stage arguments; there is no new persistent
+context record. A root-only invocation with unknown target context fails closed.
+This explicit input is an administrator-reviewed context declaration, not an
+authentication token. Capture it in the actual target-user session rather than
+manufacturing default paths from a root shell.
+
 The Python authority now accepts `--lifecycle upgrade` for `plan`, `apply`,
 and `validate`. The default `fresh` mode and pre-Python shell bootstrap retain
 their installation behavior. Upgrade requires prior root-private system state

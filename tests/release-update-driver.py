@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import stat
 import subprocess
@@ -496,6 +497,22 @@ class PreflightPolicyTests(DriverFixture):
 
 
 class AuthorityInvocationTests(DriverFixture):
+    def test_explicit_context_reaches_target_stage_without_inherited_environment(self) -> None:
+        import dataclasses
+        context = {"uid": self.user.uid, "environment": {"HOME": str(self.user.home),
+                   "XDG_CONFIG_HOME": "/custom/config", "XDG_DATA_HOME": "/custom/data",
+                   "XDG_DATA_DIRS": "/usr/local/share:/usr/share"}}
+        user = dataclasses.replace(self.user, provider_context=context)
+        bundle = Bundle(Path("/stage"), Path("/stage/source"), Path("/metadata"), Path("/artifact"), self.target, b"metadata")
+        completed = SimpleNamespace(returncode=0, stdout="planned", stderr="")
+        with (mock.patch("install.release_update.Path.is_file", return_value=True),
+              mock.patch("install.release_update.subprocess.run", return_value=completed) as call,
+              mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": "/wrong-root-context"})):
+            AuthorityRunner().invoke("system-integration", "plan", bundle, user)
+        argv = call.call_args.args[0]
+        self.assertEqual(json.loads(argv[argv.index("--target-context-json") + 1]), context)
+        self.assertNotIn("XDG_CONFIG_HOME", call.call_args.kwargs["env"])
+
     def test_target_authority_commands_and_user_boundary(self) -> None:
         runner = AuthorityRunner()
         bundle = Bundle(Path("/var/lib/vanhyprarch-update/staging/digest"),

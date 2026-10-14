@@ -27,6 +27,7 @@ from typing import Any
 from release import build as contract
 from install.release_identity import InstalledReleaseIdentity, IdentityError
 from install.release_update import BundleStore, TargetUser, UpdateError
+from install.secret_service_preflight import capture_context, ProviderError
 from install.update_journal import (UpdateJournal, JournalError,
                                     _compact_source, _compact_target)
 
@@ -284,6 +285,8 @@ class Bootstrap:
             raise BootstrapError("verified target driver has unsafe ownership or mode")
         command = ["/usr/bin/python3", str(driver), operation,
                    "--target-user", self.user.name]
+        if self.user.provider_context is not None and (bundle.tree / "install/secret_service_preflight.py").is_file():
+            command += ["--target-context-json", json.dumps(self.user.provider_context)]
         if operation != "resume":
             command += ["--release-metadata", str(bundle.metadata_path),
                         "--release-artifact", str(bundle.artifact_path)]
@@ -387,20 +390,27 @@ class Bootstrap:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-user")
+    parser.add_argument("--target-context-json")
     arguments = parser.parse_args(argv)
     if os.geteuid() != 0:
-        if arguments.target_user is not None:
+        if arguments.target_user is not None or arguments.target_context_json is not None:
             parser.error("--target-user is supplied by the sudo handoff")
         name = pwd.getpwuid(os.getuid()).pw_name
+        try:
+            context = capture_context(os.environ, os.getuid(), Path(pwd.getpwuid(os.getuid()).pw_dir))
+        except (ProviderError, ValueError):
+            print("Vanilla HyprArch update unavailable: invalid target-user XDG context", file=sys.stderr)
+            return 1
         return subprocess.call(["/usr/bin/sudo", "--", "/usr/local/bin/vanhyprarch-update",
-                                "--target-user", name])
+                                "--target-user", name, "--target-context-json", json.dumps(context)])
     if arguments.target_user is None:
         parser.error("root invocation requires explicit --target-user")
     try:
-        user = TargetUser.resolve(arguments.target_user)
+        user = TargetUser.resolve(arguments.target_user,
+                                  provider_context=json.loads(arguments.target_context_json) if arguments.target_context_json else None)
         return Bootstrap(user).run_update()
     except (BootstrapError, IdentityError, JournalError, UpdateError,
-            contract.ReleaseError, OSError) as error:
+            contract.ReleaseError, OSError, ValueError) as error:
         print(f"Vanilla HyprArch update unavailable: {error}", file=sys.stderr)
         return 1
 

@@ -17,6 +17,7 @@ FILES = (
     "install/update_bootstrap.py", "install/release_update.py",
     "install/release_identity.py", "install/update_journal.py",
     "install/release_migrations.py", "release/build.py",
+    "install/secret_service_preflight.py",
 )
 SHEBANG = b"#!/usr/bin/python3\n"
 STATE_SCHEMA = 2

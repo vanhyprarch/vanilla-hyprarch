@@ -320,7 +320,14 @@ if [ "$assume_yes" = false ]; then
 fi
 
 system_stage() {
-    "$sudo_command" "$bootstrap" "$1" --target-user "$target_user"
+    if [ "$1" = bootstrap-python ] || [ ! -f "$source_root/install/secret_service_preflight.py" ]; then
+        "$sudo_command" "$bootstrap" "$1" --target-user "$target_user"
+    else
+        target_context=$("$python_command" -B "$source_root/install/secret_service_preflight.py" context) || \
+            fail "target-user provider context capture failed"
+        "$sudo_command" "$bootstrap" "$1" --target-user "$target_user" \
+            --target-context-json "$target_context"
+    fi
 }
 
 managed_stage() {

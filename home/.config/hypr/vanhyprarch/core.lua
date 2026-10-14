@@ -72,6 +72,10 @@ if ! /usr/bin/dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPL
     /usr/bin/logger -t vanhyprarch-autostart -p user.err -- 'Environment publication failed; XDG Autostart skipped'
     exit 1
 fi
+if ! /usr/bin/gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1; then
+    /usr/bin/logger -t vanhyprarch-autostart -p user.err -- 'GNOME Keyring session handoff failed; continuing XDG Autostart'
+fi
+/usr/bin/logger -t vanhyprarch-autostart -p user.info -- 'Starting XDG Autostart after GNOME Keyring handoff attempt'
 exec /usr/bin/dex --autostart --term /usr/bin/xdg-terminal-exec
 ]])
 end)

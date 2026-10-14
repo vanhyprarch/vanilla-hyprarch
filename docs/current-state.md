@@ -212,15 +212,34 @@ Hyprland starts these processes on `hyprland.start`:
 7. one ordered XDG Autostart command: validate the required session environment,
    publish `DISPLAY`, `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`,
    `XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`, and `PATH` to D-Bus activation and
-   the systemd user manager, then exec required official `dex --autostart`
+   the systemd user manager, attempt the upstream GNOME Keyring secrets
+   handoff with `gnome-keyring-daemon --start --components=secrets`, then exec
+   required official `dex --autostart`
    with `/usr/bin/xdg-terminal-exec` for terminal entries. Missing context or
-   publication failure skips dex and logs under `vanhyprarch-autostart`.
+   publication failure skips dex. A keyring handoff failure logs a non-sensitive
+   diagnostic under `vanhyprarch-autostart` and still runs dex.
 
 The dex path exists only in `hyprland.start`; configuration reload does not
 process autostart entries again. Existing startup children remain independent.
 No systemd autostart target or Quickshell startup path is added. Package
 installation, managed deployment, and physical login/reload/login acceptance
 passed; the results are recorded in the [system baseline](system-baseline.md).
+
+Required official `gnome-keyring` supplies the existing Arch SDDM PAM hooks and
+the persistent Secret Service provider. Provisioning probes provider settings,
+registrations, and current bus ownership as the target user before package
+mutation using explicit target-user XDG context captured before sudo; conflicts
+or ambiguity preserve existing providers and block provisioning. No custom
+session helper is deployed. PAM files and package service/socket activation
+remain upstream owned. The handoff attempt follows environment publication and
+precedes dex, without participating in config reload. Keyrings are user-owned
+and are never seeded or migrated by Vanilla. Development deployment and physical
+acceptance passed: SDDM password login unlocked the persistent login collection,
+and native Nextcloud launched through XDG Autostart after a full reboot,
+retained authentication without a browser or password prompt, and synchronized.
+The live metadata probe confirmed one GNOME Keyring daemon and two accessible
+Nextcloud credential items with none locked; see
+[Secret Service](secret-service.md).
 
 The official `hyprpolkitagent` package provides graphical PolicyKit
 authentication for GUI applications that require privileged authorization.

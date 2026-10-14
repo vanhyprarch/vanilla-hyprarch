@@ -90,6 +90,7 @@ class Fixture:
             [ "${INSTALL_FIXTURE_FAIL-}" != "$key" ]
             """,
         )
+        (install / "secret_service_preflight.py").write_text("# fixture\n", encoding="utf-8")
         (install / "managed_deploy.py").write_text("# fixture\n", encoding="utf-8")
         (install / "create_once.py").write_text("# fixture\n", encoding="utf-8")
         with tarfile.open(self.archive, "w:gz") as bundle:
@@ -160,9 +161,12 @@ class Fixture:
                 esac
                 exit
             fi
-            [ "$#" -eq 4 ] && [ "$3" = --target-user ] &&
+            [ "$3" = --target-user ] &&
                 [ "$4" = fixture-user ] || exit 92
             operation=$2
+            if [ "$operation" != bootstrap-python ]; then
+                [ "$#" -eq 4 ] || { [ "$#" -eq 6 ] && [ "$5" = --target-context-json ]; } || exit 92
+            fi
             if [ "$operation" = bootstrap-python ]; then
                 key=python-bootstrap
             else
@@ -188,8 +192,14 @@ class Fixture:
                 [ "${INSTALL_FIXTURE_FAIL-}" != python-check ]
                 exit
             fi
+            [ "$1" != -B ] || shift
             script=${1##*/}
             case "$script" in
+                secret_service_preflight.py)
+                    [ "$2" = context ] || exit 95
+                    /usr/bin/python -c 'import json, os; print(json.dumps({"uid": os.getuid(), "environment": {"HOME": os.environ["HOME"], "XDG_CONFIG_HOME": os.environ.get("XDG_CONFIG_HOME") or os.environ["HOME"] + "/.config", "XDG_DATA_HOME": os.environ.get("XDG_DATA_HOME") or os.environ["HOME"] + "/.local/share", "XDG_DATA_DIRS": os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"}}))'
+                    exit
+                    ;;
                 build.py) exec /usr/bin/python "$@" ;;
                 managed_deploy.py)
                     [ "$2" = --source-root ] && [ -n "$3" ] &&
@@ -656,7 +666,7 @@ class InstallBootstrapTests(unittest.TestCase):
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         bootstrap = (REPOSITORY / "install/bootstrap").read_text(encoding="utf-8")
         self.assertIn(
-            'exec "$python_command" "$system_integration" "$operation"', bootstrap
+            'exec "$python_command" "$system_integration" "$@"', bootstrap
         )
         system_source = (
             REPOSITORY / "install/system_integration.py"

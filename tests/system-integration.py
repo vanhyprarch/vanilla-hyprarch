@@ -106,10 +106,21 @@ class FakeRunner:
                 else:
                     metadata = "pkgname = unexpected\npkgbase = unexpected\nxdata = pkgtype=pkg\narch = x86_64\n"
             result = CommandResult(0, metadata)
+        elif command == "/usr/bin/python" and args[1].endswith("/install/secret_service_preflight.py"):
+            self.assert_provider_target(user)
+            result = CommandResult(state.get("secret_service_failure", 0),
+                                   state.get("secret_service_result", json.dumps({
+                                       "provider": "none", "current_owner": "no-session",
+                                       "configured_provider": "none"})))
         else:
             raise AssertionError(f"real/unexpected command boundary reached: {args}")
         self._save(state)
         return result
+
+    @staticmethod
+    def assert_provider_target(user):
+        if user is None or user.name != "tester":
+            raise AssertionError("Secret Service probe did not run as target user")
 
     def _pacman(self, args: list[str], state: dict) -> CommandResult:
         installed = set(state["installed"])
@@ -259,6 +270,11 @@ class Fixture:
             path.mkdir(parents=True, exist_ok=True)
             path.chmod(mode)
         (self.root / "usr/lib").mkdir(parents=True, exist_ok=True)
+        pam = self.root / "etc/pam.d/sddm"
+        pam.parent.mkdir(parents=True)
+        pam.write_text("auth include system-login\n-auth optional pam_gnome_keyring.so\n"
+                       "password include system-login\n-password optional pam_gnome_keyring.so use_authtok\n"
+                       "session include system-login\n-session optional pam_gnome_keyring.so auto_start\n")
         (self.root / "usr/lib/os-release").write_text(
             'NAME="Arch Linux"\nID=arch\n', encoding="utf-8"
         )
@@ -318,6 +334,7 @@ class Fixture:
 
         return SystemIntegration(
             source_root=source_root,
+            target_context={"uid": self.user.uid, "environment": {"HOME": str(self.user.home), "XDG_CONFIG_HOME": "/home/tester/.config", "XDG_DATA_HOME": "/home/tester/.local/share", "XDG_DATA_DIRS": "/usr/local/share:/usr/share"}},
             target_username=target,
             runner=FakeRunner(self),
             system_root=self.root,
@@ -610,6 +627,106 @@ class IntegrationTestCase(unittest.TestCase):
                          [["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--", "dex"]])
         self.assertFalse(engine.validate().blockers)
         self.assertFalse(engine.plan().changes)
+
+    def test_keyring_plan_install_validate_and_preserve(self) -> None:
+        engine = self.fixture.adopt_everything()
+        state = self.fixture.state()
+        state["installed"].remove("gnome-keyring")
+        save_json(self.fixture.runner_state, state)
+        self.assertEqual({item.subject for item in engine.plan().items
+                          if item.action == "package-install"}, {"gnome-keyring"})
+        self.assertIn("secret-service-preserve", {item.action for item in engine.plan().items})
+        with self.assertRaisesRegex(IntegrationError, "gnome-keyring"):
+            engine.validate()
+        before = len(self.fixture.state()["log"])
+        pam = self.fixture.root / "etc/pam.d/sddm"
+        original = pam.read_bytes(), pam.stat().st_ino
+        engine.apply()
+        log = self.fixture.state()["log"][before:]
+        transaction = next(i for i, e in enumerate(log) if e["argv"][1:2] == ["-S"])
+        self.assertTrue(any(e["argv"][2:3] == ["preflight"] and e["user"] == "tester"
+                            for e in log[:transaction]))
+        self.assertEqual(log[transaction]["argv"],
+                         ["/usr/bin/pacman", "-S", "--needed", "--noconfirm", "--", "gnome-keyring"])
+        self.assertEqual((pam.read_bytes(), pam.stat().st_ino), original)
+        self.assertFalse(engine.validate().blockers)
+        self.assertFalse(engine.plan().changes)
+        self.assertFalse(any("gnome-keyring-daemon" in str(e["argv"]) for e in log))
+
+    def test_provider_conflict_or_ambiguity_blocks_before_package_mutation(self) -> None:
+        engine = self.fixture.adopt_everything()
+        installed = self.fixture.state()["installed"]
+        self.fixture.update(installed=[p for p in installed if p != "gnome-keyring"])
+        for failure, output in ((1, ""), (0, "not json"), (0, "{}"),
+                                (0, '{"provider":"keepassxc"}')):
+            with self.subTest(failure=failure, output=output):
+                self.fixture.update(secret_service_failure=failure, secret_service_result=output)
+                self.assertIn("secret-service-conflict", {i.action for i in engine.plan().blockers})
+                before = len(self.fixture.state()["log"])
+                with self.assertRaisesRegex(IntegrationError, "Secret Service preflight blocked"):
+                    engine.apply()
+                log = self.fixture.state()["log"][before:]
+                self.assertFalse(any(e["argv"][1:2] == ["-S"] for e in log))
+                self.assertNotIn("gnome-keyring", self.fixture.state()["installed"])
+
+    def test_keyring_pam_absence_or_missing_hook_blocks_without_rewriting(self) -> None:
+        engine = self.fixture.engine()
+        pam = self.fixture.root / "etc/pam.d/sddm"
+        for text in ("auth include system-login\n", "session optional pam_gnome_keyring.so\n"):
+            pam.write_text(text)
+            original = pam.read_bytes(), pam.stat().st_ino
+            self.assertEqual(engine._secret_service_status().action, "secret-service-conflict")
+            self.assertEqual((pam.read_bytes(), pam.stat().st_ino), original)
+        pam.unlink()
+        self.assertEqual(engine._secret_service_status().action, "secret-service-conflict")
+        self.fixture.update(installed=[p for p in self.fixture.state()["installed"] if p != "sddm"])
+        self.assertEqual(engine._secret_service_status().action, "secret-service-preserve")
+
+    def test_target_context_missing_or_mismatched_blocks_before_package_mutation(self) -> None:
+        engine = self.fixture.engine()
+        for context in (None, {}, {"uid": -1, "environment": {}}):
+            engine.target_context = context
+            self.assertEqual(engine._secret_service_status().subject, "target-user-context")
+            before = len(self.fixture.state()["log"])
+            with self.assertRaisesRegex(IntegrationError, "explicit verified target-user"):
+                engine.apply()
+            self.assertFalse(any(e["argv"][1:2] == ["-S"] for e in self.fixture.state()["log"][before:]))
+
+    def test_custom_context_crosses_user_boundary_without_sudo_environment(self) -> None:
+        engine = self.fixture.engine()
+        engine.target_context["environment"]["XDG_CONFIG_HOME"] = "/custom/config"
+        with mock.patch.dict(MODULE.os.environ, {"XDG_CONFIG_HOME": "/wrong-root-config"}):
+            self.assertEqual(engine._secret_service_status().action, "secret-service-preserve")
+        probe = next(e for e in reversed(self.fixture.state()["log"]) if e["argv"][2:3] == ["preflight"])
+        self.assertEqual(probe["user"], "tester")
+        self.assertEqual(json.loads(probe["argv"][-1])["environment"]["XDG_CONFIG_HOME"], "/custom/config")
+
+    def test_custom_configured_provider_blocks_real_probe_before_install(self) -> None:
+        import secret_service_preflight as provider
+        engine = self.fixture.engine()
+        engine.target_context["environment"]["XDG_CONFIG_HOME"] = "/custom/config"
+        settings = self.fixture.root / "custom/config/keepassxc/keepassxc.ini"
+        settings.parent.mkdir(parents=True)
+        settings.write_text("[FdoSecrets]\nEnabled=true\n")
+        before = settings.read_bytes(), settings.stat().st_ino
+        original = engine.runner.run
+
+        def probe(argv, **kwargs):
+            if argv[2:3] == ["preflight"]:
+                env = provider.context_environment(json.loads(argv[-1]), self.fixture.user.uid, self.fixture.user.home)
+                try:
+                    result = provider.ProviderAudit(environment=env, root=self.fixture.root).preflight()
+                    return CommandResult(0, json.dumps(result))
+                except provider.ProviderError:
+                    return CommandResult(1)
+            return original(argv, **kwargs)
+
+        with mock.patch.object(engine.runner, "run", side_effect=probe):
+            self.assertTrue(engine.plan().blockers)
+            with self.assertRaisesRegex(IntegrationError, "Secret Service preflight blocked"):
+                engine.apply()
+        self.assertFalse(any(e["argv"][1:2] == ["-S"] for e in self.fixture.state()["log"]))
+        self.assertEqual((settings.read_bytes(), settings.stat().st_ino), before)
 
     def test_plan_is_zero_write_to_system_root(self) -> None:
         def snapshot() -> list[tuple[str, int, int, str]]:

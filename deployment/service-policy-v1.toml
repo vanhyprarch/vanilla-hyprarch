@@ -119,6 +119,24 @@ default_install = true
 startup_owner = "dbus"
 
 [[service]]
+name = "gnome-keyring-daemon.service"
+scope = "user"
+owner = "package"
+policy = "package-activation"
+default_install = true
+startup_owner = "pam-and-package"
+notes = "SDDM PAM initializes/unlocks the login keyring; Hyprland attempts the upstream secrets handoff before dex, without making keyring availability a dependency for unrelated autostart. Preserve upstream singleton and socket activation; never manually enable this unit."
+
+[[service]]
+name = "gnome-keyring-daemon.socket"
+scope = "user"
+owner = "package"
+policy = "package-activation"
+default_install = true
+startup_owner = "package-install-hook"
+notes = "The official package install hook enables the global user control socket. Preserve upstream activation; Vanilla performs no manual enablement."
+
+[[service]]
 name = "hypridle.service"
 scope = "user"
 owner = "package"

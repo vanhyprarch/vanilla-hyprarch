@@ -110,12 +110,13 @@ class StartHookTests(unittest.TestCase):
                     expected.append("systemctl --user start vanhyprarch-voxtype.service")
                 self.assertEqual(commands["start"][:-1], expected)
                 self.assertNotIn("xdg-desktop-autostart.target", "\n".join(commands["start"]))
-                self.assertNotIn("gnome-keyring", "\n".join(commands["start"]))
+                self.assertEqual(commands["start"][-1].count("/usr/bin/gnome-keyring-daemon --start --components=secrets"), 1)
 
-    def run_command(self, *, publication_fails=False, missing=None):
+    def run_command(self, *, publication_fails=False, keyring_fails=False, missing=None):
         command = self.autostart_command()
         log = self.root / "events.jsonl"
         self.env["PUBLICATION_FAILS"] = str(int(publication_fails))
+        self.env["KEYRING_FAILS"] = str(int(keyring_fails))
         stub = '''#!/usr/bin/python
 import json, os, pathlib, sys
 root = pathlib.Path(os.environ["AUTOSTART_TEST_ROOT"])
@@ -128,6 +129,11 @@ if name == "publisher":
     if os.environ["PUBLICATION_FAILS"] == "1":
         sys.exit(17)
     record("publication-complete")
+elif name == "keyring":
+    record("keyring-start", argv=sys.argv[1:])
+    if os.environ["KEYRING_FAILS"] == "1":
+        sys.exit(19)
+    record("keyring-complete")
 elif name == "dex":
     record("dex", argv=sys.argv[1:], path=os.environ["PATH"],
         display=os.environ["WAYLAND_DISPLAY"], desktop=os.environ["XDG_CURRENT_DESKTOP"])
@@ -138,6 +144,9 @@ elif name == "logger":
             destination = self.root / name
             executable(destination, stub)
             command = command.replace(path, str(destination))
+        keyring = self.root / "keyring"
+        executable(keyring, stub)
+        command = command.replace("/usr/bin/gnome-keyring-daemon", str(keyring))
         env = self.env.copy()
         if missing:
             env[missing] = ""
@@ -150,7 +159,9 @@ elif name == "logger":
         result, events = self.run_command()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([e["event"] for e in events],
-                         ["publication-start", "publication-complete", "dex"])
+                         ["publication-start", "publication-complete", "keyring-start", "keyring-complete", "diagnostic", "dex"])
+        self.assertEqual(events[2]["argv"], ["--start", "--components=secrets"])
+        self.assertIn("Starting XDG Autostart after GNOME Keyring handoff attempt", events[4]["argv"])
         self.assertEqual(events[0]["argv"], ["--systemd", *VARIABLES])
         self.assertEqual(events[-1]["argv"], ["--autostart", "--term", "/usr/bin/xdg-terminal-exec"])
         self.assertEqual(events[-1]["path"], self.env["PATH"])
@@ -170,6 +181,33 @@ elif name == "logger":
                 result, events = self.run_command(missing=variable)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual([e["event"] for e in events], ["diagnostic"])
+
+    def test_keyring_failure_keeps_dex_with_diagnostic(self):
+        result, events = self.run_command(keyring_fails=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual([e["event"] for e in events],
+                         ["publication-start", "publication-complete", "keyring-start", "diagnostic", "diagnostic", "dex"])
+        self.assertIn("GNOME Keyring session handoff failed; continuing XDG Autostart", events[3]["argv"])
+
+    def test_unrelated_malformed_registration_and_missing_keyring_keep_dex(self):
+        directory = Path(self.env["XDG_DATA_HOME"]) / "dbus-1/services"
+        directory.mkdir(parents=True)
+        (directory / "org.example.Unrelated.service").write_text("malformed unrelated entry")
+        result, events = self.run_command(keyring_fails=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(sum(e["event"] == "dex" for e in events), 1)
+        command = self.autostart_command()
+        self.assertNotIn("secret_service_preflight", command)
+        self.assertNotIn("vanhyprarch-secret-service", command)
+
+    def test_missing_upstream_executable_still_runs_dex(self):
+        command = self.autostart_command()
+        command = command.replace("/usr/bin/gnome-keyring-daemon", "/definitely-absent/keyring")
+        command = command.replace("/usr/bin/dbus-update-activation-environment", "/usr/bin/true")
+        command = command.replace("/usr/bin/logger", "/usr/bin/true")
+        command = command.replace("/usr/bin/dex", "/usr/bin/true")
+        result = subprocess.run(["/bin/sh", "-c", command], env=self.env, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0)
 
     def test_posix_shell_syntax(self):
         subprocess.run(["/bin/sh", "-n", "-c", self.autostart_command()], check=True)

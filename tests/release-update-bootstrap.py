@@ -565,16 +565,36 @@ class InstalledCommandTests(unittest.TestCase):
         with self.assertRaises(BootstrapIntegrationError):
             self.authority.plan(lifecycle="fresh")
 
+    def test_invalid_user_context_reports_safely_before_sudo(self):
+        for environment in ({"XDG_CONFIG_HOME": "relative-config"},
+                            {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/private-session-bus"}):
+            with (self.subTest(environment=environment),
+                  mock.patch.dict(boot.os.environ, environment, clear=True),
+                  mock.patch.object(boot.os, "geteuid", return_value=1000),
+                  mock.patch.object(boot.os, "getuid", return_value=1000),
+                  mock.patch.object(boot.pwd, "getpwuid",
+                                    return_value=SimpleNamespace(pw_name="fixture", pw_dir="/home/fixture")),
+                  mock.patch.object(boot.subprocess, "call") as call,
+                  contextlib.redirect_stderr(io.StringIO()) as error):
+                self.assertEqual(boot.main([]), 1)
+                call.assert_not_called()
+                self.assertEqual(error.getvalue(),
+                                 "Vanilla HyprArch update unavailable: invalid target-user XDG context\n")
+
     def test_user_cli_crosses_sudo_once_with_resolved_account(self):
-        with (mock.patch.object(boot.os, "geteuid", return_value=1000),
+        with (mock.patch.dict(boot.os.environ, {}, clear=True),
+              mock.patch.object(boot.os, "geteuid", return_value=1000),
               mock.patch.object(boot.os, "getuid", return_value=1000),
               mock.patch.object(boot.pwd, "getpwuid",
-                                return_value=SimpleNamespace(pw_name="fixture")),
+                                return_value=SimpleNamespace(pw_name="fixture", pw_dir="/home/fixture")),
               mock.patch.object(boot.subprocess, "call", return_value=0) as call):
             self.assertEqual(boot.main([]), 0)
-        call.assert_called_once_with(["/usr/bin/sudo", "--",
-                                      "/usr/local/bin/vanhyprarch-update",
-                                      "--target-user", "fixture"])
+        call.assert_called_once()
+        argv = call.call_args.args[0]
+        self.assertEqual(argv[:-1], ["/usr/bin/sudo", "--", "/usr/local/bin/vanhyprarch-update",
+                                    "--target-user", "fixture", "--target-context-json"])
+        self.assertEqual(json.loads(argv[-1])["uid"], 1000)
+        self.assertEqual(json.loads(argv[-1])["environment"]["HOME"], "/home/fixture")
         with mock.patch.object(boot.os, "geteuid", return_value=0):
             with self.assertRaises(SystemExit) as error:
                 boot.main([])

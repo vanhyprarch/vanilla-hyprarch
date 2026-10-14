@@ -59,6 +59,7 @@ REQUIRED_DEFAULT = {
     "firefox",
     "flatpak",
     "foot",
+    "gnome-keyring",
     "gnome-text-editor",
     "grim",
     "gvfs",
@@ -265,6 +266,16 @@ class PackageManifestTests(unittest.TestCase):
         self.assertEqual(item["owner"], "session-autostart")
         self.assertNotIn("component", item)
 
+    def test_keyring_is_required_official_secret_service(self) -> None:
+        item = self.by_name["gnome-keyring"]
+        self.assertEqual(item["source"], "official")
+        self.assertEqual(item["role"], "required")
+        self.assertTrue(item["default_install"])
+        self.assertTrue(item["direct"])
+        self.assertEqual(item["owner"], "secret-service")
+        self.assertNotIn("component", item)
+        self.assertNotIn("keepassxc", self.by_name)
+
     def test_smb_backend_is_required_official_file_management(self) -> None:
         item = self.by_name["gvfs-smb"]
         self.assertEqual(item["source"], "official")
@@ -466,6 +477,13 @@ class OwnershipManifestTests(unittest.TestCase):
             self.assertIn(expected["flatpak-user-application-exports"],
                           (REPOSITORY / "docs" / document).read_text())
 
+    def test_keyrings_are_user_owned_and_never_seeded(self) -> None:
+        item = self.by_id["login-keyrings"]
+        self.assertEqual(item["class"], "USER_OWNED")
+        self.assertEqual(item["kind"], "tree")
+        self.assertNotIn("source", item)
+        self.assertEqual(item["target"], "${XDG_DATA_HOME:-$HOME/.local/share}/keyrings")
+
     def test_managed_deployment_provenance_is_backend_owned(self) -> None:
         identifier = self.document["managed_deployment_provenance"]
         self.assertEqual(identifier, "managed-deployment-provenance")
@@ -638,6 +656,8 @@ class ServicePolicyTests(unittest.TestCase):
             "pipewire.service",
             "pipewire-pulse.service",
             "wireplumber.service",
+            "gnome-keyring-daemon.service",
+            "gnome-keyring-daemon.socket",
         ):
             self.assertEqual(self.by_name[name]["policy"], "package-activation")
         for name in (
