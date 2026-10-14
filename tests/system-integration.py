@@ -112,6 +112,13 @@ class FakeRunner:
                                    state.get("secret_service_result", json.dumps({
                                        "provider": "none", "current_owner": "no-session",
                                        "configured_provider": "none"})))
+        elif args[:2] == ["/usr/bin/python", "-B"] and args[2].endswith("/install/package_relationships.py"):
+            names = sorted(row[0] for row in json.loads(args[-1]))
+            relations = [relation for field in ("transaction_conflicts", "transaction_replaces")
+                         for values in state.get(field, {}).values() for relation in values.split()]
+            unsafe = any(relation in state["installed"] for relation in relations)
+            result = CommandResult(state.get("relationship_failure", int(unsafe)),
+                                   state.get("relationship_result", json.dumps({"safe": True, "packages": names})))
         else:
             raise AssertionError(f"real/unexpected command boundary reached: {args}")
         self._save(state)
@@ -130,7 +137,7 @@ class FakeRunner:
             pending = state["pending"]
             return CommandResult(0 if pending else 1, "".join(f"{value}\n" for value in pending))
         if (args[1:3] == ["-Sp", "--print-format"]
-                and args[3] in {"%n", "%n|%H|%R"}
+                and args[3] in {"%n", "%n|%v|%r"}
                 and args[4:6] == ["--needed", "--"]):
             requested = args[6:]
             missing = [name for name in requested if name not in state["official"]]
@@ -139,10 +146,8 @@ class FakeRunner:
             resolved = [*requested, *state.get("transaction_extra", [])]
             if args[3] == "%n":
                 return CommandResult(0, "".join(f"{name}\n" for name in resolved))
-            conflicts = state.get("transaction_conflicts", {})
-            replaces = state.get("transaction_replaces", {})
             return CommandResult(0, "".join(
-                f"{name}|{conflicts.get(name, '')}|{replaces.get(name, '')}\n"
+                f"{name}|1.0-1|extra\n"
                 for name in resolved
             ))
         if args[1:5] == ["-S", "--needed", "--noconfirm", "--"]:
@@ -1814,6 +1819,32 @@ class UpgradeSemanticsTests(unittest.TestCase):
                 with self.assertRaises(IntegrationError):
                     engine.apply()
                 self.assertIn("legacy-package", self.fixture.state()["installed"])
+                self.assertNotIn("vanilla-extra", self.fixture.state()["installed"])
+
+    def test_inert_relationships_are_allowed_and_complete_preview_is_checked(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        self.fixture.update(transaction_extra=["vanilla-dependency"],
+                            transaction_conflicts={"vanilla-dependency": "uninstalled-capability"},
+                            transaction_replaces={"vanilla-dependency": "uninstalled-capability"})
+        self.assertFalse(engine.plan().blockers)
+        probes = [entry for entry in self.fixture.state()["log"]
+                  if any(str(arg).endswith("/install/package_relationships.py") for arg in entry["argv"])]
+        self.assertTrue(probes)
+        self.assertEqual({row[0] for row in json.loads(probes[-1]["argv"][-1])},
+                         {"vanilla-extra", "vanilla-dependency"})
+
+    def test_relationship_failure_or_ambiguous_result_blocks_before_mutation(self) -> None:
+        engine = self.upgrade()
+        self.add_target_package(engine)
+        for failure, output in ((1, ""), (0, "not-json"), (0, "{}"),
+                                (0, '{"safe":true,"packages":[]}')):
+            with self.subTest(failure=failure, output=output):
+                self.fixture.update(relationship_failure=failure, relationship_result=output)
+                with self.assertRaises(IntegrationError):
+                    engine.plan()
+                with self.assertRaises(IntegrationError):
+                    engine.apply()
                 self.assertNotIn("vanilla-extra", self.fixture.state()["installed"])
 
     def test_missing_old_package_is_drift_and_dropped_package_is_not_removed(self) -> None:

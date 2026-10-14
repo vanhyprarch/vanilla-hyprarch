@@ -129,12 +129,23 @@ retain upstream parsing instead of adding a local replacement.
 On the audited development host, dex's fresh package preview also adds
 `man-db`, `less`, and `libpipeline`. `man-db` declares conflicts/replacement for
 `man`, which no installed package currently provides. Fresh provisioning uses
-normal pacman resolution. The existing release-upgrade stage conservatively
-rejects any new resolved package with conflict/replacement metadata; it can
-therefore block this addition on an older installation lacking `man-db`.
-This dex change does not relax that gate. Review the actual target-release
-upgrade plan before release acceptance; an already-installed compatible
-`man-db` is preserved and removes this particular package-preview blocker.
+normal pacman resolution. The previous release-upgrade stage rejected every
+new package with nonempty conflict/replacement metadata, including this harmless
+virtual-provider case. The correction uses upstream libalpm matching against
+the complete proposed transaction and installed names/providers, including
+versions, reverse conflicts, and actual replacements. It never special-cases
+`man-db`, `man`, or dex. An installed compatible provider is preserved.
+A read-only temporary database view reproduced the original rejection and now
+passes native validation; no installed package was changed. Real v1.0.0 upgrade
+acceptance in Proxmox remains a release gate.
+
+**Validated package ABI:** pacman 7.1.0, libalpm 16.0.1. The stdlib ctypes adapter
+uses public libalpm package/list/dependency APIs without a transaction, download,
+database update, or new dependency. The inspected list layout and ABI 16 are
+explicitly guarded; other ABIs block provisioning pending review. Retest the
+adapter and safe/unsafe package cases after an ABI change. Remove the adapter
+only when an existing upstream command exposes equivalent complete read-only
+relationship checks, rather than only the addition preview.
 
 ## GNOME Keyring direct-session boundary
 

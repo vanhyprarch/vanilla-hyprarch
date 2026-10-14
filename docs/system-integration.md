@@ -123,8 +123,15 @@ An interrupted new-file publication has a local pending intent and can rerun.
 
 New official packages and their new dependencies may be installed only when
 the current Arch sync state has no pending upgrades. The read-only package
-preview must contain no already installed package and no new package declaring
-conflicts or replacements; both cases fail closed before installation. A
+preview must contain no already installed package. The installer-only
+`package_relationships.py` checks the complete name/version/repository preview
+against the databases selected by `pacman-conf`, using read-only libalpm APIs.
+Installed names and versioned virtual providers are matched by upstream code;
+conflicts in either direction, conflicts or replacements between proposed
+packages, actual installed-package replacements, unresolved dependencies, and
+ambiguous metadata fail closed. A package's own virtual provision is not a
+conflict with itself. No libalpm transaction is initialized or committed, and
+pacman's existing signature and installation path are unchanged. A
 missing package required by the old inventory is drift. Dropped
 manifest packages remain installed. Upgrade preserves `yay` without an AUR
 build or upgrade, and does not restore a missing formerly required Flathub

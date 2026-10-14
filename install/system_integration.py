@@ -446,7 +446,7 @@ class SystemIntegration:
     def _resolve_official(self, packages: Sequence[str]) -> None:
         if not packages:
             return
-        preview_format = "%n|%H|%R" if self.lifecycle == "upgrade" else "%n"
+        preview_format = "%n|%v|%r" if self.lifecycle == "upgrade" else "%n"
         result = self._run(["/usr/bin/pacman", "-Sp", "--print-format", preview_format,
                             "--needed", "--", *packages])
         output = self._require_success(result, "required packages cannot be resolved from the current sync databases")
@@ -460,12 +460,19 @@ class SystemIntegration:
             if already_installed:
                 raise IntegrationError("official package transaction would change installed packages; run Update → System first: "
                                        + ", ".join(already_installed))
-            unsafe_relations = sorted({fields[0] for fields in transaction
-                                       if fields[1] or fields[2]})
-            if unsafe_relations:
-                raise IntegrationError("official package transaction declares conflicts or replacements; "
-                                       "run Update → System or review the package change: "
-                                       + ", ".join(unsafe_relations))
+            helper = self._safe_source_file("install/package_relationships.py", "package relationship validator")
+            result = self._run(["/usr/bin/python", "-B", str(helper),
+                                "--transaction-json", json.dumps(transaction)])
+            if result.returncode:
+                raise IntegrationError("official package transaction has conflicts or replacements, unresolved dependencies, or ambiguous metadata; review before provisioning")
+            try:
+                status = json.loads(result.stdout)
+                if (not isinstance(status, dict) or set(status) != {"safe", "packages"}
+                        or status["safe"] is not True
+                        or status["packages"] != sorted(fields[0] for fields in transaction)):
+                    raise ValueError("unexpected relationship result")
+            except (ValueError, TypeError):
+                raise IntegrationError("official package relationship validation returned an ambiguous result") from None
 
     def _secret_service_status(self) -> PlanItem:
         # Probe as the target user, never the provisioning root's bus/settings.

@@ -202,8 +202,10 @@ until an explicit update or migration path is reviewed.
 Upgrade may install newly required **official** packages with the existing
 `pacman -S --needed` path, including newly required dependency packages. It
 blocks pending Arch updates and rejects a package preview that would change
-any already installed package or whose new packages declare conflicts or
-replacements. This conservatively refuses package removal and unsupported
+any already installed package. Read-only libalpm validation rejects matching
+conflicts/replacements and unresolved dependencies across the complete proposed
+transaction and installed packages; inert relationship metadata is allowed.
+This conservatively refuses package removal and unsupported
 replacement transactions. It neither
 refreshes sync databases, runs `-Syu`, upgrades the AUR `yay` package, nor
 removes packages omitted from the new manifest. Previously required packages
