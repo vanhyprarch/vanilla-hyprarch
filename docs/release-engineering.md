@@ -8,6 +8,12 @@ published, immutable, and accepted for fresh installation and direct rc1/rc3
 upgrades. `main` targets unpublished `v1.0.1-rc1`; rc1, rc2, and rc3 remain
 historical candidates.
 
+The separate [signed distribution protocol foundation](signed-distribution.md)
+adds offline Minisign-authenticated release manifests and channel catalogs using
+this existing generated release identity. It is not yet wired into installed
+acquisition/update paths; independent publisher authentication, ServerPlan
+fallback, and installed anti-rollback persistence still require that integration.
+
 ## Identity and authored declaration
 
 `main` remains development, not an update channel. Release identities are the
