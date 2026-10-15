@@ -115,6 +115,27 @@ Stable sequence 1 contains only the unchanged v1.0.0 release and expires at
 created. See the [publication record](serverplan-publication.md#initial-production-publication--complete).
 No production private key is accessed by the agent or stored in the repository.
 
+## Next-release updater maintenance — SOURCE ONLY
+
+After v1.0.1 acceptance on the VM, the user also confirmed the genuine production
+upgrade. Development now adds an explicit interactive **Update System (`yay -Syu`)**
+offer after authenticated new-release acquisition and before target preflight.
+No-new-release checks and exact-target recovery skip maintenance. Failure or
+cancellation prevents Vanilla apply. Any changed installed package/version set
+pauses for a user-performed reboot; unchanged packages permit preflight and the
+existing separate Vanilla confirmation. There is no automatic reboot, new
+persistent state or change to the separate System update action. Both actions
+use the same yay implementation, including repository and AUR updates. The
+privileged orchestrator drops to the desktop UID/GID/groups and forwards captured
+user config/cache/terminal context; yay retains its own sudo and interactive prompts.
+See [the next-release flow and safe fixture commands](release-engineering.md#next-release-development-arch-maintenance-before-a-new-update).
+
+This source change is uncommitted and undeployed. Published v1.0.1 and its tag,
+signed distribution and accepted preparation kit remain unchanged. Its existing
+updater cannot acquire this behavior until a later updater is installed; that
+first transition still requires manual Arch maintenance. No live package-manager operation,
+development updater replacement, VM or production modification was performed.
+
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).
 

@@ -10,6 +10,13 @@ The feature passed full, idempotence, reboot, and integrated Phase 2/3/4
 acceptance in a user-managed disposable Arch x86_64 VM. It must never be
 applied to the development host.
 
+Next-release source development reuses Update System's interactive `yay -Syu`
+as the unprivileged desktop user in the release updater, **before** this authority
+plans or applies a new Vanilla target. It does not add `-Syu` to system integration
+or change its package/recovery boundaries. See [updater maintenance and reboot
+policy](release-engineering.md#next-release-development-arch-maintenance-before-a-new-update).
+The immutable v1.0.1 updater retains its manual Arch maintenance prerequisite.
+
 ## Pre-Python bootstrap boundary
 
 A fresh Arch Minimal installation does not necessarily contain Python, even

@@ -268,20 +268,38 @@ class InstalledCommandTests(unittest.TestCase):
                 self.assertEqual(error.getvalue(),
                                  "Vanilla HyprArch update unavailable: invalid target-user XDG context\n")
 
+    def test_yay_context_is_captured_before_sudo_without_secret_variables(self):
+        environment = {"PATH": "/srv/fixture/bin:/usr/bin", "TERM": "foot", "LANG": "C.UTF-8",
+                       "XDG_CONFIG_HOME": "/srv/fixture/config", "XDG_CACHE_HOME": "/srv/fixture/cache",
+                       "XDG_STATE_HOME": "/srv/fixture/state", "GITHUB_TOKEN": "not-forwarded"}
+        with (mock.patch.dict(boot.os.environ, environment, clear=True),
+              mock.patch.object(boot.os, "geteuid", return_value=1000),
+              mock.patch.object(boot.os, "getuid", return_value=1000),
+              mock.patch.object(boot.pwd, "getpwuid",
+                                return_value=SimpleNamespace(pw_name="fixture", pw_dir="/srv/fixture")),
+              mock.patch.object(boot.subprocess, "call", return_value=0) as call):
+            self.assertEqual(boot.main([]), 0)
+        argv = call.call_args.args[0]
+        captured = json.loads(argv[argv.index("--system-update-environment") + 1])
+        self.assertEqual(captured, {key: value for key, value in environment.items()
+                                   if key in boot.SYSTEM_UPDATE_VARIABLES})
+        self.assertNotIn("GITHUB_TOKEN", captured)
+
     def test_user_cli_crosses_sudo_once_with_resolved_account(self):
         with (mock.patch.dict(boot.os.environ, {}, clear=True),
               mock.patch.object(boot.os, "geteuid", return_value=1000),
               mock.patch.object(boot.os, "getuid", return_value=1000),
               mock.patch.object(boot.pwd, "getpwuid",
-                                return_value=SimpleNamespace(pw_name="fixture", pw_dir="/home/fixture")),
+                                return_value=SimpleNamespace(pw_name="fixture", pw_dir="/srv/fixture")),
               mock.patch.object(boot.subprocess, "call", return_value=0) as call):
             self.assertEqual(boot.main([]), 0)
         call.assert_called_once()
         argv = call.call_args.args[0]
-        self.assertEqual(argv[:-1], ["/usr/bin/sudo", "--", "/usr/local/bin/vanhyprarch-update",
-                                    "--target-user", "fixture", "--target-context-json"])
-        self.assertEqual(json.loads(argv[-1])["uid"], 1000)
-        self.assertEqual(json.loads(argv[-1])["environment"]["HOME"], "/home/fixture")
+        self.assertEqual(argv[:6], ["/usr/bin/sudo", "--", "/usr/local/bin/vanhyprarch-update",
+                                   "--target-user", "fixture", "--target-context-json"])
+        self.assertEqual(json.loads(argv[6])["uid"], 1000)
+        self.assertEqual(json.loads(argv[6])["environment"]["HOME"], "/srv/fixture")
+        self.assertEqual(argv[7:], ["--system-update-environment", "{}"])
         with mock.patch.object(boot.os, "geteuid", return_value=0):
             with self.assertRaises(SystemExit) as error:
                 boot.main([])

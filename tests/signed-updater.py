@@ -131,14 +131,36 @@ class SignedUpdaterFixture(unittest.TestCase):
             f"releases/{version}/assets/{self.artifact_path.name}": self.artifact_path.read_bytes(),
         })
         self.updater = B.Bootstrap(self.user, root=self.root, uid=os.getuid(), gid=os.getgid(),
-                                   transport=self.transport)
+                                   transport=self.transport, system_update_environment={
+                                       "PATH": "/usr/bin:/bin", "TERM": "xterm-256color"})
         self.security = S.SecurityStore(self.updater.journal, anchor=self.anchor,
                                          minisign=self.minisign, now=lambda: self.clock)
         self.updater.security = self.security
+        self.package_before = "pacman 7.0\npython 3.13\n"
+        self.package_after = self.package_before
+        self.package_queries = 0
+        self.system_update_status = 0
+        self.pending_packages = ""
+        self.updater.run = mock.Mock(side_effect=self.fake_system_update)
         self.client = S.Acquisition(self.security, self.transport)
         self.calls = []
         self.updater._driver = self.fake_driver
         self.set_catalog()
+
+    def fake_system_update(self, command, **kwargs):
+        # All maintenance is simulated; never invoke the host package manager.
+        self.assertTrue(self.updater.journal.lock.held)
+        self.assertIsNone(self.updater.journal.inspect())
+        if command == ["/usr/bin/pacman", "-Q"]:
+            self.package_queries += 1
+            output = self.package_before if self.package_queries == 1 else self.package_after
+            return subprocess.CompletedProcess(command, 0, output, "")
+        if command == ["/usr/bin/yay", "-Syu"]:
+            return subprocess.CompletedProcess(command, self.system_update_status)
+        if command == ["/usr/bin/pacman", "-Qu"]:
+            return subprocess.CompletedProcess(command, 0 if self.pending_packages else 1,
+                                               self.pending_packages, "")
+        self.fail(f"unexpected subprocess: {command}")
 
     def signed(self, payload, *, other=False):
         secret, public = self.keys[int(other)]
@@ -173,8 +195,9 @@ class SignedUpdaterFixture(unittest.TestCase):
             return self.client.acquire(self.source, directory)
 
     def run_update(self, answer="y"):
+        answers = iter(answer) if isinstance(answer, (list, tuple)) else None
         with contextlib.redirect_stdout(io.StringIO()) as output:
-            result = self.updater.run_update(answer=lambda _: answer)
+            result = self.updater.run_update(answer=lambda _: next(answers) if answers is not None else answer)
         return result, output.getvalue()
 
 
@@ -238,7 +261,7 @@ class SignedUpdaterTests(SignedUpdaterFixture):
         self.assertEqual(self.calls, [])
 
     def test_cancel_still_persists_authenticated_observations_without_applying(self):
-        self.run_update(answer="")
+        self.run_update(answer=["y", ""])
         self.assertEqual(self.calls, ["plan"])
         self.assertEqual(self.identity_path.read_bytes(), D.canonical(self.source))
         self.assertEqual(self.security._read()["state"]["channels"]["candidate"]["sequence"], 1)
@@ -528,8 +551,9 @@ class SignedUpdaterTests(SignedUpdaterFixture):
         self.assertEqual(self.calls, ["plan", "apply"])
 
     def test_expiration_during_confirmation_prevents_new_apply(self):
-        def answer(_):
-            self.clock = D.timestamp("2027-01-01T00:00:00Z")
+        def answer(prompt):
+            if prompt.startswith("Update Vanilla"):
+                self.clock = D.timestamp("2027-01-01T00:00:00Z")
             return "y"
         with self.assertRaisesRegex(D.DistributionError, "expired"):
             self.updater.run_update(answer=answer)
@@ -556,6 +580,7 @@ class SignedUpdaterTests(SignedUpdaterFixture):
         self.assertEqual(result, 0)
         self.assertEqual(self.transport.calls, [])
         self.assertIsNone(target_driver.journal.inspect())
+        self.updater.run.assert_not_called()  # No second Arch maintenance on recovery.
         self.assertEqual(self.identity_path.read_bytes(), self.metadata_path.read_bytes())
 
     def test_interruption_after_staging_before_journal_blocks_new_discovery(self):
@@ -699,6 +724,188 @@ class SignedUpdaterTests(SignedUpdaterFixture):
                      "releases/v1.0.0/assets/other.tar.gz", "https://other.invalid/file"):
             with self.assertRaises(D.DistributionError):
                 S.endpoint_url("serverplan", path)
+
+
+class ArchMaintenanceTests(SignedUpdaterFixture):
+    def assert_not_applied(self):
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.identity_path.read_bytes(), D.canonical(self.source))
+        self.assertIsNone(self.updater.journal.inspect())
+        self.assertFalse(self.updater.store.parent.exists())
+
+    def test_no_new_release_never_runs_pacman(self):
+        self.set_catalog(entries=[])
+        result, output = self.run_update()
+        self.assertEqual(result, 0)
+        self.assertIn("up to date", output)
+        self.updater.run.assert_not_called()
+        self.assert_not_applied()
+
+    def test_declined_maintenance_does_not_run_preflight_or_apply(self):
+        result, output = self.run_update("n")
+        self.assertEqual(result, 0)
+        self.assertIn("canceled", output)
+        self.updater.run.assert_not_called()
+        self.assert_not_applied()
+
+    def test_closed_or_interrupted_prompt_does_not_run_pacman(self):
+        for error in (EOFError, KeyboardInterrupt):
+            with self.subTest(error=error), contextlib.redirect_stdout(io.StringIO()):
+                def answer(_):
+                    raise error()
+                self.assertEqual(self.updater.run_update(answer=answer), 0)
+            self.updater.run.assert_not_called()
+            self.assert_not_applied()
+
+    def test_successful_no_package_changes_runs_full_interactive_upgrade_before_plan(self):
+        events = []
+        original_run, original_driver = self.fake_system_update, self.updater._driver
+        def run(command, **kwargs):
+            self.security.authorize(self.target)
+            events.append(command[-1])
+            return original_run(command, **kwargs)
+        def invoke(bundle, operation):
+            events.append(operation)
+            return original_driver(bundle, operation)
+        self.updater.run.side_effect = run
+        self.updater._driver = invoke
+        self.run_update()
+        self.assertEqual(events, ["-Q", "-Syu", "-Q", "-Qu", "plan", "apply"])
+        call = self.updater.run.call_args_list[1]
+        self.assertEqual(call.args, (["/usr/bin/yay", "-Syu"],))
+        self.assertEqual(call.kwargs, {
+            "cwd": str(self.user.home), "env": {"PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
+                "HOME": str(self.user.home), "USER": self.user.name, "LOGNAME": self.user.name},
+            "user": self.user.uid, "group": self.user.gid, "extra_groups": self.user.groups,
+            "check": False})
+
+    def test_package_changes_pause_before_target_code_including_desktop_and_kernel(self):
+        for name in ("linux", "systemd", "hyprland", "quickshell", "ordinary-app"):
+            with self.subTest(package=name):
+                self.package_before = f"pacman 7.0\n{name} 1\n"
+                self.package_after = f"pacman 7.0\n{name} 2\n"
+                self.package_queries = 0
+                result, output = self.run_update()
+                self.assertEqual(result, 0)
+                self.assertIn("Reboot", output)
+                self.assert_not_applied()
+                with self.updater.journal.lock.acquire():
+                    self.security.authorize(self.target)
+                self.assertEqual(self.security.api._record()["sha256"],
+                                 D.digest((self.root / TARGET).read_bytes()))
+
+    def test_failed_or_canceled_yay_never_starts_vanilla(self):
+        for status in (1, 130, -2):
+            with self.subTest(status=status):
+                self.system_update_status = status
+                with self.assertRaisesRegex(B.BootstrapError, "failed or was canceled"):
+                    self.run_update()
+                self.assert_not_applied()
+
+    def test_ctrl_c_during_yay_stops_with_diagnostic(self):
+        def run(command, **kwargs):
+            if command[-1] == "-Syu":
+                raise KeyboardInterrupt()
+            return self.fake_system_update(command, **kwargs)
+        self.updater.run.side_effect = run
+        with self.assertRaisesRegex(B.BootstrapError, "Update System interrupted"):
+            self.run_update()
+        self.assert_not_applied()
+
+    def test_zero_exit_with_pending_upgrades_is_not_success(self):
+        self.pending_packages = "linux 1 -> 2\n"
+        with self.assertRaisesRegex(B.BootstrapError, "Arch upgrades remain"):
+            self.run_update()
+        self.assert_not_applied()
+
+    def test_package_query_failure_stops_before_maintenance(self):
+        self.updater.run.return_value = subprocess.CompletedProcess([], 1, "", "error")
+        self.updater.run.side_effect = None
+        with self.assertRaisesRegex(B.BootstrapError, "Cannot inspect"):
+            self.run_update()
+        self.assertEqual(self.updater.run.call_count, 1)
+        self.assert_not_applied()
+
+    def test_post_maintenance_query_failure_never_starts_vanilla(self):
+        def run(command, **kwargs):
+            if command[-1] == "-Q" and self.package_queries:
+                return subprocess.CompletedProcess(command, 1, "", "error")
+            return self.fake_system_update(command, **kwargs)
+        self.updater.run.side_effect = run
+        with self.assertRaisesRegex(B.BootstrapError, "Cannot inspect"):
+            self.run_update()
+        self.assert_not_applied()
+
+    def test_ambiguous_pending_upgrade_query_fails_closed(self):
+        def run(command, **kwargs):
+            if command[-1] == "-Qu":
+                return subprocess.CompletedProcess(command, 1, "", "database error")
+            return self.fake_system_update(command, **kwargs)
+        self.updater.run.side_effect = run
+        with self.assertRaisesRegex(B.BootstrapError, "Cannot verify"):
+            self.run_update()
+        self.assert_not_applied()
+
+    def test_package_query_order_is_not_a_package_change(self):
+        self.package_after = "python 3.13\npacman 7.0\n"
+        self.run_update()
+        self.assertEqual(self.calls, ["plan", "apply"])
+
+    def test_expiration_during_arch_maintenance_prevents_target_code(self):
+        def run(command, **kwargs):
+            if command[-1] == "-Syu":
+                self.clock = D.timestamp("2027-01-01T00:00:00Z")
+            return self.fake_system_update(command, **kwargs)
+        self.updater.run.side_effect = run
+        with self.assertRaisesRegex(D.DistributionError, "expired"):
+            self.run_update()
+        self.assert_not_applied()
+
+    def test_bad_signed_metadata_never_runs_maintenance(self):
+        self.set_catalog(other=True)
+        with self.assertRaises(D.DistributionError):
+            self.run_update()
+        self.updater.run.assert_not_called()
+        self.assert_not_applied()
+
+    def test_both_actions_use_the_same_upstream_system_update_command(self):
+        qml = (PROJECT / "home/.config/quickshell/vanhyprarch/components/UpdateActions.qml").read_text()
+        self.assertIn('yayExecutable,\n                "-Syu"', qml)
+        self.assertNotIn('"/usr/bin/pacman"', qml)
+        self.assertIn('readonly property string yayExecutable: "/usr/bin/yay"', qml)
+        self.run_update()
+        update_commands = [call.args[0] for call in self.updater.run.call_args_list
+                           if call.args[0][-1] == "-Syu"]
+        self.assertEqual(update_commands, [["/usr/bin/yay", "-Syu"]])
+
+    def test_user_configuration_and_cache_context_reach_unprivileged_yay(self):
+        self.updater.system_update_environment = {
+            "PATH": "/srv/fixture/bin:/usr/bin:/bin", "TERM": "foot", "LANG": "C.UTF-8",
+            "XDG_CONFIG_HOME": "/srv/fixture/custom-config", "XDG_CACHE_HOME": "/srv/fixture/custom-cache",
+            "XDG_STATE_HOME": "/srv/fixture/custom-state"}
+        self.run_update()
+        call = self.updater.run.call_args_list[1]
+        self.assertEqual(call.kwargs["env"], {**self.updater.system_update_environment,
+            "HOME": str(self.user.home), "USER": self.user.name, "LOGNAME": self.user.name})
+        self.assertEqual(call.kwargs["user"], self.user.uid)
+        self.assertNotIn("SUDO_UID", call.kwargs["env"])
+        self.assertNotIn("SUDO_USER", call.kwargs["env"])
+
+    def test_missing_or_unsafe_user_environment_fails_before_maintenance(self):
+        for environment in (None, {"LD_PRELOAD": "/tmp/untrusted.so"}, {"PATH": "invalid\npath"}):
+            with self.subTest(environment=environment):
+                self.updater.system_update_environment = environment
+                with self.assertRaisesRegex(B.BootstrapError, "captured environment"):
+                    self.run_update()
+                self.updater.run.assert_not_called()
+                self.assert_not_applied()
+
+    def test_yay_can_never_run_as_root(self):
+        self.updater.user = TargetUser(self.user.name, 0, self.user.gid, self.user.home, self.user.groups)
+        with self.assertRaisesRegex(B.BootstrapError, "captured environment"):
+            self.run_update()
+        self.updater.run.assert_not_called()
+        self.assert_not_applied()
 
 
 if __name__ == "__main__":

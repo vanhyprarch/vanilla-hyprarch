@@ -45,6 +45,83 @@ coordinated by the sole developer: immutable files and metadata first, the teste
 FTPS channel replacement last, final verification before Update. A formal hosting
 atomicity guarantee is not required; cryptographic checks remain mandatory.
 
+## Next-release development: Arch maintenance before a new update
+
+This is source development after immutable v1.0.1, not deployed behavior or a
+change to that release/tag/preparation kit. After authenticating a newer catalog,
+manifest, metadata and archive, the updater displays the release and asks whether
+to run the existing **Update System mechanism: `/usr/bin/yay -Syu`**, including
+Arch repositories and AUR, in the same Foot window. The standalone menu action
+and this prerequisite delegate to exactly the same upstream executable/options;
+no alternative package updater or shared-wrapper abstraction is added. Declining,
+Ctrl+C, a nonzero exit, failed package queries or remaining official upgrades stop
+before target preflight or Vanilla apply. It never launches an independent
+`pacman -Syu`, database-only refresh or `--noconfirm` transaction. Pacman is used
+only for read-only installed-package snapshots and the final official-upgrade
+check; cached `pacman -Qu` alone is not proof of repository freshness.
+
+The privileged Vanilla orchestrator runs yay as the resolved desktop UID, GID
+and supplementary groups, with that user's HOME, USER/LOGNAME and working
+directory. Yay retains its own sudo, repository/AUR selection, build/review and
+confirmation behavior; it is never run as root or wrapped in a shell. Terminal
+stdin/stdout/stderr stay inherited. A small explicit environment allowlist
+(PATH, terminal/locale and XDG/bus variables) is captured before the initial sudo
+handoff; user config/cache/state locations are preserved without passing arbitrary
+secrets, root's environment, or `SUDO_*` into yay. This additive internal CLI
+context is not distribution metadata or persistent state. Missing/invalid context
+fails closed for new maintenance, while existing exact-target recovery needs no
+new context. The standalone System action's code and command remain unchanged.
+
+The installed package name/version sets are compared before and after yay.
+Any change causes a conservative stop requesting a normal reboot before the user
+invokes Vanilla Update again. This includes kernel, systemd, Hyprland, Quickshell
+and their dependencies without maintaining a fragile critical-package list.
+It is an operator reboot policy, not a claim that every updated application
+technically requires rebooting or a universal reboot detector. The user must
+follow the instruction; no persistent reboot marker or automatic reboot is added.
+The next invocation authenticates discovery again and runs the maintenance check
+again; normally it finds no package changes. If more packages change, it pauses
+again. No new Vanilla transaction exists until the eventual approved apply.
+
+If no packages change and no upgrades remain, the existing authenticated target
+preflight and separate Vanilla confirmation proceed. Signed authorization is
+rechecked after maintenance and before apply; an expired target cannot proceed.
+Arch maintenance holds the existing updater lock and does not weaken provenance,
+anti-rollback, package planning, user ownership or identity-last publication.
+It is a separate administrator-owned Arch transaction; a later Vanilla failure
+does not roll back Arch packages. Pacman hooks retain their normal behavior.
+
+An existing authorized Vanilla journal is handled **before** discovery or this
+maintenance prompt. Recovery re-verifies the retained exact target and does not
+run a second full Arch upgrade. If package maintenance is needed to repair that
+transaction, the operator uses standalone Update System (and resolves any Arch
+mirror problem) before rerunning normal Update. The accepted v1.0.1 incident used
+a manual full `pacman -Syu` repair. No-new-release checks run no package-manager
+commands. The separate System action remains `/usr/bin/yay -Syu` (including AUR);
+both actions genuinely share yay's update implementation. No AUR parsing, package
+building or install logic is reimplemented in Vanilla.
+
+Existing v1.0.1 installations retain their immutable older bootstrap. This source
+change takes effect only when a subsequently delivered updater is installed; it
+cannot retroactively add a prompt before that first transition. Continue the
+manual standalone Update System prerequisite for that transition. Do not modify
+the accepted preparation kit or replace the installed updater to test this patch.
+
+On the genuine development installation, safe initial review uses only fixtures:
+
+```bash
+python3 -B tests/signed-updater.py ArchMaintenanceTests
+python3 -B tests/signed-updater.py SignedUpdaterTests.test_exact_target_resume_is_offline_and_survives_catalog_and_root_expiry
+```
+
+These create disposable signed releases/test keys and private simulated roots;
+every yay and pacman call is simulated. They exercise confirmation, inherited terminal
+streams, failures, package changes, reboot guidance and exact-target recovery
+without changing the host. The real installed updater must continue refusing
+unreleased/development identity. Live pacman, deployment, and any later genuine
+release-upgrade acceptance need separate authorization; do not forge an installed
+release identity to enable this flow on the development SSD.
+
 ## Identity and authored declaration
 
 `main` remains development, not an update channel. Release identities are the
