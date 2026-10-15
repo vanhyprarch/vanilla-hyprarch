@@ -4,6 +4,11 @@
 > **Original v1.0.0 users: follow the [complete one-time updater preparation and
 > upgrade guide](docs/upgrade-v1.0.0-to-v1.0.1.md) before using Update.**
 > Fresh v1.0.1 installations and already prepared systems must not repeat the bridge.
+>
+> Public ServerPlan downloads (no GitHub login required):
+> [preparation kit](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz),
+> [published upgrade guide](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/UPGRADE-FROM-v1.0.0.md),
+> [checksums](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/SHA256SUMS).
 
 Real v1.0.0 -> v1.0.1 upgrade and reboot acceptance passed on the existing Proxmox
 VM: signed ServerPlan fallback with GitHub HTTP 404, exact-target recovery after

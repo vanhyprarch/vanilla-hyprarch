@@ -29,15 +29,18 @@ The subsequent normal signed update installs genuine v1.0.1 with zero migrations
 
 ## Downloads, authenticity and prerequisites
 
-Use the [v1.0.1 GitHub Release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.1).
-Its two different archives have deliberately different purposes:
+The preparation kit, published guide and checksums are publicly available on
+ServerPlan. They are also preserved in the
+[v1.0.1 GitHub Release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.1),
+whose anonymous access currently returns HTTP 404. The two different archives
+have deliberately different purposes:
 
 | Download | Purpose |
 | --- | --- |
-| `vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz` | Complete one-time administrative kit; use this guide |
+| [vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz) | Complete one-time administrative kit; use this guide |
 | `vanhyprarch-v1.0.1.tar.gz` and `release.json` | Genuine Stable release artifacts; normal Update acquires and authenticates these |
-| `UPGRADE-FROM-v1.0.0.md` | Downloadable copy of this current guide |
-| `SHA256SUMS` | Transfer checksums for the release downloads |
+| [UPGRADE-FROM-v1.0.0.md](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/UPGRADE-FROM-v1.0.0.md) | Published guide snapshot; this document on main may contain later clarifications |
+| [SHA256SUMS](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/SHA256SUMS) | Transfer checksums for the release downloads |
 
 The preparation kit is **65,331,156 bytes**, SHA-256
 `53865902c29c1e0a5098ec09c585afabb21435c174ac765d3a13627a322ed175`.
@@ -152,7 +155,7 @@ After authenticating the expected hash above, download into a new directory:
   cd "$download_dir"
   curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
     --output vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz \
-    https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz
+    https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz
   printf '%s  %s\n' \
     53865902c29c1e0a5098ec09c585afabb21435c174ac765d3a13627a322ed175 \
     vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz | sha256sum --check -
@@ -167,19 +170,10 @@ checksum file's own hash and size are recorded above. Its original five entries
 cover every other original file. A browser download or existing trusted transfer
 method is equally usable; preserve the exact filenames and run the same checks.
 
-Anonymous GitHub access has previously returned HTTP 404 despite authenticated
-access working. A failed download is not a usable kit. If that restriction
-continues, obtain a verified copy from the maintainer. A fallback kit is prepared
-for `/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/` on ServerPlan;
-**do not assume it is uploaded**. Once the maintainer confirms it is available,
-the only change to the download command is this URL:
-
-```text
-https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz
-```
-
-All hashes, approval requirements and subsequent steps remain identical. The
-already published signed Stable assets on ServerPlan are separate and unchanged.
+The ServerPlan kit is published and byte-identical to the approved GitHub asset;
+the command above does not require GitHub access. A failed download is not a
+usable kit. All hashes, approval requirements and subsequent steps remain
+identical. The signed Stable assets on ServerPlan are separate and unchanged.
 
 ## 4. Stage protected administrative inputs and run read-only check
 
