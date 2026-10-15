@@ -71,8 +71,9 @@ grep -Fq 'implicitWidth: visible ? buttonSize : 0' "$bluetooth_component" ||
     fail 'unavailable Bluetooth dock icon still reserves width'
 grep -Fq 'implicitHeight: visible ? buttonSize : 0' "$bluetooth_component" ||
     fail 'unavailable Bluetooth dock icon still reserves height'
-grep -Fq 'opacity: root.adapterEnabled ? 1.0 : 0.45' "$bluetooth_component" ||
-    fail 'Bluetooth powered-off icon state changed'
+if grep -Eq '^[[:space:]]*opacity:' "$bluetooth_component"; then
+    fail 'Bluetooth functional states must retain the normal dock foreground'
+fi
 grep -Fq 'const candidate = root.visible && root.adapterEnabled' "$bluetooth_panel" ||
     fail 'Bluetooth discovery is not gated by a visible enabled panel'
 grep -Fq ': "Bluetooth is off")' "$bluetooth_panel" ||

@@ -37,7 +37,6 @@ Item {
         iconName: root.iconName
         theme: root.theme
         metrics: root.metrics
-        opacity: root.adapterEnabled ? 1.0 : 0.45
     }
 
     MouseArea {
