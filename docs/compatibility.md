@@ -721,10 +721,25 @@ visible before the new Hyprpaper surface. A controlled runtime test setting
 only `misc.disable_hyprland_logo = true` removed that foreign frame across four
 alternating switches, with no black or blank frame and no renderer restart.
 The managed Hyprland core therefore disables the native logo/default
-background. `force_default_wallpaper` remains unchanged, splash-text policy is
-unrelated, and Appearance does not add preload, fade, overlay, or request-order
+background. `force_default_wallpaper` remains unchanged, and Appearance does not
+add preload, fade, overlay, or request-order
 workarounds. This is a compositor-background ownership boundary, not a general
 claim that Hyprpaper transitions are defective.
+
+For a separate brief dark-background/bottom-text flash after SDDM login, live
+Hyprland 0.56.2 readback confirmed `disable_hyprland_logo = true` but
+`disable_splash_rendering = false` (the unset default), with no later user
+override. Hyprpaper already had `splash = false`. The installed Lua API and
+[tagged option definitions](https://github.com/hyprwm/Hyprland/blob/v0.56.2/src/config/values/ConfigValues.cpp)
+confirm independent compositor logo and splash switches, a `0xff111111`
+background and translucent white splash text. This is the strongest verified
+explanation for the reported frame before Appearance's renderer maps its
+wallpaper. The managed core now also sets `misc.disable_splash_rendering = true`.
+The user confirmed that a real SDDM logout/login on the development machine
+removed the flash. This does not remove wallpaper startup latency. Retest both
+native suppression options and the SDDM-to-wallpaper
+transition after Hyprland upgrades; revisit the setting if upstream removes or
+changes the splash option. No startup delay or renderer workaround is added.
 
 The installed binary links hyprgraphics plus libmagic, PNG, JPEG, WebP, SVG,
 and JPEG XL libraries. Tagged hyprgraphics source additionally provides BMP.

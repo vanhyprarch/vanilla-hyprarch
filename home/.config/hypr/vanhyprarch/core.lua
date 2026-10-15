@@ -195,6 +195,8 @@ hl.config({
         -- Appearance owns wallpaper rendering; never expose Hyprland's native
         -- logo/default background behind Hyprpaper.
         disable_hyprland_logo = true,
+        -- The compositor splash is separate and can appear before Hyprpaper.
+        disable_splash_rendering = true,
     },
 })
 

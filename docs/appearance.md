@@ -140,6 +140,13 @@ frame; no renderer sequencing workaround is required. The shell palette still
 updates after the manager has reconciled and verified external Appearance
 state.
 
+The core also sets `misc.disable_splash_rendering = true` to suppress Hyprland's
+separate splash text before the selected wallpaper appears at login. Hyprpaper's
+own `splash = false` remains in its managed config. These settings remove native
+branding; they do not eliminate the time needed to start the renderer and apply
+the persisted wallpaper. A real SDDM logout/login on the development machine
+passed visual acceptance: the startup flash is gone.
+
 Wallpaper paths are canonicalized and must resolve to a regular file beneath
 the matching mode directory. A symlink whose target remains inside is accepted;
 an escaping symlink is rejected. The installed renderer stack was verified for

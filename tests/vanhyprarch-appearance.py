@@ -1449,7 +1449,7 @@ class StaticIntegrationTests(unittest.TestCase):
         )
         self.assertNotIn('hl.exec_cmd("hyprpaper")', core)
 
-    def test_hyprland_native_background_is_disabled_without_extra_policy(self) -> None:
+    def test_hyprland_native_background_and_splash_are_disabled(self) -> None:
         core = (
             REPOSITORY / "home/.config/hypr/vanhyprarch/core.lua"
         ).read_text(encoding="utf-8")
@@ -1462,7 +1462,11 @@ class StaticIntegrationTests(unittest.TestCase):
             re.findall(r"\bforce_default_wallpaper\s*=\s*-1\b", core),
             ["force_default_wallpaper = -1"],
         )
-        self.assertNotIn("disable_splash_rendering", core)
+        self.assertEqual(
+            re.findall(r"\bdisable_splash_rendering\s*=\s*true\b", core),
+            ["disable_splash_rendering = true"],
+        )
+        self.assertIsNone(re.search(r"\bdisable_splash_rendering\s*=\s*false\b", core))
 
     def test_official_asset_metadata_and_pair_one_defaults_are_exact(self) -> None:
         self.assertEqual(
