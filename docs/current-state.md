@@ -1428,6 +1428,7 @@ or drifted provenance still fails closed.
 
 ### PLANNED
 
+- Next active item: improve the Vanilla HyprArch dock's system icons.
 - Build the thin optional archinstall integration defined in the
   [installation strategy](installation-strategy.md), reusing the implemented
   post-install bootstrap for a configured first reboot.
@@ -1440,6 +1441,19 @@ or drifted provenance still fails closed.
 - Perform physical multi-monitor acceptance when two suitable outputs are
   simultaneously available; deterministic multi-output coverage already
   exists and no failure is currently known.
+
+### WAITING FOR UPSTREAM — LOW PRIORITY
+
+- KeePassXC 2.7.12 intermittently launches Light on the development desktop
+  despite correct Dark GSettings and XDG Settings portal values. A Light → Dark
+  change repairs it; moving the window between workspaces does not. Treat this
+  as a likely upstream race during the initial Linux portal read, described in
+  [issue #10947](https://github.com/keepassxreboot/keepassxc/issues/10947) and
+  [PR #13366](https://github.com/keepassxreboot/keepassxc/pull/13366), targeted for
+  KeePassXC 2.8.0, rather than an active Vanilla regression. Wait for 2.8.0 Stable
+  and retest startup and runtime theme switching. Keep KeePassXC optional and
+  outside the baseline; make no Vanilla theme changes, workarounds, Qt overrides
+  or beta installations.
 
 ### PROVISIONAL
 
