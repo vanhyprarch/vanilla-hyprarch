@@ -245,6 +245,24 @@ class ReleaseContractTests(unittest.TestCase):
             tracked.write_bytes(original)
             junk.unlink(missing_ok=True)
 
+    def test_tracked_release_outputs_rejected_at_any_depth(self) -> None:
+        for index, name in enumerate(("release.json", "tests/fixtures/release.json",
+                                      "vanhyprarch-v1.0.0.tar.gz",
+                                      "tests/fixtures/vanhyprarch-v1.0.0.tar.gz")):
+            with self.subTest(path=name):
+                repo = self.work / f"repo-{index}"
+                shutil.copytree(self.repo, repo)
+                path = repo / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"forbidden tracked output fixture\n")
+                git(repo, "add", "--", name)
+                git(repo, "commit", "-qm", "tracked release output fixture")
+                output = self.work / f"output-{index}"
+                output.mkdir()
+                with self.assertRaisesRegex(RELEASE.ReleaseError, "tracked release output is forbidden"):
+                    RELEASE.build(repo, git(repo, "rev-parse", "HEAD"), output)
+                self.assertEqual(list(output.iterdir()), [])
+
     def test_commit_identity(self) -> None:
         self.assertEqual(self.metadata["commit"], self.commit)
         output = self.work / "bad"

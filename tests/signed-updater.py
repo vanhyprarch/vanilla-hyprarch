@@ -479,7 +479,7 @@ class SignedUpdaterTests(SignedUpdaterFixture):
         base.mkdir()
         _, self.metadata_path, self.artifact_path, self.target = driver.BundleFixture.build(
             base, target_version="v1.0.1", minimum="v1.0.0", low=0, high=1, registry_ids=[1])
-        original = (PROJECT / "tests/fixtures/updater-v1.0.0/release.json").read_bytes()
+        original = (PROJECT / "tests/fixtures/updater-v1.0.0/release-metadata.json").read_bytes()
         self.source = D.contract.parse_metadata(original)
         self.identity_path.write_bytes(original)
         (self.root / "migration-state.txt").write_text("1")

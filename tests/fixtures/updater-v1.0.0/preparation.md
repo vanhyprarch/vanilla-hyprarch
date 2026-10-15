@@ -11,7 +11,13 @@ bytes, SHA-256 `de57673385f961b233bdae95731ba9e7a3bfef32ce5f44851143dafff0bcb0c9
 | Required fixture | SHA-256 |
 | --- | --- |
 | `vanhyprarch-update` | `13435389ce2e8d2e89d081ddab96b6f8287ccb58213d9a2c23b3b8fc6b9fb54d` |
-| `release.json` | `6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c` |
+| `release-metadata.json` | `6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c` |
+
+`release-metadata.json` retains the exact original published `release.json`
+bytes under a fixture name, so it is not mistaken for a tracked release output.
+Tests materialize those bytes as `usr/share/vanhyprarch/release.json` only inside
+their isolated temporary installation roots. The release packaging safeguard
+continues rejecting tracked `release.json` and release archive filenames.
 
 The updater is the original deterministic ZIP_STORED zipapp reconstructed with
 the published builder and byte-verified source inputs. Metadata is the canonical

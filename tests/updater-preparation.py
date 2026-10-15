@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ spec = importlib.util.spec_from_file_location("preparation", PROJECT / "admin/pr
 prep = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prep)
 FIXTURES = PROJECT / "tests/fixtures/updater-v1.0.0"
+IDENTITY_FIXTURE = FIXTURES / "release-metadata.json"
 # Historical offline golden source, not approval for real preparation.
 APPROVED = "76ba35807ae01197011017b119206316dff3796b"
 
@@ -55,9 +57,14 @@ class PreparationTests(unittest.TestCase):
             destination = cls.source / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(PROJECT / name, destination)
+        # Include the historical metadata in the packaged source, as the real
+        # checkout does, without tracking a forbidden release-output filename.
+        fixture = cls.source / IDENTITY_FIXTURE.relative_to(PROJECT)
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(IDENTITY_FIXTURE, fixture)
         git(cls.source, "config", "user.name", "Fixture")
         git(cls.source, "config", "user.email", "fixture@example.invalid")
-        git(cls.source, "add", "--", *prep.FILES)
+        git(cls.source, "add", "--", *prep.FILES, str(IDENTITY_FIXTURE.relative_to(PROJECT)))
         git(cls.source, "commit", "-qm", "isolated signed updater fixture")
         APPROVED = git(cls.source, "rev-parse", "HEAD")
         git(cls.source, "remote", "set-url", "origin", "https://github.com/vanhyprarch/vanilla-hyprarch.git")
@@ -71,7 +78,7 @@ class PreparationTests(unittest.TestCase):
         cls.metadata = cls.output / "release.json"
         cls.artifact = next(cls.output.glob("*.tar.gz"))
         cls.original = (FIXTURES / "vanhyprarch-update").read_bytes()
-        cls.identity = (FIXTURES / "release.json").read_bytes()
+        cls.identity = IDENTITY_FIXTURE.read_bytes()
 
     @classmethod
     def tearDownClass(cls):
@@ -118,6 +125,14 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(prep.digest(self.original), prep.ORIGINAL_UPDATER)
         self.assertEqual(prep.digest(self.identity), prep.ORIGINAL_IDENTITY)
         self.assertEqual(self.operation.check()["status"], "replace")
+
+    def test_preparation_bundle_preserves_renamed_historical_metadata(self):
+        self.assertEqual(prep.contract.verify(self.metadata, self.artifact)["commit"], APPROVED)
+        prefix = prep.contract.archive_root(self.operation.value["version"]) + "/"
+        with tarfile.open(self.artifact, "r:gz") as archive:
+            path = prefix + str(IDENTITY_FIXTURE.relative_to(PROJECT))
+            self.assertEqual(archive.extractfile(path).read(), self.identity)
+            self.assertNotIn(prefix + "tests/fixtures/updater-v1.0.0/release.json", archive.getnames())
 
     def test_check_changes_nothing(self):
         before = snapshot(self.root)
