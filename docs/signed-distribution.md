@@ -358,6 +358,12 @@ directory, and remove them afterward. No private fixtures are committed.
 
 ## Local publisher and isolated tests
 
+Phase 3A's [static publication tooling and hosting runbook](serverplan-publication.md)
+builds on these primitives, retaining frozen signatures and catalog receipts.
+It adds no installed updater or network-transport changes; real hosting acceptance
+has passed for the current single-user manual publication workflow. Production
+trust provisioning remains pending.
+
 Run from the repository root. The existing builder still builds an exact Git
 commit, not dirty working-tree contents. All following commands are local;
 outputs refuse existing destinations and should be built in a scratch directory:
@@ -414,20 +420,25 @@ Only an authenticated fresh catalog with no eligible target reports that status.
 Requests retain HTTPS validation, a 20-second timeout, no inherited proxies,
 bounded downloads, and at most three GitHub-asset redirects to the existing
 CDN allowlist without credentials/cookies. Static ServerPlan/raw-metadata
-redirects are refused. Actual ServerPlan hosting/rename behavior remains a
-Phase 3 acceptance requirement. Tests exercise real transport code with GitHub
+redirects are refused. Disposable ServerPlan delivery and FTPS replacement have
+passed user-confirmed hosting acceptance; these observations do not establish a
+formal atomicity guarantee. Tests exercise real transport code with GitHub
 HTTP 404 and complete signed ServerPlan fixtures; public GitHub is not needed.
 
 Still required: separately approved offline production key custody/generation,
-public trust-pin delivery in an approved exact source commit, publisher artifact
-freeze/reuse enforcement, static publication, a rebuilt verified preparation
-payload, and snapshotted Proxmox acceptance from genuine v1.0.0. Production
+public trust-pin delivery in an approved exact source commit, actual production
+static publication, a rebuilt verified preparation payload, and snapshotted
+Proxmox acceptance from genuine v1.0.0. Production
 preparation checks official Minisign and the packaged root signature before
 changing its two files; it never installs the package or keys itself.
 
 Static publication must upload immutable assets, verify them, publish immutable
-manifest/signature files, verify them, then atomically replace the self-contained
-signed channel catalog last. Hosting rename/replace semantics and interrupted
-publication require separate validation; no FTPS, cPanel, upload, or production
-publication code is included here. Official Arch packages remain official Arch
-downloads; ServerPlan `packages/` remains reserved for future Vanilla components.
+manifest/signature files, verify them, then stage and verify the complete
+self-contained signed channel catalog before replacing the active catalog last
+with the tested FTPS rename operation. The sole developer must finish publication
+and verify the active catalog before initiating Update. Temporary update-check
+unavailability is acceptable during publication; invalid or inconsistent content
+still fails closed. A formal provider-confirmed atomicity guarantee is not a
+publication prerequisite. No FTPS, cPanel or upload client is included here.
+Official Arch packages remain official Arch downloads; ServerPlan `packages/`
+remains reserved for future Vanilla components.

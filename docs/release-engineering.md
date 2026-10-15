@@ -14,6 +14,11 @@ state, and signed recovery using this existing generated release identity.
 It remains undeployed and production trust is deliberately unconfigured. Public
 key custody, static signed publication, definitive preparation, and Proxmox
 acceptance remain release gates.
+The [Phase 3A publication runbook](serverplan-publication.md) covers offline tree
+assembly and the accepted disposable hosting observations. Publication is manually
+coordinated by the sole developer: immutable files and metadata first, the tested
+FTPS channel replacement last, final verification before Update. A formal hosting
+atomicity guarantee is not required; cryptographic checks remain mandatory.
 
 ## Identity and authored declaration
 

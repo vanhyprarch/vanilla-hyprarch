@@ -60,6 +60,21 @@ between the two publications. This work is undeployed: the public trust record i
 unconfigured, production keys/hosting publication do not exist, and real updater
 preparation and Proxmox lifecycle acceptance remain blocked pending Phase 3.
 
+Phase 3A adds offline [static publication tooling and a disposable ServerPlan
+acceptance runbook](serverplan-publication.md): frozen release signatures,
+catalog sequence reservations, and an isolated test-only HTTPS observer.
+User-confirmed disposable hosting acceptance passed: HTTPS hashes/signatures,
+incomplete-upload isolation, FTPS replacement, 240/240 complete OLD/NEW responses
+and 240/240 complete signed sequence-1/2 catalogs, with no observed HTTP errors,
+missing files or partial content. The final sequence-2 catalog verified and
+immutable objects were unchanged. This is operational acceptance for the current
+single-user manual publication workflow, not a formal atomicity guarantee.
+The developer initiates Update only after publication and final verification;
+temporary check unavailability during publication is acceptable. Signatures,
+immutable bindings, rollback protection and fail-closed behavior remain mandatory.
+No provider-confirmed atomic-rename guarantee is required. Production keys,
+metadata, updater preparation and Proxmox acceptance remain pending.
+
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).
 
