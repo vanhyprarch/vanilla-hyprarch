@@ -1053,8 +1053,8 @@ cursor handling.
 **Affected component:** Qt 6.11.2 with Quickshell 0.3.1
 
 `MultiEffect.colorization` preserves source luminance rather than applying an
-exact semantic foreground. The canonical system SVG geometry uses black source
-artwork, so VM visual acceptance showed that effect leaving the new dock icons
+exact semantic foreground. The previous system SVG geometry used black source
+artwork, so VM visual acceptance showed that effect leaving the dock icons
 dark and unreadable in Dark Mode even when its colorization input was the
 correct theme token.
 
@@ -1064,6 +1064,17 @@ The shared `SystemIcon` renderer instead uses the installed
 scope is limited to Vanilla's structural SVGs. An offscreen pixel fixture
 checks opaque Dark and Light output against the authoritative theme values;
 application and content icon-theme rendering remains separate.
+
+The static Lucide replacement preserves this renderer and the original
+24-unit geometry/stroke width 2. On Quickshell 0.3.2 and Qt 6.12.0, the offscreen
+fixture checks all 18 icons in both palettes, including their upstream
+`currentColor` strokes, without modifying SVG files at runtime. The installed
+native APIs expose BlueZ `discovering`/device `connected`, NetworkManager link
+state and 0–1 Wi-Fi strength, and PipeWire sink volume/mute through reactive
+properties. Networking exposes no primary-route selector on this version, so
+the dock preserves its existing Ethernet-first preference for simultaneous
+links. Unknown Wi-Fi strength uses generic connected artwork rather than a
+fabricated measurement or a disconnected indicator.
 
 Retest the rendered foreground and the internal icon-image import after a Qt
 upgrade. Replace this boundary when a supported public Qt or Quickshell image

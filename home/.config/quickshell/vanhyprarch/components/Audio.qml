@@ -15,16 +15,16 @@ Item {
     readonly property string iconName: {
         const audio = root.sink && root.sink.audio ? root.sink.audio : null
         if (!audio || audio.muted)
-            return "audio-volume-muted"
+            return "volume-off"
 
         const volume = Number(audio.volume)
         if (!isFinite(volume) || volume <= 0)
-            return "audio-volume-muted"
+            return "volume-off"
         if (volume <= 0.33)
-            return "audio-volume-low"
+            return "volume"
         if (volume <= 0.66)
-            return "audio-volume-medium"
-        return "audio-volume-high"
+            return "volume-1"
+        return "volume-2"
     }
 
     implicitWidth: buttonSize

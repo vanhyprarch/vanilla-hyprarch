@@ -18,6 +18,13 @@ Item {
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool adapterEnabled: adapter
         && adapter.state === BluetoothAdapterState.Enabled && adapter.enabled
+    readonly property var devices: root.adapter && root.adapter.devices
+        ? root.adapter.devices.values : []
+    readonly property bool connected: root.devices.some(device => device && device.connected)
+    // Power takes precedence; real discovery is visible even while connected.
+    readonly property string iconName: !root.adapterEnabled ? "bluetooth-off"
+        : root.adapter.discovering ? "bluetooth-searching"
+        : root.connected ? "bluetooth-connected" : "bluetooth"
 
     visible: root.hardwareAvailable
     implicitWidth: visible ? buttonSize : 0
@@ -27,7 +34,7 @@ Item {
 
     SystemIcon {
         anchors.centerIn: parent
-        iconName: "bluetooth"
+        iconName: root.iconName
         theme: root.theme
         metrics: root.metrics
         opacity: root.adapterEnabled ? 1.0 : 0.45

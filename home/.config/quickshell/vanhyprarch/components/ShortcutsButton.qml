@@ -15,7 +15,7 @@ Item {
 
     SystemIcon {
         anchors.centerIn: parent
-        iconName: "information"
+        iconName: "info"
         theme: root.theme
         metrics: root.metrics
     }

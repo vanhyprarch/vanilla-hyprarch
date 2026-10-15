@@ -20,7 +20,7 @@ Item {
 
     SystemIcon {
         anchors.centerIn: parent
-        iconName: root.controller.darkMode ? "theme-dark" : "theme-light"
+        iconName: root.controller.darkMode ? "moon" : "sun"
         theme: root.theme
         metrics: root.metrics
     }

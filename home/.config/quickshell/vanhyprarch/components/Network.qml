@@ -38,31 +38,28 @@ Item {
         return strongest
     }
     readonly property string iconName: {
-        if (!root.backendAvailable
-                || Networking.connectivity === NetworkConnectivity.None)
-            return "network-disconnected"
+        if (!root.backendAvailable)
+            return "globe-off"
 
-        if (Networking.connectivity === NetworkConnectivity.Portal
-                || Networking.connectivity === NetworkConnectivity.Limited)
-            return "network-limited"
-
+        // Preserve the existing Ethernet-first preference for simultaneous links.
+        // Connectivity checks describe Internet reachability, not link presence.
         if (root.connectedWiredDevices.length > 0)
-            return "network-wired"
+            return "ethernet-port"
 
-        if (root.strongestWifiNetwork) {
+        if (root.connectedWifiDevices.length > 0) {
             const signal = root.safeSignalStrength(root.strongestWifiNetwork)
-            if (signal <= 0.20)
-                return "network-wireless-signal-none"
-            if (signal <= 0.40)
-                return "network-wireless-signal-low"
-            if (signal <= 0.60)
-                return "network-wireless-signal-ok"
-            if (signal <= 0.80)
-                return "network-wireless-signal-good"
-            return "network-wireless-signal-excellent"
+            // Unknown strength stays connected without inventing a percentage.
+            if (signal < 0)
+                return "wifi"
+            const percent = Math.round(signal * 100)
+            if (percent <= 33)
+                return "wifi-low"
+            if (percent <= 66)
+                return "wifi-high"
+            return "wifi"
         }
 
-        return "network-wireless-offline"
+        return "globe-off"
     }
 
     function connectedWifiNetwork(device): var {
@@ -77,10 +74,10 @@ Item {
     }
 
     function safeSignalStrength(network): real {
-        if (!network)
-            return 0
-        const signal = Number(network.signalStrength)
-        return isFinite(signal) ? Math.max(0, Math.min(1, signal)) : 0
+        if (!network || typeof network.signalStrength !== "number")
+            return -1
+        const signal = network.signalStrength
+        return isFinite(signal) && signal >= 0 && signal <= 1 ? signal : -1
     }
 
     implicitWidth: buttonSize

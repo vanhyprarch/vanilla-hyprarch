@@ -558,7 +558,7 @@ The current Quickshell UI includes:
 - one persistent Light/Dark Appearance mode coordinating the accepted shell
   palette, standard host preference, and remembered per-mode wallpaper;
 - direct dock access to Super+Space from the logo and to the shortcut viewer
-  from a system-sized `dialog-information` control;
+  from a system-sized information control;
 - clock and calendar;
 - lock, suspend, logout through `hyprshutdown`, reboot, and power-off actions;
 - a keyboard-and-mouse Super+Space surface with Apps, Install, Remove, Update,
@@ -744,15 +744,29 @@ Manual pointer and visual validation of the two new dock affordances remains
 pending.
 
 Theme, Info/Shortcuts, Power & Idle, Display, Audio, Network, and Bluetooth use
-one original Vanilla-owned structural icon set under
-`assets/system-icons/`. Every semantic state has one scale-independent SVG
-with a `0 0 24 24` view box. One shared renderer uses the existing 20-pixel
-logical icon size in the normal layout (with a bounded responsive reduction on
+exactly 18 approved static Lucide SVGs under the managed Quickshell tree's
+`assets/system-icons/`. The unmodified source revision and ISC/Feather MIT
+notices are recorded [alongside the assets](../home/.config/quickshell/vanhyprarch/assets/system-icons/README.md).
+There is no Lucide package, runtime download or upstream synchronization;
+future Lucide versions require no maintenance. One shared renderer uses the
+existing 20-pixel logical icon size in the normal layout (with a bounded responsive reduction on
 constrained logical screens) and recolors the monochrome source through the
 existing Power/menu icon's `theme.accent` foreground using Qt's icon-image
 color property, so light and dark appearances remain coherent without
 preserving the source artwork's dark luminance or selecting different artwork
 at another monitor scale.
+Bluetooth priority is powered off, actual BlueZ discovery, connected device,
+then enabled idle. Network keeps the existing Ethernet-first preference when
+both links are connected; Wi-Fi percentages 0–33, 34–66 and 67–100 map to
+`wifi-low`, `wifi-high` and `wifi`. Unknown strength stays generic `wifi`;
+Internet reachability does not turn an active link into disconnected artwork.
+Audio keeps mute/zero priority and its existing 33/66 percent boundaries, with
+amplification using `volume-2`. Theme artwork represents the current mode
+(`sun` Light, `moon` Dark), Power & Idle uses `zap`, Display `monitor-cog`, and
+Shortcuts `info`. Reactive native backends and all control actions are retained.
+The managed deployment validates all 23 artifacts, and native same-process
+Quickshell reload passed with no new diagnostics or preference changes.
+The user visually approved the deployed Lucide icons on the development desktop.
 Application, picker, tray, and content icons remain theme-resolved; Papirus is
 still the shell's icon-theme baseline for those external icons.
 
@@ -1428,7 +1442,6 @@ or drifted provenance still fails closed.
 
 ### PLANNED
 
-- Next active item: improve the Vanilla HyprArch dock's system icons.
 - Build the thin optional archinstall integration defined in the
   [installation strategy](installation-strategy.md), reusing the implemented
   post-install bootstrap for a configured first reboot.

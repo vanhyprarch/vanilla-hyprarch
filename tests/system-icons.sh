@@ -29,6 +29,19 @@ render_dir=$runtime_root/render
 mkdir -m 0700 -p -- "$config_dir" "$render_dir" "$runtime_root/runtime"
 ln -s "$shell_dir/components" "$config_dir/components"
 ln -s "$shell_dir/assets" "$config_dir/assets"
+python -B "$test_dir/system-icons.py" --state-fixture "$config_dir/state.qml"
+state_log=$runtime_root/state.log
+if ! env -u WAYLAND_DISPLAY -u DISPLAY \
+    QT_QPA_PLATFORM=offscreen XDG_RUNTIME_DIR=$runtime_root/runtime \
+    timeout 10s qs --no-color -p "$config_dir/state.qml" >"$state_log" 2>&1
+then
+    cat "$state_log" >&2
+    fail 'state fixture failed'
+fi
+grep -F 'vanhyprarch system icon state self-check passed' "$state_log" || {
+    cat "$state_log" >&2
+    fail 'state fixture did not complete'
+}
 ln -s "$test_dir/system-icon-render.qml" "$config_dir/shell.qml"
 
 log=$runtime_root/quickshell.log

@@ -144,10 +144,13 @@ official Arch packages. It does not make GNOME Text Editor the text MIME
 default or a dock pin. The four fresh dock pins are Firefox, Foot, Thunar,
 then Bazaar. Existing user pin state is preserved.
 
-The shell declares Papirus through its root icon-theme pragma. System-control
-icons use Papirus full-color assets where appropriate; tray icons may be tinted
-with the shell accent. Missing icons should be addressed through the icon policy
-rather than by embedding arbitrary unlicensed assets.
+The shell declares Papirus through its root icon-theme pragma for application,
+tray and content icons. The 2026-10-15 dock decision permanently vendors only
+18 approved Lucide SVGs as static local system-control artwork, using the existing
+renderer and palette. The assets carry upstream provenance and ISC/Feather MIT
+notices; no Lucide dependency, runtime download, synchronization or future
+upstream maintenance is required. Missing icons should be addressed through
+this policy rather than by embedding arbitrary unlicensed assets.
 
 `xarchiver` is the selected lightweight archive frontend with Thunar's archive
 plugin. `file-roller` remains excluded. BlueZ remains the Bluetooth backend;

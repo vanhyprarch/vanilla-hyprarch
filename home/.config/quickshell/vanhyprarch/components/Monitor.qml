@@ -19,7 +19,7 @@ Item {
 
     SystemIcon {
         anchors.centerIn: parent
-        iconName: "display"
+        iconName: "monitor-cog"
         theme: root.theme
         metrics: root.metrics
     }
