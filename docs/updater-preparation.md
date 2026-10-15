@@ -5,11 +5,12 @@ accept it in a **snapshotted Proxmox VM**. Production remains untouched until
 that acceptance is complete. Do not run it on an unreleased/development host.
 No preparation or VM execution has been accepted yet.
 
-**EXECUTION BLOCKED:** GitHub public release access remains unavailable. The
-definitive payload must be rebuilt from a later explicitly approved exact commit
-containing secure ServerPlan distribution, independently signed manifests, and
-configured production public trust pins. Phase 2 implements authenticated fallback
-in source/tests but deliberately leaves trust unconfigured. Commit `76ba358` and the hashes below are
+**NOT YET AUTHORIZED:** GitHub public release access remains unavailable, but
+authenticated ServerPlan fallback, production public trust configuration and the
+initial signed v1.0.0 ServerPlan publication are complete. The definitive payload
+must still be rebuilt from an explicitly approved exact commit containing the
+final public pins, followed by separate VM execution authorization.
+Commit `76ba358` and the hashes below are
 preliminary regression/reproducibility records only: **NOT approved for VM or
 production installation**. Do not execute the administrative procedure yet.
 
@@ -35,7 +36,7 @@ The preliminary payload was built from
 It must not become the definitive preparation payload. The tool takes an
 explicit `--approved-commit`; it does not pin this preliminary commit.
 
-After ServerPlan completion and review, select and approve a later exact source
+After final public-trust review, select and approve a later exact source
 commit and rebuild all payload/provenance records. Use administrative tooling
 from that same approved commit so its authoritative file list and packager stay
 aligned with the payload. Existing protocol/schema requirements and byte-for-byte
@@ -89,9 +90,10 @@ records; never use these preliminary hashes to authorize real preparation.
 
 Before any administrator command below:
 
-- Complete and accept the signed ServerPlan distribution and updater fallback,
-  approve the later source commit, and rebuild/verify the definitive payload.
-  Obtain separate VM execution authorization. These prerequisites are pending.
+- Signed ServerPlan distribution and updater fallback are complete. Approve the
+  exact source commit with final public pins, rebuild/verify the definitive
+  payload, and obtain separate VM execution authorization. These steps remain
+  pending; this runbook does not authorize preparation.
 - Require the official Arch `minisign` package before preparation. The tool performs
   read-only package/executable and packaged-root signature/expiry checks; it never
   installs a verifier or obtains trust keys from ServerPlan. Complete a normal

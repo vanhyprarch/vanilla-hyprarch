@@ -643,8 +643,11 @@ class SignedUpdaterTests(SignedUpdaterFixture):
 
     def test_packaged_unconfigured_anchor_blocks_released_installation(self):
         self.updater.security = None
-        with self.assertRaisesRegex(D.DistributionError, "unconfigured"):
-            self.run_update()
+        unconfigured = D.canonical({"schema": 1, "public_key": None, "root": None, "root_sha256": None})
+        with mock.patch.object(B, "SecurityStore", side_effect=lambda journal:
+                               S.SecurityStore(journal, anchor=unconfigured)):
+            with self.assertRaisesRegex(D.DistributionError, "unconfigured"):
+                self.run_update()
         self.assertEqual(self.transport.calls, [])
 
     def test_preparation_prerequisites_verify_public_pins_without_installing_packages(self):
@@ -674,7 +677,10 @@ class SignedUpdaterTests(SignedUpdaterFixture):
     def test_preparation_prerequisites_reject_unconfigured_trust_before_package_query(self):
         from install.update_bootstrap_integration import FILES
         operation = preparation.Preparation.__new__(preparation.Preparation)
-        operation.payload = BootstrapIntegration.package_files({name: (PROJECT / name).read_bytes() for name in FILES})
+        files = {name: (PROJECT / name).read_bytes() for name in FILES}
+        files["release/trust.json"] = D.canonical({"schema": 1, "public_key": None,
+                                                   "root": None, "root_sha256": None})
+        operation.payload = BootstrapIntegration.package_files(files)
         operation.api = mock.Mock()
         with mock.patch.object(preparation.subprocess, "run") as run:
             with self.assertRaisesRegex(ValueError, "trust anchor"):

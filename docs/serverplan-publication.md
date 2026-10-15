@@ -1,9 +1,13 @@
 # Static publication and disposable hosting acceptance
 
 Status: Phase 3A tooling and user-confirmed disposable hosting acceptance are
-complete for the current single-user deployment model. Production keys, metadata,
-updater preparation and VM acceptance remain pending and require separate
-authorization. The installed trust record remains unconfigured. Follow the
+complete for the current single-user deployment model. The user signed root 1,
+the authentic v1.0.0 manifest and Stable sequence-1 catalog interactively, then
+published the initial signed production baseline on ServerPlan. Native Minisign
+and independent HTTPS byte verification passed for the complete public tree.
+The public trust anchor is integrated in source. Updater preparation and VM
+acceptance remain pending; further publication and installed-system changes
+require separate authorization. Follow the
 [signed protocol](signed-distribution.md) and existing
 [release artifact workflow](release-engineering.md); this adds no identity source.
 
@@ -11,7 +15,7 @@ authorization. The installed trust record remains unconfigured. Follow the
 
 `release/publication.py` assembles `WORKSPACE/public/vanilla-hyprarch/` with only
 `roots/`, `channels/`, and `releases/`. Uploading its contents under
-`/dist/v1/vanilla-hyprarch/` is a later, separately authorized operation.
+`/dist/v1/vanilla-hyprarch/` requires explicit authorization for each publication.
 `dist/v1` is distribution protocol 1, not a product version. Unsigned indexes
 are not selection authority; `packages/` is untouched and remains reserved for
 future Vanilla components. Arch packages continue using official repositories.
@@ -75,6 +79,147 @@ Do not reconstruct counters by trusting the mirror or deleting receipts. A local
 privileged deletion/snapshot rollback cannot be prevented by local counters
 alone; retain independent records of published sequences/digests. Do not build a
 later publication from an older workspace backup without reconciling those records.
+
+## Initial production root — verified
+
+The user generated one encrypted production key pair. The agent reads only
+`~/.local/share/vanhyprarch-signing/publisher.pub`; it never opens, inspects or
+copies `publisher.key`. Only the user runs operations requiring that key in Foot.
+Official `/usr/bin/minisign` handles its normal interactive passphrase prompt;
+no passphrase belongs in arguments, environment variables, scripts or logs.
+The user signed root 1; `TrustedRoot.initial` verified its native signature,
+exact payload digest, key, identity, sequence floors and current validity.
+
+The canonical unsigned input is [`release/initial-root.json`](../release/initial-root.json).
+It contains the protocol's existing root schema, not a second trust format:
+
+| Public value | Initial production root |
+| --- | --- |
+| Project / distribution protocol | `vanilla-hyprarch` / `1` |
+| Root version / predecessor | `1` / `null` |
+| Stable / candidate sequence floors | `1` / `1` |
+| Issued at | `2026-10-15T07:35:10Z` |
+| Expires at | `2031-10-15T07:35:10Z` |
+| Native Minisign key ID (display only) | `BCE599B5D2226B7E` |
+| Protocol key ID / full public-packet SHA-256 | `66e3d461f7f1ccca2614da2005126cc0edaf821b0033beb73a70688e82e639a0` |
+| Canonical root **payload** SHA-256 | `58e8bc7a3094d4ea9ad2b58b80af1184feab3c530157556eeb950c78980f0f72` |
+
+The public verification key is
+`RWR+ayLStZnlvFmvSohkDaHCDoR1lgtFYXElF3aN3YOhOZLaJQa+XR59`.
+The full fingerprint is the existing `public_key_id()` result, not the short ID
+from an unsigned comment. Reproduce the payload into a new scratch file with:
+
+```text
+python -B -m release.distribution root --public-key RWR+ayLStZnlvFmvSohkDaHCDoR1lgtFYXElF3aN3YOhOZLaJQa+XR59 --issued-at 2026-10-15T07:35:10Z --output NEW_ROOT_PAYLOAD
+sha256sum NEW_ROOT_PAYLOAD
+```
+
+The five-calendar-year rule is independent of the unchanged catalog default and
+maximum of 365 days (31,536,000 seconds). Do not change these frozen root bytes
+when signing. The updater still requires a complete signed envelope in its
+canonical `release/trust.json`: schema 1, this public key, this payload digest,
+and the base64-encoded signed root envelope. The existing `publication init`
+produced that exact public trust record after verifying the signature, and it
+was integrated into `release/trust.json`. The signed envelope SHA-256 is
+`c7cfe586811a366df01a4d666bf511c5c7594bc703f4045080082968c325752c`;
+this is distinct from the pinned payload digest above. This is source-only
+configuration; the installed updater and security state are untouched.
+
+Public-only preparation material is retained outside Git at
+`~/Downloads/vanhyprarch-production-public/`: the unsigned root, verification
+key, pins/checksums, signed root, unsigned release manifest and exact downloaded
+v1.0.0 assets. The initialized `publisher/` workspace contains the verified root
+and complete public trust record, frozen v1.0.0 manifest/signature receipts and
+the signed Stable sequence-1 receipt and public catalog.
+No private key is placed there. The original metadata is 430 bytes, SHA-256
+`6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c`.
+The original `vanhyprarch-v1.0.0.tar.gz` is 65,148,187 bytes, SHA-256
+`de57673385f961b233bdae95731ba9e7a3bfef32ce5f44851143dafff0bcb0c9`.
+Both were checked against the previously authenticated baseline and the archive
+contract without extraction or execution. The source commit remains
+`8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`; no rebuild or identity edit occurs.
+
+The following root signing command was completed by the user and is retained
+for the ceremony record. **Do not rerun it or replace the frozen signed root.**
+
+```bash
+cd "$HOME/Projects/vanilla-hyprarch"
+python -B -m release.distribution --minisign /usr/bin/minisign sign \
+  --input release/initial-root.json \
+  --secret-key "$HOME/.local/share/vanhyprarch-signing/publisher.key" \
+  --public-key RWR+ayLStZnlvFmvSohkDaHCDoR1lgtFYXElF3aN3YOhOZLaJQa+XR59 \
+  --envelope \
+  --output "$HOME/Downloads/vanhyprarch-production-public/root-1.signed.json"
+```
+
+The public-only initialization below was also completed and its trust record
+validated before integration. It is shown for reproducibility; do not rerun it
+over the existing workspace.
+
+```bash
+PUBLICATION_DIR="$HOME/Downloads/vanhyprarch-production-public"
+python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" init \
+  --root-envelope "$PUBLICATION_DIR/root-1.signed.json" \
+  --public-key RWR+ayLStZnlvFmvSohkDaHCDoR1lgtFYXElF3aN3YOhOZLaJQa+XR59 \
+  --root-sha256 58e8bc7a3094d4ea9ad2b58b80af1184feab3c530157556eeb950c78980f0f72
+```
+
+The user completed the following manifest signing command in Foot. It recomputed
+the manifest from the unchanged original assets and froze its exact signature.
+This is a ceremony record, not an instruction to sign the release again.
+
+```bash
+cd "$HOME/Projects/vanilla-hyprarch"
+PUBLICATION_DIR="$HOME/Downloads/vanhyprarch-production-public"
+python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" release \
+  --metadata "$PUBLICATION_DIR/assets/release.json" \
+  --archive "$PUBLICATION_DIR/assets/vanhyprarch-v1.0.0.tar.gz" \
+  --approved-commit 8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb \
+  --secret-key "$HOME/.local/share/vanhyprarch-signing/publisher.key"
+```
+
+The user then signed the following catalog, binding the frozen manifest and
+signature. These exact times are retained for reproducibility. Do not regenerate
+sequence 1 with a new issuance or expiry; every renewal requires a higher sequence.
+
+```bash
+python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" catalog \
+  --channel stable --sequence 1 --version v1.0.0 \
+  --issued-at 2026-10-15T07:59:16Z --expires-at 2027-10-15T07:59:16Z \
+  --secret-key "$HOME/.local/share/vanhyprarch-signing/publisher.key"
+python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" check
+```
+
+## Initial production publication — complete
+
+The authenticated export is
+`~/Downloads/vanhyprarch-production-public/publisher/public/vanilla-hyprarch/`.
+The user published its six public files under `/dist/v1/vanilla-hyprarch/`,
+preserving the already uploaded authentic release assets. The catalog was uploaded
+under a temporary filename, verified, then activated last through the tested FTPS
+rename. Independent HTTPS downloads from
+`https://vanhyprarch.it/dist/v1/vanilla-hyprarch/` matched every local byte, length
+and SHA-256. The existing protocol verifier authenticated root, catalog and native
+manifest signature, then verified the original release metadata and archive
+contract without extraction or execution.
+
+| Public object | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `roots/1.json` | 864 | `c7cfe586811a366df01a4d666bf511c5c7594bc703f4045080082968c325752c` |
+| `channels/stable.json` | 1,148 | `1eab39c97e20b55fb2de7ad48d24cb107fbe845e49045622adb8c85351d4a937` |
+| `releases/v1.0.0/manifest.json` | 825 | `2ffef6db6f6e54fb78f6d6de0f23b393f683f795cbec4c030bdd6ec2ccf32a0e` |
+| `releases/v1.0.0/manifest.json.sig` | 307 | `2e5577e7756af24eed890130b10b09b59f778981b80c6a973262108bba9db4ae` |
+| `releases/v1.0.0/assets/release.json` | 430 | `6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c` |
+| `releases/v1.0.0/assets/vanhyprarch-v1.0.0.tar.gz` | 65,148,187 | `de57673385f961b233bdae95731ba9e7a3bfef32ce5f44851143dafff0bcb0c9` |
+
+Stable sequence 1 uses root 1 and contains only the original stable v1.0.0
+identity at `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`, migration level 1.
+Its validity is exactly 365 days (31,536,000 seconds), ending at
+`2027-10-15T07:59:16Z`. No Candidate catalog was created or uploaded. The local
+publisher check reports v1.0.0 and no pending channel publication. Retain the
+frozen receipts, public export and verification checksums for subsequent renewal.
+Never upload the workspace, input directory, receipts or keys. No installed
+updater, release identity, rollback state or VM was changed during publication.
 
 ## Accepted single-user manual publication policy
 
@@ -254,13 +399,12 @@ and cache changes require separately approved scope; none is deployed here.
 The updater's existing unconditional bounded downloads and cryptographic checks
 remain unchanged. Test-subtree headers do not establish production-path policy.
 
-## Production checklist — NOT EXECUTED
+## Production checklist — INITIAL PUBLICATION COMPLETE; PREPARATION AND VM PENDING
 
-- Separately approve the offline signing workstation, operators, recovery owner,
-  encryption/passphrase custody and at least two independent encrypted backups.
-  Generate the real Minisign key **encrypted**, outside Git, workspaces and web
-  roots; do not use the disposable `-W` test-key option. Test backup recovery
-  offline. Never upload or transmit the private key or passphrase.
+- The user has generated the encrypted production key pair and arranged backups.
+  Keep private-key and passphrase custody outside Git, publication workspaces and
+  web roots. Do not generate another key for this initial root. Only the user
+  accesses the private key interactively; no agent inspection or backup copying.
 - Independently verify the complete public-packet SHA-256 fingerprint on two
   trusted devices/channels, not merely Minisign's short ID or HTTPS download.
   Record the signed initial root payload digest separately. Approve its exact
@@ -269,19 +413,18 @@ remain unchanged. Test-subtree headers do not establish production-path policy.
 - Deliver approved public pins through a reviewed exact source commit. Keep
   production and test roots separate. Rebuild deterministic release artifacts
   from independently approved commits with the existing release builder.
-- For the existing authentic v1.0.0 mirror, independently reverify every asset
-  against the published originals. Explicitly approve first-time missing signed
-  sidecars during protocol activation; never replace existing asset bytes. Stop
-  on any discrepancy or unexplained pre-existing manifest/signature.
+- The authentic v1.0.0 assets, root, signed manifest and Stable sequence-1 catalog
+  have been published and independently reverified as recorded above. Preserve
+  those immutable bytes; stop on any later discrepancy or unexplained change.
 - Freeze signed manifests/signatures once. Build the initial stable catalog
   from genuine stable releases only; never relabel current candidate/main as a
   stable product. Use higher sequences for every subsequent renewal/change.
   Default/maximum catalog validity is 365 days, independent of root validity.
 - Follow the accepted single-user publication sequence above, keeping Update on
   hold until final HTTPS verification succeeds. Disposable hosting acceptance is
-  complete; no formal atomicity guarantee is required. Production paths still
-  need their own byte/signature and cache observations. Do not edit/re-sign
-  existing immutable objects. Back up publisher receipts and publication evidence.
+  complete; no formal atomicity guarantee is required. Initial production-path
+  byte and signature checks passed. Do not edit/re-sign existing immutable
+  objects. Back up publisher receipts and publication evidence.
 - Rebuild the one-time updater preparation bundle from a later approved exact
   commit containing the final public pins, completed fallback and accepted tools.
   Follow the [preparation runbook](updater-preparation.md); initial v1.0.0 identity,

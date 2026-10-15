@@ -1,10 +1,11 @@
 # Signed distribution protocol 1
 
 Status: Phase 1 foundation and Phase 2 updater integration implemented in source
-and isolated tests, not deployed. Production trust is deliberately unconfigured;
-there are no production keys, hosted signed metadata, or live security-state
-changes. Completing this implementation does **not** authorize preparation or
-publication. See [release engineering](release-engineering.md) for historical
+and isolated tests; the installed updater remains unchanged. The production root,
+v1.0.0 manifest and Stable sequence-1 catalog are signed, verified and published
+on ServerPlan. The public anchor is configured in source; no installed security
+state has changed. Further publication and installed updater preparation require
+separate authorization. See [release engineering](release-engineering.md) for historical
 v1.0.0 behavior and [preparation](updater-preparation.md) for the VM release gate.
 
 `/dist/v1` names **distribution protocol 1**, independently of product versions
@@ -51,15 +52,15 @@ The initial anchor must be delivered by the separately authenticated updater
 preparation/source trust workflow: the full public key **and** SHA-256 of the
 exact initial root payload. `TrustedRoot.initial` requires both explicit pins,
 checks the root's self-signature using that pinned key, and validates its clock
-interval. There is no default production key, trust-on-first-use, or live key
+interval. There is no implicit key selection, trust-on-first-use, or live key
 generation. SHA-256 alone establishes integrity, not publisher authentication.
 
 The packaged canonical `release/trust.json` has exactly `schema: 1`,
 `public_key`, `root_sha256`, and `root` (base64 of the initial signed root
-envelope). The checked-in values are all `null` except the schema: an explicit
-unconfigured development placeholder. Release acquisition and real preparation
-reject it. Phase 3 must supply independently approved public pins; no client
-obtains an initial key from a transport. Private signing material is never
+envelope). The source now contains the approved production key, exact payload
+digest and verified signed root envelope. An entirely null development
+placeholder remains explicitly rejected by acquisition and real preparation.
+No client obtains an initial key from a transport. Private signing material is never
 packaged. An initialized updater's initial anchor is immutable across normal
 replacement; use the authenticated rotation chain for later keys.
 
@@ -313,7 +314,7 @@ acquisition rejects an expired root at the exact expiry second. Rotation must be
 accepted while the current root is still valid. After expiry, new acquisition
 requires separately authenticated administrative recovery; there is no automatic
 trust reset. Existing exact-target transaction recovery is the bounded exception
-described above. No production root/key has been created.
+described above. The verified initial production root follows this rule.
 
 | Catalog lifetime option | Security and operation |
 | --- | --- |
@@ -350,7 +351,7 @@ publication workflows:
    reset state. Compromise of the sole root requires a separately authenticated
    administrative trust repair; self-signed replacement is insufficient.
 
-Keep future production private keys encrypted, outside Git and hosting, with
+Keep production private keys encrypted, outside Git and hosting, with
 offline recoverable backups and a separately recorded public fingerprint.
 Never send private keys to ServerPlan or GitHub. Phase 1 tests generate only
 temporary unencrypted **TEST-ONLY** keys, mode 0600 in a mode-0700 temporary
@@ -361,8 +362,9 @@ directory, and remove them afterward. No private fixtures are committed.
 Phase 3A's [static publication tooling and hosting runbook](serverplan-publication.md)
 builds on these primitives, retaining frozen signatures and catalog receipts.
 It adds no installed updater or network-transport changes; real hosting acceptance
-has passed for the current single-user manual publication workflow. Production
-trust provisioning remains pending.
+has passed for the current single-user manual publication workflow. The initial
+production trust anchor and signed ServerPlan baseline are also verified; the
+installed updater has not been prepared or replaced.
 
 Run from the repository root. The existing builder still builds an exact Git
 commit, not dirty working-tree contents. All following commands are local;
@@ -425,9 +427,17 @@ passed user-confirmed hosting acceptance; these observations do not establish a
 formal atomicity guarantee. Tests exercise real transport code with GitHub
 HTTP 404 and complete signed ServerPlan fixtures; public GitHub is not needed.
 
-Still required: separately approved offline production key custody/generation,
-public trust-pin delivery in an approved exact source commit, actual production
-static publication, a rebuilt verified preparation payload, and snapshotted
+The user generated the production key pair and signed the canonical
+[initial root payload](../release/initial-root.json) interactively. Native
+verification passed against the approved public key and exact root digest;
+`release/trust.json` now contains the complete public anchor. The user also signed
+the original v1.0.0 manifest and Stable sequence-1 catalog with the existing tools.
+All six [published production files](serverplan-publication.md#initial-production-publication--complete)
+match the authenticated local bytes over HTTPS, and the full trust chain verifies.
+No Candidate catalog or partial trust schema is introduced.
+
+Still required: public trust-pin delivery in an approved exact source commit,
+a rebuilt verified preparation payload, and separately authorized snapshotted
 Proxmox acceptance from genuine v1.0.0. Production
 preparation checks official Minisign and the packaged root signature before
 changing its two files; it never installs the package or keys itself.

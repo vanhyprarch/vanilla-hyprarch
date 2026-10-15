@@ -166,15 +166,17 @@ class InstalledCommandTests(unittest.TestCase):
 
     def test_isolated_zipapp_contains_verifier_and_public_trust_resource(self):
         self.authority.apply(lifecycle="fresh")
-        code = ("import sys,json; sys.path.insert(0,sys.argv[1]); "
+        code = ("import sys,json; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
                 "from importlib.resources import files; "
                 "from install.signed_distribution import SecurityStore; "
                 "from release.distribution import ROOT_YEARS,MAX_CATALOG_LIFETIME; "
-                "value=json.loads(files('release').joinpath('trust.json').read_bytes()); "
-                "assert value=={'schema':1,'public_key':None,'root':None,'root_sha256':None}; "
+                "data=files('release').joinpath('trust.json').read_bytes(); "
+                "assert data==Path(sys.argv[2]).read_bytes(); "
+                "value=json.loads(data); assert value['schema']==1; "
                 "assert ROOT_YEARS==5 and MAX_CATALOG_LIFETIME==31536000; "
-                "print('packaged verifier and unconfigured public trust: PASS')")
-        result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(self.authority.target)],
+                "print('packaged verifier and exact source public trust: PASS')")
+        result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(self.authority.target),
+                                 str(PROJECT / "release/trust.json")],
                                 capture_output=True, text=True, check=True)
         self.assertIn("PASS", result.stdout)
 

@@ -11,9 +11,15 @@ historical candidates.
 The [signed distribution protocol](signed-distribution.md) adds source-level
 Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
 state, and signed recovery using this existing generated release identity.
-It remains undeployed and production trust is deliberately unconfigured. Public
-key custody, static signed publication, definitive preparation, and Proxmox
-acceptance remain release gates.
+The installed updater remains unchanged. The user signed root 1, the authentic
+v1.0.0 manifest and Stable sequence-1 catalog interactively. Native Minisign
+verification passed, and the complete public anchor is configured in source.
+Initial signed ServerPlan publication is complete: independent HTTPS verification
+matched all six public files to the authenticated local tree, preserving the
+original v1.0.0 metadata, archive, commit and migration level 1. Root validity is
+`2026-10-15T07:35:10Z` through `2031-10-15T07:35:10Z`; Stable sequence 1 expires
+at `2027-10-15T07:59:16Z`, exactly 365 days after issuance. No Candidate catalog
+was published. Definitive preparation and Proxmox acceptance remain pending.
 The [Phase 3A publication runbook](serverplan-publication.md) covers offline tree
 assembly and the accepted disposable hosting observations. Publication is manually
 coordinated by the sole developer: immutable files and metadata first, the tested
@@ -466,8 +472,9 @@ Background update checks remain future work.
 The standalone [preparation tool and runbook](updater-preparation.md) reuse the
 bootstrap authority to replace only the updater and matching provenance, with
 verified private backups, explicit authorization, and guarded recovery. Installed
-v1.0.0 identity and migration state remain unchanged. Execution is blocked until
-signed ServerPlan distribution and updater fallback are complete and a definitive
-payload is rebuilt from a later approved exact commit. The preliminary `76ba358`
-payload is not approved for VM or production use. Snapshotted Proxmox acceptance
-must precede any production preparation; no preparation has been executed.
+v1.0.0 identity and migration state remain unchanged. Signed ServerPlan publication
+and authenticated updater fallback are complete. A definitive payload must still
+be rebuilt from an approved exact commit containing the final public pins; the
+preliminary `76ba358` payload is not approved for VM or production use. Separate
+VM authorization and snapshotted Proxmox acceptance must precede any production
+preparation; no preparation has been executed.

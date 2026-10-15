@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-09-25.
+Snapshot date: 2026-10-15.
 
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The authored declaration on
@@ -42,10 +42,10 @@ directions that still require validation.
 The v1.0.1 legacy-updater transition now has a standalone, one-time
 [administrative preparation tool and VM runbook](updater-preparation.md).
 It prepares only the updater/provenance pair while preserving genuine v1.0.0
-identity and migration state. Execution is blocked pending secure ServerPlan
-distribution with independently signed manifests and updater fallback. The
-preliminary `76ba358` payload lacks that functionality and is not approved for
-VM or production installation. Rebuild from a later approved exact commit, then
+identity and migration state. Signed ServerPlan distribution and authenticated
+updater fallback are complete. The preliminary `76ba358` payload lacks that
+functionality and is not approved for VM or production installation. Rebuild
+from an approved exact commit containing the final production public pins, then
 obtain separate VM authorization and snapshotted Proxmox lifecycle acceptance.
 
 The [signed distribution protocol](signed-distribution.md) now includes Phase 2
@@ -56,9 +56,10 @@ days (31,536,000 seconds); roots use five UTC calendar years. Minisign is a requ
 official baseline package. Interrupted updater/provenance replacement uses a
 root-private write-ahead intent, independent original-provenance receipt, and
 authenticated exact-target recovery; real zipapp/SIGKILL tests cover restart
-between the two publications. This work is undeployed: the public trust record is
-unconfigured, production keys/hosting publication do not exist, and real updater
-preparation and Proxmox lifecycle acceptance remain blocked pending Phase 3.
+between the two publications. The production root signature is verified and its
+public trust record is configured in source. The initial signed v1.0.0 baseline
+is published on ServerPlan; updater preparation and Proxmox acceptance remain
+pending. The installed updater has not been replaced or run.
 
 Phase 3A adds offline [static publication tooling and a disposable ServerPlan
 acceptance runbook](serverplan-publication.md): frozen release signatures,
@@ -72,8 +73,23 @@ single-user manual publication workflow, not a formal atomicity guarantee.
 The developer initiates Update only after publication and final verification;
 temporary check unavailability during publication is acceptable. Signatures,
 immutable bindings, rollback protection and fail-closed behavior remain mandatory.
-No provider-confirmed atomic-rename guarantee is required. Production keys,
-metadata, updater preparation and Proxmox acceptance remain pending.
+No provider-confirmed atomic-rename guarantee is required. Initial production
+publication is complete; updater preparation and Proxmox acceptance remain pending.
+
+The user generated the encrypted production Minisign key pair interactively.
+The canonical [initial root payload](../release/initial-root.json) is prepared
+with root version 1, stable/candidate floors 1, and five UTC calendar years of
+validity. The user signed it in Foot; native Minisign verification confirmed the
+exact approved payload and pins. The complete public anchor is integrated in
+`release/trust.json`. The user also signed the authentic v1.0.0 manifest and
+Stable sequence-1 catalog, then published the public tree on ServerPlan, staging
+and verifying the catalog before activating it last through FTPS. Independent
+HTTPS verification matched all six files to the authenticated local bytes:
+root, manifest, native signature, catalog, original release.json and archive.
+Stable sequence 1 contains only the unchanged v1.0.0 release and expires at
+`2027-10-15T07:59:16Z`, exactly 365 days after issuance. No Candidate catalog was
+created. See the [publication record](serverplan-publication.md#initial-production-publication--complete).
+No production private key is accessed by the agent or stored in the repository.
 
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).
