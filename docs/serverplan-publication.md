@@ -1,20 +1,16 @@
 # Static publication and disposable hosting acceptance
 
-Status: Phase 3A tooling and user-confirmed disposable hosting acceptance are
-complete for the current single-user deployment model. The user signed root 1,
-the authentic v1.0.0 manifest and Stable sequence-1 catalog interactively, then
-published the initial signed production baseline on ServerPlan. Native Minisign
-and independent HTTPS byte verification passed for the complete public tree.
-The public trust anchor is integrated in source. Preparation and normal dock
-discovery passed on the existing v1.0.0 VM, preserving identity and migration
-level 1 and recording root 1 / Stable sequence 1 in the ledger. The genuine
-v1.0.1 manifest and signed Stable sequence 2 were subsequently published, and
-the genuine v1.0.0 -> v1.0.1 upgrade/reboot acceptance passed on that same VM.
-The complete [original-v1.0.0 user guide](upgrade-v1.0.0-to-v1.0.1.md) documents
-the necessary one-time bridge and accepted recovery. Further publication and
-installed-system changes require separate authorization. Follow the
-[signed protocol](signed-distribution.md) and existing
-[release artifact workflow](release-engineering.md); this adds no identity source.
+Status: the static publisher and manual FileZilla FTPS workflow are implemented
+and accepted. Production root 1 and Stable sequence 3 authenticate immutable
+v1.0.0, v1.0.1 and v1.0.2. HTTPS byte verification and the genuine v1.0.1 ->
+v1.0.2 signed upgrade/reboot passed in release testing. GitHub Release publication
+and authenticated asset verification passed; anonymous GitHub access remains 404.
+
+Use the [operator runbook](release-workflow.md) for the whole lifecycle and the
+[signed protocol](signed-distribution.md) for trust rules. This document owns
+local publication preparation, manual upload ordering and HTTPS verification.
+Existing initial-root/earlier-sequence records below are historical evidence,
+not commands to repeat or current channel pointers.
 
 ## Offline publisher
 
@@ -85,15 +81,136 @@ privileged deletion/snapshot rollback cannot be prevented by local counters
 alone; retain independent records of published sequences/digests. Do not build a
 later publication from an older workspace backup without reconciling those records.
 
+## Recreate operator upload materials
+
+After `release.publication check` passes, set these operator-chosen variables in
+Bash: `WORKSPACE` (the durable publisher), `VERSION`, `CHANNEL`, `SEQUENCE`,
+`PREVIOUS_SEQUENCE` (the last published sequence), and new absolute `UPLOAD` and
+`NOTES` directories outside Git/web roots. Keep the approved release and catalog
+inputs unchanged. Run multi-command examples with `set -euo pipefail`; stop on
+any failed check. New selections must not overwrite unexplained existing files.
+
+The following reproduces the practical five-file selection without depending on
+any earlier Downloads directory. Only `UPLOAD` is selected in FileZilla; never
+upload `NOTES`, the workspace, receipts, keys or numbered staging-directory names.
+
+```bash
+set -euo pipefail
+PUB="$WORKSPACE"
+PUBLIC="$PUB/public/vanilla-hyprarch"
+BASE=https://vanhyprarch.it/dist/v1/vanilla-hyprarch
+python -B -m release.publication --workspace "$PUB" check
+cmp "$PUBLIC/channels/$CHANNEL.json" "$PUB/receipts/catalogs/$CHANNEL/$SEQUENCE.json"
+test ! -e "$UPLOAD"
+test ! -e "$NOTES"
+mkdir -m 0700 "$UPLOAD" "$NOTES"
+mkdir -p "$UPLOAD/01-assets/releases/$VERSION/assets" \
+  "$UPLOAD/02-metadata/releases/$VERSION" "$UPLOAD/03-channel/channels"
+cp "$PUBLIC/releases/$VERSION/assets/release.json" "$UPLOAD/01-assets/releases/$VERSION/assets/"
+cp "$PUBLIC/releases/$VERSION/assets/vanhyprarch-$VERSION.tar.gz" "$UPLOAD/01-assets/releases/$VERSION/assets/"
+cp "$PUBLIC/releases/$VERSION/manifest.json" "$PUBLIC/releases/$VERSION/manifest.json.sig" "$UPLOAD/02-metadata/releases/$VERSION/"
+cp "$PUB/receipts/catalogs/$CHANNEL/$SEQUENCE.json" "$UPLOAD/03-channel/channels/$CHANNEL.json.complete"
+(cd "$UPLOAD" && sha256sum "01-assets/releases/$VERSION/assets/"* \
+  "02-metadata/releases/$VERSION/"* "03-channel/channels/$CHANNEL.json.complete") > "$NOTES/UPLOAD-SHA256SUMS"
+```
+
+Record approved source, lengths, hashes and local signature verification in the
+operator's publication record. The native signature and catalog envelope are
+copied as already signed, never regenerated. An identical historical remote file
+is verified and skipped; different bytes or an unknown directory require stopping.
+
+Generate the established GET-only byte-comparison helper from this tracked text:
+
+```bash
+cat > "$NOTES/HTTPS-CHECKS.sh" <<'CHECKS'
+https_check() (
+  local remote="$1" expected="${2:-$1}" tmp status limit
+  limit=$(wc -c < "$PUB/$expected") || return
+  tmp=$(mktemp) || return
+  trap 'rm -f -- "$tmp"' EXIT
+  status=$(curl --fail --silent --show-error --proto '=https' --noproxy '*' \
+    --connect-timeout 10 --max-time 120 --max-filesize "$limit" \
+    -H 'Cache-Control: no-cache' -H 'Accept-Encoding: identity' \
+    --output "$tmp" --write-out '%{http_code}' "$BASE/$remote") || return
+  if [[ "$status" != 200 ]]; then
+    printf 'FAIL: HTTP %s for %s\n' "$status" "$remote" >&2
+    return 1
+  fi
+  cmp "$PUB/$expected" "$tmp" || return
+  printf 'PASS %s\n' "$remote"
+)
+CHECKS
+bash -n "$NOTES/HTTPS-CHECKS.sh"
+source "$NOTES/HTTPS-CHECKS.sh"
+https_check "channels/$CHANNEL.json" "receipts/catalogs/$CHANNEL/$PREVIOUS_SEQUENCE.json"
+```
+
+That last check authenticates the currently active pointer by exact comparison
+with a previously verified frozen receipt, not the workspace's newer catalog.
+For a separately authorized first channel publication, require no channel receipt
+history and confirm the remote pointer is absent instead; its first sequence is
+the pinned floor. A 404 for an established channel is a failure, never up-to-date.
+
+Generate `UPLOAD.txt` with concrete local-to-remote mappings and checks:
+
+```bash
+cat > "$NOTES/UPLOAD.txt" <<UPLOAD_NOTES
+Manual FileZilla FTPS publication: $VERSION / $CHANNEL sequence $SEQUENCE
+Upload ONLY files under $UPLOAD. Numbered directories are local labels.
+Remote base: /dist/v1/vanilla-hyprarch/
+Keep release updates on hold until the final check passes. STOP on any mismatch.
+Never overwrite different immutable bytes, delete the active pointer first, or
+change roots, earlier releases, upgrade kits or packages as an incidental upload.
+
+HTTPS setup in the same Bash terminal:
+PUB="$PUB"
+BASE="$BASE"
+source "$NOTES/HTTPS-CHECKS.sh"
+https_check channels/$CHANNEL.json receipts/catalogs/$CHANNEL/$PREVIOUS_SEQUENCE.json
+
+1. Upload local 01-assets/releases/$VERSION/assets/release.json and
+   vanhyprarch-$VERSION.tar.gz into remote releases/$VERSION/assets/.
+   After both complete:
+https_check releases/$VERSION/assets/release.json public/vanilla-hyprarch/releases/$VERSION/assets/release.json
+https_check releases/$VERSION/assets/vanhyprarch-$VERSION.tar.gz public/vanilla-hyprarch/releases/$VERSION/assets/vanhyprarch-$VERSION.tar.gz
+
+2. Upload local 02-metadata/releases/$VERSION/manifest.json and manifest.json.sig
+   into remote releases/$VERSION/. After both complete:
+https_check releases/$VERSION/manifest.json public/vanilla-hyprarch/releases/$VERSION/manifest.json
+https_check releases/$VERSION/manifest.json.sig public/vanilla-hyprarch/releases/$VERSION/manifest.json.sig
+
+3. Upload local 03-channel/channels/$CHANNEL.json.complete into remote channels/.
+   Require BOTH checks before promotion:
+https_check channels/$CHANNEL.json.complete receipts/catalogs/$CHANNEL/$SEQUENCE.json
+https_check channels/$CHANNEL.json receipts/catalogs/$CHANNEL/$PREVIOUS_SEQUENCE.json
+
+4. ONLY after every check passes, manually rename-overwrite in FileZilla FTPS:
+   channels/$CHANNEL.json.complete -> channels/$CHANNEL.json
+   Then require:
+https_check channels/$CHANNEL.json receipts/catalogs/$CHANNEL/$SEQUENCE.json
+
+No FTPS action is performed by these verification commands. Do not run all
+stages together before their respective manual uploads have completed.
+UPLOAD_NOTES
+```
+
+For first-channel publication omit only the old-pointer comparison after proving
+absence as described above; never invent an old receipt. Archive `UPLOAD.txt`,
+checksums, frozen signed bytes and observed HTTPS results with release evidence.
+The helper bounds size, requires HTTP 200, refuses redirects and requests identity
+encoding/cache revalidation. `cmp` checks every byte; a network failure, partial
+transfer, signature/hash/identity mismatch or old-pointer change means stop.
+Do not initiate Update until the new active catalog and its immutable references
+have all passed verification. This is the accepted manual workflow, not a new
+publication service or FTPS automation.
+
 ## Initial production root — verified
 
-The user generated one encrypted production key pair. The agent reads only
-`~/.local/share/vanhyprarch-signing/publisher.pub`; it never opens, inspects or
-copies `publisher.key`. Only the user runs operations requiring that key in Foot.
-Official `/usr/bin/minisign` handles its normal interactive passphrase prompt;
-no passphrase belongs in arguments, environment variables, scripts or logs.
-The user signed root 1; `TrustedRoot.initial` verified its native signature,
-exact payload digest, key, identity, sequence floors and current validity.
+The existing root was signed interactively with an operator-held encrypted
+Minisign key. Only PUBLIC pins, the root payload and its verified signed envelope
+belong in project records. Private-key paths, custody arrangements and backups
+are operator inputs; an agent must not inspect or invoke the key. Official
+Minisign handles the passphrase prompt directly in the operator's terminal.
 
 The canonical unsigned input is [`release/initial-root.json`](../release/initial-root.json).
 It contains the protocol's existing root schema, not a second trust format:
@@ -127,78 +244,38 @@ and the base64-encoded signed root envelope. The existing `publication init`
 produced that exact public trust record after verifying the signature, and it
 was integrated into `release/trust.json`. The signed envelope SHA-256 is
 `c7cfe586811a366df01a4d666bf511c5c7594bc703f4045080082968c325752c`;
-this is distinct from the pinned payload digest above. This is source-only
-configuration; the installed updater and security state are untouched.
+this is distinct from the pinned payload digest above. The complete anchor is
+embedded in the reviewed updater source and retained across normal replacements.
+Do not change it to rotate a key or rerun the completed root ceremony.
 
-Public-only preparation material is retained outside Git at
-`~/Downloads/vanhyprarch-production-public/`: the unsigned root, verification
-key, pins/checksums, signed root, unsigned release manifest and exact downloaded
-v1.0.0 assets. The initialized `publisher/` workspace contains the verified root
-and complete public trust record, frozen v1.0.0 manifest/signature receipts and
-the signed Stable sequence-1 receipt and public catalog.
-No private key is placed there. The original metadata is 430 bytes, SHA-256
-`6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c`.
-The original `vanhyprarch-v1.0.0.tar.gz` is 65,148,187 bytes, SHA-256
-`de57673385f961b233bdae95731ba9e7a3bfef32ce5f44851143dafff0bcb0c9`.
-Both were checked against the previously authenticated baseline and the archive
-contract without extraction or execution. The source commit remains
-`8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`; no rebuild or identity edit occurs.
-
-The following root signing command was completed by the user and is retained
-for the ceremony record. **Do not rerun it or replace the frozen signed root.**
+For a genuinely new, separately authorized publisher workspace only, obtain the
+signed initial root from the tracked public trust record rather than an untrusted
+transport. The following extracts PUBLIC material without accessing a key:
 
 ```bash
-cd "$HOME/Projects/vanilla-hyprarch"
-python -B -m release.distribution --minisign /usr/bin/minisign sign \
-  --input release/initial-root.json \
-  --secret-key "$HOME/.local/share/vanhyprarch-signing/publisher.key" \
-  --public-key RWR+ayLStZnlvFmvSohkDaHCDoR1lgtFYXElF3aN3YOhOZLaJQa+XR59 \
-  --envelope \
-  --output "$HOME/Downloads/vanhyprarch-production-public/root-1.signed.json"
-```
-
-The public-only initialization below was also completed and its trust record
-validated before integration. It is shown for reproducibility; do not rerun it
-over the existing workspace.
-
-```bash
-PUBLICATION_DIR="$HOME/Downloads/vanhyprarch-production-public"
-python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" init \
-  --root-envelope "$PUBLICATION_DIR/root-1.signed.json" \
+python -B - "$ROOT_ENVELOPE" <<'PY_ROOT'
+import base64, json, sys
+from pathlib import Path
+trust = json.loads(Path('release/trust.json').read_bytes())
+with Path(sys.argv[1]).open('xb') as output:
+    output.write(base64.b64decode(trust['root'], validate=True))
+PY_ROOT
+python -B -m release.publication --workspace "$NEW_WORKSPACE" init \
+  --root-envelope "$ROOT_ENVELOPE" \
   --public-key RWR+ayLStZnlvFmvSohkDaHCDoR1lgtFYXElF3aN3YOhOZLaJQa+XR59 \
   --root-sha256 58e8bc7a3094d4ea9ad2b58b80af1184feab3c530157556eeb950c78980f0f72
 ```
 
-The user completed the following manifest signing command in Foot. It recomputed
-the manifest from the unchanged original assets and froze its exact signature.
-This is a ceremony record, not an instruction to sign the release again.
-
-```bash
-cd "$HOME/Projects/vanilla-hyprarch"
-PUBLICATION_DIR="$HOME/Downloads/vanhyprarch-production-public"
-python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" release \
-  --metadata "$PUBLICATION_DIR/assets/release.json" \
-  --archive "$PUBLICATION_DIR/assets/vanhyprarch-v1.0.0.tar.gz" \
-  --approved-commit 8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb \
-  --secret-key "$HOME/.local/share/vanhyprarch-signing/publisher.key"
-```
-
-The user then signed the following catalog, binding the frozen manifest and
-signature. These exact times are retained for reproducibility. Do not regenerate
-sequence 1 with a new issuance or expiry; every renewal requires a higher sequence.
-
-```bash
-python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" catalog \
-  --channel stable --sequence 1 --version v1.0.0 \
-  --issued-at 2026-10-15T07:59:16Z --expires-at 2027-10-15T07:59:16Z \
-  --secret-key "$HOME/.local/share/vanhyprarch-signing/publisher.key"
-python -B -m release.publication --workspace "$PUBLICATION_DIR/publisher" check
-```
+Set new absolute output paths before use. This initializes empty history; it
+cannot reconstruct an established publisher. For continuing publication restore
+its verified workspace/receipts, reconcile published counters, then run `check`.
+Do not use `init` to evade missing history. Interactive release/catalog commands
+are in the [operator runbook](release-workflow.md#6-interactive-signing-and-local-verification).
 
 ## Initial production publication — complete
 
-The authenticated export is
-`~/Downloads/vanhyprarch-production-public/publisher/public/vanilla-hyprarch/`.
+The authenticated export is `WORKSPACE/public/vanilla-hyprarch/`; its absolute
+workspace location is supplied by the operator.
 The user published its six public files under `/dist/v1/vanilla-hyprarch/`,
 preserving the already uploaded authentic release assets. The catalog was uploaded
 under a temporary filename, verified, then activated last through the tested FTPS
@@ -239,14 +316,37 @@ Real VM acceptance passed signed ServerPlan discovery with GitHub HTTP 404,
 zero migrations, normal dock authorization, journal retention after stale Arch
 mirror failures, full Arch upgrade and exact-target resume, identity-last
 completion, Stable 2 ledger, cleared journal and successful reboot/desktop checks.
-No production SSD changes occurred. The administrative download-kit fallback
-described in the user guide is separate, not an update-protocol object; preparing
-it does not publish it or change the signed channel.
+The public original-v1.0.0 administrative kit is a separate download, not an
+update-protocol object. It remains available through the historical user guide
+and does not change signed channel membership.
+
+## v1.0.2 Stable sequence 3 — complete
+
+The immutable annotated tag targets `39ee15155e49be0af3d044a0b11b6c89108fddf7`.
+The signed catalog retains root 1 and the unchanged v1.0.0/v1.0.1 bindings, adding
+v1.0.2. Issuance is `2026-10-15T15:04:41Z`; expiry is `2027-10-15T15:04:41Z`.
+
+| Public object | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `releases/v1.0.2/assets/release.json` | 527 | `6292c27007151fbf859e92f2a0e066f3e0766dee3c075d798c1c9d76ca7bcb2c` |
+| `releases/v1.0.2/assets/vanhyprarch-v1.0.2.tar.gz` | 65,330,818 | `91a521734dd9ea2cbfc6a239ca3969b70913ead28991c90594e1711a57f73bf7` |
+| `releases/v1.0.2/manifest.json` | 922 | `8da04f8f2fa418abd352e9908dc8441256d29143b61380de5beabd94b837dc74` |
+| `releases/v1.0.2/manifest.json.sig` | 307 | `438286a32f8f6f39c3e9a22d977a03d5ccb0bb725e3c70c24a9df4054cb44bf6` |
+| `channels/stable.json` (sequence-3 envelope) | 1,968 | `5a4b4146d9ca1ef57f4c743e3012faaf29d8ee71cd016a7433a0fb355b40e0ec` |
+
+The catalog **payload** digest, used by the anti-rollback ledger, is
+`a234251a982276296b9a876e189e3bd599943bfaf3d51ac113aba29a465956dc`.
+The deterministic installed updater hash is
+`4c4c5c5c44dbf9cb2eb42cf5736aa5e23fc11c56f035b673543ef666e7e5c220`.
+Normal signed upgrade from genuine v1.0.1, zero migrations, provenance/ledger,
+journal cleanup, reboot and subsequent up-to-date discovery passed in release
+testing. GitHub's three authenticated downloads also match the approved bytes.
+Live yay maintenance acceptance remains deferred to genuine v1.0.2 -> v1.0.3.
 
 ## Accepted single-user manual publication policy
 
-Vanilla HyprArch currently has one user, its developer. Publication and release
-updates are manually coordinated: **do not initiate Update while publishing**.
+Publication and release updates use a manually coordinated maintenance window:
+**do not initiate Update while publishing**.
 Temporary update-check unavailability is acceptable during that window. A formal
 provider-confirmed atomic-rename guarantee is not required. Cryptographic
 authentication, provenance, rollback protection and fail-closed behavior remain
@@ -423,9 +523,9 @@ remain unchanged. Test-subtree headers do not establish production-path policy.
 
 ## Production checklist — INITIAL PUBLICATION AND VM DISCOVERY COMPLETE
 
-- The user has generated the encrypted production key pair and arranged backups.
-  Keep private-key and passphrase custody outside Git, publication workspaces and
-  web roots. Do not generate another key for this initial root. Only the user
+- Keep private-key and passphrase custody outside Git, publication workspaces
+  and web roots, with recoverable offline backups held by the operator. Do not
+  generate another key for this initial root. Only the user
   accesses the private key interactively; no agent inspection or backup copying.
 - Independently verify the complete public-packet SHA-256 fingerprint on two
   trusted devices/channels, not merely Minisign's short ID or HTTPS download.

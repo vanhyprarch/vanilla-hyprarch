@@ -10,7 +10,7 @@ The feature passed full, idempotence, reboot, and integrated Phase 2/3/4
 acceptance in a user-managed disposable Arch x86_64 VM. It must never be
 applied to the development host.
 
-Next-release source development reuses Update System's interactive `yay -Syu`
+The v1.0.2 release updater reuses Update System's interactive `yay -Syu`
 as the unprivileged desktop user in the release updater, **before** this authority
 plans or applies a new Vanilla target. It does not add `-Syu` to system integration
 or change its package/recovery boundaries. See [updater maintenance and reboot
@@ -45,11 +45,12 @@ source acquired
   -> ./install/bootstrap plan --target-user USER
      (preliminary; non-root allowed while Python is absent)
   -> sudo ./install/bootstrap bootstrap-python --target-user USER
-  -> sudo ./install/bootstrap plan --target-user USER
+  -> capture context as USER with install/secret_service_preflight.py context
+  -> sudo ./install/bootstrap plan --target-user USER --target-context-json CONTEXT_JSON
      (complete authoritative Phase 4 plan; read-only)
   -> human review
-  -> sudo ./install/bootstrap apply --target-user USER
-  -> sudo ./install/bootstrap validate --target-user USER
+  -> sudo ./install/bootstrap apply --target-user USER --target-context-json CONTEXT_JSON
+  -> sudo ./install/bootstrap validate --target-user USER --target-context-json CONTEXT_JSON
 ```
 
 With Python absent, `bootstrap-python` requires root, installs and verifies only
@@ -59,7 +60,19 @@ Python-bootstrap-required error. Once Python is present, the complete `plan`,
 `apply`, and `validate` operations require root, verify the interpreter, and
 execute `system_integration.py` with the same operation, source root, and target
 user. A system that already has Python therefore starts with
-`sudo ./install/bootstrap plan --target-user USER`. Repeating `bootstrap-python`
+the context capture followed by `sudo ./install/bootstrap plan --target-user USER
+--target-context-json CONTEXT_JSON`. For a normal-user Bash invocation after
+Python is available, the read-only stage plan is:
+
+```bash
+target_user=$(id -un)
+target_context=$(python -B install/secret_service_preflight.py context)
+sudo ./install/bootstrap plan --target-user "$target_user" \
+  --target-context-json "$target_context"
+```
+
+Keep the captured context for the separately authorized apply/validate stages;
+never reconstruct it from root's environment. Repeating `bootstrap-python`
 preserves the verified interpreter without another package transaction and
 still does not delegate.
 
@@ -163,7 +176,7 @@ resolve pacman itself, and runs `pacman -Qu` against those already-present
 databases. Any pending upgrade blocks provisioning with an instruction for the
 administrator to perform a normal full `pacman -Syu` first.
 
-Vanilla never runs `pacman -Sy`, never refreshes databases independently, and
+This authority never runs `pacman -Sy`, never refreshes databases independently, and
 never silently runs `pacman -Syu`. Missing default official packages are
 derived only from `packages/manifest-v1.toml`, checked with read-only
 `pacman -Sp`, and installed in one `pacman -S --needed --noconfirm`

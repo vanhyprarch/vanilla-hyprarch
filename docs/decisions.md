@@ -6,6 +6,9 @@ historical milestones belong in `project-history.md`.
 
 Validated upstream-version quirks and removable workarounds are registered in
 the [compatibility register](compatibility.md) rather than duplicated in ADRs.
+Operational development and publication steps belong in the
+[signed release runbook](release-workflow.md); wire schemas remain in the
+[signed distribution contract](signed-distribution.md).
 
 Statuses used here:
 

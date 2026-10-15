@@ -4,7 +4,8 @@ Snapshot date: 2026-10-15.
 
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The subsequent immutable
-`v1.0.1` Stable is published at `83bfeaa627392817c21b29ce73557a32f5ad563e`. Immutable
+`v1.0.1` Stable is published at `83bfeaa627392817c21b29ce73557a32f5ad563e`.
+Current **v1.0.2 Stable** is tagged at `39ee15155e49be0af3d044a0b11b6c89108fddf7`. Immutable
 candidate releases rc1, rc2, and rc3 remain historical.
 The offline release contract includes a deterministic exact-commit
 artifact builder, pre-extraction verifier, and root-owned installed identity
@@ -39,9 +40,9 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
-## v1.0.2 Stable consolidation — DECLARED, NOT YET PUBLISHED
+## v1.0.2 Stable consolidation — PUBLISHED AND RELEASE-TEST ACCEPTED
 
-The release declaration now targets v1.0.2 Stable: the existing yay-based
+The published v1.0.2 Stable consolidates: the existing yay-based
 pre-upgrade maintenance flow, accepted Hyprland startup splash suppression,
 exactly 18 static Lucide dock icons, the accepted Bluetooth-off foreground
 correction, and associated documentation. Architecture remains x86_64, update
@@ -49,13 +50,22 @@ protocol 1 and migration level 1. Genuine v1.0.1 requires zero migrations and
 no updater preparation. The 18 SVGs and their ISC/Feather MIT notices travel
 with the managed Quickshell tree; no Lucide dependency is added.
 
-Both the existing Proxmox VM and production computer passed the signed
-v1.0.0 -> v1.0.1 upgrade and reboot acceptance. Root 1 and Stable sequence 2
-remain active. v1.0.2 signing, publication and VM/production upgrade acceptance
-are pending; the development installation retains unreleased identity.
-Live yay-flow acceptance is explicitly deferred to the genuine
-v1.0.2 -> v1.0.3 upgrade. The accepted automated terminal, cancellation, reboot
-and recovery coverage is sufficient for v1.0.2; no extra Candidate is required.
+The genuine v1.0.1 -> v1.0.2 normal-dock signed upgrade, identity/provenance,
+Stable sequence 3, journal cleanup, reboot and subsequent authenticated
+"Installed: v1.0.2 / up to date" check passed in release testing. The official
+annotated tag, exact-commit and strict-tag reproducibility, ServerPlan HTTPS
+bytes and all three authenticated GitHub Release downloads are verified.
+Anonymous GitHub page/asset access still returns HTTP 404. Architecture and
+migration compatibility are unchanged. Live yay-flow acceptance remains deferred
+to genuine v1.0.2 -> v1.0.3; the automated coverage is accepted for v1.0.2.
+
+The [operator runbook](release-workflow.md) is the canonical lifecycle checklist.
+[Release engineering](release-engineering.md) defines contracts and recovery;
+[ServerPlan publication](serverplan-publication.md#recreate-operator-upload-materials)
+regenerates upload selections, instructions and HTTPS checks from tracked text.
+No previous chat or temporary local directory is an operational prerequisite.
+Operator-held encrypted keys and durable publisher receipts remain external
+inputs with explicit custody/recovery requirements.
 
 The v1.0.1 legacy-updater transition now has a standalone, one-time
 [administrative preparation tool and VM runbook](updater-preparation.md).
@@ -83,8 +93,7 @@ Subsequent reboot/login, wallpaper, dock, theme, preferences and normal "Install
 v1.0.1 / up to date" behavior were user-confirmed. See the
 [public original-v1.0.0 upgrade guide](upgrade-v1.0.0-to-v1.0.1.md) for the complete
 manual bridge, exact accepted downloads and recovery steps. The guide is newer
-documentation on main, not part of the immutable v1.0.1 archive. No production
-SSD changes occurred.
+documentation on main, not part of the immutable v1.0.1 archive.
 
 The [signed distribution protocol](signed-distribution.md) now includes Phase 2
 updater integration in source and isolated tests: native Minisign authentication,
@@ -98,7 +107,7 @@ between the two publications. The production root signature is verified and its
 public trust record is configured in source. The initial signed v1.0.0 baseline
 is published on ServerPlan. Signed Stable sequence 2 adds genuine v1.0.1;
 the VM's real upgrade and reboot acceptance passed. The development installation
-retains unreleased/development identity; no production SSD changes occurred.
+retains unreleased/development identity.
 
 Phase 3A adds offline [static publication tooling and a disposable ServerPlan
 acceptance runbook](serverplan-publication.md): frozen release signatures,
@@ -113,8 +122,9 @@ The developer initiates Update only after publication and final verification;
 temporary check unavailability during publication is acceptable. Signatures,
 immutable bindings, rollback protection and fail-closed behavior remain mandatory.
 No provider-confirmed atomic-rename guarantee is required. Initial production
-publication and VM upgrade acceptance are complete. Signed Stable sequence 2
-is active and binds original v1.0.0 and genuine v1.0.1. The Stable
+publication and v1.0.1 upgrade acceptance are complete. Signed Stable sequence 2
+was the v1.0.1 publication, binding original v1.0.0 and genuine v1.0.1; current
+sequence 3 is recorded above. The Stable
 declaration preserves x86_64, update protocol 1 and migration level 1; upgrading
 the genuine v1.0.0 VM requires zero migrations and no further updater preparation.
 
@@ -133,10 +143,9 @@ Stable sequence 1 contains only the unchanged v1.0.0 release and expires at
 created. See the [publication record](serverplan-publication.md#initial-production-publication--complete).
 No production private key is accessed by the agent or stored in the repository.
 
-## Next-release updater maintenance — SOURCE ONLY
+## Updater maintenance — INCLUDED IN v1.0.2
 
-After v1.0.1 acceptance on the VM, the user also confirmed the genuine production
-upgrade. Development now adds an explicit interactive **Update System (`yay -Syu`)**
+The v1.0.2 updater adds an explicit interactive **Update System (`yay -Syu`)**
 offer after authenticated new-release acquisition and before target preflight.
 No-new-release checks and exact-target recovery skip maintenance. Failure or
 cancellation prevents Vanilla apply. Any changed installed package/version set
@@ -148,13 +157,11 @@ privileged orchestrator drops to the desktop UID/GID/groups and forwards capture
 user config/cache/terminal context; yay retains its own sudo and interactive prompts.
 See [the next-release flow and safe fixture commands](release-engineering.md#next-release-development-arch-maintenance-before-a-new-update).
 
-This committed source change is included in the v1.0.2 declaration and remains
-undeployed as an installed updater. Published v1.0.1 and its tag, signed
-distribution and accepted preparation kit remain unchanged. The installed
-v1.0.1 updater performs the transition to v1.0.2 without the new yay prompt;
-use standalone Update System before that transition. Real end-to-end yay
-acceptance belongs to v1.0.2 -> v1.0.3. No live package-manager operation or
-installed updater replacement is performed during release preparation.
+This updater is installed by v1.0.2, and its automated yay, terminal,
+cancellation, reboot and exact-target recovery tests passed. The older v1.0.1
+updater performed the transition to v1.0.2 without this prompt. Live maintenance
+acceptance belongs to v1.0.2 -> v1.0.3; use standalone Update System when needed
+before upgrading an installation whose updater predates this feature.
 
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).
@@ -1477,7 +1484,7 @@ or drifted provenance still fails closed.
 
 ### WAITING FOR UPSTREAM — LOW PRIORITY
 
-- KeePassXC 2.7.12 intermittently launches Light on the development desktop
+- KeePassXC 2.7.12 intermittently launches Light on a test installation
   despite correct Dark GSettings and XDG Settings portal values. A Light → Dark
   change repairs it; moving the window between workspaces does not. Treat this
   as a likely upstream race during the initial Linux portal read, described in

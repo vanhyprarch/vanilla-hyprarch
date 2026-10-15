@@ -17,6 +17,9 @@ documents relevant to the task:
 - [Architecture decisions](docs/decisions.md)
 - [System baseline](docs/system-baseline.md)
 - [Installation strategy](docs/installation-strategy.md)
+- [Development and signed release runbook](docs/release-workflow.md)
+- [Release contracts and recovery](docs/release-engineering.md)
+- [Manual ServerPlan publication](docs/serverplan-publication.md)
 - [Compatibility and upstream workarounds](docs/compatibility.md)
 - [Power & Idle backend](docs/power-idle-backend.md)
 - [Screensaver lifecycle](docs/screensaver-lifecycle.md)
@@ -76,6 +79,9 @@ indispensable dependency is approved and documented.
 
 ## Workflow rules
 
+- Establish branch, `HEAD`, working-tree status, remote synchronization and the
+  declared/installed release identities before acting. Stop on unexplained drift;
+  never discard WIP or infer an installed identity from the checkout.
 - Inspect the relevant code, documentation, live ownership, and version facts
   before editing.
 - Make the smallest scoped change and one architectural change at a time.
@@ -91,6 +97,13 @@ indispensable dependency is approved and documented.
   replacement state.
 - Document version-specific workarounds with evidence and a condition for
   retesting or removing them.
+- Signing, tag/release publication, remote writes, package maintenance, installed
+  deployments/upgrades and destructive recovery require explicit operator scope.
+  An agent never accesses production private keys or passphrases; the operator
+  performs signing interactively. Preserve signed bindings, sequence floors,
+  updater provenance, exact-target recovery and immutable published artifacts.
+- Public docs describe project procedures, not private host inventories, storage,
+  credentials or backup locations. Use operator-provided paths in examples.
 
 ## Validation expectations
 

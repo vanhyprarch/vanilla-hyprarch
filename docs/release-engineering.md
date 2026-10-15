@@ -12,17 +12,17 @@ guide](upgrade-v1.0.0-to-v1.0.1.md)**. Already prepared systems and fresh v1.0.1
 installations must not repeat it. Newer documentation lives on main without
 changing the published tag or rebuilding the release.
 
-The current declaration targets **v1.0.2 Stable**, consolidating yay pre-upgrade
-maintenance, accepted Hyprland splash suppression, 18 vendored Lucide dock
-icons and the Bluetooth-off foreground correction. x86_64, update protocol 1,
-migration level 1 and the existing compatibility minimums are unchanged;
-genuine v1.0.1 -> v1.0.2 requires zero migrations and no updater preparation.
-Build twice from the exact declaration commit, compare both metadata and archive,
-then run the existing VM's offline read-only target plan. Signing, the official
-tag, higher-sequence Stable catalog and publication remain subsequent authorized
-steps. Preserve Stable sequence 2 until promotion is approved. After VM upgrade
-and reboot acceptance, back up production before its upgrade; only after full
-acceptance locate the old local/NAS backups and add a verified increment.
+**Operational entry point:** [development and complete signed release workflow](release-workflow.md).
+This file is the contract/recovery reference; historical numbered-phase sections
+are implementation records, not a second current publication procedure.
+
+Current v1.0.2 Stable is published at `39ee15155e49be0af3d044a0b11b6c89108fddf7`.
+Exact-commit and strict-tag builds reproduced approved bytes; ServerPlan Stable
+sequence 3, the genuine v1.0.1 upgrade/reboot, GitHub Release publication and all
+three authenticated downloads passed verification. Anonymous GitHub remains 404.
+Architecture x86_64, protocol 1 and migration level 1 are unchanged; v1.0.1 needs
+zero migrations or updater preparation. Public publication hashes are recorded
+in [ServerPlan publication](serverplan-publication.md#v102-stable-sequence-3--complete).
 
 The [signed distribution protocol](signed-distribution.md) adds source-level
 Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
@@ -49,8 +49,8 @@ failure retained the journal; after full `pacman -Syu` and reboot the normal upd
 resumed its exact authorized target. Identity/commit, migration level 1, updater
 checksum, root 1 / Stable 2 ledger, journal cleanup and preserved desktop settings
 passed, as did a subsequent "Installed: v1.0.1 / up to date" dock check. No repeated
-preparation, new VM or additional snapshot is required. Production subsequently
-passed the same genuine v1.0.0 -> v1.0.1 upgrade and reboot acceptance.
+preparation, new VM or additional snapshot is required for an already prepared
+release-test installation.
 The [Phase 3A publication runbook](serverplan-publication.md) covers offline tree
 assembly and the accepted disposable hosting observations. Publication is manually
 coordinated by the sole developer: immutable files and metadata first, the tested
@@ -59,9 +59,8 @@ atomicity guarantee is not required; cryptographic checks remain mandatory.
 
 ## Next-release development: Arch maintenance before a new update
 
-This is source development after immutable v1.0.1, not deployed behavior or a
-change to that release/tag/preparation kit. It is included in the v1.0.2
-declaration. After authenticating a newer catalog,
+This behavior is included in the installed v1.0.2 updater. It does not change
+the immutable v1.0.1 release, tag or preparation kit. After authenticating a newer catalog,
 manifest, metadata and archive, the updater displays the release and asks whether
 to run the existing **Update System mechanism: `/usr/bin/yay -Syu`**, including
 Arch repositories and AUR, in the same Foot window. The standalone menu action
@@ -600,8 +599,7 @@ acceptance on the existing VM. The preliminary `76ba358` payload remains
 unapproved. Do not repeat preparation on that VM: the v1.0.1 declaration changed
 no packaged updater source, and its accepted signed updater remains compatible
 with the v1.0.2 target.
-The actual v1.0.1 upgrade and reboot acceptance passed on both the existing VM
-and production computer. The
+Genuine v1.0.0 -> v1.0.1 upgrade and reboot acceptance passed in release testing. The
 [public user guide](upgrade-v1.0.0-to-v1.0.1.md) supplies the exact accepted kit,
 download hashes, protected staging, check/apply commands, post-update validation
 and mirror/journal recovery. Preserve all six original preparation files inside

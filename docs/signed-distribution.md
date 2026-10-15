@@ -1,22 +1,20 @@
 # Signed distribution protocol 1
 
-Status: Phase 1 foundation and Phase 2 updater integration implemented in source
-and isolated tests; the existing v1.0.0 Proxmox VM's prepared signed updater has
-passed the real v1.0.0 -> v1.0.1 normal-dock upgrade and reboot acceptance.
-Production root 1, both release manifests and Stable sequence 2 are signed,
-verified and published on ServerPlan. The VM ledger records root 1, Stable 2 and
-both immutable release bindings; installed v1.0.1 retains migration level 1.
-Further publication and changes to other installations require separate
-authorization. See [release engineering](release-engineering.md) for historical
-behavior and the [original-v1.0.0 user guide](upgrade-v1.0.0-to-v1.0.1.md) for the
-required one-time bridge. Fresh v1.0.1 and already prepared systems skip it.
+Status: the protocol, updater and static publisher are implemented. Production
+root 1 and Stable sequence 3 authenticate immutable v1.0.0/v1.0.1/v1.0.2 releases
+on ServerPlan. Genuine signed upgrade/reboot acceptance and exact-target recovery
+have passed in release testing. Follow the [operator runbook](release-workflow.md)
+for execution, [release engineering](release-engineering.md) for lifecycle
+contracts, and [ServerPlan publication](serverplan-publication.md) for manual
+publication. Original unprepared v1.0.0 alone needs the historical bridge;
+fresh signed releases and already prepared systems must not repeat it.
 
 `/dist/v1` names **distribution protocol 1**, independently of product versions
 such as `v1.0.1` and the existing product `update_protocol = 1`.
 `release/distribution.py` is the shared verifier and offline publisher library.
 The updater zipapp includes it, the public `release/trust.json` record, and
 `install/signed_distribution.py`. Official Arch `minisign` is now required in
-the package baseline. This implementation phase installed no packages.
+the package baseline.
 
 ## Encoding, signatures, and trust
 
@@ -235,6 +233,14 @@ terminal cleanup, and target-user journal binding remain the existing driver's
 authority. State deletion/rollback by a privileged attacker or disk snapshot
 cannot be solved solely by local counters.
 
+After successful identity publication and journal/staging cleanup, `authorization`
+may remain non-null. It is retained authenticated evidence, not an active pending
+transaction or a cleanup defect. `Acquisition.acquire` clears it when publishing
+new authenticated catalog observations, then replaces it if a target is acquired.
+A failed discovery is not proof that it should be cleared. Judge completion by
+verified installed identity and journal/staging state; never delete the proof or
+reset the ledger merely to obtain null.
+
 ### Interrupted updater/provenance publication
 
 Executable and provenance publication are atomic per file, not as a pair. An
@@ -366,10 +372,10 @@ Phase 3A's [static publication tooling and hosting runbook](serverplan-publicati
 builds on these primitives, retaining frozen signatures and catalog receipts.
 It adds no installed updater or network-transport changes; real hosting acceptance
 has passed for the current single-user manual publication workflow. The initial
-production trust anchor and signed ServerPlan baseline are also verified. The
-existing v1.0.0 VM has passed preparation, signed discovery, actual v1.0.1 upgrade,
-exact-target recovery and reboot acceptance. No production SSD preparation has
-occurred.
+production trust anchor and signed ServerPlan baseline are also verified.
+Release testing has passed legacy preparation, signed discovery, real Stable
+upgrades, exact-target recovery and reboot acceptance. Current public release
+status is recorded above.
 
 Run from the repository root. The existing builder still builds an exact Git
 commit, not dirty working-tree contents. All following commands are local;
@@ -453,7 +459,7 @@ changing its two files; it never installs the package or keys itself.
 Static publication must upload immutable assets, verify them, publish immutable
 manifest/signature files, verify them, then stage and verify the complete
 self-contained signed channel catalog before replacing the active catalog last
-with the tested FTPS rename operation. The sole developer must finish publication
+with the tested FTPS rename operation. The operator must finish publication
 and verify the active catalog before initiating Update. Temporary update-check
 unavailability is acceptable during publication; invalid or inconsistent content
 still fails closed. A formal provider-confirmed atomicity guarantee is not a

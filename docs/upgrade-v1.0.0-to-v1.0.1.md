@@ -1,5 +1,12 @@
 # Upgrade original v1.0.0 to v1.0.1
 
+This is the historical v1.0.1 procedure and its frozen acceptance hashes. The
+one-time bridge still applies only to an original unprepared v1.0.0. A newer
+active Stable catalog can select a newer release: use its approved identity and
+the [current acceptance procedure](release-workflow.md#8-genuine-upgrade-reboot-acceptance-and-recovery),
+not the historical v1.0.1-only completion assertions below. Do not change
+security state or hashes merely to make an old assertion pass.
+
 **Original v1.0.0 needs one manual updater preparation before normal Update can
 install v1.0.1. Do not install the preparation archive as a desktop release.**
 Fresh v1.0.1 installations and systems already prepared for signed updates must

@@ -1,20 +1,25 @@
 # Vanilla HyprArch
 
-> **Current stable release: [v1.0.1](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.1).**
+> **Current stable release: [v1.0.2](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.2).**
 > **Original v1.0.0 users: follow the [complete one-time updater preparation and
 > upgrade guide](docs/upgrade-v1.0.0-to-v1.0.1.md) before using Update.**
-> Fresh v1.0.1 installations and already prepared systems must not repeat the bridge.
+> Its v1.0.1 completion assertions are historical; verify the actual approved target.
+> Fresh signed-release installations and already prepared systems must not repeat the bridge.
 >
 > Public ServerPlan downloads (no GitHub login required):
 > [preparation kit](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz),
 > [published upgrade guide](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/UPGRADE-FROM-v1.0.0.md),
 > [checksums](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/SHA256SUMS).
 
-Real v1.0.0 -> v1.0.1 upgrade and reboot acceptance passed on the existing Proxmox
-VM: signed ServerPlan fallback with GitHub HTTP 404, exact-target recovery after
-Arch mirror failure, zero migrations, preserved settings and working desktop.
-Stable source/tag remains `83bfeaa627392817c21b29ce73557a32f5ad563e`; newer
-documentation on `main` does not change its immutable archive.
+The genuine v1.0.1 -> v1.0.2 signed upgrade and reboot acceptance passed in
+release testing. Stable sequence 3 is published on ServerPlan. The GitHub Release
+and all three authenticated asset downloads are verified; anonymous GitHub
+access currently returns HTTP 404. The immutable source/tag is
+`39ee15155e49be0af3d044a0b11b6c89108fddf7`.
+
+For a fresh development or release-engineering session, start with
+[AGENTS.md](AGENTS.md), [current state](docs/current-state.md), then the
+[complete development and signed release runbook](docs/release-workflow.md).
 
 Vanilla HyprArch is a small, incremental desktop configuration layer for a
 standard Arch Linux installation. Its philosophy is **Arch vanilla + Hyprland
@@ -88,23 +93,23 @@ Matrix, Doom, and Game of Life.
 
 On a fresh Arch Minimal x86_64 installation with Internet access, run these
 commands as the normal target user, not root. The two downloads are the
-published v1.0.1 release assets, also available on the operational ServerPlan mirror:
+published v1.0.2 release assets, also available on the operational ServerPlan mirror:
 
 ```bash
 set -e
 sudo pacman -Syu --needed curl
-bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.1.XXXXXXXX")
+bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.2.XXXXXXXX")
 cd "$bundle_dir"
-curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o release.json https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.1/assets/release.json
-curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o vanhyprarch-v1.0.1.tar.gz https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.1/assets/vanhyprarch-v1.0.1.tar.gz
+curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o release.json https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.2/assets/release.json
+curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o vanhyprarch-v1.0.2.tar.gz https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.2/assets/vanhyprarch-v1.0.2.tar.gz
 sha256sum -c <<'SHA256'
-c5ddeeb07dfe6ceb40144a26a490df39a344940d9e9e60b18acbf8ad3885b7d1  release.json
-8c349c35f1e01e57cce98d7247915742cf6c5e33dff395b7842963304b908aa5  vanhyprarch-v1.0.1.tar.gz
+6292c27007151fbf859e92f2a0e066f3e0766dee3c075d798c1c9d76ca7bcb2c  release.json
+91a521734dd9ea2cbfc6a239ca3969b70913ead28991c90594e1711a57f73bf7  vanhyprarch-v1.0.2.tar.gz
 SHA256
-tar -xzf vanhyprarch-v1.0.1.tar.gz
-"$PWD/vanhyprarch-v1.0.1/install.sh" \
+tar -xzf vanhyprarch-v1.0.2.tar.gz
+"$PWD/vanhyprarch-v1.0.2/install.sh" \
   --release-metadata "$PWD/release.json" \
-  --release-artifact "$PWD/vanhyprarch-v1.0.1.tar.gz"
+  --release-artifact "$PWD/vanhyprarch-v1.0.2.tar.gz"
 ```
 
 Authenticate the expected hashes through a trusted publisher record before
@@ -124,6 +129,10 @@ Run this separate development command as the normal target user:
 ```bash
 sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/main/install.sh)
 ```
+
+This network command requires GitHub source access. On HTTP 404, stop and
+use an independently authenticated source workflow; do not silently substitute
+a release or bypass source verification.
 
 It resolves `main` to an exact commit, downloads that commit's source archive,
 and delegates package/system integration, managed deployment, create-once

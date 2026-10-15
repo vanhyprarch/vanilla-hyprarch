@@ -3,7 +3,7 @@
 **For an original v1.0.0 installation, follow the [complete public upgrade
 guide](upgrade-v1.0.0-to-v1.0.1.md)**. It provides the accepted downloadable kit,
 all authoritative hashes, exact user commands and recovery guidance. Fresh
-v1.0.1 installations and already prepared systems must not repeat preparation.
+signed-release installations and already prepared systems must not repeat preparation.
 This document retains the administrative design, historical build records and
 advanced construction/recovery reference; its preliminary examples are not the
 accepted download procedure.
@@ -12,7 +12,7 @@ The complete genuine v1.0.0 -> v1.0.1 upgrade and reboot acceptance passed on th
 **existing snapshotted Proxmox VM**, including authenticated ServerPlan fallback,
 Stable sequence 2, exact-target recovery after Arch mirror failure, migration
 level 1 and preserved settings. Do not repeat preparation on that VM or run it
-on an unreleased/development host. The production SSD remains untouched.
+on an unreleased/development host.
 
 **VM PREPARATION AND DISCOVERY ACCEPTED:** the definitive bundle from
 `394422752564a832e2f15a004b6e3dc828e1b47b` was built reproducibly, transferred
@@ -22,8 +22,8 @@ HTTP 404 and authenticated ServerPlan fallback. The durable ledger recorded
 root 1, Stable sequence 1 and the original v1.0.0 binding. Installed identity
 and migration level 1 were unchanged. The accepted updater SHA-256 is
 `4512e61395435c2e2e275d0481a4d9f1fe1de003c6e551b4cc6f0757889f0fc1`.
-The current Stable declaration changes no packaged updater source; no new
-preparation bundle or installation is required for the v1.0.1 target preflight.
+The v1.0.1 declaration changed no packaged updater source. Later releases may
+replace the updater through the signed lifecycle without repeating this bridge.
 Commit `76ba358` and its hashes below remain preliminary historical records,
 never approved installation material. The remaining commands describe first-time
 preparation elsewhere under separate authorization, not a repeat on this VM.
@@ -39,7 +39,8 @@ The first signed updater invocation creates its separate rollback ledger before
 discovery. After that operation begins (or ledger initialization is interrupted),
 updater-only restoration is refused; use signed exact-target recovery instead.
 If only acquisition was attempted, retry the prepared updater; an active journal
-resumes its exact retained target. VM acceptance can instead restore its snapshot.
+resumes its exact retained target. Snapshot restoration is a separate full-system
+recovery decision, never an automatic alternative to authenticated resume.
 The small in-memory payload adapter supplies bytes from the existing,
 deterministic zipapp packager; it introduces no updater format or trust protocol.
 
@@ -289,6 +290,7 @@ the VM. Use the public user guide for a different original v1.0.0 installation.
    and verify the updated desktop, dex, persistent keyring/Nextcloud behavior,
    and subsequent normal update discovery.
 
-The preparation/discovery phase is complete. Actual v1.0.1 upgrade and reboot
-acceptance remain required before production SSD use; no intermediate release,
-repeated preparation, VM recreation or additional snapshot is required.
+The legacy preparation, genuine v1.0.1 upgrade and reboot acceptance are complete.
+These are historical regression cases, not remaining release gates. Use the
+[current release workflow](release-workflow.md) for subsequent signed upgrades;
+do not repeat this bridge or rebuild its accepted administrative payload.

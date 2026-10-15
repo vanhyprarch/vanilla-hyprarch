@@ -7,8 +7,10 @@ managed-file, create-once, accepted system-integration, and SDDM stages. The
 repository-root `install.sh` now provides their thin shared post-install orchestration;
 the optional archinstall entry point does not exist yet.
 
-The immutable `v1.0.0` stable release is published and accepted; `main` is a
-development ref declaring the unpublished `v1.0.1` Stable release.
+The immutable `v1.0.2` Stable release is published and release-test accepted;
+`main` remains a development ref, not an installed release identity. Follow the
+[release workflow](release-workflow.md) for exact-source builds, publication,
+genuine upgrade acceptance and recovery.
 Its Hyprland files express portable managed, create-once machine, and user-override
 ownership. The public wrapper does not duplicate those lifecycles: each
 existing stage retains its own manifests, provenance, conflict handling, and
@@ -84,9 +86,10 @@ and leave that record absent. They refuse an existing installed release identity
 to avoid a stale claim. The system stage installs the root-owned
 `/usr/local/bin/vanhyprarch-update` command on release and development paths;
 it refuses updates while the installed release identity is absent. Manual
-GitHub release discovery and verified target-driver handoff are implemented.
-Fresh v1.0.0 installation uses the published `release.json` and
-`vanhyprarch-v1.0.0.tar.gz` through the verified local bundle mode; the exact
+root-pinned signed discovery with GitHub/ServerPlan transport fallback and verified
+target-driver handoff are implemented. Fresh release installation uses the
+published version-matching `release.json` and archive through verified local
+bundle mode; the exact
 normal-user commands and checksums are in the [README](../README.md#install-stable).
 Real fresh release-mode installation from Arch Minimal passed. Candidate
 releases rc1, rc2, and rc3 are historical; rc2 remains an immutable broken

@@ -126,7 +126,7 @@ terminal arguments, startup/reload separation, and publication failure.
 Retest these limitations after dex updates or a session-desktop identity change;
 retain upstream parsing instead of adding a local replacement.
 
-On the audited development host, dex's fresh package preview also adds
+The audited dex fresh-package preview also adds
 `man-db`, `less`, and `libpipeline`. `man-db` declares conflicts/replacement for
 `man`, which no installed package currently provides. Fresh provisioning uses
 normal pacman resolution. The previous release-upgrade stage rejected every
@@ -136,8 +136,9 @@ the complete proposed transaction and installed names/providers, including
 versions, reverse conflicts, and actual replacements. It never special-cases
 `man-db`, `man`, or dex. An installed compatible provider is preserved.
 A read-only temporary database view reproduced the original rejection and now
-passes native validation; no installed package was changed. Real v1.0.0 upgrade
-acceptance in Proxmox remains a release gate.
+passes native validation. Genuine v1.0.0 -> v1.0.1 upgrade/recovery/reboot
+acceptance subsequently passed in release testing; this is no longer a release
+gate. Retest the package relationships after an applicable libalpm ABI change.
 
 **Validated package ABI:** pacman 7.1.0, libalpm 16.0.1. The stdlib ctypes adapter
 uses public libalpm package/list/dependency APIs without a transaction, download,
