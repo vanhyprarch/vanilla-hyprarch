@@ -1,10 +1,18 @@
 # One-time v1.0.0 updater preparation
 
-This administrative procedure is for the project's single existing user. It has
-passed on the **existing snapshotted Proxmox VM**, preserving genuine v1.0.0 and
-migration level 1. Do not repeat preparation on that VM or run it on an
-unreleased/development host. Production remains untouched until the genuine
-v1.0.1 upgrade and reboot acceptance pass.
+**For an original v1.0.0 installation, follow the [complete public upgrade
+guide](upgrade-v1.0.0-to-v1.0.1.md)**. It provides the accepted downloadable kit,
+all authoritative hashes, exact user commands and recovery guidance. Fresh
+v1.0.1 installations and already prepared systems must not repeat preparation.
+This document retains the administrative design, historical build records and
+advanced construction/recovery reference; its preliminary examples are not the
+accepted download procedure.
+
+The complete genuine v1.0.0 -> v1.0.1 upgrade and reboot acceptance passed on the
+**existing snapshotted Proxmox VM**, including authenticated ServerPlan fallback,
+Stable sequence 2, exact-target recovery after Arch mirror failure, migration
+level 1 and preserved settings. Do not repeat preparation on that VM or run it
+on an unreleased/development host. The production SSD remains untouched.
 
 **VM PREPARATION AND DISCOVERY ACCEPTED:** the definitive bundle from
 `394422752564a832e2f15a004b6e3dc828e1b47b` was built reproducibly, transferred
@@ -105,7 +113,8 @@ Before any administrator command below:
   installs a verifier or obtains trust keys from ServerPlan. Complete a normal
   administrator-owned Arch upgrade first if necessary; then `sudo pacman -S --needed minisign`
   is the ordinary official-package installation path. Do not run it as part of
-  development tooling tests. No real preparation is authorized by this runbook.
+  development tooling tests. Use the accepted public guide for an original
+  installation, rather than executing these historical construction templates.
 - Retain the existing genuine v1.0.0 VM and its available snapshot, including its
   system and user disks; no new VM or additional snapshot is required. Retain
   its original updater, provenance and release metadata as backup material.
@@ -250,10 +259,11 @@ another preparation requires explicit administrative review, not receipt deletio
 
 ## Validation matrix — reference
 
-Preparation and authenticated discovery are accepted on the existing VM. The
+Preparation, authenticated discovery and the actual v1.0.1 upgrade/reboot are
+accepted on the existing VM. The
 following lifecycle and fault cases remain reference coverage for isolated
 regressions; they are not instructions to repeat the completed phase or restore
-the VM. The next VM operation is the genuine v1.0.1 read-only target preflight.
+the VM. Use the public user guide for a different original v1.0.0 installation.
 
 1. Check genuine baseline and read-only plan; cancel without `--authorize` and
    verify zero changes. Apply, repeat check/apply, and compare the two component

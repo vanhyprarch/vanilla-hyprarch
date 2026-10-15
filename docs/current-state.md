@@ -3,8 +3,8 @@
 Snapshot date: 2026-10-15.
 
 The immutable `v1.0.0` stable release is published at
-`8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The authored declaration on
-`main` now declares the unpublished `v1.0.1` Stable patch release. Immutable
+`8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The subsequent immutable
+`v1.0.1` Stable is published at `83bfeaa627392817c21b29ce73557a32f5ad563e`. Immutable
 candidate releases rc1, rc2, and rc3 remain historical.
 The offline release contract includes a deterministic exact-commit
 artifact builder, pre-extraction verifier, and root-owned installed identity
@@ -52,8 +52,21 @@ ServerPlan discovery reported no newer release. The persistent ledger recorded
 production root 1, Stable sequence 1 and the original v1.0.0 binding; installed
 identity stayed v1.0.0 at migration level 1. This preparation/discovery phase is
 accepted and must not be repeated. The preliminary `76ba358` payload remains
-historical and unapproved. The next VM step is the genuine v1.0.1 read-only target
-preflight; the later real upgrade and reboot acceptance remain pending.
+historical and unapproved. The genuine v1.0.0 -> v1.0.1 upgrade and reboot
+acceptance have now passed on that same VM; do not repeat preparation.
+
+The user confirmed signed Stable sequence 2 discovery through ServerPlan with
+GitHub HTTP 404, a zero-migration plan, and normal dock update authorization.
+Stale Arch databases/mirrors caused a package-download failure; the updater
+retained the journal. After a full `pacman -Syu` and reboot, the normal updater
+resumed the exact authorized target successfully. Identity, commit, migration
+level 1, updater checksum, Stable sequence 2 ledger and journal cleanup passed.
+Subsequent reboot/login, wallpaper, dock, theme, preferences and normal "Installed:
+v1.0.1 / up to date" behavior were user-confirmed. See the
+[public original-v1.0.0 upgrade guide](upgrade-v1.0.0-to-v1.0.1.md) for the complete
+manual bridge, exact accepted downloads and recovery steps. The guide is newer
+documentation on main, not part of the immutable v1.0.1 archive. No production
+SSD changes occurred.
 
 The [signed distribution protocol](signed-distribution.md) now includes Phase 2
 updater integration in source and isolated tests: native Minisign authentication,
@@ -65,8 +78,8 @@ root-private write-ahead intent, independent original-provenance receipt, and
 authenticated exact-target recovery; real zipapp/SIGKILL tests cover restart
 between the two publications. The production root signature is verified and its
 public trust record is configured in source. The initial signed v1.0.0 baseline
-is published on ServerPlan. VM preparation and authenticated discovery are
-accepted; the actual v1.0.1 upgrade remains pending. The development installation
+is published on ServerPlan. Signed Stable sequence 2 adds genuine v1.0.1;
+the VM's real upgrade and reboot acceptance passed. The development installation
 retains unreleased/development identity; no production SSD changes occurred.
 
 Phase 3A adds offline [static publication tooling and a disposable ServerPlan
@@ -82,8 +95,8 @@ The developer initiates Update only after publication and final verification;
 temporary check unavailability during publication is acceptable. Signatures,
 immutable bindings, rollback protection and fail-closed behavior remain mandatory.
 No provider-confirmed atomic-rename guarantee is required. Initial production
-publication and VM preparation/discovery are complete. Stable sequence 1 remains
-active until separately authorized v1.0.1 signing and publication. The Stable
+publication and VM upgrade acceptance are complete. Signed Stable sequence 2
+is active and binds original v1.0.0 and genuine v1.0.1. The Stable
 declaration preserves x86_64, update protocol 1 and migration level 1; upgrading
 the genuine v1.0.0 VM requires zero migrations and no further updater preparation.
 

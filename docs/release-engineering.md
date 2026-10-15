@@ -5,8 +5,12 @@ fresh-install identity publisher, upgrade-safe stages, migration runner,
 durable journal, local exact-target driver, and installed manual updater
 implemented. Super+Space exposes the manual updater. `v1.0.0` stable is
 published, immutable, and accepted for fresh installation and direct rc1/rc3
-upgrades. `main` declares unpublished `v1.0.1` Stable; rc1, rc2, and rc3 remain
-historical candidates.
+upgrades. `v1.0.1` Stable is published at the immutable annotated tag's commit
+`83bfeaa627392817c21b29ce73557a32f5ad563e`; rc1, rc2, and rc3 remain historical
+candidates. **Original v1.0.0 requires the [complete one-time manual upgrade
+guide](upgrade-v1.0.0-to-v1.0.1.md)**. Already prepared systems and fresh v1.0.1
+installations must not repeat it. Newer documentation lives on main without
+changing the published tag or rebuilding the release.
 
 The [signed distribution protocol](signed-distribution.md) adds source-level
 Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
@@ -26,9 +30,15 @@ hashes, ownership and schema-3 provenance passed. The normal dock Update check
 reported v1.0.0 up to date after GitHub HTTP 404 and authenticated ServerPlan
 fallback. The ledger recorded root 1, Stable sequence 1 and the unchanged v1.0.0
 binding; installed identity and migration level 1 were preserved. Preparation
-and discovery acceptance are complete. The next step is the genuine v1.0.1 target
-preflight, followed by separately authorized signing/publication and real upgrade
-and reboot acceptance. No repeated preparation or new VM/snapshot is required.
+and discovery acceptance were followed by genuine v1.0.1 read-only preflight,
+signed manifest/Stable sequence 2 publication, actual normal-dock upgrade and
+successful reboot acceptance on the same VM. A stale Arch database/mirror download
+failure retained the journal; after full `pacman -Syu` and reboot the normal updater
+resumed its exact authorized target. Identity/commit, migration level 1, updater
+checksum, root 1 / Stable 2 ledger, journal cleanup and preserved desktop settings
+passed, as did a subsequent "Installed: v1.0.1 / up to date" dock check. No repeated
+preparation, new VM or additional snapshot is required. Production SSD remains
+untouched.
 The [Phase 3A publication runbook](serverplan-publication.md) covers offline tree
 assembly and the accepted disposable hosting observations. Publication is manually
 coordinated by the sole developer: immutable files and metadata first, the tested
@@ -288,7 +298,7 @@ under a safe target source tree, with bounded sizes and no symlinks. The
 local target driver verifies the complete target artifact before giving its
 root-controlled extracted tree and metadata to the runner. Registry entries
 never contain shell commands. The published `v1.0.0` release and current
-unpublished `v1.0.1` Stable repository target both have minimum level 0 and target
+published `v1.0.1` Stable target both have minimum level 0 and target
 level 1; the production registry contains migration `0001`, which upgrades rc1
 updater provenance from schema 1 to schema 2. Real rc1-to-rc3 and
 rc1-to-stable updates physically validated it. Historical v1.0.0 fresh installations
@@ -417,8 +427,8 @@ The acquisition details in this section describe the immutable published
 v1.0.0 updater and its historical acceptance. The current source replaces its
 GitHub-listing discovery with the independently authenticated protocol described
 in [signed distribution](signed-distribution.md). The prepared signed updater
-passed normal dock discovery on the existing v1.0.0 Proxmox VM as recorded above;
-the actual v1.0.1 release upgrade remains pending.
+passed normal dock discovery and the actual v1.0.0 -> v1.0.1 upgrade/reboot on
+the existing Proxmox VM as recorded above.
 
 The system-integration authority installs `/usr/local/bin/vanhyprarch-update`
 as a root-owned mode-0755 regular executable Python archive. It contains the
@@ -490,5 +500,10 @@ and authenticated updater fallback are complete. The definitive payload from
 acceptance on the existing VM. The preliminary `76ba358` payload remains
 unapproved. Do not repeat preparation on that VM: the Stable declaration changes
 no packaged updater source, and its accepted updater remains compatible.
-Production SSD preparation remains outside this acceptance; actual v1.0.1 upgrade
-and reboot acceptance on the existing VM must precede production use.
+The actual v1.0.1 upgrade and reboot acceptance also passed; production SSD
+preparation remains outside this acceptance. The
+[public user guide](upgrade-v1.0.0-to-v1.0.1.md) supplies the exact accepted kit,
+download hashes, protected staging, check/apply commands, post-update validation
+and mirror/journal recovery. Preserve all six original preparation files inside
+the clearly named downloadable bridge kit; do not publish its historical inner
+`rc1` input as another product release or substitute it for the Stable archive.

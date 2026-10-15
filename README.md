@@ -1,12 +1,15 @@
 # Vanilla HyprArch
 
-> **Current stable release: [v1.0.0](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.0).**
-> It is published and immutable. `main` now targets the unpublished
-> `v1.0.1-rc1` patch candidate.
+> **Current stable release: [v1.0.1](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.1).**
+> **Original v1.0.0 users: follow the [complete one-time updater preparation and
+> upgrade guide](docs/upgrade-v1.0.0-to-v1.0.1.md) before using Update.**
+> Fresh v1.0.1 installations and already prepared systems must not repeat the bridge.
 
-Real v1.0.0 acceptance passed: a fresh release-mode install from Arch Minimal,
-direct public updates from rc1 with migration 0001 and from rc3 with zero
-migrations, and post-reboot graphical and system/user-service checks.
+Real v1.0.0 -> v1.0.1 upgrade and reboot acceptance passed on the existing Proxmox
+VM: signed ServerPlan fallback with GitHub HTTP 404, exact-target recovery after
+Arch mirror failure, zero migrations, preserved settings and working desktop.
+Stable source/tag remains `83bfeaa627392817c21b29ce73557a32f5ad563e`; newer
+documentation on `main` does not change its immutable archive.
 
 Vanilla HyprArch is a small, incremental desktop configuration layer for a
 standard Arch Linux installation. Its philosophy is **Arch vanilla + Hyprland
@@ -80,30 +83,34 @@ Matrix, Doom, and Game of Life.
 
 On a fresh Arch Minimal x86_64 installation with Internet access, run these
 commands as the normal target user, not root. The two downloads are the
-published v1.0.0 release assets:
+published v1.0.1 release assets, also available on the operational ServerPlan mirror:
 
 ```bash
 set -e
 sudo pacman -Syu --needed curl
-bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.0.XXXXXXXX")
+bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.1.XXXXXXXX")
 cd "$bundle_dir"
-curl -fL --proto '=https' --tlsv1.2 -o release.json https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.0/release.json
-curl -fL --proto '=https' --tlsv1.2 -o vanhyprarch-v1.0.0.tar.gz https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.0/vanhyprarch-v1.0.0.tar.gz
+curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o release.json https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.1/assets/release.json
+curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o vanhyprarch-v1.0.1.tar.gz https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.1/assets/vanhyprarch-v1.0.1.tar.gz
 sha256sum -c <<'SHA256'
-6b02a0b286028a56d41217f42326c136f87dd7908ea86bf6cc22efdf32e4b75c  release.json
-de57673385f961b233bdae95731ba9e7a3bfef32ce5f44851143dafff0bcb0c9  vanhyprarch-v1.0.0.tar.gz
+c5ddeeb07dfe6ceb40144a26a490df39a344940d9e9e60b18acbf8ad3885b7d1  release.json
+8c349c35f1e01e57cce98d7247915742cf6c5e33dff395b7842963304b908aa5  vanhyprarch-v1.0.1.tar.gz
 SHA256
-tar -xzf vanhyprarch-v1.0.0.tar.gz
-"$PWD/vanhyprarch-v1.0.0/install.sh" \
+tar -xzf vanhyprarch-v1.0.1.tar.gz
+"$PWD/vanhyprarch-v1.0.1/install.sh" \
   --release-metadata "$PWD/release.json" \
-  --release-artifact "$PWD/vanhyprarch-v1.0.0.tar.gz"
+  --release-artifact "$PWD/vanhyprarch-v1.0.1.tar.gz"
 ```
 
-The installer can bootstrap Python when it is absent. It verifies the bundle
+Authenticate the expected hashes through a trusted publisher record before
+executing downloaded code; checksums from the same untrusted download do not
+independently authenticate it. The installer can bootstrap Python when absent. It verifies the bundle
 again before installation and commits the stable installed release identity
 only after validation succeeds. Reboot afterward to enter the SDDM login.
-The public updater supports direct upgrades from v1.0.0-rc1 to v1.0.0; rc3 to
-v1.0.0 was also validated. Intermediate candidates are not required.
+For an existing original v1.0.0 installation, use the
+[manual bridge guide](docs/upgrade-v1.0.0-to-v1.0.1.md), not these fresh-install
+commands. The downloadable kit preserves the exact accepted administrative input;
+its historical inner `rc1` filename does not make it a desktop release.
 
 ## Install development from main
 

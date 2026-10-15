@@ -8,7 +8,10 @@ and independent HTTPS byte verification passed for the complete public tree.
 The public trust anchor is integrated in source. Preparation and normal dock
 discovery passed on the existing v1.0.0 VM, preserving identity and migration
 level 1 and recording root 1 / Stable sequence 1 in the ledger. The genuine
-v1.0.1 target preflight and upgrade remain pending; further publication and
+v1.0.1 manifest and signed Stable sequence 2 were subsequently published, and
+the genuine v1.0.0 -> v1.0.1 upgrade/reboot acceptance passed on that same VM.
+The complete [original-v1.0.0 user guide](upgrade-v1.0.0-to-v1.0.1.md) documents
+the necessary one-time bridge and accepted recovery. Further publication and
 installed-system changes require separate authorization. Follow the
 [signed protocol](signed-distribution.md) and existing
 [release artifact workflow](release-engineering.md); this adds no identity source.
@@ -223,6 +226,23 @@ frozen receipts, public export and verification checksums for subsequent renewal
 Never upload the workspace, input directory, receipts or keys. No installed
 updater, release identity, rollback state or VM was changed during publication.
 
+## v1.0.1 Stable sequence 2 — complete
+
+The sole developer published the approved v1.0.1 assets, manifest and native
+signature, verified their HTTPS bytes, then staged, verified and activated
+signed Stable sequence 2 last. It binds unchanged v1.0.0 and v1.0.1 at
+`83bfeaa627392817c21b29ce73557a32f5ad563e`, expires
+`2027-10-15T09:35:27Z`, and retains root 1. Both original v1.0.0 objects and the
+production root remain unchanged. No Candidate catalog was introduced.
+
+Real VM acceptance passed signed ServerPlan discovery with GitHub HTTP 404,
+zero migrations, normal dock authorization, journal retention after stale Arch
+mirror failures, full Arch upgrade and exact-target resume, identity-last
+completion, Stable 2 ledger, cleared journal and successful reboot/desktop checks.
+No production SSD changes occurred. The administrative download-kit fallback
+described in the user guide is separate, not an update-protocol object; preparing
+it does not publish it or change the signed channel.
+
 ## Accepted single-user manual publication policy
 
 Vanilla HyprArch currently has one user, its developer. Publication and release
@@ -431,12 +451,11 @@ remain unchanged. Test-subtree headers do not establish production-path policy.
   passed on the existing snapshotted v1.0.0 VM, including normal dock discovery
   with GitHub HTTP 404 and authenticated ServerPlan Stable sequence 1. Do not
   repeat preparation; retain the genuine identity, migration state and user data.
-- Obtain separate authorization for the genuine v1.0.1 target preflight and
-  normal upgrade on that same VM. Existing regression coverage includes XDG/provider
-  conflicts, interrupted update/recovery, identity-last and zero unexpected
-  migrations. Block public GitHub entirely and accept signed ServerPlan acquisition
-  and post-reboot desktop/application behavior. No production SSD work precedes
-  VM acceptance. No package/release/key installation occurred in Phase 3A.
+- Genuine v1.0.1 target preflight, normal upgrade, exact-target recovery and
+  reboot acceptance on that same VM are complete, including GitHub HTTP 404 and
+  authenticated ServerPlan acquisition. Keep the accepted originals and recovery
+  records; do not repeat preparation. Other installed-system changes still need
+  authorization. No package/release/key installation occurred in Phase 3A itself.
 
 Run isolated tests with a verified official Minisign executable:
 
