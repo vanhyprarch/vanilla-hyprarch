@@ -39,6 +39,24 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
+## v1.0.2 Stable consolidation — DECLARED, NOT YET PUBLISHED
+
+The release declaration now targets v1.0.2 Stable: the existing yay-based
+pre-upgrade maintenance flow, accepted Hyprland startup splash suppression,
+exactly 18 static Lucide dock icons, the accepted Bluetooth-off foreground
+correction, and associated documentation. Architecture remains x86_64, update
+protocol 1 and migration level 1. Genuine v1.0.1 requires zero migrations and
+no updater preparation. The 18 SVGs and their ISC/Feather MIT notices travel
+with the managed Quickshell tree; no Lucide dependency is added.
+
+Both the existing Proxmox VM and production computer passed the signed
+v1.0.0 -> v1.0.1 upgrade and reboot acceptance. Root 1 and Stable sequence 2
+remain active. v1.0.2 signing, publication and VM/production upgrade acceptance
+are pending; the development installation retains unreleased identity.
+Live yay-flow acceptance is explicitly deferred to the genuine
+v1.0.2 -> v1.0.3 upgrade. The accepted automated terminal, cancellation, reboot
+and recovery coverage is sufficient for v1.0.2; no extra Candidate is required.
+
 The v1.0.1 legacy-updater transition now has a standalone, one-time
 [administrative preparation tool and VM runbook](updater-preparation.md).
 It prepares only the updater/provenance pair while preserving genuine v1.0.0
@@ -130,11 +148,13 @@ privileged orchestrator drops to the desktop UID/GID/groups and forwards capture
 user config/cache/terminal context; yay retains its own sudo and interactive prompts.
 See [the next-release flow and safe fixture commands](release-engineering.md#next-release-development-arch-maintenance-before-a-new-update).
 
-This source change is uncommitted and undeployed. Published v1.0.1 and its tag,
-signed distribution and accepted preparation kit remain unchanged. Its existing
-updater cannot acquire this behavior until a later updater is installed; that
-first transition still requires manual Arch maintenance. No live package-manager operation,
-development updater replacement, VM or production modification was performed.
+This committed source change is included in the v1.0.2 declaration and remains
+undeployed as an installed updater. Published v1.0.1 and its tag, signed
+distribution and accepted preparation kit remain unchanged. The installed
+v1.0.1 updater performs the transition to v1.0.2 without the new yay prompt;
+use standalone Update System before that transition. Real end-to-end yay
+acceptance belongs to v1.0.2 -> v1.0.3. No live package-manager operation or
+installed updater replacement is performed during release preparation.
 
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).

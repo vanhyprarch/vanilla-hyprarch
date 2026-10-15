@@ -12,6 +12,18 @@ guide](upgrade-v1.0.0-to-v1.0.1.md)**. Already prepared systems and fresh v1.0.1
 installations must not repeat it. Newer documentation lives on main without
 changing the published tag or rebuilding the release.
 
+The current declaration targets **v1.0.2 Stable**, consolidating yay pre-upgrade
+maintenance, accepted Hyprland splash suppression, 18 vendored Lucide dock
+icons and the Bluetooth-off foreground correction. x86_64, update protocol 1,
+migration level 1 and the existing compatibility minimums are unchanged;
+genuine v1.0.1 -> v1.0.2 requires zero migrations and no updater preparation.
+Build twice from the exact declaration commit, compare both metadata and archive,
+then run the existing VM's offline read-only target plan. Signing, the official
+tag, higher-sequence Stable catalog and publication remain subsequent authorized
+steps. Preserve Stable sequence 2 until promotion is approved. After VM upgrade
+and reboot acceptance, back up production before its upgrade; only after full
+acceptance locate the old local/NAS backups and add a verified increment.
+
 The [signed distribution protocol](signed-distribution.md) adds source-level
 Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
 state, and signed recovery using this existing generated release identity.
@@ -37,8 +49,8 @@ failure retained the journal; after full `pacman -Syu` and reboot the normal upd
 resumed its exact authorized target. Identity/commit, migration level 1, updater
 checksum, root 1 / Stable 2 ledger, journal cleanup and preserved desktop settings
 passed, as did a subsequent "Installed: v1.0.1 / up to date" dock check. No repeated
-preparation, new VM or additional snapshot is required. Production SSD remains
-untouched.
+preparation, new VM or additional snapshot is required. Production subsequently
+passed the same genuine v1.0.0 -> v1.0.1 upgrade and reboot acceptance.
 The [Phase 3A publication runbook](serverplan-publication.md) covers offline tree
 assembly and the accepted disposable hosting observations. Publication is manually
 coordinated by the sole developer: immutable files and metadata first, the tested
@@ -48,7 +60,8 @@ atomicity guarantee is not required; cryptographic checks remain mandatory.
 ## Next-release development: Arch maintenance before a new update
 
 This is source development after immutable v1.0.1, not deployed behavior or a
-change to that release/tag/preparation kit. After authenticating a newer catalog,
+change to that release/tag/preparation kit. It is included in the v1.0.2
+declaration. After authenticating a newer catalog,
 manifest, metadata and archive, the updater displays the release and asks whether
 to run the existing **Update System mechanism: `/usr/bin/yay -Syu`**, including
 Arch repositories and AUR, in the same Foot window. The standalone menu action
@@ -106,6 +119,12 @@ change takes effect only when a subsequently delivered updater is installed; it
 cannot retroactively add a prompt before that first transition. Continue the
 manual standalone Update System prerequisite for that transition. Do not modify
 the accepted preparation kit or replace the installed updater to test this patch.
+
+The genuine v1.0.1 -> v1.0.2 upgrade uses the installed v1.0.1 updater and cannot
+exercise this target updater's new maintenance prompt. The accepted automated
+yay, PTY, cancellation, reboot and recovery tests are sufficient for v1.0.2.
+Live end-to-end acceptance is deferred to the genuine v1.0.2 -> v1.0.3 upgrade;
+it is not a v1.0.2 blocker and requires no extra Candidate or temporary catalog.
 
 On the genuine development installation, safe initial review uses only fixtures:
 
@@ -384,6 +403,9 @@ Neither replays the migration on fresh installation. Rc3-to-stable
 needs no migration; rc1-to-stable runs `0001` directly. The current repository
 target adds no new migration. Genuine v1.0.0 at level 1 upgrades to v1.0.1 with
 an empty migration plan, retaining level 1 and the prepared schema-3 updater.
+The v1.0.2 declaration also retains level 1, so an authentic installed v1.0.1
+at level 1 has an empty migration plan. Changing the product patch version does
+not create a state migration.
 
 Each migration Python file exposes `plan(context) -> list[str]`,
 `apply(context) -> None`, and `validate(context) -> bool`. `plan` and
@@ -575,10 +597,11 @@ v1.0.0 identity and migration state remain unchanged. Signed ServerPlan publicat
 and authenticated updater fallback are complete. The definitive payload from
 `394422752564a832e2f15a004b6e3dc828e1b47b` has passed preparation and discovery
 acceptance on the existing VM. The preliminary `76ba358` payload remains
-unapproved. Do not repeat preparation on that VM: the Stable declaration changes
-no packaged updater source, and its accepted updater remains compatible.
-The actual v1.0.1 upgrade and reboot acceptance also passed; production SSD
-preparation remains outside this acceptance. The
+unapproved. Do not repeat preparation on that VM: the v1.0.1 declaration changed
+no packaged updater source, and its accepted signed updater remains compatible
+with the v1.0.2 target.
+The actual v1.0.1 upgrade and reboot acceptance passed on both the existing VM
+and production computer. The
 [public user guide](upgrade-v1.0.0-to-v1.0.1.md) supplies the exact accepted kit,
 download hashes, protected staging, check/apply commands, post-update validation
 and mirror/journal recovery. Preserve all six original preparation files inside
