@@ -1,18 +1,24 @@
 # One-time v1.0.0 updater preparation
 
-This administrative procedure is for the project's single existing user. First
-accept it in a **snapshotted Proxmox VM**. Production remains untouched until
-that acceptance is complete. Do not run it on an unreleased/development host.
-No preparation or VM execution has been accepted yet.
+This administrative procedure is for the project's single existing user. It has
+passed on the **existing snapshotted Proxmox VM**, preserving genuine v1.0.0 and
+migration level 1. Do not repeat preparation on that VM or run it on an
+unreleased/development host. Production remains untouched until the genuine
+v1.0.1 upgrade and reboot acceptance pass.
 
-**NOT YET AUTHORIZED:** GitHub public release access remains unavailable, but
-authenticated ServerPlan fallback, production public trust configuration and the
-initial signed v1.0.0 ServerPlan publication are complete. The definitive payload
-must still be rebuilt from an explicitly approved exact commit containing the
-final public pins, followed by separate VM execution authorization.
-Commit `76ba358` and the hashes below are
-preliminary regression/reproducibility records only: **NOT approved for VM or
-production installation**. Do not execute the administrative procedure yet.
+**VM PREPARATION AND DISCOVERY ACCEPTED:** the definitive bundle from
+`394422752564a832e2f15a004b6e3dc828e1b47b` was built reproducibly, transferred
+and successfully applied. Updater hashes, ownership and schema-3 provenance
+passed. The normal dock Update action reported v1.0.0 up to date with GitHub
+HTTP 404 and authenticated ServerPlan fallback. The durable ledger recorded
+root 1, Stable sequence 1 and the original v1.0.0 binding. Installed identity
+and migration level 1 were unchanged. The accepted updater SHA-256 is
+`4512e61395435c2e2e275d0481a4d9f1fe1de003c6e551b4cc6f0757889f0fc1`.
+The current Stable declaration changes no packaged updater source; no new
+preparation bundle or installation is required for the v1.0.1 target preflight.
+Commit `76ba358` and its hashes below remain preliminary historical records,
+never approved installation material. The remaining commands describe first-time
+preparation elsewhere under separate authorization, not a repeat on this VM.
 
 `admin/prepare-updater.py` replaces only the installed updater and its matching
 bootstrap provenance. It does not execute an update, install packages, publish
@@ -36,8 +42,8 @@ The preliminary payload was built from
 It must not become the definitive preparation payload. The tool takes an
 explicit `--approved-commit`; it does not pin this preliminary commit.
 
-After final public-trust review, select and approve a later exact source
-commit and rebuild all payload/provenance records. Use administrative tooling
+The accepted definitive bundle uses the exact commit recorded above. For any
+future separately authorized construction, use administrative tooling
 from that same approved commit so its authoritative file list and packager stay
 aligned with the payload. Existing protocol/schema requirements and byte-for-byte
 packager comparison still apply; rerun the focused tests before VM authorization.
@@ -90,18 +96,19 @@ records; never use these preliminary hashes to authorize real preparation.
 
 Before any administrator command below:
 
-- Signed ServerPlan distribution and updater fallback are complete. Approve the
-  exact source commit with final public pins, rebuild/verify the definitive
-  payload, and obtain separate VM execution authorization. These steps remain
-  pending; this runbook does not authorize preparation.
+- Signed ServerPlan distribution, updater fallback, definitive bundle construction
+  and preparation/discovery on the existing VM are accepted. First-time preparation
+  on another installation still requires explicit approval and verified input;
+  this reference checklist does not authorize it.
 - Require the official Arch `minisign` package before preparation. The tool performs
   read-only package/executable and packaged-root signature/expiry checks; it never
   installs a verifier or obtains trust keys from ServerPlan. Complete a normal
   administrator-owned Arch upgrade first if necessary; then `sudo pacman -S --needed minisign`
   is the ordinary official-package installation path. Do not run it as part of
   development tooling tests. No real preparation is authorized by this runbook.
-- Snapshot a genuine v1.0.0 VM, including its system and user disks. Retain a
-  separate copy of its original updater, provenance, and release metadata.
+- Retain the existing genuine v1.0.0 VM and its available snapshot, including its
+  system and user disks; no new VM or additional snapshot is required. Retain
+  its original updater, provenance and release metadata as backup material.
 - Verify the immutable v1.0.0 release source/asset through the trusted release
   workflow. The tool pins the original updater SHA-256
   `13435389ce2e8d2e89d081ddab96b6f8287ccb58213d9a2c23b3b8fc6b9fb54d`
@@ -241,7 +248,12 @@ resume procedure or the complete VM snapshot. Do not clear a journal or forge
 identity/migration state. After restoration the receipt remains recoverable;
 another preparation requires explicit administrative review, not receipt deletion.
 
-## Proxmox acceptance matrix
+## Validation matrix — reference
+
+Preparation and authenticated discovery are accepted on the existing VM. The
+following lifecycle and fault cases remain reference coverage for isolated
+regressions; they are not instructions to repeat the completed phase or restore
+the VM. The next VM operation is the genuine v1.0.1 read-only target preflight.
 
 1. Check genuine baseline and read-only plan; cancel without `--authorize` and
    verify zero changes. Apply, repeat check/apply, and compare the two component
@@ -254,12 +266,10 @@ another preparation requires explicit administrative review, not receipt deletio
    verify the normal prepared updater forwards them. Test custom state/cache
    overrides and require a refusal before mutation. Do not infer paths from
    process environments or shell-profile execution.
-4. After the ServerPlan gate is complete, run a real normal release upgrade only
-   in the VM, against an explicitly
-   approved stable target. The current candidate declaration is not a stable
-   update: use an isolated, clearly labeled lifecycle test release under the
-   existing fixture trust boundary before publication, never weaken the live
-   stable channel rules or modify installed identity to make it eligible.
+4. After successful target preflight and separately authorized signing/publication,
+   run the genuine v1.0.0 to v1.0.1 Stable upgrade through the normal dock action
+   on the existing VM. Preserve channel rules, installed identity until final
+   validation, and zero required migrations; no fixture identity is substituted.
 5. Test a configured competing Secret Service provider under custom XDG paths:
    the normal target preflight must block provisioning before package mutation.
    Preserve providers and user settings. Standalone KeePassXC is not a conflict.
@@ -269,7 +279,6 @@ another preparation requires explicit administrative review, not receipt deletio
    and verify the updated desktop, dex, persistent keyring/Nextcloud behavior,
    and subsequent normal update discovery.
 
-Only after this matrix passes may the identical, verified one-time procedure be
-considered for the production SSD. No intermediate release is needed by this
-design. Physical VM lifecycle acceptance and administrative-source approval
-remain release gates; isolated tests do not replace them.
+The preparation/discovery phase is complete. Actual v1.0.1 upgrade and reboot
+acceptance remain required before production SSD use; no intermediate release,
+repeated preparation, VM recreation or additional snapshot is required.

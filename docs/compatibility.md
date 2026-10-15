@@ -181,9 +181,11 @@ correction uses explicit pre-sudo target-user context and direct upstream login
 initialization. Tests cover both reproduced boundaries and failure isolation.
 Retest context forwarding across bootstrap and release-driver updates. Older
 installed updater code that lacks this context handoff must not provision this
-addition by guessing defaults: its target plan blocks. Resolving that legacy
-handoff is a release gate, separate from the existing `man-db`/`man` follow-up;
-it does not block controlled development deployment of the managed Lua core.
+addition by guessing defaults: its target plan blocks. That legacy handoff is
+now resolved by the accepted one-time preparation of the existing
+v1.0.0 Proxmox VM. Its normal dock check passed authenticated ServerPlan fallback
+with original identity/migration preserved. The separate libalpm source correction
+also passed; the genuine v1.0.1 target preflight and upgrade remain pending.
 
 Retest package activation, PAM token/unlock behavior, daemon reuse and
 readiness, desktop-entry eligibility, and provider settings after these

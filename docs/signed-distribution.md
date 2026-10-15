@@ -1,11 +1,13 @@
 # Signed distribution protocol 1
 
 Status: Phase 1 foundation and Phase 2 updater integration implemented in source
-and isolated tests; the installed updater remains unchanged. The production root,
-v1.0.0 manifest and Stable sequence-1 catalog are signed, verified and published
-on ServerPlan. The public anchor is configured in source; no installed security
-state has changed. Further publication and installed updater preparation require
-separate authorization. See [release engineering](release-engineering.md) for historical
+and isolated tests; the existing v1.0.0 Proxmox VM's prepared signed updater has
+passed normal dock discovery. The production root, v1.0.0 manifest and Stable
+sequence-1 catalog are signed, verified and published
+on ServerPlan. The public anchor is configured in source; the VM ledger records
+root 1, Stable sequence 1 and the original v1.0.0 binding, with identity and
+migration level 1 unchanged. Further publication and changes to other installations
+require separate authorization. See [release engineering](release-engineering.md) for historical
 v1.0.0 behavior and [preparation](updater-preparation.md) for the VM release gate.
 
 `/dist/v1` names **distribution protocol 1**, independently of product versions
@@ -363,8 +365,9 @@ Phase 3A's [static publication tooling and hosting runbook](serverplan-publicati
 builds on these primitives, retaining frozen signatures and catalog receipts.
 It adds no installed updater or network-transport changes; real hosting acceptance
 has passed for the current single-user manual publication workflow. The initial
-production trust anchor and signed ServerPlan baseline are also verified; the
-installed updater has not been prepared or replaced.
+production trust anchor and signed ServerPlan baseline are also verified. The
+existing v1.0.0 VM has passed preparation and signed discovery; no production SSD
+preparation or actual v1.0.1 upgrade has occurred.
 
 Run from the repository root. The existing builder still builds an exact Git
 commit, not dirty working-tree contents. All following commands are local;
@@ -436,9 +439,11 @@ All six [published production files](serverplan-publication.md#initial-productio
 match the authenticated local bytes over HTTPS, and the full trust chain verifies.
 No Candidate catalog or partial trust schema is introduced.
 
-Still required: public trust-pin delivery in an approved exact source commit,
-a rebuilt verified preparation payload, and separately authorized snapshotted
-Proxmox acceptance from genuine v1.0.0. Production
+Public trust-pin delivery, definitive preparation from commit
+`394422752564a832e2f15a004b6e3dc828e1b47b` and authenticated discovery on the
+existing snapshotted v1.0.0 VM are accepted. Genuine v1.0.1 target preflight,
+separately authorized signing/publication, actual upgrade and reboot acceptance
+remain pending; no repeated preparation is needed. Production
 preparation checks official Minisign and the packaged root signature before
 changing its two files; it never installs the package or keys itself.
 

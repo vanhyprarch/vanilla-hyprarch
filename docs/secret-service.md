@@ -48,7 +48,9 @@ it as root or substitute another user's environment.
 Fresh installation and the user-launched updater forward the payload through
 existing arguments. No context file or preference is persisted. Root-only calls
 require an explicit capture. Older updater code without forwarding fails closed
-against the new target; that compatibility handoff remains a release gate.
+against the new target. The approved one-time preparation and normal signed
+discovery have now passed on the existing v1.0.0 VM, resolving that handoff;
+the genuine v1.0.1 target preflight and upgrade remain pending.
 
 The probe checks registrations, activation availability, and current bus owner
 using standard D-Bus interfaces, plus known optional provider-enable settings.
@@ -152,6 +154,8 @@ integration, managed deployment, contained Lua ownership, XDG Autostart,
 provider/context, bootstrap, release-driver/bootstrap/artifact, create-once,
 and SDDM suites. The updater also reports invalid target-user context with a
 fixed diagnostic and exits before sudo, without a traceback or context disclosure.
-Shell syntax and `git diff --check` passed. Legacy updater context forwarding
-compatibility and the `man-db`/`man` dependency-resolution issue remain release
-gates before publishing v1.0.1; development acceptance does not clear them.
+Shell syntax and `git diff --check` passed. The later libalpm correction resolved
+the `man-db`/`man` source defect, and the existing v1.0.0 VM passed approved
+updater preparation and authenticated discovery. Those completed phases are not
+new release gates. The next genuine v1.0.1 target preflight must validate provider
+and package compatibility before the separately authorized real upgrade.

@@ -5,13 +5,13 @@ fresh-install identity publisher, upgrade-safe stages, migration runner,
 durable journal, local exact-target driver, and installed manual updater
 implemented. Super+Space exposes the manual updater. `v1.0.0` stable is
 published, immutable, and accepted for fresh installation and direct rc1/rc3
-upgrades. `main` targets unpublished `v1.0.1-rc1`; rc1, rc2, and rc3 remain
+upgrades. `main` declares unpublished `v1.0.1` Stable; rc1, rc2, and rc3 remain
 historical candidates.
 
 The [signed distribution protocol](signed-distribution.md) adds source-level
 Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
 state, and signed recovery using this existing generated release identity.
-The installed updater remains unchanged. The user signed root 1, the authentic
+The development host remains unreleased. The user signed root 1, the authentic
 v1.0.0 manifest and Stable sequence-1 catalog interactively. Native Minisign
 verification passed, and the complete public anchor is configured in source.
 Initial signed ServerPlan publication is complete: independent HTTPS verification
@@ -19,7 +19,16 @@ matched all six public files to the authenticated local tree, preserving the
 original v1.0.0 metadata, archive, commit and migration level 1. Root validity is
 `2026-10-15T07:35:10Z` through `2031-10-15T07:35:10Z`; Stable sequence 1 expires
 at `2027-10-15T07:59:16Z`, exactly 365 days after issuance. No Candidate catalog
-was published. Definitive preparation and Proxmox acceptance remain pending.
+was published. The definitive preparation payload from
+`394422752564a832e2f15a004b6e3dc828e1b47b` passed reproducibility and was
+successfully applied to the existing snapshotted v1.0.0 Proxmox VM. Updater
+hashes, ownership and schema-3 provenance passed. The normal dock Update check
+reported v1.0.0 up to date after GitHub HTTP 404 and authenticated ServerPlan
+fallback. The ledger recorded root 1, Stable sequence 1 and the unchanged v1.0.0
+binding; installed identity and migration level 1 were preserved. Preparation
+and discovery acceptance are complete. The next step is the genuine v1.0.1 target
+preflight, followed by separately authorized signing/publication and real upgrade
+and reboot acceptance. No repeated preparation or new VM/snapshot is required.
 The [Phase 3A publication runbook](serverplan-publication.md) covers offline tree
 assembly and the accepted disposable hosting observations. Publication is manually
 coordinated by the sole developer: immutable files and metadata first, the tested
@@ -279,13 +288,15 @@ under a safe target source tree, with bounded sizes and no symlinks. The
 local target driver verifies the complete target artifact before giving its
 root-controlled extracted tree and metadata to the runner. Registry entries
 never contain shell commands. The published `v1.0.0` release and current
-unpublished `v1.0.1-rc1` repository target both have minimum level 0 and target
+unpublished `v1.0.1` Stable repository target both have minimum level 0 and target
 level 1; the production registry contains migration `0001`, which upgrades rc1
 updater provenance from schema 1 to schema 2. Real rc1-to-rc3 and
-rc1-to-stable updates physically validated it. Fresh installations establish
-level 1 and schema 2 directly without replaying the migration. Rc3-to-stable
+rc1-to-stable updates physically validated it. Historical v1.0.0 fresh installations
+established level 1 and schema 2 directly; the current source installs schema 3.
+Neither replays the migration on fresh installation. Rc3-to-stable
 needs no migration; rc1-to-stable runs `0001` directly. The current repository
-target adds no new migration.
+target adds no new migration. Genuine v1.0.0 at level 1 upgrades to v1.0.1 with
+an empty migration plan, retaining level 1 and the prepared schema-3 updater.
 
 Each migration Python file exposes `plan(context) -> list[str]`,
 `apply(context) -> None`, and `validate(context) -> bool`. `plan` and
@@ -405,8 +416,9 @@ acceptance.
 The acquisition details in this section describe the immutable published
 v1.0.0 updater and its historical acceptance. The current source replaces its
 GitHub-listing discovery with the independently authenticated protocol described
-in [signed distribution](signed-distribution.md). That candidate has not been
-installed or exercised against a real release on the development host.
+in [signed distribution](signed-distribution.md). The prepared signed updater
+passed normal dock discovery on the existing v1.0.0 Proxmox VM as recorded above;
+the actual v1.0.1 release upgrade remains pending.
 
 The system-integration authority installs `/usr/local/bin/vanhyprarch-update`
 as a root-owned mode-0755 regular executable Python archive. It contains the
@@ -473,8 +485,10 @@ The standalone [preparation tool and runbook](updater-preparation.md) reuse the
 bootstrap authority to replace only the updater and matching provenance, with
 verified private backups, explicit authorization, and guarded recovery. Installed
 v1.0.0 identity and migration state remain unchanged. Signed ServerPlan publication
-and authenticated updater fallback are complete. A definitive payload must still
-be rebuilt from an approved exact commit containing the final public pins; the
-preliminary `76ba358` payload is not approved for VM or production use. Separate
-VM authorization and snapshotted Proxmox acceptance must precede any production
-preparation; no preparation has been executed.
+and authenticated updater fallback are complete. The definitive payload from
+`394422752564a832e2f15a004b6e3dc828e1b47b` has passed preparation and discovery
+acceptance on the existing VM. The preliminary `76ba358` payload remains
+unapproved. Do not repeat preparation on that VM: the Stable declaration changes
+no packaged updater source, and its accepted updater remains compatible.
+Production SSD preparation remains outside this acceptance; actual v1.0.1 upgrade
+and reboot acceptance on the existing VM must precede production use.

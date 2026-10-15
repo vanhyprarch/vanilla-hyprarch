@@ -187,8 +187,8 @@ class InstalledCommandTests(unittest.TestCase):
             json.dumps({"schema": 1, "sha256": state["sha256"]}, sort_keys=True) + "\n"
         )
         registry = MigrationRegistry(PROJECT)
-        self.assertEqual(registry.declaration["version"], "v1.0.1-rc1")
-        self.assertEqual(registry.declaration["channel"], "candidate")
+        self.assertEqual(registry.declaration["version"], "v1.0.1")
+        self.assertEqual(registry.declaration["channel"], "stable")
         # The published stable target remains a historical upgrade fixture.
         target = contract.parse_metadata(contract.metadata_bytes({
             **registry.declaration,

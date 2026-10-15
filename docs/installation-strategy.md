@@ -8,7 +8,7 @@ repository-root `install.sh` now provides their thin shared post-install orchest
 the optional archinstall entry point does not exist yet.
 
 The immutable `v1.0.0` stable release is published and accepted; `main` is a
-development ref targeting unpublished `v1.0.1-rc1`.
+development ref declaring the unpublished `v1.0.1` Stable release.
 Its Hyprland files express portable managed, create-once machine, and user-override
 ownership. The public wrapper does not duplicate those lifecycles: each
 existing stage retains its own manifests, provenance, conflict handling, and

@@ -4,7 +4,7 @@ Snapshot date: 2026-10-15.
 
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The authored declaration on
-`main` now targets the unpublished `v1.0.1-rc1` patch candidate. Immutable
+`main` now declares the unpublished `v1.0.1` Stable patch release. Immutable
 candidate releases rc1, rc2, and rc3 remain historical.
 The offline release contract includes a deterministic exact-commit
 artifact builder, pre-extraction verifier, and root-owned installed identity
@@ -43,10 +43,17 @@ The v1.0.1 legacy-updater transition now has a standalone, one-time
 [administrative preparation tool and VM runbook](updater-preparation.md).
 It prepares only the updater/provenance pair while preserving genuine v1.0.0
 identity and migration state. Signed ServerPlan distribution and authenticated
-updater fallback are complete. The preliminary `76ba358` payload lacks that
-functionality and is not approved for VM or production installation. Rebuild
-from an approved exact commit containing the final production public pins, then
-obtain separate VM authorization and snapshotted Proxmox lifecycle acceptance.
+updater fallback are complete. The definitive payload from
+`394422752564a832e2f15a004b6e3dc828e1b47b` was built reproducibly and applied
+successfully to the existing genuine v1.0.0 Proxmox VM with its existing snapshot.
+The user confirmed updater hashes, ownership and schema-3 provenance, then ran
+the normal dock Update action. With GitHub returning HTTP 404, authenticated
+ServerPlan discovery reported no newer release. The persistent ledger recorded
+production root 1, Stable sequence 1 and the original v1.0.0 binding; installed
+identity stayed v1.0.0 at migration level 1. This preparation/discovery phase is
+accepted and must not be repeated. The preliminary `76ba358` payload remains
+historical and unapproved. The next VM step is the genuine v1.0.1 read-only target
+preflight; the later real upgrade and reboot acceptance remain pending.
 
 The [signed distribution protocol](signed-distribution.md) now includes Phase 2
 updater integration in source and isolated tests: native Minisign authentication,
@@ -58,8 +65,9 @@ root-private write-ahead intent, independent original-provenance receipt, and
 authenticated exact-target recovery; real zipapp/SIGKILL tests cover restart
 between the two publications. The production root signature is verified and its
 public trust record is configured in source. The initial signed v1.0.0 baseline
-is published on ServerPlan; updater preparation and Proxmox acceptance remain
-pending. The installed updater has not been replaced or run.
+is published on ServerPlan. VM preparation and authenticated discovery are
+accepted; the actual v1.0.1 upgrade remains pending. The development installation
+retains unreleased/development identity; no production SSD changes occurred.
 
 Phase 3A adds offline [static publication tooling and a disposable ServerPlan
 acceptance runbook](serverplan-publication.md): frozen release signatures,
@@ -74,7 +82,10 @@ The developer initiates Update only after publication and final verification;
 temporary check unavailability during publication is acceptable. Signatures,
 immutable bindings, rollback protection and fail-closed behavior remain mandatory.
 No provider-confirmed atomic-rename guarantee is required. Initial production
-publication is complete; updater preparation and Proxmox acceptance remain pending.
+publication and VM preparation/discovery are complete. Stable sequence 1 remains
+active until separately authorized v1.0.1 signing and publication. The Stable
+declaration preserves x86_64, update protocol 1 and migration level 1; upgrading
+the genuine v1.0.0 VM requires zero migrations and no further updater preparation.
 
 The user generated the encrypted production Minisign key pair interactively.
 The canonical [initial root payload](../release/initial-root.json) is prepared

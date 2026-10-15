@@ -5,9 +5,11 @@ complete for the current single-user deployment model. The user signed root 1,
 the authentic v1.0.0 manifest and Stable sequence-1 catalog interactively, then
 published the initial signed production baseline on ServerPlan. Native Minisign
 and independent HTTPS byte verification passed for the complete public tree.
-The public trust anchor is integrated in source. Updater preparation and VM
-acceptance remain pending; further publication and installed-system changes
-require separate authorization. Follow the
+The public trust anchor is integrated in source. Preparation and normal dock
+discovery passed on the existing v1.0.0 VM, preserving identity and migration
+level 1 and recording root 1 / Stable sequence 1 in the ledger. The genuine
+v1.0.1 target preflight and upgrade remain pending; further publication and
+installed-system changes require separate authorization. Follow the
 [signed protocol](signed-distribution.md) and existing
 [release artifact workflow](release-engineering.md); this adds no identity source.
 
@@ -399,7 +401,7 @@ and cache changes require separately approved scope; none is deployed here.
 The updater's existing unconditional bounded downloads and cryptographic checks
 remain unchanged. Test-subtree headers do not establish production-path policy.
 
-## Production checklist — INITIAL PUBLICATION COMPLETE; PREPARATION AND VM PENDING
+## Production checklist — INITIAL PUBLICATION AND VM DISCOVERY COMPLETE
 
 - The user has generated the encrypted production key pair and arranged backups.
   Keep private-key and passphrase custody outside Git, publication workspaces and
@@ -425,12 +427,12 @@ remain unchanged. Test-subtree headers do not establish production-path policy.
   complete; no formal atomicity guarantee is required. Initial production-path
   byte and signature checks passed. Do not edit/re-sign existing immutable
   objects. Back up publisher receipts and publication evidence.
-- Rebuild the one-time updater preparation bundle from a later approved exact
-  commit containing the final public pins, completed fallback and accepted tools.
-  Follow the [preparation runbook](updater-preparation.md); initial v1.0.0 identity,
-  migration state and user-owned data must remain genuine and unchanged.
-- Obtain separate snapshotted Proxmox authorization. Start from genuine v1.0.0;
-  exercise preparation, normal upgrade, custom supported XDG context/provider
+- The definitive preparation from commit `394422752564a832e2f15a004b6e3dc828e1b47b`
+  passed on the existing snapshotted v1.0.0 VM, including normal dock discovery
+  with GitHub HTTP 404 and authenticated ServerPlan Stable sequence 1. Do not
+  repeat preparation; retain the genuine identity, migration state and user data.
+- Obtain separate authorization for the genuine v1.0.1 target preflight and
+  normal upgrade on that same VM. Existing regression coverage includes XDG/provider
   conflicts, interrupted update/recovery, identity-last and zero unexpected
   migrations. Block public GitHub entirely and accept signed ServerPlan acquisition
   and post-reboot desktop/application behavior. No production SSD work precedes
