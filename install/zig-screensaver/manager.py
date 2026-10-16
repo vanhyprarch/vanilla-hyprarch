@@ -33,6 +33,10 @@ EXPECTED_ARCHIVE_SHA256 = "9bd759283aa823aba124c94d64b9696df670551a1d6418ca1a321
 EXPECTED_REPOSITORY_URL = "https://github.com/vanhyprarch/vanhyprarch-zig-player"
 EXPECTED_RELEASE_URL = EXPECTED_REPOSITORY_URL + "/releases/tag/v0.1.1"
 EXPECTED_DOWNLOAD_URL = EXPECTED_REPOSITORY_URL + "/releases/download/v0.1.1/" + EXPECTED_ASSET
+EXPECTED_SERVERPLAN_URL = (
+    "https://vanhyprarch.it/dist/v1/vanhyprarch-zig-player/releases/v0.1.1/assets/"
+    + EXPECTED_ASSET
+)
 EXPECTED_SOURCE_TAG_URL = EXPECTED_REPOSITORY_URL + "/tree/v0.1.1"
 EXPECTED_SOURCE_ARCHIVE_URL = EXPECTED_REPOSITORY_URL + "/archive/refs/tags/v0.1.1.tar.gz"
 EXPECTED_MEMBER_HASHES = {
@@ -571,6 +575,32 @@ def component_lock(path_map: dict[str, Path]):
     return descriptor
 
 
+def download_archive(archive: Path, github_url: str) -> None:
+    curl = "/usr/bin/curl"
+    if not os.access(curl, os.X_OK):
+        fail("/usr/bin/curl is required to install Zig Screensaver")
+    # Only remote HTTP/network/transfer failures permit another endpoint.
+    # Local errors and TLS verification failures must fail closed.
+    transport_failures = {
+        5, 6, 7, 8, 16, 18, 22, 28, 35, 52, 55, 56, 92, 95, 96, 97,
+    }
+    failures: list[str] = []
+    for source, url in (("GitHub", github_url), ("ServerPlan", EXPECTED_SERVERPLAN_URL)):
+        result = run([curl, "--disable", "--fail", "--location", "--proto", "=https",
+            "--proto-redir", "=https", "--tlsv1.2", "--connect-timeout", "10",
+            "--max-time", "120", "--output", str(archive), url], check=False)
+        if result.returncode == 0:
+            return
+        detail = result.stderr.strip() or f"status {result.returncode}"
+        failures.append(f"{source} download failed (curl exit {result.returncode}): {detail}")
+        if result.returncode not in transport_failures:
+            fail("; ".join(failures))
+        archive.unlink(missing_ok=True)
+        if source == "GitHub":
+            print(f"{failures[-1]}; trying ServerPlan.", file=sys.stderr)
+    fail("; ".join(failures))
+
+
 def download_candidate(work: Path, metadata: Path) -> dict[str, Path]:
     values = parse_metadata(metadata)
     architecture_override = os.environ.get("VANHYPRARCH_TARGET_ARCHITECTURE")
@@ -586,11 +616,7 @@ def download_candidate(work: Path, metadata: Path) -> dict[str, Path]:
             fail("archive overrides are allowed only for isolated tests")
         shutil.copyfile(test_archive, archive)
     else:
-        curl = "/usr/bin/curl"
-        if not os.access(curl, os.X_OK):
-            fail("/usr/bin/curl is required to install Zig Screensaver")
-        run([curl, "--fail", "--location", "--proto", "=https", "--tlsv1.2",
-            "--output", str(archive), values["VANHYPRARCH_ZIG_PLAYER_DOWNLOAD_URL"]])
+        download_archive(archive, values["VANHYPRARCH_ZIG_PLAYER_DOWNLOAD_URL"])
     if sha256_file(archive) != values["VANHYPRARCH_ZIG_PLAYER_SHA256"]:
         fail("player archive checksum verification failed")
     root = values["VANHYPRARCH_ZIG_PLAYER_ASSET"].removesuffix(".tar.gz")

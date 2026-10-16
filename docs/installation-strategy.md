@@ -300,6 +300,16 @@ tracked immutable manager metadata pins release `v0.1.1`, Linux
 `x86_64`, the exact asset name and SHA-256, and canonical release and source-tag
 URLs. It never follows GitHub's `latest` redirect.
 
+GitHub remains the preferred download source. HTTP, connection, timeout, or
+incomplete-transfer failures permit one ServerPlan attempt at the fixed URL in
+the manager. Both sources must supply the identical approved archive; local
+filesystem/configuration errors and integrity failures never trigger fallback.
+Each attempt has a 10-second connection timeout and a 120-second total timeout.
+Partial downloads are discarded before fallback. All completed downloads pass
+the existing trusted archive and member pins before installation. The
+[ServerPlan publication instructions](serverplan-publication.md#optional-zig-player-archive)
+record the independent player distribution directory and pre-v1.0.3 upload gate.
+
 The manager downloads into a private temporary directory, verifies canonical
 metadata, the exact archive digest and layout, each member digest, x86_64 ELF,
 runtime libraries, destinations, ownership, and modes, then publishes the

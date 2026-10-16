@@ -12,6 +12,38 @@ local publication preparation, manual upload ordering and HTTPS verification.
 Existing initial-root/earlier-sequence records below are historical evidence,
 not commands to repeat or current channel pointers.
 
+## Optional Zig Player archive
+
+The component manager prefers GitHub and has a transport-only ServerPlan
+fallback. The approved upload destination is:
+
+```text
+/dist/v1/vanhyprarch-zig-player/releases/v0.1.1/assets/vanhyprarch-zig-player-v0.1.1-linux-x86_64.tar.gz
+```
+
+This independent project directory is separate from
+`/dist/v1/vanilla-hyprarch/`; player artifacts do not belong in the main project's
+distribution tree or signed catalog. Publication remains a separately authorized
+manual operation using the existing
+FTPS procedure and operator-confirmed document-root mapping.
+
+Publish the original v0.1.1 archive unchanged: filename
+`vanhyprarch-zig-player-v0.1.1-linux-x86_64.tar.gz`, size **149,617 bytes**, SHA-256
+`9bd759283aa823aba124c94d64b9696df670551a1d6418ca1a32194ea0b1a887`.
+Do not repack or regenerate it. Both download sources must provide these exact
+bytes. Trust remains in the existing manager constants and canonical component
+metadata, not in a checksum fetched from the mirror. Archive/member or other
+integrity failures terminate installation without another transport attempt.
+
+Before publishing Vanilla HyprArch v1.0.3, download the uploaded archive via
+HTTPS from
+`https://vanhyprarch.it/dist/v1/vanhyprarch-zig-player/releases/v0.1.1/assets/vanhyprarch-zig-player-v0.1.1-linux-x86_64.tar.gz`
+and verify its size and SHA-256 against the trusted values above. The operator
+has confirmed publication and independent HTTPS verification: HTTP 200,
+149,617 bytes, and the trusted archive SHA-256 above. This satisfies the player
+archive publication prerequisite for v1.0.3. Isolated installer tests do not
+require the endpoint to exist.
+
 ## Offline publisher
 
 `release/publication.py` assembles `WORKSPACE/public/vanilla-hyprarch/` with only

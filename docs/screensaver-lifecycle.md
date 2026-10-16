@@ -164,6 +164,14 @@ before withdrawing the marker and deleting only proven component-owned files.
 Shared packages and the baseline controller are never removed. Zig is not an
 end-user dependency.
 
+Acquisition prefers GitHub and uses ServerPlan only after a transport failure.
+Both sources must deliver the same pinned v0.1.1 archive. Completed downloads
+undergo the existing archive/member, layout, ELF, and runtime checks; validation
+failure terminates the operation without another source attempt. Temporary
+downloads are cleaned up on success or handled failure, and acquisition and
+verification precede any replacement of an existing valid installation.
+Canonical component metadata and publication/rollback behavior are unchanged.
+
 Clean up is more conservative than installed validation. A valid marker proves
 prior component provenance. A mode-0600 runtime-only receipt can prove exact
 canonical files published by an interrupted fresh install; it is created

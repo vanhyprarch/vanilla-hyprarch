@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -9,12 +10,25 @@ import tarfile
 import tempfile
 import types
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 from pathlib import Path
 
 
 REPOSITORY = Path(__file__).resolve().parent.parent
 MANAGER = REPOSITORY / "install/zig-screensaver/manager.py"
+SERVERPLAN_URL = (
+    "https://vanhyprarch.it/dist/v1/vanhyprarch-zig-player/releases/v0.1.1/assets/"
+    "vanhyprarch-zig-player-v0.1.1-linux-x86_64.tar.gz"
+)
+
+
+def load_manager():
+    module = types.ModuleType("zig_manager_under_test")
+    module.__file__ = str(MANAGER)
+    exec(compile(MANAGER.read_text(encoding="utf-8"), str(MANAGER), "exec"),
+        module.__dict__)
+    return module
 
 
 def digest(path):
@@ -130,6 +144,187 @@ class ZigScreensaverManagerTests(unittest.TestCase):
 
     def status(self):
         return json.loads(self.run_manager("component-status", "--json").stdout)
+
+    def run_transport(self, responses, operation="install", success=True):
+        module = load_manager()
+        environment = self.environment.copy()
+        environment.pop("VANHYPRARCH_TEST_ARCHIVE")
+        requests = []
+        work_directories = []
+        real_run = module.run
+        real_temporary_directory = tempfile.TemporaryDirectory
+        stdout, stderr = io.StringIO(), io.StringIO()
+
+        def staging_directory(**kwargs):
+            temporary = real_temporary_directory(dir=self.root, **kwargs)
+            work = Path(temporary.name)
+            self.assertEqual(work.stat().st_mode & 0o777, 0o700)
+            work_directories.append(work)
+            return temporary
+
+        def transport_run(argv, *, check=True):
+            if argv[0] != "/usr/bin/curl":
+                return real_run(argv, check=check)
+            self.assertFalse(check)
+            self.assertLess(len(requests), len(responses), "unexpected transport retry")
+            code, payload, message = responses[len(requests)]
+            requests.append(argv[-1])
+            archive = Path(argv[argv.index("--output") + 1])
+            self.assertEqual(archive.parent, work_directories[-1])
+            self.assertFalse(archive.exists(), "partial download was not discarded")
+            self.assertEqual(argv[1], "--disable")
+            for option, expected in (("--proto", "=https"), ("--proto-redir", "=https"),
+                    ("--connect-timeout", "10"), ("--max-time", "120")):
+                self.assertEqual(argv[argv.index(option) + 1], expected)
+            self.assertIn("--fail", argv)
+            if isinstance(payload, OSError):
+                raise payload
+            if payload is not None:
+                archive.write_bytes(payload)
+            return subprocess.CompletedProcess(argv, code, stdout="", stderr=message)
+
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(module, "run", side_effect=transport_run), \
+                mock.patch.object(module.tempfile, "TemporaryDirectory", side_effect=staging_directory), \
+                redirect_stdout(stdout), redirect_stderr(stderr):
+            github_url = module.parse_metadata(self.metadata)["VANHYPRARCH_ZIG_PLAYER_DOWNLOAD_URL"]
+            code = module.main([str(MANAGER), operation])
+        self.assertEqual(code, 0 if success else 1, stderr.getvalue())
+        self.assertEqual(len(requests), len(responses))
+        self.assertTrue(work_directories)
+        for work in work_directories:
+            self.assertFalse(work.exists(), "temporary acquisition files survived")
+        expected_urls = [github_url]
+        if len(responses) == 2:
+            expected_urls.append(SERVERPLAN_URL)
+        self.assertEqual(requests, expected_urls)
+        return stderr.getvalue()
+
+    def installed_snapshot(self):
+        files = [self.home / ".local/bin/vanhyprarch-zig-player",
+            self.data / "vanhyprarch/components/zig-screensaver"]
+        for directory in (self.data / "licenses/vanhyprarch-zig-player",
+                self.data / "doc/vanhyprarch-zig-player"):
+            files.extend(directory.iterdir())
+        return {path: (path.read_bytes(), path.stat().st_mode & 0o777) for path in files}
+
+    def test_github_transport_success_publishes_valid_payload(self):
+        self.run_transport([(0, self.archive.read_bytes(), "")])
+        binary = self.home / ".local/bin/vanhyprarch-zig-player"
+        self.assertEqual(binary.read_bytes(), (self.source / "vanhyprarch-zig-player").read_bytes())
+        self.assertEqual(binary.stat().st_mode & 0o777, 0o755)
+        release = self.data / "doc/vanhyprarch-zig-player/vanhyprarch-zig-player.conf"
+        self.assertEqual(release.read_bytes(), self.metadata.read_bytes())
+        self.assertEqual(release.stat().st_mode & 0o777, 0o644)
+        marker = self.data / "vanhyprarch/components/zig-screensaver"
+        self.assertEqual(marker.read_bytes(), b"vanhyprarch-zig-screensaver-v1\n")
+        self.assertEqual(marker.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.status()["state"], "installed")
+
+    def test_http_404_and_network_failures_fall_back(self):
+        archive_bytes = self.archive.read_bytes()
+        self.run_manager("install")
+        for code, message in ((22, "HTTP 404"), (6, "host resolution failed"),
+                (7, "connection failed"), (28, "timeout"), (18, "partial transfer"),
+                (56, "connection interrupted")):
+            with self.subTest(code=code):
+                diagnostic = self.run_transport([(code, b"partial GitHub bytes", message),
+                    (0, archive_bytes, "")], operation="reinstall")
+                self.assertIn("trying ServerPlan", diagnostic)
+                self.assertEqual(self.status()["state"], "installed")
+
+    def test_http_404_fallback_installs_from_clean_state(self):
+        self.run_transport([(22, b"partial", "HTTP 404"), (0, self.archive.read_bytes(), "")])
+        self.assertEqual(self.status()["state"], "installed")
+        binary = self.home / ".local/bin/vanhyprarch-zig-player"
+        self.assertEqual(digest(binary), digest(self.source / "vanhyprarch-zig-player"))
+
+    def test_checksum_failure_never_retries_another_source(self):
+        for responses in ([(0, b"wrong GitHub archive", "")],
+                [(22, None, "HTTP 404"), (0, b"wrong ServerPlan archive", "")],
+                [(0, self.archive.read_bytes()[:100], "")]):
+            with self.subTest(sources=len(responses)):
+                diagnostic = self.run_transport(responses, success=False)
+                self.assertIn("archive checksum verification failed", diagnostic)
+                self.assertEqual(self.status()["state"], "not-installed")
+
+    def test_completed_invalid_payload_never_falls_back(self):
+        for failure in ("member", "layout", "ELF", "runtime library"):
+            with self.subTest(failure=failure):
+                if failure == "ELF":
+                    player = self.source / "vanhyprarch-zig-player"
+                    contents = bytearray(player.read_bytes())
+                    contents[18:20] = (183).to_bytes(2, "little")
+                    player.write_bytes(contents)
+                self.write_archive(extra=failure == "layout")
+                self.write_metadata()
+                if failure == "member":
+                    contents = self.metadata.read_text()
+                    self.metadata.write_text(contents.replace(self.original_readme_hash, "0" * 64))
+                if failure == "runtime library":
+                    shutil.copy2("/usr/bin/true", self.source / "vanhyprarch-zig-player")
+                    self.write_archive()
+                    self.write_metadata()
+                    self.environment["VANHYPRARCH_TEST_MISSING_LIBRARY"] = "1"
+                diagnostic = self.run_transport([(0, self.archive.read_bytes(), "")], success=False)
+                expected = {"member": "member checksum", "layout": "unexpected path",
+                    "ELF": "not an x86_64 ELF", "runtime library": "required runtime library"}
+                self.assertIn(expected[failure], diagnostic)
+                self.assertEqual(self.status()["state"], "not-installed")
+
+    def test_failed_transport_reinstall_preserves_complete_installation(self):
+        self.run_manager("install")
+        before = self.installed_snapshot()
+        before_log = self.log.read_bytes()
+        failures = (
+            [(22, b"partial", "HTTP 404"), (28, b"partial fallback", "timeout")],
+            [(0, b"wrong GitHub archive", "")],
+            [(22, None, "HTTP 404"), (0, b"wrong ServerPlan archive", "")],
+        )
+        for responses in failures:
+            with self.subTest(sources=len(responses)):
+                diagnostic = self.run_transport(responses, operation="reinstall", success=False)
+                if responses[-1][0] != 0:
+                    self.assertIn("GitHub download failed", diagnostic)
+                    self.assertIn("ServerPlan download failed", diagnostic)
+                self.assertEqual(self.installed_snapshot(), before)
+                self.assertEqual(self.log.read_bytes(), before_log)
+                self.assertEqual(self.status()["state"], "installed")
+
+    def test_local_and_security_curl_errors_do_not_fall_back(self):
+        for code in (2, 3, 23, 26, 27, 47, 48, 58, 60, 63, 77, -15):
+            with self.subTest(code=code):
+                diagnostic = self.run_transport([(code, b"partial", "local or security error")],
+                    success=False)
+                self.assertNotIn("trying ServerPlan", diagnostic)
+                self.assertEqual(self.status()["state"], "not-installed")
+
+    def test_staging_and_partial_cleanup_errors_do_not_fall_back(self):
+        self.run_transport([(0, PermissionError("staging denied"), "")], success=False)
+        module = load_manager()
+        archive = self.root / "partial.tar.gz"
+        archive.write_bytes(b"partial")
+        result = subprocess.CompletedProcess([], 22, stdout="", stderr="HTTP 404")
+        with mock.patch.object(module, "run", return_value=result) as runner, \
+                mock.patch.object(module.Path, "unlink", side_effect=PermissionError("cleanup denied")):
+            with self.assertRaises(PermissionError):
+                module.download_archive(archive, "https://example.invalid/download")
+        self.assertEqual(runner.call_count, 1)
+
+    def test_canonical_metadata_remains_valid_without_fallback_field(self):
+        module = load_manager()
+        canonical = REPOSITORY / "install/vanhyprarch-zig-player.conf"
+        with mock.patch.dict(os.environ, {}, clear=True):
+            values = module.parse_metadata(canonical)
+        self.assertEqual(values["VANHYPRARCH_ZIG_PLAYER_SHA256"],
+            "9bd759283aa823aba124c94d64b9696df670551a1d6418ca1a32194ea0b1a887")
+        self.assertEqual(values["VANHYPRARCH_ZIG_PLAYER_BINARY_SHA256"],
+            "e5669983b2c9af6f121096c77796116df52b85bdf014c3bb30ced18a7353e9cf")
+        self.run_manager("install")
+        before = self.installed_snapshot()
+        self.run_transport([(0, self.archive.read_bytes(), "")], operation="reinstall")
+        self.assertEqual(self.installed_snapshot(), before)
+        self.assertEqual(self.status()["state"], "installed")
 
     def test_install_damage_repair_and_uninstall(self):
         self.assertEqual(self.status()["state"], "not-installed")
