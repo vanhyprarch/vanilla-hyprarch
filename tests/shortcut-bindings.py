@@ -25,6 +25,7 @@ SHORTCUTS_PANEL_QML = (
 SEPARATOR = "\x1f"
 METADATA_START = "\U000e0001"
 METADATA_END = "\U000e007f"
+CLIPBOARD_KEYS = ("A", "C", "V", "X")
 
 LUA_HARNESS = r'''
 local function proxy()
@@ -37,16 +38,20 @@ end
 
 local dispatchers = proxy()
 dispatchers.exec_cmd = function(command) return command end
+local bindings = {}
 
 hl = {
     dsp = dispatchers,
     bind = function(keys, dispatcher, options)
         local opts = options or {}
-        io.write(keys, "\31", opts.description or "", "\31",
-            tostring(opts.release == true), "\31",
-            tostring(opts.availability), "\31", tostring(dispatcher), "\31",
-            tostring(opts.locked == true), "\31",
-            tostring(opts.repeating == true), "\n")
+        bindings[keys] = { dispatcher = dispatcher, options = opts }
+        if arg[2] ~= "callbacks" then
+            io.write(keys, "\31", opts.description or "", "\31",
+                tostring(opts.release == true), "\31",
+                tostring(opts.availability), "\31", tostring(dispatcher), "\31",
+                tostring(opts.locked == true), "\31",
+                tostring(opts.repeating == true), "\n")
+        end
         return proxy()
     end,
 }
@@ -72,7 +77,7 @@ def decode_description(description: str) -> tuple[str, str]:
     return description[:start], payload[len(prefix) :]
 
 
-def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
+def run_lua(harness: str, *, installed: bool = False, mode: str = "catalog") -> str:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         home = root / "home"
@@ -90,8 +95,8 @@ def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
         result = subprocess.run(
-            ["/usr/bin/lua", "-", str(BINDINGS)],
-            input=LUA_HARNESS,
+            ["/usr/bin/lua", "-", str(BINDINGS), mode],
+            input=harness,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -101,9 +106,12 @@ def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
         )
     if result.returncode != 0:
         raise AssertionError(result.stderr)
+    return result.stdout
 
+
+def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
-    for line in result.stdout.splitlines():
+    for line in run_lua(LUA_HARNESS, installed=installed).splitlines():
         (
             keys,
             description,
@@ -133,11 +141,209 @@ def evaluate_bindings(installed: bool) -> list[dict[str, object]]:
     return records
 
 
+def clipboard_events(windows: list[dict[str, object] | None], *, rapid: bool = False) -> list[tuple[str, ...]]:
+    fixtures = []
+    for window in windows:
+        fields = [] if window is None else [
+            f"[{json.dumps(key)}] = {json.dumps(value) if value is not None else 'nil'}"
+            for key, value in window.items()
+        ]
+        literal = "nil" if window is None else "{" + ", ".join(fields) + "}"
+        fixtures.append("{ window = " + literal + " }")
+    harness = LUA_HARNESS + r'''
+local function forbidden() error("clipboard callback attempted a non-native action") end
+hl.exec_cmd = forbidden
+hl.dsp.exec_cmd = forbidden
+hl.dsp.send_shortcut = forbidden
+os.execute = forbidden
+io.popen = forbidden
+
+local reads = 0
+local currentWindow
+local now = 0
+local timers = {}
+local eventCount = 0
+local presses = 0
+local scheduled = 0
+local collectedHandles = 0
+local balance = {}
+hl.get_active_window = function()
+    reads = reads + 1
+    return currentWindow
+end
+hl.dsp.send_key_state = function(spec)
+    local count = 0
+    for field in pairs(spec) do
+        assert(field == "mods" or field == "key" or field == "state")
+        count = count + 1
+    end
+    assert(count == 3, "unexpected key-event arguments or window target")
+    return function()
+        local chord = spec.mods .. ":" .. spec.key
+        balance[chord] = (balance[chord] or 0) + (spec.state == "down" and 1 or -1)
+        assert(balance[chord] >= 0, "release did not match a press")
+        if spec.state == "down" then presses = presses + 1 end
+        eventCount = eventCount + 1
+        io.write(spec.mods, "\31", spec.key, "\31", spec.state, "\n")
+    end
+end
+hl.dispatch = function(dispatcher)
+    assert(type(dispatcher) == "function", "unexpected dispatcher")
+    dispatcher()
+end
+hl.timer = function(callback, options)
+    assert(type(callback) == "function")
+    assert(presses == scheduled + 1, "timer must be scheduled after its key-down")
+    assert(options.timeout == 50 and options.type == "oneshot")
+    for field in pairs(options) do
+        assert(field == "timeout" or field == "type")
+    end
+    scheduled = scheduled + 1
+    table.insert(timers, { callback = callback, due = now + options.timeout })
+    -- Native Hyprland owns the callback independently of the returned handle.
+    return setmetatable({}, { __gc = function() collectedHandles = collectedHandles + 1 end })
+end
+local function advance(milliseconds)
+    now = now + milliseconds
+    local pending = timers
+    timers = {}
+    for _, timer in ipairs(pending) do
+        if timer.due <= now then
+            timer.callback()
+        else
+            table.insert(timers, timer)
+        end
+    end
+end
+local function releaseTimers()
+    local before = eventCount
+    local count = #timers
+    local beforeReads = reads
+    currentWindow = nil
+    collectgarbage("collect")
+    assert(collectedHandles == scheduled, "timer unexpectedly needs its Lua handle")
+    advance(49)
+    assert(eventCount == before, "key-up fired before 50 ms")
+    advance(1)
+    assert(eventCount == before + count and #timers == 0, "pending release was lost")
+    assert(reads == beforeReads, "release must not reclassify focus")
+    for _, pending in pairs(balance) do
+        assert(pending == 0, "unbalanced key events after timers fired")
+    end
+end
+''' + "\nlocal fixtures = {" + ", ".join(fixtures) + "}\nlocal rapid = " + str(rapid).lower() + r'''
+for _, fixture in ipairs(fixtures) do
+    for _, key in ipairs({ "A", "C", "V", "X" }) do
+        currentWindow = fixture.window
+        local binding = assert(bindings["SUPER + " .. key])
+        for option in pairs(binding.options) do
+            assert(option == "description", "unexpected clipboard binding flag")
+        end
+        local before = reads
+        local beforeEvents, beforeTimers = eventCount, #timers
+        binding.dispatcher()
+        assert(reads == before + 1, "focus must be read once per activation")
+        local suitable = currentWindow and currentWindow.mapped == true
+            and currentWindow.accepts_input == true
+        local expected = suitable and 1 or 0
+        assert(eventCount == beforeEvents + expected, "press must precede its timer")
+        assert(#timers == beforeTimers + expected, "one release timer is required per press")
+        if not rapid then releaseTimers() end
+    end
+end
+if rapid then releaseTimers() end
+'''
+    return [tuple(line.split(SEPARATOR)) for line in run_lua(harness, mode="callbacks").splitlines()]
+
+
 class ShortcutBindingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.absent = evaluate_bindings(False)
         cls.installed = evaluate_bindings(True)
+
+    def test_clipboard_bindings_are_described_once_without_native_chord_changes(self) -> None:
+        for records in (self.absent, self.installed):
+            for key, action in (("A", "Select all"), ("C", "Copy"), ("V", "Paste"), ("X", "Cut")):
+                matches = [item for item in records if item["keys"] == f"SUPER + {key}"]
+                self.assertEqual(len(matches), 1)
+                self.assertEqual(matches[0]["description"], f"Clipboard | {action}")
+                self.assertTrue(str(matches[0]["dispatcher"]).startswith("function:"))
+                for flag in ("locked", "repeating", "release", "availability"):
+                    self.assertFalse(matches[0][flag])
+                for mods in ("CTRL", "CTRL + SHIFT"):
+                    self.assertFalse(any(item["keys"] == f"{mods} + {key}" for item in records))
+
+    def assert_clipboard_modifiers(self, window: dict[str, object], mods: str) -> None:
+        expected = [(mods if key in ("C", "V") else "CTRL", key, state)
+                    for key in CLIPBOARD_KEYS for state in ("down", "up")]
+        self.assertEqual(clipboard_events([{"mapped": True, "accepts_input": True, **window}]), expected)
+
+    def test_exact_terminal_classes_and_initial_classes_use_terminal_shortcuts(self) -> None:
+        for identifier in ("foot", "footclient", "org.codeberg.dnkl.foot", "Alacritty",
+                "kitty", "com.mitchellh.ghostty", "wezterm", "org.wezfurlong.wezterm"):
+            for field in ("class", "initial_class"):
+                for other in (None, "changed.application.id"):
+                    with self.subTest(identifier=identifier, field=field, other=other):
+                        window = {"class": other, "initial_class": other, field: identifier}
+                        self.assert_clipboard_modifiers(window, "CTRL SHIFT")
+
+    def test_graphical_and_unknown_classes_use_plain_control(self) -> None:
+        for identifier in ("firefox", "thunar", "keepassxc", "org.telegram.desktop",
+                "xterm", "custom-terminal", "foot-extra", "org.codeberg.dnkl.foot.extra",
+                "Foot", "alacritty", "kittycat", "wezterm-extra", "com.mitchellh.ghostty.extra",
+                "org.omarchy.terminal", "TUI.float", "", None):
+            with self.subTest(identifier=identifier):
+                self.assert_clipboard_modifiers({"class": identifier, "initial_class": identifier,
+                    "title": "foot terminal"}, "CTRL")
+        self.assert_clipboard_modifiers({"class": "xwayland-test", "xwayland": True}, "CTRL")
+        self.assert_clipboard_modifiers({}, "CTRL")
+
+    def test_missing_unmapped_and_non_input_windows_do_not_forward(self) -> None:
+        windows = [None, {}, {"class": "foot", "mapped": False, "accepts_input": True},
+            {"class": "foot", "mapped": True, "accepts_input": False},
+            {"class": "foot", "mapped": True}, {"class": "foot", "accepts_input": True}]
+        self.assertEqual(clipboard_events(windows), [])
+
+    def test_select_all_and_cut_keep_plain_control_in_terminals(self) -> None:
+        windows = [{"mapped": True, "accepts_input": True, "class": name}
+                   for name in ("firefox", "foot", "Alacritty", "kitty",
+                                "com.mitchellh.ghostty", "org.wezfurlong.wezterm")]
+        events = [event for event in clipboard_events(windows) if event[1] in ("A", "X")]
+        expected = [("CTRL", key, state) for _ in windows
+                    for key in ("A", "X") for state in ("down", "up")]
+        self.assertEqual(events, expected)
+
+    def test_focus_changes_keep_each_shortcut_pair_balanced(self) -> None:
+        windows = [{"mapped": True, "accepts_input": True, "class": name}
+                   for name in ("foot", "firefox", "footclient", "thunar")]
+        expected = [(mods if key in ("C", "V") else "CTRL", key, state)
+                    for mods in ("CTRL SHIFT", "CTRL", "CTRL SHIFT", "CTRL")
+                    for key in CLIPBOARD_KEYS for state in ("down", "up")]
+        self.assertEqual(clipboard_events(windows), expected)
+
+    def test_rapid_invocations_keep_independent_release_callbacks_alive(self) -> None:
+        windows = [{"mapped": True, "accepts_input": True, "class": name}
+                   for name in ("foot", "firefox", "kitty", "thunar") * 10]
+        modifiers = ("CTRL SHIFT", "CTRL", "CTRL SHIFT", "CTRL") * 10
+        expected = [(mods if key in ("C", "V") else "CTRL", key, state)
+                    for state in ("down", "up")
+                    for mods in modifiers for key in CLIPBOARD_KEYS]
+        self.assertEqual(clipboard_events(windows, rapid=True), expected)
+
+    def test_user_override_can_unbind_and_replace_clipboard_shortcuts(self) -> None:
+        harness = LUA_HARNESS + r'''
+local originalTerminal = bindings["SUPER + RETURN"]
+hl.unbind = function(key) bindings[key] = nil end
+for _, key in ipairs({ "A", "C", "V", "X" }) do
+    hl.unbind("SUPER + " .. key)
+    assert(bindings["SUPER + " .. key] == nil)
+    hl.bind("SUPER + " .. key, function() end, { description = "Custom " .. key })
+    assert(bindings["SUPER + " .. key].options.description == "Custom " .. key)
+end
+assert(bindings["SUPER + RETURN"] == originalTerminal)
+'''
+        self.assertEqual(run_lua(harness, mode="callbacks"), "")
 
     def test_dictation_bindings_are_actual_conditional_bindings(self) -> None:
         absent_f9 = [item for item in self.absent if item["keys"] == "F9"]

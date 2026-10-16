@@ -5,6 +5,22 @@ and removable local mitigations. Package selection belongs in
 [the system baseline](system-baseline.md); implementation status belongs in
 [current state](current-state.md).
 
+## Universal clipboard key-release timing
+
+The repository adopts Omarchy's native 50 ms key-down/key-up split from
+commit `51bfd1dbaa1b5f790e19623faf2745945d40c796`, whose clipboard helper cites
+[Hyprland discussion #14099](https://github.com/hyprwm/Hyprland/discussions/14099)
+for synthetic key/modifier state remaining pressed or repeating. This is an
+upstream mitigation, not a reproduced Vanilla failure. Hyprland 0.56.2-4's
+installed Lua API and matching
+[`hlTimer()` source](https://github.com/hyprwm/Hyprland/blob/efb50993780079460b0cbed1363e2166a2de1d9f/src/config/lua/bindings/LuaBindingsToplevel.cpp)
+verify one-shot timer ownership and
+callback lifetime; isolated fixtures verify captured releases. Desktop input
+acceptance passed for all four shortcuts on development. The policy affects
+only Super+A/C/V/X. Retest rapid input, held modifiers, and focus changes after
+Hyprland upgrades; remove or
+change the timing only after equivalent native behavior passes those tests.
+
 ## Validated baseline
 
 | Component | Validated version | Role / status |

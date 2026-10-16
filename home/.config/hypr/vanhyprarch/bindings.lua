@@ -41,6 +41,39 @@ end
 
 local mainMod = "SUPER"
 
+-- Adapted from Omarchy's universal clipboard bindings; see OMARCHY-NOTICE.txt.
+local terminalClasses = {
+    Alacritty = true,
+    kitty = true,
+    ["com.mitchellh.ghostty"] = true,
+    foot = true,
+    -- Foot's documented server-mode app-id extends Omarchy's generic set.
+    footclient = true,
+    ["org.codeberg.dnkl.foot"] = true,
+    wezterm = true,
+    -- WezTerm's documented default class/app-id; see system-baseline.md.
+    ["org.wezfurlong.wezterm"] = true,
+}
+
+local function clipboardShortcut(key)
+    return function()
+        local window = hl.get_active_window()
+        if window == nil or window.mapped ~= true or window.accepts_input ~= true then
+            return
+        end
+
+        local terminal = (key == "C" or key == "V")
+            and (terminalClasses[window.class] or terminalClasses[window.initial_class])
+        local mods = terminal and "CTRL SHIFT" or "CTRL"
+        -- Explicit modifiers replace held Super; never redirect focus to a window.
+        hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "down" }))
+        -- Hyprland retains each one-shot timer and its captured key/modifiers.
+        hl.timer(function()
+            hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "up" }))
+        end, { timeout = 50, type = "oneshot" })
+    end
+end
+
 -- Exact component markers prevent optional bindings from becoming baseline policy.
 local function dictationComponentInstalled()
     local sessionHome = os.getenv("HOME")
@@ -64,6 +97,12 @@ bind(mainMod .. " + RETURN", "Apps", "Terminal", hl.dsp.exec_cmd("foot"))
 bind(mainMod .. " + SHIFT + RETURN", "Apps", "Browser", hl.dsp.exec_cmd("firefox"))
 bind(mainMod .. " + SHIFT + B", "Apps", "Browser", hl.dsp.exec_cmd("firefox"))
 bind(mainMod .. " + SHIFT + F", "Apps", "File manager", hl.dsp.exec_cmd("thunar"))
+
+-- Clipboard
+bind(mainMod .. " + A", "Clipboard", "Select all", clipboardShortcut("A"))
+bind(mainMod .. " + C", "Clipboard", "Copy", clipboardShortcut("C"))
+bind(mainMod .. " + V", "Clipboard", "Paste", clipboardShortcut("V"))
+bind(mainMod .. " + X", "Clipboard", "Cut", clipboardShortcut("X"))
 
 -- Shell
 bind(mainMod .. " + K", "Shell", "Show shortcuts",

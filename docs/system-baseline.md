@@ -203,6 +203,77 @@ configuration. The public machine seed and validated development-machine file
 both leave the global XKB tuple unset; explicit per-device exceptions may still
 belong in machine configuration.
 
+The managed clipboard bindings forward native shortcuts:
+
+| Binding | Graphical applications | Recognized terminals |
+| --- | --- | --- |
+| Super+A · Select all | Ctrl+A | Ctrl+A |
+| Super+C · Copy | Ctrl+C | Ctrl+Shift+C |
+| Super+V · Paste | Ctrl+V | Ctrl+Shift+V |
+| Super+X · Cut | Ctrl+X | Ctrl+X |
+
+Super+A/X preserve each application's native Ctrl+A/X meanings. In terminals
+these are shell/application actions, not special Select all/Cut operations.
+Copy/Paste terminal detection matches only these exact `class` or `initial_class`
+identifiers:
+
+| Terminal | Identifiers | Source |
+| --- | --- | --- |
+| Foot | `foot`, `org.codeberg.dnkl.foot` | [Pinned Omarchy terminal rules](https://github.com/omacom/omarchy/blob/51bfd1dbaa1b5f790e19623faf2745945d40c796/default/hypr/apps/terminals.lua) |
+| Foot server mode | `footclient` | Installed Foot 1.28.0 `/etc/xdg/foot/foot.ini` default app-id documentation |
+| Alacritty | `Alacritty` | Same pinned Omarchy rules |
+| Kitty | `kitty` | Same pinned Omarchy rules |
+| Ghostty | `com.mitchellh.ghostty` | Same pinned Omarchy rules |
+| WezTerm | `wezterm` | Same pinned Omarchy rules |
+| WezTerm default | `org.wezfurlong.wezterm` | [Official `wezterm start --class` documentation](https://wezterm.org/cli/start.html) |
+
+Omarchy-specific IDs, TUI matching, and terminal tags are excluded. No terminal
+settings or existing Ctrl-based bindings change: Ctrl+C remains SIGINT in
+terminal sessions, and native Ctrl+Shift+C/V remain Copy/Paste. Super+K discovers
+all four normal descriptions.
+
+Each activation sends native key-down immediately, then uses
+`hl.timer(callback, { timeout = 50, type = "oneshot" })` for key-up, following
+[Omarchy's pinned clipboard implementation](https://github.com/omacom/omarchy/blob/51bfd1dbaa1b5f790e19623faf2745945d40c796/default/hypr/bindings/clipboard.lua).
+Hyprland retains each timer/callback until it fires; every invocation captures
+its own key and modifiers. Releases are not cancelled or reclassified when
+focus changes. Neither event has a window target, so focus is never forced back
+onto an earlier window. Missing, unmapped, or non-input windows prevent a new
+press, while an already-scheduled release still runs. See the
+[timing compatibility record](compatibility.md#universal-clipboard-key-release-timing).
+
+There is no shell helper, clipboard-content inspection, new dependency, or
+lock/inhibitor bypass. Physical acceptance on the development desktop covers
+all four shortcuts in graphical applications, Copy/Paste in Foot, Thunar
+directory cut/paste, KeePassXC password copy, clipboard interoperability, rapid
+focus switching, and Plex Desktop through XWayland. Native Ctrl+C and
+Ctrl+Shift+C/V in Foot remain functional. Italian layout, untested terminals,
+and Flatpak applications remain separate acceptance boundaries. The release
+goes to the then-focused surface; native timing and focus behavior, including
+configuration reloads during a pending release, are not guaranteed by mocks.
+
+Unknown classes use Ctrl+C/V, including terminals with unrecognized/custom
+application IDs; Super+C can therefore interrupt a process in an unsupported
+terminal. Application-specific copy/paste remappings and layer-shell panels are
+outside the initial guarantee. Applications using Super+A/C/V/X lose those
+chords while the global bindings are enabled.
+
+To disable them, add the following to the preserved user-owned
+`${XDG_CONFIG_HOME:-$HOME/.config}/vanhyprarch/overrides/hyprland.lua`:
+
+```lua
+hl.unbind("SUPER + A")
+hl.unbind("SUPER + C")
+hl.unbind("SUPER + V")
+hl.unbind("SUPER + X")
+```
+
+For replacements, unbind first and then add the desired `hl.bind()` calls in
+that same override, which loads after managed bindings. Do not edit the managed
+bindings file or Foot configuration merely to opt out. Upstream attribution and
+the complete MIT notice are adjacent in
+`home/.config/hypr/vanhyprarch/OMARCHY-NOTICE.txt`; the root license is unchanged.
+
 ## Deliberate default applications
 
 | Role | Package |
