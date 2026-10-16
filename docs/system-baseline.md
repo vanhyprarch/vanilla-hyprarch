@@ -190,6 +190,12 @@ default; managed-payload physical acceptance remains pending. See
 
 ## Keyboard and session defaults
 
+The managed Hyprland core sets `cursor.no_warps = true` globally. Window
+activation, including dock cycling across workspaces, keeps the pointer in
+place. Normal mouse focus, keyboard focus, and workspace navigation remain
+available. The later user-owned `vanhyprarch/overrides/hyprland.lua` may set
+`hl.config({ cursor = { no_warps = false } })` to restore automatic warping.
+
 Hyprland's native `input.numlock_by_default` option is enabled. Num Lock is
 therefore on by default when the graphical session starts. This is a compositor
 input default; it does not require `numlockx`, `setleds`, an autostart command,

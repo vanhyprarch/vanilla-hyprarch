@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Hyprland
 
 Item {
     id: root
@@ -10,6 +9,7 @@ Item {
     required property var theme
     required property var metrics
     required property LauncherStore store
+    required property LauncherController controller
     required property var targetScreen
     required property var focusCoordinator
     readonly property int contentWidth: root.metrics.dockContentWidth
@@ -34,144 +34,15 @@ Item {
             desktopEntry: DesktopEntries.byId(launcher.desktopId)
         })).filter(launcher => launcher.desktopEntry !== null)
     }
-    readonly property var openUnpinnedDesktopIds: collectOpenUnpinnedDesktopIds()
+    readonly property var openUnpinnedDesktopIds: {
+        const pinnedIds = store.launchers.map(launcher => launcher.desktopId)
+        return controller.openDesktopIds.filter(desktopId => !pinnedIds.includes(desktopId))
+    }
     readonly property var runtimeLaunchers: {
         // Re-resolve ephemeral IDs when the installed application index changes.
         DesktopEntries.applications.values
         return runtimeOrder.map(desktopId => DesktopEntries.byId(desktopId))
             .filter(desktopEntry => desktopEntry !== null)
-    }
-
-    function normalizeIdentifier(value): string {
-        return value === null || value === undefined
-            ? "" : String(value).trim().toLowerCase()
-    }
-
-    function desktopEntryCandidates(desktopEntry: DesktopEntry): var {
-        if (!desktopEntry)
-            return []
-
-        const candidates = []
-        const startupClass = normalizeIdentifier(desktopEntry.startupClass)
-        const desktopId = normalizeIdentifier(desktopEntry.id)
-        const desktopIdWithoutSuffix = desktopId.endsWith(".desktop")
-            ? desktopId.slice(0, -8) : desktopId
-
-        for (const candidate of [startupClass, desktopId, desktopIdWithoutSuffix]) {
-            if (candidate !== "" && !candidates.includes(candidate))
-                candidates.push(candidate)
-        }
-        return candidates
-    }
-
-    function runtimeIdentifiersForToplevel(toplevel): var {
-        if (!toplevel)
-            return []
-
-        const ipcObject = toplevel.lastIpcObject
-        const wayland = toplevel.wayland
-        const identifiers = [
-            normalizeIdentifier(ipcObject ? ipcObject["class"] : ""),
-            normalizeIdentifier(wayland ? wayland.appId : "")
-        ]
-        return identifiers.filter((identifier, index) =>
-            identifier !== "" && identifiers.indexOf(identifier) === index)
-    }
-
-    function resolveDesktopEntryForToplevel(toplevel): var {
-        const runtimeIdentifiers = runtimeIdentifiersForToplevel(toplevel)
-        if (runtimeIdentifiers.length === 0)
-            return null
-
-        const applications = DesktopEntries.applications.values
-        for (const runtimeIdentifier of runtimeIdentifiers) {
-            const exactMatch = applications.find(desktopEntry =>
-                desktopEntryCandidates(desktopEntry).includes(runtimeIdentifier))
-            if (exactMatch)
-                return exactMatch
-        }
-
-        for (const runtimeIdentifier of runtimeIdentifiers) {
-            const fallback = DesktopEntries.heuristicLookup(runtimeIdentifier)
-            if (!fallback)
-                continue
-            const installedEntry = applications.find(desktopEntry => desktopEntry.id === fallback.id)
-            if (installedEntry)
-                return installedEntry
-        }
-
-        return null
-    }
-
-    function toplevelMatchesDesktopEntry(toplevel, desktopEntry: DesktopEntry): bool {
-        if (!toplevel || !desktopEntry)
-            return false
-
-        const runtimeIdentifiers = runtimeIdentifiersForToplevel(toplevel)
-        const candidates = desktopEntryCandidates(desktopEntry)
-        if (runtimeIdentifiers.some(identifier => candidates.includes(identifier)))
-            return true
-
-        const resolvedEntry = resolveDesktopEntryForToplevel(toplevel)
-        return resolvedEntry !== null && resolvedEntry.id === desktopEntry.id
-    }
-
-    function matchingToplevelsForDesktopEntry(desktopEntry: DesktopEntry): var {
-        if (!desktopEntry)
-            return []
-
-        const matches = []
-        for (const workspace of Hyprland.workspaces.values) {
-            if (!workspace || !workspace.toplevels)
-                continue
-
-            for (const toplevel of workspace.toplevels.values) {
-                if (toplevelMatchesDesktopEntry(toplevel, desktopEntry)
-                        && !matches.some(match => match.toplevel === toplevel))
-                    matches.push({ toplevel: toplevel, workspace: workspace })
-            }
-        }
-        return matches
-    }
-
-    function workspaceIdsForDesktopEntry(desktopEntry: DesktopEntry): var {
-        if (!desktopEntry)
-            return []
-
-        const workspaceIds = []
-        for (const workspace of Hyprland.workspaces.values) {
-            if (!workspace || workspace.id <= 0 || !workspace.toplevels)
-                continue
-
-            const matches = workspace.toplevels.values.some(toplevel =>
-                toplevelMatchesDesktopEntry(toplevel, desktopEntry))
-
-            if (matches && !workspaceIds.includes(workspace.id))
-                workspaceIds.push(workspace.id)
-        }
-
-        return workspaceIds.sort((left, right) => left - right)
-    }
-
-    function collectOpenUnpinnedDesktopIds(): var {
-        // Make application-index and persistent-store changes explicit dependencies.
-        DesktopEntries.applications.values
-        const pinnedIds = store.launchers.map(launcher => launcher.desktopId)
-        const desktopIds = []
-
-        for (const workspace of Hyprland.workspaces.values) {
-            if (!workspace || !workspace.toplevels)
-                continue
-
-            for (const toplevel of workspace.toplevels.values) {
-                const desktopEntry = resolveDesktopEntryForToplevel(toplevel)
-                if (desktopEntry && !pinnedIds.includes(desktopEntry.id)
-                        && !desktopIds.includes(desktopEntry.id))
-                    desktopIds.push(desktopEntry.id)
-            }
-        }
-
-        return desktopIds
     }
 
     function reconcileRuntimeOrder(): void {
@@ -183,50 +54,6 @@ Item {
         if (nextOrder.length !== runtimeOrder.length
                 || nextOrder.some((desktopId, index) => desktopId !== runtimeOrder[index]))
             runtimeOrder = nextOrder
-    }
-
-    function activateExistingWindow(desktopEntry: DesktopEntry): void {
-        const matches = matchingToplevelsForDesktopEntry(desktopEntry)
-        if (matches.length === 0)
-            return
-
-        const focusedWorkspace = Hyprland.focusedWorkspace
-        let match = matches.find(candidate => focusedWorkspace && candidate.workspace
-            && candidate.workspace.id === focusedWorkspace.id)
-        if (!match)
-            match = matches[0]
-
-        const wayland = match.toplevel ? match.toplevel.wayland : null
-        if (wayland) {
-            wayland.activate()
-        } else if (match.workspace) {
-            match.workspace.activate()
-        }
-    }
-
-    function isDesktopEntryRunning(desktopEntry: DesktopEntry): bool {
-        return matchingToplevelsForDesktopEntry(desktopEntry).length > 0
-    }
-
-    function activateOrLaunch(desktopEntry: DesktopEntry): void {
-        if (!desktopEntry)
-            return
-
-        if (isDesktopEntryRunning(desktopEntry))
-            activateExistingWindow(desktopEntry)
-        else
-            desktopEntry.execute()
-    }
-
-    function closeAllWindows(desktopEntry: DesktopEntry): void {
-        // Snapshot the matches before close requests mutate the workspace models.
-        const matches = matchingToplevelsForDesktopEntry(desktopEntry).slice()
-        for (const match of matches) {
-            const toplevel = match ? match.toplevel : null
-            const handle = toplevel ? (toplevel.wayland || toplevel.handle) : null
-            if (handle)
-                handle.close()
-        }
     }
 
     function beginPinnedDrag(desktopId: string): void {
@@ -399,10 +226,10 @@ Item {
                     x: (root.width - width) / 2
                     desktopEntry: modelData.desktopEntry
                     draggable: true
-                    workspaceIds: root.workspaceIdsForDesktopEntry(modelData.desktopEntry)
-                    onActivationRequested: root.activateOrLaunch(modelData.desktopEntry)
+                    workspaceIds: root.controller.workspaceIdsForDesktopEntry(modelData.desktopEntry)
+                    onActivationRequested: root.controller.activateOrLaunch(modelData.desktopEntry)
                     onContextMenuRequested: root.openContextMenu(modelData.desktopEntry,
-                        launcherButton, true, root.isDesktopEntryRunning(modelData.desktopEntry))
+                        launcherButton, true, root.controller.isDesktopEntryRunning(modelData.desktopEntry))
                     onDragStarted: root.beginPinnedDrag(modelData.desktopEntry.id)
                     onDragFinished: root.finishPinnedDrag(modelData.desktopEntry.id)
                 }
@@ -449,10 +276,10 @@ Item {
                     x: (root.width - width) / 2
                     desktopEntry: modelData
                     draggable: false
-                    workspaceIds: root.workspaceIdsForDesktopEntry(modelData)
-                    onActivationRequested: root.activateOrLaunch(modelData)
+                    workspaceIds: root.controller.workspaceIdsForDesktopEntry(modelData)
+                    onActivationRequested: root.controller.activateOrLaunch(modelData)
                     onContextMenuRequested: root.openContextMenu(modelData,
-                        runtimeLauncherButton, false, root.isDesktopEntryRunning(modelData))
+                        runtimeLauncherButton, false, root.controller.isDesktopEntryRunning(modelData))
                 }
             }
         }
@@ -549,12 +376,13 @@ Item {
 
     LauncherContextMenu {
         id: launcherContextMenu
+        controller: root.controller
         theme: root.theme
         metrics: root.metrics
         launcherStore: root.store
         popupAnchorItem: launcherContextPopupAnchor
         targetScreen: root.targetScreen
         focusCoordinator: root.focusCoordinator
-        onCloseAllRequested: root.closeAllWindows(launcherContextMenu.desktopEntry)
+        onCloseAllRequested: root.controller.closeAllWindows(launcherContextMenu.desktopEntry)
     }
 }

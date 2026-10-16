@@ -305,8 +305,9 @@ io.write(table.concat(loaded, "\n"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("XDG_CONFIG_HOME must be an absolute path", result.stderr)
 
-    def xwayland_scaling_assignments(
-        self, *paths: Path, config_home: Path | None = None
+    def config_assignments(
+        self, *paths: Path, config_home: Path | None = None,
+        section: str = "xwayland", option: str = "force_zero_scaling"
     ) -> list[str]:
         harness = r'''
 local function inert()
@@ -319,7 +320,8 @@ end
 hl = inert()
 hl.exec_cmd = function() error("session commands must remain inert") end
 hl.config = function(options)
-    local value = options.xwayland and options.xwayland.force_zero_scaling
+    local section = options[os.getenv("VHA_TEST_CONFIG_SECTION")]
+    local value = section and section[os.getenv("VHA_TEST_CONFIG_OPTION")]
     if value ~= nil then
         io.write(type(value), ":", tostring(value), "\n")
     end
@@ -343,6 +345,8 @@ end
                     "HOME": str(root / "home"),
                     "XDG_CONFIG_HOME": str(config_home or root / "config"),
                     "XDG_DATA_HOME": str(root / "data"),
+                    "VHA_TEST_CONFIG_SECTION": section,
+                    "VHA_TEST_CONFIG_OPTION": option,
                 },
                 timeout=5,
             )
@@ -350,14 +354,14 @@ end
         return result.stdout.splitlines()
 
     def test_managed_xwayland_scaling_default_is_boolean_true(self) -> None:
-        self.assertEqual(self.xwayland_scaling_assignments(CORE_PATH), ["boolean:true"])
+        self.assertEqual(self.config_assignments(CORE_PATH), ["boolean:true"])
 
     def test_create_once_seeds_do_not_assign_xwayland_scaling(self) -> None:
         for seed in (MACHINE_SEED, OVERRIDE_SEED):
             with self.subTest(seed=seed):
-                self.assertEqual(self.xwayland_scaling_assignments(seed), [])
+                self.assertEqual(self.config_assignments(seed), [])
 
-    def test_xwayland_scaling_user_override_remains_effective(self) -> None:
+    def assert_user_config_override(self, section: str, option: str) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             config = Path(temporary) / "config"
             sources = {
@@ -372,19 +376,37 @@ end
                 shutil.copyfile(source, target)
 
             self.assertEqual(
-                self.xwayland_scaling_assignments(LOADER_PATH, config_home=config),
+                self.config_assignments(LOADER_PATH, config_home=config,
+                                        section=section, option=option),
                 ["boolean:true"],
             )
             override = config / "vanhyprarch/overrides/hyprland.lua"
             override.write_text(
                 OVERRIDE_HEADER
-                + '\nhl.config({ xwayland = { force_zero_scaling = false } })\n',
+                + f'\nhl.config({{ {section} = {{ {option} = false }} }})\n',
                 encoding="utf-8",
             )
             self.assertEqual(
-                self.xwayland_scaling_assignments(LOADER_PATH, config_home=config),
+                self.config_assignments(LOADER_PATH, config_home=config,
+                                        section=section, option=option),
                 ["boolean:true", "boolean:false"],
             )
+
+    def test_xwayland_scaling_user_override_remains_effective(self) -> None:
+        self.assert_user_config_override("xwayland", "force_zero_scaling")
+
+    def test_managed_cursor_no_warps_default_is_boolean_true(self) -> None:
+        self.assertEqual(self.config_assignments(
+            CORE_PATH, section="cursor", option="no_warps"), ["boolean:true"])
+
+    def test_create_once_seeds_do_not_assign_cursor_no_warps(self) -> None:
+        for seed in (MACHINE_SEED, OVERRIDE_SEED):
+            with self.subTest(seed=seed):
+                self.assertEqual(self.config_assignments(
+                    seed, section="cursor", option="no_warps"), [])
+
+    def test_cursor_no_warps_user_override_remains_effective(self) -> None:
+        self.assert_user_config_override("cursor", "no_warps")
 
     def test_complete_hyprland_chain_verifies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

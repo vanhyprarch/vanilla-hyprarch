@@ -8,6 +8,7 @@ DockPopup {
 
     required property var theme
     required property LauncherStore launcherStore
+    required property LauncherController controller
     property DesktopEntry desktopEntry
     property bool pinned: true
     property bool running: false
@@ -26,39 +27,8 @@ DockPopup {
             root.contentItem.forceActiveFocus()
     }
 
-    function normalizeActionIdentifier(value): string {
-        return value === null || value === undefined
-            ? "" : String(value).trim().toLowerCase()
-    }
-
     function openNewWindow(): void {
-        if (!desktopEntry)
-            return
-
-        const actions = desktopEntry.actions || []
-        const preferredIds = ["new-window", "newwindow", "new_window"]
-        let newWindowAction = null
-
-        for (const action of actions) {
-            if (action && preferredIds.includes(normalizeActionIdentifier(action.id))) {
-                newWindowAction = action
-                break
-            }
-        }
-
-        if (!newWindowAction) {
-            for (const action of actions) {
-                if (action && normalizeActionIdentifier(action.name) === "new window") {
-                    newWindowAction = action
-                    break
-                }
-            }
-        }
-
-        if (newWindowAction)
-            newWindowAction.execute()
-        else
-            desktopEntry.execute()
+        controller.openNewWindow(desktopEntry)
     }
 
     component ContextActionRow: PanelActionRow {

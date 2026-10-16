@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # SPDX-License-Identifier: GPL-2.0-only
-"""Exercise production launcher geometry and diagnostics in an offscreen shell."""
+"""Exercise production launcher geometry, activation, and diagnostics offscreen."""
 
 from __future__ import annotations
 
@@ -72,6 +72,7 @@ ShellRoot {
     VisualMetrics { id: metrics; viewportWidth: 1000; viewportHeight: testWindow.height }
     Theme { id: theme; metrics: metrics }
     LauncherStore { id: store }
+    LauncherController { id: launcherController }
     QtObject {
         id: coordinator
         property var lastWindow: null
@@ -120,6 +121,7 @@ ShellRoot {
                 theme: theme
                 metrics: metrics
                 store: store
+                controller: launcherController
                 targetScreen: Quickshell.screens[0]
                 focusCoordinator: coordinator
                 anchors.fill: parent
@@ -344,6 +346,7 @@ ShellRoot {
                     lines.append(line)
                     if "LAUNCHER_UX_PASS" in line:
                         print("Production launcher geometry, popup/drag anchors, and diagnostic UX: PASS")
+                        activation_checks(root, components, environment)
                         return
                     if "LAUNCHER_UX_FAILURE:" in line:
                         break
@@ -355,6 +358,105 @@ ShellRoot {
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+
+
+def activation_checks(root: Path, components: Path, environment: dict[str, str]) -> None:
+    config = root / "config/quickshell/launcher-activation-test"
+    config.mkdir()
+    (config / "components").symlink_to(components, target_is_directory=True)
+    (config / "shell.qml").write_bytes(
+        (Path(__file__).parent / "launcher-activation.qml").read_bytes())
+    launch_log = root / "launches.jsonl"
+    launch_script = root / "record-launch.py"
+    launch_script.write_text(
+        "import json, os, sys\n"
+        "with open(os.environ['VHA_TEST_LAUNCH_LOG'], 'a') as stream:\n"
+        "    stream.write(json.dumps([sys.argv[1:], os.getcwd()]) + '\\n')\n",
+        encoding="utf-8")
+    directory = root / "working directory"
+    directory.mkdir()
+    entry = root / "data/applications/dock-fixture-00.desktop"
+    entry.write_text(
+        "[Desktop Entry]\nType=Application\nName=Native launch fixture\n"
+        f'Exec=/usr/bin/python "{launch_script}" ordinary "argument with spaces"\n'
+        f"Path={directory}\nActions=new-window;\nStartupWMClass=NativeFixture\n"
+        "[Desktop Action new-window]\nName=New Window\n"
+        f'Exec=/usr/bin/python "{launch_script}" new "action argument"\n',
+        encoding="utf-8")
+    for desktop_id, startup_class in (("foot", "foot"), ("firefox", "Firefox"),
+                                      ("plex", "Plex"),
+                                      ("org.telegram.desktop", "TelegramDesktop")):
+        (entry.parent / f"{desktop_id}.desktop").write_text(
+            "[Desktop Entry]\nType=Application\n"
+            f"Name={desktop_id}\nStartupWMClass={startup_class}\nExec=/usr/bin/true\n",
+            encoding="utf-8")
+    environment = dict(environment, VHA_TEST_LAUNCH_LOG=str(launch_log))
+    log = root / "activation.log"
+    with log.open("w") as output:
+        process = subprocess.Popen(["qs", "--no-color", "-p", str(config)],
+                                   env=environment, stdout=output,
+                                   stderr=subprocess.STDOUT, text=True)
+        try:
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                text = log.read_text()
+                if "LAUNCHER_ACTIVATION_FAILURE:" in text:
+                    raise AssertionError(text)
+                records = launch_log.read_text().splitlines() if launch_log.exists() else []
+                if "LAUNCHER_ACTIVATION_PASS:" in text and len(records) == 2:
+                    import json
+                    actual = sorted(json.loads(record) for record in records)
+                    expected = sorted([
+                        [["ordinary", "argument with spaces"], str(directory)],
+                        [["new", "action argument"], str(directory)],
+                    ])
+                    assert actual == expected, actual
+                    for line in text.splitlines():
+                        if "FOCUS_COMMAND:" in line:
+                            command = json.loads(line.split("FOCUS_COMMAND:", 1)[1])
+                            verify_focus_guard(command)
+                    assert "FOCUS_COMMAND:" in text, text
+                    assert "TypeError" not in text and "ReferenceError" not in text, text
+                    print(text.split("LAUNCHER_ACTIVATION_PASS:", 1)[1].splitlines()[0])
+                    print("Native desktop-entry/action arguments, working directory, and focus identity guard: PASS")
+                    return
+                if process.poll() is not None:
+                    break
+                time.sleep(0.02)
+            raise AssertionError(log.read_text())
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+
+def verify_focus_guard(command: list[str]) -> None:
+    assert command[:2] == ["/usr/bin/hyprctl", "eval"], command
+    harness = r"""
+local mode, source = arg[1], arg[2]
+local window
+if mode ~= "closed" then
+    window = { mapped = mode ~= "unmapped",
+        stable_id = mode == "reused" and 0x999 or 0x2 }
+end
+local calls = 0
+hl = {
+    get_window = function(selector) assert(selector == "address:0xabc"); return window end,
+    dsp = { focus = function(options) assert(options.window == window); return options end },
+    dispatch = function() calls = calls + 1 end,
+}
+assert(load(source))()
+assert(calls == (mode == "valid" and 1 or 0))
+"""
+    with tempfile.TemporaryDirectory(prefix="vanhyprarch-focus-guard-") as temporary:
+        path = Path(temporary) / "guard.lua"
+        path.write_text(harness)
+        for mode in ("valid", "closed", "unmapped", "reused"):
+            subprocess.run(["lua", str(path), mode, command[2]], check=True,
+                           text=True, capture_output=True, timeout=5)
 
 
 if __name__ == "__main__":

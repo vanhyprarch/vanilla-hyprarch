@@ -643,6 +643,39 @@ namespace. Managed Hyprland policy disables animation only for that namespace,
 so panels appear at their bounded anchored geometry without changing the
 persistent dock or other Quickshell surfaces.
 
+Dock application activation uses one session-local `LauncherController` shared
+across screens. An ordinary click launches through `DesktopEntry.execute()`
+when no matching window exists, activates a single existing window, or cycles
+through multiple windows across workspaces in ascending Hyprland `stableId`
+creation order. Only dock activations advance the remembered selection,
+independently of mouse focus and workspace enumeration; a closed selection advances to its next
+surviving successor, wrapping as necessary. Closing all matches clears it.
+Matching retains desktop IDs, StartupWMClass, and native app IDs and includes
+`initialClass`; titles are never used. Native lifecycle events refresh cached
+metadata, and each click requests a fresh client snapshot. Foreign-toplevel
+activation is preferred when its cached identity agrees; the native Lua focus
+fallback checks the current window's stable identity before using its address.
+Activation follows the compositor's native focus/cursor policy. The managed
+core now defaults `cursor.no_warps = true` desktop-wide, keeping the pointer
+stationary during window activation, including cross-workspace dock cycling.
+Physical testing also confirmed keyboard focus, workspace navigation, and
+normal mouse focus. Later user overrides remain authoritative; see
+[System baseline](system-baseline.md#keyboard-and-session-defaults).
+
+Zero-window primary launches have a five-second per-application guard against
+duplicate clicks. Matching windows clear the guard; failed launches become
+retryable after its deadline, with expiry checked on interactions and model
+updates rather than polling. Explicit **Open new window** always bypasses the
+guard and requests the existing desktop action, or executes the main entry when
+no new-window action exists. Arguments and working directories stay owned by
+Quickshell's native desktop-entry APIs. Applications can still reuse a process
+or window. Unavailable snapshots fail closed; known matches awaiting a valid
+window identity are not replaced with a new launch. Applications without usable
+desktop/window identifiers remain subject to matching limitations. Cycling and
+pending state reset on shell reload and never enter USER_OWNED `launchers.json`.
+Physical acceptance of this activation phase passed. Directional Dwindle
+placement remains separate future work; no placement policy changes here.
+
 Super+Space uses `DesktopEntries.applications` directly and launches through
 the native `DesktopEntry.execute()` API. It has no project-owned application
 catalog and starts no search subprocess. One global `PowerActions` controller

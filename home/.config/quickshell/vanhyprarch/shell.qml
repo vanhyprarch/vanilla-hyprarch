@@ -122,6 +122,10 @@ ShellRoot {
         id: launcherStore
     }
 
+    LauncherController {
+        id: launcherController
+    }
+
     readonly property var globalTextSizeController: textSizeController
     readonly property var globalMonitorController: monitorController
     readonly property PowerActions globalPowerActions: powerActions
@@ -248,6 +252,7 @@ ShellRoot {
                 id: dockLaunchers
 
                 store: launcherStore
+                controller: launcherController
                 theme: shellTheme
                 metrics: screenMetrics
                 targetScreen: screenScope.modelData

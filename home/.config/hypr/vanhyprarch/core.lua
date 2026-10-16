@@ -41,10 +41,16 @@ local function dictationComponentInstalled()
     return content == "vanhyprarch-dictation-v1\n"
 end
 
--- Cursor environment ----------------------------------------------------------
+-- Cursor ----------------------------------------------------------------------
 
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
+
+hl.config({
+    cursor = {
+        no_warps = true,
+    },
+})
 
 -- Startup ---------------------------------------------------------------------
 
