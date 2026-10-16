@@ -150,12 +150,12 @@ class ReleaseContractTests(unittest.TestCase):
 
     def test_authored_declaration_current_values(self) -> None:
         current = RELEASE.parse_declaration((PROJECT / "release/release.toml").read_bytes())
-        self.assertEqual(current["version"], "v1.0.3")
+        self.assertEqual(current["version"], "v1.0.4")
         self.assertEqual(current["channel"], "stable")
         self.assertEqual(current["minimum_installed_version"], "v1.0.0-rc1")
         self.assertEqual(current["minimum_migration_level"], 0)
         self.assertEqual(current["migration_level"], 1)
-        self.assertEqual(current["summary"], "Add verified Zig Player fallback, Qt 5 Wayland support, universal shortcuts, balanced dock launchers, and intelligent window cycling without warping.")
+        self.assertEqual(current["summary"], "Restore the state-aware Lucide Caffeine icon and streamline release preflight and post-upgrade acceptance.")
 
     def test_generated_metadata_exact_fields(self) -> None:
         self.assertEqual(set(self.metadata), RELEASE.METADATA_KEYS)

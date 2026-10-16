@@ -41,12 +41,24 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
-## v1.0.4 development — NOT DECLARED
+## v1.0.4 Stable — DECLARATION PREPARED, NOT PUBLISHED
 
-The next planned scope is the accepted Caffeine Coffee/Zap icon correction and
-the release-workflow improvements on main. `release/release.toml` still declares
-version v1.0.3; its published tag/source are immutable, and v1.0.4 Stable has not
-been declared. The development checkout is not the installed release identity.
+The next declaration is `v1.0.4` Stable. It preserves x86_64, update protocol 1,
+minimum installed version `v1.0.0-rc1`, minimum migration level 0 and target
+migration level 1. Genuine v1.0.3 at level 1 requires zero migrations and no
+updater preparation. These changes introduce no persisted-state transition or
+signed distribution protocol change. v1.0.3 remains the published Stable;
+the development declaration is not an installed release identity.
+
+The release contains exactly two accepted development changes since v1.0.3:
+
+- Caffeine's backend-authoritative state selects the static Lucide Coffee icon
+  while enabled and Zap while disabled, preserving Power & Idle behavior and
+  existing styling. Commit `cfc159bedbc982b11f36aae40d1e0e7420bd6c64` passed
+  automated checks, development deployment and physical desktop acceptance.
+- Reusable operator-side release preflight and post-upgrade acceptance tooling,
+  focused tests and the streamlined canonical documentation, committed as
+  `67edbe995c54e15a716a7883e5f3d1ba2228763c`.
 
 `release/acceptance.py` replaces one-off VM wrappers with local input preparation,
 one read-only preflight and one post-upgrade entry point. It reuses the canonical
@@ -64,6 +76,15 @@ passed, environmental warnings remained non-fatal, and installed/selected user
 state stayed unchanged. Live preflight against a newer release remains untested
 and will be exercised during the normal v1.0.3 -> v1.0.4 VM release preflight.
 See the [single operator runbook](release-workflow.md).
+
+Canonical release-readiness suites, acceptance-helper tests and read-only payload
+validation passed. These do not replace exact-source builds or live preflight.
+Declaration approval/commit, reproducible exact-source builds and the genuine
+v1.0.3 -> v1.0.4 read-only preflight remain pending. That preflight must use
+`release/acceptance.py prepare` and its operator-executed `preflight` command
+before tag approval. Signing/publication and the later normal-dock upgrade,
+post-upgrade technical checks, visual acceptance and authenticated already-current
+check remain separate gates; no one-off diagnostic wrapper is required.
 
 ## v1.0.3 Stable — PUBLISHED AND ACCEPTED
 
