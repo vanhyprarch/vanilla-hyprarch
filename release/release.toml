@@ -1,9 +1,9 @@
 schema = 1
-version = "v1.0.2"
+version = "v1.0.3"
 channel = "stable"
 architecture = "x86_64"
 update_protocol = 1
 minimum_installed_version = "v1.0.0-rc1"
 minimum_migration_level = 0
 migration_level = 1
-summary = "Consolidate yay pre-upgrade maintenance, Hyprland splash suppression, and static Lucide dock icons with consistent Bluetooth-off coloring."
+summary = "Add verified Zig Player fallback, Qt 5 Wayland support, universal shortcuts, balanced dock launchers, and intelligent window cycling without warping."

@@ -1,6 +1,6 @@
 # Current project state
 
-Snapshot date: 2026-10-15.
+Snapshot date: 2026-10-16.
 
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The subsequent immutable
@@ -39,6 +39,42 @@ journal/staging cleanup passed.
 
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
+
+## v1.0.3 Stable — DECLARATION PREPARED, NOT PUBLISHED
+
+The next declaration is `v1.0.3` Stable. It preserves x86_64, update protocol 1,
+minimum installed version `v1.0.0-rc1`, minimum migration level 0, and target
+migration level 1. Genuine v1.0.2 at level 1 requires zero migrations and no
+updater preparation. No new persisted-state transition or signed protocol change
+is introduced.
+
+Accepted development changes since v1.0.2 are:
+
+- GitHub-first Zig Player acquisition with a transport-only ServerPlan fallback
+  and the unchanged trusted archive/member hashes. The original v0.1.1 archive
+  is published on ServerPlan and independently verified via HTTPS.
+- Official `qt5-wayland` in the managed baseline for fresh installations and
+  upgrades, without forcing Qt backends or changing scaling policy.
+- Universal Super+A/C/V/X shortcuts with native 50 ms key-release timers,
+  terminal-specific copy/paste, and the complete Omarchy MIT attribution.
+- Dock launchers centered within the bounded available middle region.
+- Shared session-local launcher activation and deterministic cross-workspace
+  window cycling, preserving explicit new-window actions and the launch guard.
+- Global managed `cursor.no_warps = true`, with later user overrides preserved.
+
+Relevant automated checks, development deployment validation, and physical
+desktop acceptance passed. The focused repository language audit found no
+unintended Italian content. Deterministic Dwindle placement (Phase B) is deferred:
+Hyprland 0.56.2 lacks the preselection cleanup guarantees required for that
+integration. It is not included in this release.
+
+Release declaration approval, exact-source artifact checks, publication, and
+genuine v1.0.2 -> v1.0.3 upgrade acceptance remain pending. That upgrade must use
+the ordinary dock Update action and is the first live acceptance of v1.0.2's
+Yay offer, cancellation/failure handling, manual-reboot pause when packages
+change, authenticated application, recovery, and installed identity. Direct
+target-driver apply is not a substitute. Follow the existing
+[operator runbook](release-workflow.md); v1.0.2 remains the published Stable.
 
 ## v1.0.2 Stable consolidation — PUBLISHED AND RELEASE-TEST ACCEPTED
 
