@@ -21,7 +21,6 @@ Item {
     property string activeDragDesktopId: ""
     property int pendingDropIndex: -1
     property Item contextMenuSourceAnchor: null
-    property real preferredContentCenterY: height / 2
     property color dragIndicatorColor: root.theme.accent
     readonly property int dragIndicatorWidth: root.metrics.dockLauncherDragIndicatorWidth
     readonly property int dragIndicatorHeight: root.metrics.dockLauncherDragIndicatorHeight
@@ -383,10 +382,7 @@ Item {
         Column {
             id: content
 
-            y: implicitHeight >= launcherViewport.height ? 0
-                : Math.max(0, Math.min(
-                    launcherViewport.height - implicitHeight,
-                    root.preferredContentCenterY - implicitHeight / 2))
+            anchors.verticalCenter: parent.verticalCenter
             width: root.width
             spacing: root.spacing
 

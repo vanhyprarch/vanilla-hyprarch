@@ -627,8 +627,15 @@ regions. The full height of the actual bottom control stack is reserved before
 the flexible middle launcher region receives the remainder, so launcher content
 is the first content to scroll. Only a viewport too short for the compact top
 and complete bottom stacks bounds the bottom region itself; its controls remain
-reachable by scrolling. Dock popups are clamped to safe monitor-local width and
-height margins; Display, Audio, Network, Bluetooth, Power & Idle, and Calendar
+reachable by scrolling. Launcher content centers within the available middle
+viewport, with equal free space above and below within normal pixel rounding,
+rather than at the screen's midpoint. Its Column centers in the Flickable
+content item, whose height is the larger of the viewport and natural launcher
+stack. Overflow therefore starts at the top and remains scrollable; the existing
+extreme zero-height middle region policy is unchanged. Isolated geometry tests,
+canonical development deployment validation, and user visual acceptance passed.
+Dock popups are clamped to safe monitor-local width and height margins;
+Display, Audio, Network, Bluetooth, Power & Idle, and Calendar
 content scrolls within the fixed outer panel when it cannot fit. This keeps a
 960x540 logical desktop usable without changing compositor or application
 scaling. Dock popups use the dedicated `vanhyprarch-dock-popup` layer-shell

@@ -81,6 +81,15 @@ class ResponsiveShellStaticTests(unittest.TestCase):
         self.assertIn("Flickable {\n            id: dockSystemRegion", shell)
         self.assertIn("boundsBehavior: Flickable.StopAtBounds", shell)
 
+    def test_launchers_center_in_their_content_item_without_screen_preference(self) -> None:
+        shell = self.read("shell.qml")
+        launchers = self.read("components/Launchers.qml")
+        self.assertNotIn("preferredContentCenterY", shell + launchers)
+        content = launchers.split("id: content", 1)[1].split("Repeater {", 1)[0]
+        self.assertIn("anchors.verticalCenter: parent.verticalCenter", content)
+        self.assertNotRegex(content, r"(?m)^\s+y:")
+        self.assertIn("contentHeight: Math.max(height, content.implicitHeight)", launchers)
+
     def test_launcher_popup_anchors_project_reactive_flickable_geometry(self) -> None:
         launchers = self.read("components/Launchers.qml")
         self.assertIn(

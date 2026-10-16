@@ -255,8 +255,6 @@ ShellRoot {
                 anchors.fill: parent
                 anchors.topMargin: dockLauncherRegion.contentInset
                 anchors.bottomMargin: dockLauncherRegion.contentInset
-                preferredContentCenterY: dockWindow.height / 2
-                    - dockLauncherRegion.y - dockLaunchers.y
                 onEmptySpacePressed:
                     overlayFocusCoordinator.dockBackgroundInteracted()
             }

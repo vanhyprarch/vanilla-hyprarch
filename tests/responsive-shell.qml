@@ -151,7 +151,6 @@ TestCase {
         y: 160
         width: 60
         height: 480
-        property real preferredContentCenterY: height / 2
         property Item contextSource: firstLauncher
 
         Flickable {
@@ -167,11 +166,7 @@ TestCase {
             Column {
                 id: anchorContent
 
-                y: implicitHeight >= anchorViewport.height ? 0
-                    : Math.max(0, Math.min(
-                        anchorViewport.height - implicitHeight,
-                        launcherAnchorFixture.preferredContentCenterY
-                            - implicitHeight / 2))
+                anchors.verticalCenter: parent.verticalCenter
                 width: anchorViewport.width
                 spacing: 4
 
@@ -310,6 +305,53 @@ TestCase {
             return Math.abs(anchor.y
                 - source.mapToItem(anchor.parent, 0, 0).y) < 0.001
         })
+    }
+
+    function verifyLauncherCentering() {
+        compare(anchorContent.parent, anchorViewport.contentItem)
+        tryCompare(anchorViewport.contentItem, "height", anchorViewport.contentHeight)
+        tryVerify(function() {
+            const expected = Math.max(0,
+                (anchorViewport.height - anchorContent.height) / 2)
+            return Math.abs(anchorContent.y - expected) <= 0.5
+        })
+        if (anchorContent.height <= anchorViewport.height) {
+            const below = anchorViewport.height - anchorContent.y - anchorContent.height
+            verify(Math.abs(anchorContent.y - below) <= 1,
+                "fitting launchers have unequal free space")
+        }
+    }
+
+    function test_launcher_centering_data() {
+        return [
+            { tag: "roomy", height: 480 },
+            { tag: "compact", height: 260 },
+            { tag: "exact-fit", height: 144 },
+            { tag: "overflow", height: 100 },
+            { tag: "zero-viewport", height: 16 }
+        ]
+    }
+
+    function test_launcher_centering(data) {
+        launcherAnchorFixture.height = data.height
+        verifyLauncherCentering()
+    }
+
+    function test_launcher_dynamic_height_and_overflow_return_to_center() {
+        verifyLauncherCentering()
+        launcherAnchorFixture.height = 100
+        verifyLauncherCentering()
+        anchorViewport.contentY = anchorViewport.contentHeight - anchorViewport.height
+        verify(anchorViewport.atYEnd)
+        launcherAnchorFixture.height = 480
+        tryCompare(anchorViewport, "contentY", 0)
+        verifyLauncherCentering()
+        firstLauncher.height = 80
+        tryCompare(anchorContent, "height", 168)
+        verifyLauncherCentering()
+        firstLauncher.height = 40
+        tryCompare(anchorContent, "height", 128)
+        verifyLauncherCentering()
     }
 
     function test_appPicker_anchor_initial_wide_placement() {
