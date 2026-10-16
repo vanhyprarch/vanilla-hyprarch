@@ -68,6 +68,16 @@ ShellRoot {
     }
     ThemeToggle { id: themeToggle; theme: theme; metrics: metrics; controller: appearance }
 
+    IdleController { id: idleController; checksEnabled: false; ready: true }
+    PowerIdle {
+        id: powerIdle
+        controller: idleController
+        theme: theme
+        metrics: metrics
+        targetScreen: null
+        focusCoordinator: null
+    }
+
     function check(actual, expected, description) {
         checks++
         if (actual !== expected)
@@ -75,6 +85,9 @@ ShellRoot {
     }
     function themeIcon() {
         return themeToggle.children.find(child => child.iconName !== undefined).iconName
+    }
+    function idleIcon() {
+        return powerIdle.children.find(child => child.iconName !== undefined)
     }
 
     Timer {
@@ -149,6 +162,21 @@ ShellRoot {
             appearance.busy = true
             themeToggle.activate()
             check(themeIcon(), "sun", "busy Appearance cannot toggle")
+
+            check(idleIcon().iconName, "zap", "confirmed Caffeine off")
+            check(idleIcon().width, metrics.dockSystemIconSize, "Power & Idle icon width")
+            check(idleIcon().height, metrics.dockSystemIconSize, "Power & Idle icon height")
+            check(powerIdle.width, metrics.dockSystemControlTarget, "Power & Idle target width")
+            check(powerIdle.height, metrics.dockSystemControlTarget, "Power & Idle target height")
+            idleController.caffeine = true
+            check(idleIcon().iconName, "coffee", "immediate confirmed Caffeine on")
+            idleController.ready = false
+            check(idleIcon().iconName, "coffee", "retain last confirmed Caffeine state")
+            check(idleIcon().opacity, metrics.disabledInteractiveOpacity, "unready opacity")
+            idleController.ready = true
+            check(idleIcon().opacity, 1.0, "ready opacity")
+            idleController.caffeine = false
+            check(idleIcon().iconName, "zap", "immediate confirmed Caffeine off")
             console.log("vanhyprarch system icon state self-check passed: " + checks + " checks")
             Qt.quit()
         }

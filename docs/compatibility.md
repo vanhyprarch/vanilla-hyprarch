@@ -1084,7 +1084,7 @@ application and content icon-theme rendering remains separate.
 
 The static Lucide replacement preserves this renderer and the original
 24-unit geometry/stroke width 2. On Quickshell 0.3.2 and Qt 6.12.0, the offscreen
-fixture checks all 18 icons in both palettes, including their upstream
+fixture checks the vendored icons in both palettes, including their upstream
 `currentColor` strokes, without modifying SVG files at runtime. The installed
 native APIs expose BlueZ `discovering`/device `connected`, NetworkManager link
 state and 0–1 Wi-Fi strength, and PipeWire sink volume/mute through reactive

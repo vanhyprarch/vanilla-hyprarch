@@ -302,8 +302,11 @@ commands without making either depend on the shell. Startup and the existing
 30-second status timer remain recovery and reconciliation safety nets, not the
 normal feedback path.
 
-Installed Papirus provides exact icons named `preferences-system-power` and
-`caffeine`. Use the former normally and the latter while Caffeine is active.
+The shared Power & Idle dock button uses the vendored Lucide `zap` icon normally
+and `coffee` while Caffeine is active. Its reactive binding follows only the
+controller's confirmed backend state, preserving the normal button action,
+dimensions and styling. The Coffee SVG uses the existing pinned Lucide revision,
+license notices and semantic-color renderer; no dependency or state owner is added.
 The panel and passive synchronization behavior have passed manual visual
 review, including effect persistence. The complete production screensaver
 chain is validated. Controlled manual tests also passed for real DPMS,

@@ -847,7 +847,7 @@ Manual pointer and visual validation of the two new dock affordances remains
 pending.
 
 Theme, Info/Shortcuts, Power & Idle, Display, Audio, Network, and Bluetooth use
-exactly 18 approved static Lucide SVGs under the managed Quickshell tree's
+exactly 19 approved static Lucide SVGs under the managed Quickshell tree's
 `assets/system-icons/`. The unmodified source revision and ISC/Feather MIT
 notices are recorded [alongside the assets](../home/.config/quickshell/vanhyprarch/assets/system-icons/README.md).
 There is no Lucide package, runtime download or upstream synchronization;
@@ -865,7 +865,8 @@ both links are connected; Wi-Fi percentages 0–33, 34–66 and 67–100 map to
 Internet reachability does not turn an active link into disconnected artwork.
 Audio keeps mute/zero priority and its existing 33/66 percent boundaries, with
 amplification using `volume-2`. Theme artwork represents the current mode
-(`sun` Light, `moon` Dark), Power & Idle uses `zap`, Display `monitor-cog`, and
+(`sun` Light, `moon` Dark), Power & Idle uses `coffee` for confirmed Caffeine ON
+and `zap` otherwise, Display `monitor-cog`, and
 Shortcuts `info`. Reactive native backends and all control actions are retained.
 The managed deployment validates all 23 artifacts, and native same-process
 Quickshell reload passed with no new diagnostics or preference changes.
@@ -1282,8 +1283,9 @@ Per-screen buttons and popups consume that shared confirmed state. The panel
 exposes the documented presets, disables choices that would violate stage
 ordering, clears automatic lock to `None` atomically when its stage is changed
 to `Never`, and shows backend errors without presenting a requested Caffeine
-value before a successful status confirmation. The dock icon changes between
-Papirus `preferences-system-power` and `caffeine`. Repository-native tests cover
+value before a successful status confirmation. The dock icon changes immediately
+between local Lucide `zap` and `coffee` when confirmed state changes.
+Repository-native tests cover
 eager IPC registration and same-process reload, both Caffeine directions,
 rollback, unavailable and hung IPC, external transactions, refresh coalescing,
 and stale status-error recovery; corrected controlled live timing validation

@@ -32,7 +32,7 @@ CONTROL_FILES = (
 
 EXPECTED_ASSETS = set("""bluetooth bluetooth-searching bluetooth-off bluetooth-connected
 ethernet-port wifi wifi-high wifi-low globe-off volume-2 volume-1 volume volume-off
-monitor-cog zap sun moon info""".split())
+monitor-cog zap coffee sun moon info""".split())
 
 
 def require(condition: bool, message: str) -> None:
@@ -301,7 +301,9 @@ def main() -> None:
 
     require("Networking.connectivity" not in controls["Network.qml"],
             "Internet reachability is incorrectly masking an active link")
-    require('iconName: "zap"' in controls["PowerIdle.qml"], "Power & Idle must use zap")
+    require('iconName: root.controller.caffeine ? "coffee" : "zap"'
+            in controls["PowerIdle.qml"],
+            "Power & Idle must reflect confirmed Caffeine state")
     manifest = (REPOSITORY / "packages/manifest-v1.toml").read_text().lower()
     require("lucide" not in manifest and "nodejs" not in manifest and "npm" not in manifest,
             "static icon integration added an unnecessary runtime dependency")

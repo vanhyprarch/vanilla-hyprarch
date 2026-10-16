@@ -13,7 +13,7 @@ ShellRoot {
     readonly property var icons: ["bluetooth", "bluetooth-searching", "bluetooth-off",
         "bluetooth-connected", "ethernet-port", "wifi", "wifi-high", "wifi-low",
         "globe-off", "volume-2", "volume-1", "volume", "volume-off", "monitor-cog",
-        "zap", "sun", "moon", "info"]
+        "zap", "coffee", "sun", "moon", "info"]
 
     VisualMetrics {
         id: metrics

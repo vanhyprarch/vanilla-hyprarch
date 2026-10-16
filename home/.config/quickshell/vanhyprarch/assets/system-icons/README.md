@@ -1,6 +1,6 @@
 # Dock system icons
 
-These 18 SVGs are unmodified, permanently vendored static assets from
+These 19 SVGs are unmodified, permanently vendored static assets from
 [Lucide](https://github.com/lucide-icons/lucide), commit
 `d672fc43dbf60962d9d829e35bc3b3e5ed89a178` (`icons/<filename>.svg`).
 The revision records provenance and attribution only. There is no Lucide package,

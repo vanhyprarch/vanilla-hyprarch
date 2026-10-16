@@ -18,7 +18,7 @@ Item {
 
     SystemIcon {
         anchors.centerIn: parent
-        iconName: "zap"
+        iconName: root.controller.caffeine ? "coffee" : "zap"
         theme: root.theme
         metrics: root.metrics
         opacity: root.controller.ready

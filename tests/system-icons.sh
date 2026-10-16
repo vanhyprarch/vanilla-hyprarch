@@ -26,8 +26,16 @@ PYTHONPYCACHEPREFIX=$runtime_root/pycache python "$test_dir/system-icons.py"
 
 config_dir=$runtime_root/config
 render_dir=$runtime_root/render
-mkdir -m 0700 -p -- "$config_dir" "$render_dir" "$runtime_root/runtime"
-ln -s "$shell_dir/components" "$config_dir/components"
+mkdir -m 0700 -p -- "$config_dir/components" "$render_dir" "$runtime_root/runtime"
+# Keep the production controls/renderer; reuse the headless popup surface stub.
+for component in "$shell_dir/components/"*; do
+    name=${component##*/}
+    if [ "$name" = DockPopup.qml ]; then
+        ln -s "$test_dir/monitor-ui-stubs/DockPopup.qml" "$config_dir/components/$name"
+    else
+        ln -s "$component" "$config_dir/components/$name"
+    fi
+done
 ln -s "$shell_dir/assets" "$config_dir/assets"
 python -B "$test_dir/system-icons.py" --state-fixture "$config_dir/state.qml"
 state_log=$runtime_root/state.log
