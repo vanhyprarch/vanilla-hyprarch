@@ -1,9 +1,9 @@
 # Static publication and disposable hosting acceptance
 
 Status: the static publisher and manual FileZilla FTPS workflow are implemented
-and accepted. Production root 1 and Stable sequence 3 authenticate immutable
-v1.0.0, v1.0.1 and v1.0.2. HTTPS byte verification and the genuine v1.0.1 ->
-v1.0.2 signed upgrade/reboot passed in release testing. GitHub Release publication
+and accepted. Production root 1 and Stable sequence 4 authenticate immutable
+v1.0.0 through v1.0.3. HTTPS byte verification and the genuine v1.0.2 ->
+v1.0.3 signed upgrade/reboot passed in release testing. GitHub Release publication
 and authenticated asset verification passed; anonymous GitHub access remains 404.
 
 Use the [operator runbook](release-workflow.md) for the whole lifecycle and the
@@ -373,7 +373,36 @@ The deterministic installed updater hash is
 Normal signed upgrade from genuine v1.0.1, zero migrations, provenance/ledger,
 journal cleanup, reboot and subsequent up-to-date discovery passed in release
 testing. GitHub's three authenticated downloads also match the approved bytes.
-Live yay maintenance acceptance remains deferred to genuine v1.0.2 -> v1.0.3.
+At that release, live Yay maintenance acceptance was deferred; the genuine
+v1.0.2 -> v1.0.3 run subsequently passed.
+
+## v1.0.3 Stable sequence 4 — complete
+
+The immutable annotated `v1.0.3` tag names source commit
+`53bd30c402352684befb41bef9f827e19de254d9`. Both source builds and the strict tag
+build produced the same archive. ServerPlan assets, manifest/signature, complete
+candidate and final active catalog passed independent HTTPS/public-key checks.
+Sequence 4 preserves v1.0.0, v1.0.1 and v1.0.2 bindings and adds v1.0.3. It was
+issued `2026-10-16T11:56:13Z`, expires `2027-10-16T11:56:13Z`, and uses root 1.
+
+| Object | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `vanhyprarch-v1.0.3.tar.gz` | 65363742 | `614a360941c5fa05175cf7da0815ff1fc30ccc6a3a50c8ba17dc87c6f05622b7` |
+| `release.json` | 538 | `8d8f154d0bc6dbb6e375edfc6160e289f3135b953c7e84a4ef2047939d3db1f4` |
+| `manifest.json` | 933 | `1cf105f1e12872c6be5824508511c16461b410c5c205bec3efd79da9b7cb8d78` |
+| `manifest.json.sig` | 307 | `57239fbb406919545e258f702e3a12ebfcb4fd1b06e47c46277b13622dac9072` |
+| Signed Stable catalog envelope | 2380 | `494bfa60270e0897232c4bfe11236a31df9b753f0133248f663ff0d0b89a3548` |
+
+Stable catalog **payload** SHA-256 is
+`b75f632c59b6d0cc09ab0928c75911dc4c113afaaafb00d7155d3aa2e83340b2`;
+the installed updater hash is
+`4c4c5c5c44dbf9cb2eb42cf5736aa5e23fc11c56f035b673543ef666e7e5c220`.
+These historical identities are evidence, not values to reuse for another release.
+The genuine dock upgrade, Yay/reboot continuation, post-upgrade validators,
+operator visual/preferences acceptance and authenticated already-current check
+passed. The immutable GitHub Release and all three attached assets were verified
+through authenticated downloads; anonymous GitHub page/assets returned HTTP 404.
+See [the operator runbook](release-workflow.md) for the next release's steps.
 
 ## Accepted single-user manual publication policy
 

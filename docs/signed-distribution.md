@@ -1,13 +1,17 @@
 # Signed distribution protocol 1
 
 Status: the protocol, updater and static publisher are implemented. Production
-root 1 and Stable sequence 3 authenticate immutable v1.0.0/v1.0.1/v1.0.2 releases
+root 1 and Stable sequence 4 authenticate immutable v1.0.0 through v1.0.3 releases
 on ServerPlan. Genuine signed upgrade/reboot acceptance and exact-target recovery
 have passed in release testing. Follow the [operator runbook](release-workflow.md)
 for execution, [release engineering](release-engineering.md) for lifecycle
 contracts, and [ServerPlan publication](serverplan-publication.md) for manual
 publication. Original unprepared v1.0.0 alone needs the historical bridge;
 fresh signed releases and already prepared systems must not repeat it.
+
+The operator-only acceptance helper verifies retained ledger/publication evidence
+without calling acquisition, state publication or updater execution. Its commands
+and evidence-reuse rules belong solely to the runbook; this protocol is unchanged.
 
 `/dist/v1` names **distribution protocol 1**, independently of product versions
 such as `v1.0.1` and the existing product `update_protocol = 1`.

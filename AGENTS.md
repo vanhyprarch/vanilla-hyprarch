@@ -91,6 +91,11 @@ indispensable dependency is approved and documented.
   desktop without explicit approval and an independent bounded failsafe.
 - Do not stage or commit unless the user explicitly requests it.
 - Run `git --no-pager diff --check` before proposing a commit.
+- Use `release/acceptance.py` and its isolated regression tests for release-test
+  preflight and post-upgrade reports; do not regenerate one-off acceptance
+  scripts. Follow the [release runbook](docs/release-workflow.md) for commands,
+  evidence reuse and PASS/WARNING/FAIL decisions. The operator transfers files
+  and runs VM commands in graphical Foot; agents do not establish VM SSH access.
 - Never silently rewrite unrelated user settings to make a requested value fit.
 - Live configuration changes must fail closed, preserve exact rollback
   material, validate targets and ownership before signalling, and verify the

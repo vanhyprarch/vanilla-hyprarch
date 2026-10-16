@@ -15,6 +15,34 @@ Use a dedicated Bash session with `set -euo pipefail` for multi-command operatio
 stop on every nonzero result. Never continue to a push, signature, upload or
 apply after a failed prerequisite.
 
+Codex can perform already-authorized local preparation, read-only verification
+and report analysis without asking again for routine commands. The operator
+controls VM transfers/execution, signing keys, manual FileZilla uploads and
+Stable activation. A new scope still needs explicit authorization: commit/push,
+tag publication, signing, each remote publication stage, genuine upgrade or
+production deployment. Stop at the relevant boundary with concrete reviewed
+inputs; do not combine signing, upload and activation into one operation.
+
+Use the reusable acceptance helper below, not release-specific diagnostic scripts.
+Its focused gate is `python3 -B tests/release-acceptance.py`; its fixtures use
+temporary releases and disposable TEST-ONLY keys. It does not change the updater
+zipapp, installed authorities, trust roots or distribution protocol.
+Rerun this focused gate after helper, authority CLI, ownership/service manifest
+or relevant Qt changes; a new helper still needs an authorized real VM rehearsal.
+
+Reuse successful evidence by identity and state, rather than repeating every
+previous gate after an unrelated diagnostic warning:
+
+| Evidence | Reuse and repetition rule |
+| --- | --- |
+| Reviewed source and focused readiness tests | Reuse for unchanged source; rerun affected tests after code changes. |
+| Two reproducible builds and approved hashes | Preserve both outputs; section 5 still requires its one strict tagged comparison. Do not rebuild to debug a VM report. |
+| Input verification | Recheck hashes at transfer/execution boundaries before using target code; this does not require rebuilding or re-signing. |
+| PLAN and ownership decisions | Repeat after material target-system/package/provider changes; retain successful independent checks if a wrapper failed before PLAN. |
+| Frozen signatures and HTTPS publication results | Reuse immutable receipts; verify each new upload batch and final active pointer. Never re-sign historical bytes. |
+| Post-upgrade technical report | One complete run after the real upgrade/reboot. A warning alone does not invalidate successful validators; resolve only concrete remaining required checks. |
+| Visual and normal-dock already-current acceptance | Operator records each separately; neither can be inferred from a technical report. |
+
 ## 1. Establish context and develop within ownership boundaries
 
 From the checkout, inspect before changing anything:
@@ -53,7 +81,7 @@ For an explicitly authorized development installation, as its normal user:
 
 ```bash
 python -B install/managed_deploy.py --source-root "$PWD" plan update
-# Review every action/conflict and ownership before authorizing the next command.
+# Review actions, conflicts and ownership; proceed within the authorized scope.
 python -B install/managed_deploy.py --source-root "$PWD" update
 python -B install/managed_deploy.py --source-root "$PWD" validate
 ```
@@ -145,52 +173,98 @@ publisher authentication; source approval and the pinned signed chain supply tru
 
 ## 4. Read-only preflight on a genuine compatible installation
 
-Use the designated release-test installation and its suitable existing recovery
-backup/snapshot. Transfer the approved archive, metadata and checksum record by
-an established trusted method. Authenticate the expected hashes independently,
-then check them before extracting/executing target code. Do not recreate an
-existing test installation or repeat updater preparation. Original unprepared
-v1.0.0 is the exceptional [legacy bridge](updater-preparation.md); genuine signed
-v1.0.1 and later need no bridge.
+Use the existing designated release-test VM and its suitable recovery backup;
+do not recreate it or repeat updater preparation. Original unprepared v1.0.0
+alone needs the [legacy bridge](updater-preparation.md). An ordinary preflight
+is offline bundle/compatibility planning, not signed discovery or an upgrade.
 
-In the target user's graphical Foot terminal, set `BUNDLE` to the absolute input
-directory and `VERSION` to the approved target. Verify `SHA256SUMS` against the
-approved record, not merely a checksum downloaded from the same untrusted host.
-The installed updater/provenance must already be validated for that source release.
+Use the reusable **operator-side** `release/acceptance.py`. It is not installed
+as a new updater, service or package. Codex prepares inputs and reviews reports;
+the operator alone performs authenticated SCP transfers and executes VM commands
+in graphical Foot. Do not establish agent SSH access or fabricate graphical
+context. Set `VM_HOST` and `VM_ENDPOINT` from the operator's verified target;
+public examples intentionally contain no private host inventory.
+The source installation must already have validated schema-3 updater provenance
+and initialized signed-distribution state; diagnostics never initialize that state.
+
+Codex may group local input preparation into one invocation. Set `OUT_A`,
+`COMMIT`, `METADATA_SHA` and `ARCHIVE_SHA` from section 3's independently approved
+record. `INSTALLED_METADATA` and `INSTALLED_UPDATER_SHA` name the **previous
+release's** approved metadata file and packaged-updater hash, not values inferred
+from the VM itself. `PREFLIGHT` must be a new directory outside Git. This works
+before the target is signed or published:
 
 ```bash
-cd "$BUNDLE"
-sha256sum --check SHA256SUMS
-python3 -I -B -c 'import sys; from pathlib import Path; sys.path.insert(0,"/usr/local/bin/vanhyprarch-update"); from release.build import verify; print(verify(Path(sys.argv[1]),Path(sys.argv[2]))["version"])' "$BUNDLE/release.json" "$BUNDLE/vanhyprarch-$VERSION.tar.gz"
-test ! -e "$BUNDLE/vanhyprarch-$VERSION"
-test ! -L "$BUNDLE/vanhyprarch-$VERSION"
-tar -xzf "$BUNDLE/vanhyprarch-$VERSION.tar.gz" -C "$BUNDLE"
-SOURCE="$BUNDLE/vanhyprarch-$VERSION"
-target_user=$(id -un)
-target_context=$(python3 -B "$SOURCE/install/secret_service_preflight.py" context)
-sudo python3 -B "$SOURCE/install/release_update.py" plan \
-  --target-user "$target_user" --target-context-json "$target_context" \
-  --xdg-config-home "${XDG_CONFIG_HOME:-$HOME/.config}" \
-  --xdg-data-home "${XDG_DATA_HOME:-$HOME/.local/share}" \
-  --xdg-state-home "${XDG_STATE_HOME:-$HOME/.local/state}" \
-  --xdg-cache-home "${XDG_CACHE_HOME:-$HOME/.cache}" \
-  --release-metadata "$BUNDLE/release.json" \
-  --release-artifact "$BUNDLE/vanhyprarch-$VERSION.tar.gz"
+python3 -B release/acceptance.py prepare --bundle "$OUT_A" --output "$PREFLIGHT" \
+  --commit "$COMMIT" --metadata-sha256 "$METADATA_SHA" \
+  --archive-sha256 "$ARCHIVE_SHA" --installed-metadata "$INSTALLED_METADATA" \
+  --installed-updater-sha256 "$INSTALLED_UPDATER_SHA" --vm-host "$VM_HOST"
 ```
 
-Capture context **before sudo**; do not use a root shell, `sudo -E`, guessed XDG
-defaults or process-environment scraping. Require correct source/target, exact
-target digest, expected migrations and all three authority plans. Review provider,
-package and managed ownership conflicts and user-state preservation. Plan uses
-temporary preview files under `/run`, cleans them, and applies no authority.
-Compare read-only before/after hashes of installed identity, updater/provenance
-and distribution ledger; require no new journal. If a journal already exists,
-stop and use the recovery section instead. Do not run offline apply here.
+Preparation verifies the real archive contract, preserves the approved input
+bytes and checksum file, computes the target updater with the existing packager,
+and copies the one reusable Python helper and an approval record. Keep the
+printed approval-record hash independently. The prepared directory is private;
+it must travel through the operator's authenticated transfer, never an unsigned
+public download treated as its own trust authority.
 
-This proves bundle/compatibility planning; it does not substitute for signed
-discovery or a genuine normal-dock upgrade. Recheck a plan after material system
-changes. Complete needed Arch maintenance using standalone Update System
-(`yay -Syu`) and follow reboot guidance before the later real upgrade.
+For example, when the chosen directory basename is `vanilla-preflight`, the
+operator uses exactly these three manual operations. Transfer/retrieval are in
+development Foot; execution is in the VM's graphical Foot:
+
+```bash
+scp -r "$PREFLIGHT" "$VM_ENDPOINT:Downloads/"
+python3 -I -B ~/Downloads/vanilla-preflight/acceptance.py preflight ~/Downloads/vanilla-preflight
+scp "$VM_ENDPOINT:Downloads/preflight-vanilla-preflight.txt" "$EVIDENCE/"
+```
+
+Substitute the actual prepared basename. One consolidated report is displayed and
+saved with mode 0600; it refuses an existing path, including symlinks. An explicit
+`--report NEW_PATH` records a justified retry without destroying previous evidence.
+Keep other updates and deliberate preference edits idle during this comparison.
+No terminal `tee`, root shell, global umask change or extra VM script is needed.
+Python and the existing Vanilla baseline tools are required; missing tools fail
+clearly rather than being installed by diagnostics. Host identity uses native
+`uname` information, without requiring the optional `hostname` executable.
+
+The helper independently checks the pinned inputs and installed updater before
+importing its existing verifier. It captures provider/XDG context as the user
+**before sudo**, then uses the authenticated updater's canonical `BundleStore`
+for private root-owned preview material. The target driver's exact `plan`
+command remains the compatibility/migration/three-authority authority. Its full
+stdout and stderr are retained; source/target/digest, all three plan sections and
+expected migration IDs must agree. No APPLY, maintenance or recovery is invoked.
+The staged identity must still match approval, and PLAN consumes those root-owned
+copies rather than rereading mutable user inputs after their verification.
+Read-only package queries made by the canonical authorities are part of the
+operator-authorized diagnostic, not an additional package-maintenance approval.
+
+Only the privileged worker scopes its process umask to 0022, recording inherited
+and effective values and restoring the original afterward. This lets the native
+stager create its required exact 0755 directory; security validation is unchanged.
+The v1.0.3 restrictive-umask failure was introduced by its manual wrapper; the
+normal dock/Foot/sudo chain was separately measured at 0022. No installed updater
+change or global sudo/umask policy is made here.
+
+Identity, updater/provenance, security ledger, authority records and selected
+manifest-derived user files are compared before/after, including handled failure.
+Pending journals, authority intents, foreign previews or retained update staging
+stop the check; unrelated temporary material is never deleted. Only this run's
+native preview is cleaned. Hard termination/power loss cannot guarantee cleanup;
+retain the failure report and inspect remaining state, without automatic repair.
+
+PASS means all required checks succeeded. WARNING also exits 0, but records an
+environmental issue or an unestablished property. FAIL exits nonzero (preserving
+subprocess codes) and blocks progression. Required service failures come from the
+release's actual default service policy; optional/unrelated failures, including
+TPM measurement units, are warnings with unit details and available baseline
+history. They are not silently ignored or automatically attributed to Vanilla.
+Review warnings for relevance before closing the gate. A script defect does not
+turn a genuine failure into PASS, nor invalidate other successful evidence.
+
+Recheck PLAN after material package, provider, ownership or compatibility changes.
+A passed preflight does not replace the real updater's own later PLAN. Arch
+maintenance and reboot belong to the normal update workflow, never this helper.
 
 ## 5. Annotated tag and strict rebuild
 
@@ -238,14 +312,20 @@ python -B -m release.publication --workspace "$WORKSPACE" release \
 
 Set `CHANNEL` to the approved channel, `SEQUENCE` to its next contiguous receipt
 number, and `ISSUED_AT` once to an approved UTC timestamp. Retain that timestamp
-for retries. Derive a `--version` argument for **every** intended catalog member
-from verified history; retain prior immutable bindings. Example only: substitute
-the actual versions and channel, not these historical members blindly:
+for retries. Codex derives the reviewed Bash array `CATALOG_VERSIONS` from the
+authenticated previous receipt's membership plus the approved new release;
+the operator reviews that complete list and sequence before signing. Do not copy
+a hard-coded historical version list or silently omit the current Stable.
+The following signing block consumes the reviewed array:
 
 ```bash
+catalog_args=()
+for catalog_version in "${CATALOG_VERSIONS[@]}"; do
+  catalog_args+=(--version "$catalog_version")
+done
 python -B -m release.publication --workspace "$WORKSPACE" catalog \
   --channel "$CHANNEL" --sequence "$SEQUENCE" \
-  --version v1.0.0 --version v1.0.1 --version v1.0.2 \
+  "${catalog_args[@]}" \
   --issued-at "$ISSUED_AT" --secret-key "$SIGNING_KEY"
 python -B -m release.publication --workspace "$WORKSPACE" check
 ```
@@ -275,6 +355,10 @@ The order is immutable assets -> HTTPS byte verification -> immutable manifest
 and native signature -> HTTPS verification -> complete temporary catalog ->
 verify staged bytes and unchanged old active catalog -> FileZilla FTPS
 same-directory rename-overwrite **last** -> verify the new active catalog.
+Codex groups mechanical preparation and verification for each completed batch
+into one evidence summary; the operator need not transfer separate diagnostics
+for each file. Keep the approval boundaries between signing, manual upload
+batches, final activation and genuine upgrade intact.
 Do not delete the active pointer first. An existing identical immutable object
 is verified and skipped; different bytes require stopping. No root, historical
 release, public upgrade kit or package directory is an incidental upload target.
@@ -292,8 +376,10 @@ any package/version change requests a manual reboot. A later invocation repeats
 the check, usually finding no changes. No-new-release and exact-target recovery
 skip maintenance. No automatic reboot or persistent reboot marker exists.
 An older installed updater controls the transition installing this feature:
-v1.0.1 -> v1.0.2 did not test it live. Live yay acceptance is deferred to genuine
-v1.0.2 -> v1.0.3; the accepted automated coverage is not a v1.0.2 release blocker.
+v1.0.1 -> v1.0.2 did not test it live. Genuine v1.0.2 -> v1.0.3 acceptance closed
+that gate, including Yay package changes, the manual-reboot stop, successful
+continuation and final authenticated already-current discovery. Do not reopen
+that completed gate unless relevant code changes require new acceptance.
 
 After apply, use read-only checks against the approved target records:
 
@@ -315,49 +401,62 @@ After apply, use read-only checks against the approved target records:
   preferences, then normal Update must report the installed release current
   only after authenticated discovery. Record exactly which acceptance passed.
 
-For example, set `EXPECTED_UPDATER_SHA`, `CHANNEL`, `SEQUENCE`,
-`CATALOG_PAYLOAD_SHA`, `ROOT_VERSION` and `ROOT_PAYLOAD_SHA` from the approved
-build and signed publication records, and use this read-only immediate check.
-`BUNDLE`/`SOURCE` still name the previously verified target inputs on this machine:
+Use the same reusable helper for the technical checks, with a fresh preparation
+that includes the **public signed** publication evidence. Run the section-4
+preparation command with `--publisher "$WORKSPACE" --output "$POSTUPGRADE"`
+instead of its preflight output. All other independently approved inputs remain
+the same. This reads only `public/vanilla-hyprarch/` catalog/manifest/signature
+files, verifies native Minisign bindings, and never opens a private key. Do not
+rebuild artifacts, sign again, or invent catalog sequences for diagnostics.
+
+For a chosen output basename `vanilla-post-upgrade`, the operator again performs
+one upload, one graphical command, and one report retrieval:
 
 ```bash
-sudo python3 -B - "$BUNDLE/release.json" "$SOURCE/release/trust.json" \
-  "$EXPECTED_UPDATER_SHA" "$CHANNEL" "$SEQUENCE" "$CATALOG_PAYLOAD_SHA" \
-  "$ROOT_VERSION" "$ROOT_PAYLOAD_SHA" <<'PY_ACCEPT'
-import hashlib, json, stat, sys
-from pathlib import Path
-expected = Path(sys.argv[1]).read_bytes()
-identity = json.loads(expected)
-assert Path('/usr/share/vanhyprarch/release.json').read_bytes() == expected
-updater = Path('/usr/local/bin/vanhyprarch-update')
-digest = hashlib.sha256(updater.read_bytes()).hexdigest()
-assert digest == sys.argv[3]
-provenance_path = Path('/var/lib/vanhyprarch/update-bootstrap-v1.json')
-provenance = json.loads(provenance_path.read_bytes())
-assert provenance['schema'] == 3 and provenance['sha256'] == digest
-assert provenance['update_protocol'] == identity['update_protocol']
-assert provenance['distribution_initialized'] is True
-assert provenance['distribution_anchor_sha256'] == json.loads(Path(sys.argv[2]).read_bytes())['root_sha256']
-ledger = json.loads(Path('/var/lib/vanhyprarch/distribution-security-v1.json').read_bytes())
-assert ledger['schema'] == 1
-state = ledger['state']
-assert state['channels'][sys.argv[4]] == {'sequence': int(sys.argv[5]), 'sha256': sys.argv[6]}
-assert state['root_version'] == int(sys.argv[7]) and state['root_sha256'] == sys.argv[8]
-assert identity['version'] in state['bindings']
-assert not Path('/var/lib/vanhyprarch/update/journal.json').exists()
-for path, mode in ((updater, 0o755), (provenance_path, 0o600),
-                   (Path('/usr/share/vanhyprarch/release.json'), 0o644)):
-    info = path.lstat()
-    assert stat.S_ISREG(info.st_mode) and info.st_uid == info.st_gid == 0
-    assert stat.S_IMODE(info.st_mode) == mode
-print('PASS: exact identity/updater/provenance, authenticated channel/root, no journal')
-PY_ACCEPT
+scp -r "$POSTUPGRADE" "$VM_ENDPOINT:Downloads/"
+python3 -I -B ~/Downloads/vanilla-post-upgrade/acceptance.py post-upgrade ~/Downloads/vanilla-post-upgrade --baseline ~/Downloads/preflight-vanilla-preflight.txt
+scp "$VM_ENDPOINT:Downloads/post-upgrade-vanilla-post-upgrade.txt" "$EVIDENCE/"
 ```
 
-A later legitimate catalog/root can supersede these expected values. Review its
-authenticated records rather than changing/deleting security state to satisfy an
-old acceptance example. This diagnostic reads no application secrets and does
-not require `authorization` to be null.
+The original preflight report remains on the VM. `--baseline` accepts only a
+successful report for the same target, approved source, host and user/XDG context.
+It enables comparison with the actual pre-upgrade user-file hashes and service
+failures. Without it, omit the option: the report explicitly warns that
+cross-upgrade byte preservation is unestablished. Differences since preflight
+require review for intervening user changes; never rewrite preferences to make
+an assertion pass. Both phases still require unchanged user-file identities,
+hashes, ownership and modes **during** their own diagnostic interval. Keyrings,
+wallpaper contents and other unselected user data are not read or proven.
+
+Post-upgrade verifies the exact target identity and packaged updater, root-owned
+schema-3 provenance, signed catalog/manifest and ledger bindings, complete
+transaction state and absence of retained staging. It runs the three existing
+upgrade validators, preserving their graphical/user contexts. The system
+authority verifies required official packages (including additions such as
+`qt5-wayland`); managed deployment verifies all files in every target-managed
+tree, so no second release-specific list can misplace an attribution notice or
+miss a new component. Create-once remains the authority for user-state lifecycle.
+
+Hyprland errors, a failed IPC command, an unexpected response, actual Quickshell
+configuration/runtime errors and required service failures are FAIL. Quickshell
+uses a locale selected from installed UTF-8 locales and verified with `locale
+charmap`; stdout and stderr are always separate. A warning on stderr is not the
+IPC value. Successful `pong` plus exit 0 remains necessary. Optional/environmental
+warnings are recorded without converting a healthy Vanilla installation into a
+failed release. No locale or unit configuration is changed.
+
+The report finishes technical validation only. The operator separately confirms
+shell/wallpaper/theme/icons and preferences visually, then uses the ordinary dock
+Update action to authenticate discovery and report the installed release current.
+Do not substitute a direct target-driver APPLY, command simulation or a technical
+report for those two manual acceptance steps. Record their results once.
+
+A later legitimate catalog can supersede the prepared publication evidence.
+Prepare fresh authenticated public evidence in that case. Preparation currently
+supports the signing root pinned in the target payload; a signing-root rotation
+requires reviewed public-chain input support before using this helper. Never
+reset the ledger or weaken an assertion. A retained non-null authorization is
+normal and is verified as signed evidence, never mistaken for an active transaction.
 
 Before deployment beyond the release-test installation, require its acceptance
 and a current recoverable system/user-state backup. Do not change another

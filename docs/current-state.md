@@ -5,7 +5,8 @@ Snapshot date: 2026-10-16.
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The subsequent immutable
 `v1.0.1` Stable is published at `83bfeaa627392817c21b29ce73557a32f5ad563e`.
-Current **v1.0.2 Stable** is tagged at `39ee15155e49be0af3d044a0b11b6c89108fddf7`. Immutable
+Current **v1.0.3 Stable** is tagged at `53bd30c402352684befb41bef9f827e19de254d9`.
+The previous v1.0.2 is tagged at `39ee15155e49be0af3d044a0b11b6c89108fddf7`. Immutable
 candidate releases rc1, rc2, and rc3 remain historical.
 The offline release contract includes a deterministic exact-commit
 artifact builder, pre-extraction verifier, and root-owned installed identity
@@ -40,9 +41,33 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
-## v1.0.3 Stable — DECLARATION PREPARED, NOT PUBLISHED
+## v1.0.4 development — NOT DECLARED
 
-The next declaration is `v1.0.3` Stable. It preserves x86_64, update protocol 1,
+The next planned scope is the accepted Caffeine Coffee/Zap icon correction and
+the release-workflow improvements on main. `release/release.toml` still declares
+version v1.0.3; its published tag/source are immutable, and v1.0.4 Stable has not
+been declared. The development checkout is not the installed release identity.
+
+`release/acceptance.py` replaces one-off VM wrappers with local input preparation,
+one read-only preflight and one post-upgrade entry point. It reuses the canonical
+verifier, target-driver PLAN and three authority validators, preserves graphical
+context and process-local umask 0022, resolves paths from the actual payload,
+uses UTF-8 Qt diagnostics with separate streams, and distinguishes required
+failures from environmental warnings. Reports retain before/after evidence and
+can carry actual pre-upgrade user-file hashes into later acceptance. Operator
+SCP/Foot execution, exclusive signing custody and manual publication remain
+unchanged. The first post-upgrade VM rehearsal exposed an optional transaction
+field mismatch, now corrected with canonical completed-state fixtures and complete
+isolated post-upgrade coverage. The corrected helper passed real v1.0.3 VM
+post-upgrade acceptance with WARNING and exit status 0: all mandatory checks
+passed, environmental warnings remained non-fatal, and installed/selected user
+state stayed unchanged. Live preflight against a newer release remains untested
+and will be exercised during the normal v1.0.3 -> v1.0.4 VM release preflight.
+See the [single operator runbook](release-workflow.md).
+
+## v1.0.3 Stable — PUBLISHED AND ACCEPTED
+
+The published `v1.0.3` Stable preserves x86_64, update protocol 1,
 minimum installed version `v1.0.0-rc1`, minimum migration level 0, and target
 migration level 1. Genuine v1.0.2 at level 1 requires zero migrations and no
 updater preparation. No new persisted-state transition or signed protocol change
@@ -68,13 +93,19 @@ unintended Italian content. Deterministic Dwindle placement (Phase B) is deferre
 Hyprland 0.56.2 lacks the preselection cleanup guarantees required for that
 integration. It is not included in this release.
 
-Release declaration approval, exact-source artifact checks, publication, and
-genuine v1.0.2 -> v1.0.3 upgrade acceptance remain pending. That upgrade must use
-the ordinary dock Update action and is the first live acceptance of v1.0.2's
-Yay offer, cancellation/failure handling, manual-reboot pause when packages
-change, authenticated application, recovery, and installed identity. Direct
-target-driver apply is not a substitute. Follow the existing
-[operator runbook](release-workflow.md); v1.0.2 remains the published Stable.
+Reproducible source builds, strict annotated-tag rebuild, signed ServerPlan
+Stable sequence 4, HTTPS artifact verification and authenticated immutable GitHub
+Release downloads passed. The genuine normal-dock v1.0.2 -> v1.0.3 VM upgrade
+tested Yay maintenance, the manual-reboot pause after package changes, successful
+continuation, identity/updater/ledger integrity, all three authorities and final
+reboot/runtime validation. The operator accepted the desktop and preferences,
+then confirmed authenticated already-current discovery. Production acceptance
+was also reported complete. No pre-upgrade preference content hashes were
+available for that release, so cross-upgrade byte identity is not claimed.
+Unrelated TPM measurement unit failures were environmental warnings, not Vanilla
+validation failures. Anonymous GitHub page/asset requests remain HTTP 404 despite
+successful authenticated publication. Public identities are recorded in
+[ServerPlan publication](serverplan-publication.md#v103-stable-sequence-4--complete).
 
 ## v1.0.2 Stable consolidation — PUBLISHED AND RELEASE-TEST ACCEPTED
 
@@ -92,8 +123,8 @@ Stable sequence 3, journal cleanup, reboot and subsequent authenticated
 annotated tag, exact-commit and strict-tag reproducibility, ServerPlan HTTPS
 bytes and all three authenticated GitHub Release downloads are verified.
 Anonymous GitHub page/asset access still returns HTTP 404. Architecture and
-migration compatibility are unchanged. Live yay-flow acceptance remains deferred
-to genuine v1.0.2 -> v1.0.3; the automated coverage is accepted for v1.0.2.
+migration compatibility are unchanged. At v1.0.2 publication, live yay-flow
+acceptance was deferred; the genuine v1.0.2 -> v1.0.3 run subsequently passed.
 
 The [operator runbook](release-workflow.md) is the canonical lifecycle checklist.
 [Release engineering](release-engineering.md) defines contracts and recovery;
@@ -196,8 +227,9 @@ See [the next-release flow and safe fixture commands](release-engineering.md#nex
 This updater is installed by v1.0.2, and its automated yay, terminal,
 cancellation, reboot and exact-target recovery tests passed. The older v1.0.1
 updater performed the transition to v1.0.2 without this prompt. Live maintenance
-acceptance belongs to v1.0.2 -> v1.0.3; use standalone Update System when needed
-before upgrading an installation whose updater predates this feature.
+acceptance subsequently passed during v1.0.2 -> v1.0.3. Use standalone Update
+System when needed before upgrading an installation whose updater predates this
+feature; do not repeat accepted preparation or tests without relevant changes.
 
 Validated upstream-version behavior and workaround removal conditions are
 tracked in the [compatibility register](compatibility.md).

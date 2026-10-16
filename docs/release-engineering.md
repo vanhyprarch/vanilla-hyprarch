@@ -16,13 +16,17 @@ changing the published tag or rebuilding the release.
 This file is the contract/recovery reference; historical numbered-phase sections
 are implementation records, not a second current publication procedure.
 
-Current v1.0.2 Stable is published at `39ee15155e49be0af3d044a0b11b6c89108fddf7`.
+Current v1.0.3 Stable is published at `53bd30c402352684befb41bef9f827e19de254d9`.
 Exact-commit and strict-tag builds reproduced approved bytes; ServerPlan Stable
-sequence 3, the genuine v1.0.1 upgrade/reboot, GitHub Release publication and all
-three authenticated downloads passed verification. Anonymous GitHub remains 404.
-Architecture x86_64, protocol 1 and migration level 1 are unchanged; v1.0.1 needs
-zero migrations or updater preparation. Public publication hashes are recorded
-in [ServerPlan publication](serverplan-publication.md#v102-stable-sequence-3--complete).
+sequence 4, the genuine v1.0.2 dock upgrade/reboot with Yay maintenance and
+manual-reboot continuation, all authority validations, visual acceptance and
+authenticated already-current discovery passed. GitHub Release and all three
+authenticated downloads are verified; anonymous GitHub remains 404. Architecture
+x86_64, protocol 1 and migration level 1 are unchanged. Public identities are in
+[ServerPlan publication](serverplan-publication.md#v103-stable-sequence-4--complete).
+The reusable operator-only `release/acceptance.py` consolidates read-only VM
+checks; [runbook sections 4 and 8](release-workflow.md) own its commands. It changes
+no installed updater code, authority, transaction contract or protocol.
 
 The [signed distribution protocol](signed-distribution.md) adds source-level
 Minisign-authenticated acquisition, GitHub/ServerPlan fallback, durable rollback
@@ -122,8 +126,11 @@ the accepted preparation kit or replace the installed updater to test this patch
 The genuine v1.0.1 -> v1.0.2 upgrade uses the installed v1.0.1 updater and cannot
 exercise this target updater's new maintenance prompt. The accepted automated
 yay, PTY, cancellation, reboot and recovery tests are sufficient for v1.0.2.
-Live end-to-end acceptance is deferred to the genuine v1.0.2 -> v1.0.3 upgrade;
-it is not a v1.0.2 blocker and requires no extra Candidate or temporary catalog.
+Live end-to-end acceptance was deferred at v1.0.2 publication and subsequently
+passed through the genuine v1.0.2 -> v1.0.3 dock upgrade. Yay package changes,
+the manual-reboot pause, successful continuation and authenticated already-current
+discovery are accepted evidence; no extra Candidate, temporary catalog or repeat
+of that unchanged flow is required.
 
 On the genuine development installation, safe initial review uses only fixtures:
 
