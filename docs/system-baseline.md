@@ -41,6 +41,14 @@ pinned component manager invokes its command-line client; neither dependency
 is left implicit merely because it is also present transitively on the
 development system. Zig is not a runtime or baseline package.
 
+`qt5-wayland` is a required, default-installed official package providing native
+Wayland support for Qt 5 applications. Fresh installations and release upgrades
+receive it through the manifest-driven system-integration stage and its existing
+Arch preflight checks. Development validation with KeePassXC 2.7.12 confirmed
+that installing the missing backend restored native Wayland and correct UI
+scaling. KeePassXC remains optional. This adds no global Qt platform or scaling
+override and does not change `xwayland.force_zero_scaling`.
+
 `flatpak` is a required, unpinned official Arch package. Clean installations
 install the version currently available from the enabled official repositories,
 and administrator-owned Arch upgrades keep it current. Vanilla update does not

@@ -525,8 +525,36 @@ class IntegrationTestCase(unittest.TestCase):
         self.assertIn("bluez-utils", engine.official_default_packages)
         self.assertIn("base-devel", engine.official_default_packages)
         self.assertIn("git", engine.official_default_packages)
+        self.assertIn("qt5-wayland", engine.official_default_packages)
         self.assertEqual(engine.recommended_default_packages, ("bluez-utils", "pavucontrol"))
-        self.assertTrue({"cups", "cups-pk-helper", "system-config-printer", "avahi", "gnupg", "wtype"}.isdisjoint(engine.official_default_packages))
+        self.assertTrue({"cups", "cups-pk-helper", "system-config-printer", "avahi", "gnupg", "wtype", "keepassxc"}.isdisjoint(engine.official_default_packages))
+
+    def test_upgrade_adds_qt5_wayland_to_prior_baseline(self) -> None:
+        state = self.fixture.state()
+        state["installed"].remove("qt5-wayland")
+        save_json(self.fixture.runner_state, state)
+        previous = self.fixture.engine()
+        previous.package_manifest["package"] = [
+            item for item in previous.package_manifest["package"] if item["name"] != "qt5-wayland"
+        ]
+        previous.apply()
+
+        engine = self.fixture.engine(lifecycle="upgrade")
+        self.assertIn("qt5-wayland", engine.official_default_packages)
+        self.assertIn(("package-install", "qt5-wayland"),
+                      {(item.action, item.subject) for item in engine.plan().items})
+        before = len(self.fixture.state()["log"])
+        engine.apply()
+        transactions = [entry["argv"] for entry in self.fixture.state()["log"][before:]
+                        if entry["argv"][:2] == ["/usr/bin/pacman", "-S"]]
+        self.assertEqual(transactions, [["/usr/bin/pacman", "-S", "--needed", "--noconfirm",
+                                         "--", "qt5-wayland"]])
+        self.assertIn("qt5-wayland", self.fixture.state()["installed"])
+        inventory = load_json(self.fixture.root / MODULE.STATE_FILE.lstrip("/"))
+        self.assertIn("qt5-wayland", inventory["official_packages"])
+        self.assertFalse(engine.validate().blockers)
+        self.assertIn(("package-preserve", "qt5-wayland"),
+                      {(item.action, item.subject) for item in engine.plan().items})
 
     def test_plan_reports_missing_and_preserved_packages(self) -> None:
         state = self.fixture.state()
@@ -829,7 +857,8 @@ class IntegrationTestCase(unittest.TestCase):
         ]
         self.assertGreaterEqual(len(package_transactions), 1)
         self.assertEqual(set(package_transactions[0][5:]), set(engine.official_default_packages))
-        self.assertTrue({"cups", "cups-pk-helper", "system-config-printer", "avahi", "p7zip"}.isdisjoint(package_transactions[0][5:]))
+        self.assertIn("qt5-wayland", package_transactions[0][5:])
+        self.assertTrue({"cups", "cups-pk-helper", "system-config-printer", "avahi", "p7zip", "keepassxc"}.isdisjoint(package_transactions[0][5:]))
 
     def test_yay_build_is_non_root_metadata_driven_and_records_commit(self) -> None:
         engine = self.fixture.adopt_everything()

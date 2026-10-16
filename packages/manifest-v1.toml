@@ -516,6 +516,15 @@ owner = "desktop-integration"
 reason = "Provides Gio and GLib bindings used by managed helpers."
 
 [[package]]
+name = "qt5-wayland"
+source = "official"
+role = "required"
+default_install = true
+direct = true
+owner = "desktop-integration"
+reason = "Provides native Wayland support for Qt 5 applications."
+
+[[package]]
 name = "qt6-svg"
 source = "official"
 role = "required"

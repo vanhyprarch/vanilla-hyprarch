@@ -90,6 +90,7 @@ REQUIRED_DEFAULT = {
     "python",
     "python-dbus",
     "python-gobject",
+    "qt5-wayland",
     "qt6-svg",
     "quickshell",
     "slurp",
