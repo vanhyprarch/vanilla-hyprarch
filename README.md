@@ -1,226 +1,137 @@
-# Vanilla HyprArch
+<h1 align="center">
+  <img src="docs/assets/readme-banner.svg" alt="Vanilla HyprArch — a focused desktop layer for Arch Linux" width="960">
+</h1>
 
-> **Current stable release: [v1.0.2](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.2).**
-> **Original v1.0.0 users: follow the [complete one-time updater preparation and
-> upgrade guide](docs/upgrade-v1.0.0-to-v1.0.1.md) before using Update.**
-> Its v1.0.1 completion assertions are historical; verify the actual approved target.
-> Fresh signed-release installations and already prepared systems must not repeat the bridge.
->
-> Public ServerPlan downloads (no GitHub login required):
-> [preparation kit](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/vanhyprarch-v1.0.0-updater-preparation-3944227.tar.gz),
-> [published upgrade guide](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/UPGRADE-FROM-v1.0.0.md),
-> [checksums](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/upgrade-kits/v1.0.0-to-v1.0.1/SHA256SUMS).
+<p align="center">
+  <strong>Stable v1.0.4</strong> · x86_64 · GPL-2.0-only
+</p>
 
-The genuine v1.0.1 -> v1.0.2 signed upgrade and reboot acceptance passed in
-release testing. Stable sequence 3 is published on ServerPlan. The GitHub Release
-and all three authenticated asset downloads are verified; anonymous GitHub
-access currently returns HTTP 404. The immutable source/tag is
-`39ee15155e49be0af3d044a0b11b6c89108fddf7`.
+<p align="center">
+  <a href="#install-stable">Install</a> ·
+  <a href="https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.4">Release notes</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
 
-For a fresh development or release-engineering session, start with
-[AGENTS.md](AGENTS.md), [current state](docs/current-state.md), then the
-[complete development and signed release runbook](docs/release-workflow.md).
+Vanilla HyprArch is a **keyboard-first desktop layer for Arch Linux**.
+Shortcuts offer the fastest, most efficient way to get things done. The desktop
+is just as natural with a mouse: open Firefox from the dock, watch a video, or
+browse your files. **Keyboard first, not keyboard only** — everyday use doesn't
+require a power user's workflow.
 
-Vanilla HyprArch is a small, incremental desktop configuration layer for a
-standard Arch Linux installation. Its philosophy is **Arch vanilla + Hyprland
-vanilla + small independent components**: it does not fork or patch Arch,
-Hyprland, Quickshell, systemd, BlueZ, or other upstream projects.
+It brings together upstream **Hyprland**, a **Quickshell** interface, and small
+independent components. Arch and its upstream packages stay vanilla; the project
+provides the configuration and integration that connect them.
 
-## Architecture
+## In pictures
 
-The graphical session is direct:
+<table>
+  <tr>
+    <th align="center">Dark appearance</th>
+    <th align="center">Light appearance</th>
+  </tr>
+  <tr>
+    <td width="50%"><a href="docs/assets/screenshots/desktop-dark.png"><img src="docs/assets/screenshots/desktop-dark.png" alt="Vanilla HyprArch dark desktop with the night wallpaper and vertical dock" width="100%"></a></td>
+    <td width="50%"><a href="docs/assets/screenshots/desktop-light.png"><img src="docs/assets/screenshots/desktop-light.png" alt="Vanilla HyprArch light desktop with the daylight wallpaper and vertical dock" width="100%"></a></td>
+  </tr>
+</table>
 
-```text
-SDDM X11 greeter -> Vanilla password-only theme -> /usr/bin/start-hyprland -> Hyprland/Wayland
-```
+<p align="center">
+  <a href="docs/assets/screenshots/desktop-tiling.png"><img src="docs/assets/screenshots/desktop-tiling.png" alt="Hyprland tiling with Firefox on the left, an app catalog above a terminal on the right, and the Vanilla HyprArch dock" width="960"></a>
+  <br>
+  <sub>Firefox, an app catalog, and a terminal — tiled by Hyprland.</sub>
+</p>
 
-UWSM is not part of the architecture. Hyprland owns the session and starts the
-required session processes. Quickshell provides the desktop UI. Power & Idle
-state belongs to `vanhyprarch-idle`, while Hyprland directly owns one
-`hypridle` process. Appearance state belongs to `vanhyprarch-appearance`, while
-Hyprpaper is only its session-owned wallpaper renderer. Graphical XKB state
-belongs to `systemd-localed`; the managed keyboard helper projects it into
-Hyprland without owning active groups or per-device rules.
+## Your desktop, at a glance
 
-The graphical session prepends `$HOME/.local/bin` exactly once to its inherited
-`PATH`. Public `vanhyprarch-*` session commands are installed there and invoked
-by name; helpers private to Quickshell remain at
-`Quickshell.shellDir/helpers`, while fixed system dependencies may use explicit
-`/usr/bin/...` paths.
+| Area | What you get |
+| :--- | :--- |
+| **Desktop** | A dock on each display, app launchers, workspaces, system tray, and clock. |
+| **Everyday controls** | Audio, Wi-Fi, Bluetooth, monitor brightness, Caffeine, and Power & Idle. |
+| **Appearance** | Coordinated light and dark themes, remembered wallpapers, and eight bundled 4K backgrounds. |
+| **Apps & updates** | A keyboard-and-mouse app menu, package installation and removal, Flatpak with Flathub, and signed Vanilla updates. |
+| **Shortcuts** | **Super+Space** for apps and actions; **Print Screen** for region, window, or monitor capture. |
 
-Optional screensaver rendering is delegated to the independent
-[Vanilla HyprArch Zig Player](https://github.com/vanhyprarch/vanhyprarch-zig-player).
-The baseline always provides `vanhyprarch-screensaver`, while the player is the
-opt-in **Zig Screensaver** component. This repository provides pinned component
-lifecycle control
-for the separately released executable; it does not vendor or duplicate the
-player's source. The player owns native layer-shell presentation and input
-absorption. The pinned integration uses release `v0.1.1` and offers Color Mix,
-Matrix, Doom, and Game of Life.
+Add optional components from **Additional system components**:
 
-## Implemented
-
-- per-screen dock and desktop frame with launchers, workspaces, tray, clock,
-  theme and power controls;
-- native Quickshell audio, NetworkManager Wi-Fi, and BlueZ Bluetooth controls;
-- event-driven projection of systemd-localed's graphical XKB tuple into
-  Hyprland, without owning active layout groups or per-device rules;
-- DDC/CI brightness and development-machine scale presets;
-- persistent Power & Idle preferences, Caffeine, automatic locking, display
-  power-off and suspend/resume, with capability-aware support for the optional
-  native screensaver;
-- one Light/Dark Appearance preference coordinating the Vanilla palette,
-  standard host application preference, and independently remembered Light and
-  Dark wallpapers, with eight bundled 3840×2160 GPL-2.0-only Wolkenstein v2
-  choices and an explicit pair-1 default;
-- direct-session PolicyKit and clean Hyprland logout integration;
-- Print Screen smart region/window/monitor screenshots saved under
-  `Pictures/Screenshots` and copied as `image/png` for normal Ctrl+V pasting;
-- keyboard-and-mouse Super+Space Apps, Install, Remove Package, Update,
-  Additional system components, and Power workflows with native catalogs and
-  visible terminal transactions;
-- normalized package, component, ownership, and service-policy manifests plus a
-  staged, rollback-capable deployment core for Vanilla-managed user files and a
-  pinned, checksummed Zig Screensaver install/adopt/reinstall/uninstall lifecycle;
-- required, unpinned Flatpak from the official Arch repositories, with an
-  idempotent bootstrap component for the required system Flathub remote;
-- optional, offline F9 push-to-talk dictation managed through Additional system
-  components using verified upstream Voxtype 1.0.1, the default English-only
-  `small.en` model, a two-minute recording maximum, and official-repository
-  `wtype`.
+- **[Local Dictation](docs/dictation.md)** — hold **F9** to record, then release to
+  transcribe locally. Choose your speech model, languages, and CPU or Vulkan GPU backend.
+- **[Zig Screensaver](https://github.com/vanhyprarch/vanhyprarch-zig-player)** — an
+  independent native player with Color Mix, Matrix, Doom, and Game of Life effects.
 
 ## Install stable
 
-On a fresh Arch Minimal x86_64 installation with Internet access, run these
-commands as the normal target user, not root. The two downloads are the
-published v1.0.2 release assets, also available on the operational ServerPlan mirror:
+Start with a **fresh, minimal Arch Linux x86_64 installation**, working Internet,
+and a regular user with `sudo` access. Configure the base system and graphics
+drivers for your hardware first; the Archinstall entry point is still planned.
+
+**v1.0.4 downloads:**
+[Release archive](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets/vanhyprarch-v1.0.4.tar.gz) ·
+[Release metadata](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets/release.json) ·
+[GitHub release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.4)
+
+The direct downloads use the project's ServerPlan mirror. Some anonymous GitHub
+requests currently return HTTP 404; those responses do not indicate a missing release.
+
+<details>
+<summary><strong>Verified installation commands</strong></summary>
+
+Run as your regular user. Confirm the pinned SHA-256 values below against a
+trusted publisher record before executing downloaded code.
 
 ```bash
-set -e
-sudo pacman -Syu --needed curl
-bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.2.XXXXXXXX")
-cd "$bundle_dir"
-curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o release.json https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.2/assets/release.json
-curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 -o vanhyprarch-v1.0.2.tar.gz https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.2/assets/vanhyprarch-v1.0.2.tar.gz
-sha256sum -c <<'SHA256'
-6292c27007151fbf859e92f2a0e066f3e0766dee3c075d798c1c9d76ca7bcb2c  release.json
-91a521734dd9ea2cbfc6a239ca3969b70913ead28991c90594e1711a57f73bf7  vanhyprarch-v1.0.2.tar.gz
+(
+  set -e
+  sudo pacman -Syu --needed curl
+  bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.4.XXXXXXXX")
+  cd "$bundle_dir"
+  download_base='https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets'
+
+  curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    -o release.json "$download_base/release.json"
+  curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    -o vanhyprarch-v1.0.4.tar.gz "$download_base/vanhyprarch-v1.0.4.tar.gz"
+
+  sha256sum -c <<'SHA256'
+b41625ed6fbb1e8c215539111b30ab7bcbef29e8ba14d921b0a0e252ce60a11a  release.json
+dc6dd35cf6f23361d9b1e51b909130e8779669a8f90ee5275bde99a0766e121e  vanhyprarch-v1.0.4.tar.gz
 SHA256
-tar -xzf vanhyprarch-v1.0.2.tar.gz
-"$PWD/vanhyprarch-v1.0.2/install.sh" \
-  --release-metadata "$PWD/release.json" \
-  --release-artifact "$PWD/vanhyprarch-v1.0.2.tar.gz"
+
+  tar -xzf vanhyprarch-v1.0.4.tar.gz
+  "$PWD/vanhyprarch-v1.0.4/install.sh" \
+    --release-metadata "$PWD/release.json" \
+    --release-artifact "$PWD/vanhyprarch-v1.0.4.tar.gz"
+)
 ```
 
-Authenticate the expected hashes through a trusted publisher record before
-executing downloaded code; checksums from the same untrusted download do not
-independently authenticate it. The installer can bootstrap Python when absent. It verifies the bundle
-again before installation and commits the stable installed release identity
-only after validation succeeds. Reboot afterward to enter the SDDM login.
-For an existing original v1.0.0 installation, use the
-[manual bridge guide](docs/upgrade-v1.0.0-to-v1.0.1.md), not these fresh-install
-commands. The downloadable kit preserves the exact accepted administrative input;
-its historical inner `rc1` filename does not make it a desktop release.
+The installer verifies the bundle again, validates the installation, and records
+its stable release identity. Reboot afterward to enter the SDDM login.
+See the [installation strategy](docs/installation-strategy.md) for the full workflow.
 
-## Install development from main
+</details>
 
-Run this separate development command as the normal target user:
+## Already using Vanilla HyprArch?
 
-```bash
-sudo pacman -Syu --needed curl && bash <(curl -fsSL https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/main/install.sh)
-```
+Open **Update** from the dock or **Super+Space**. The updater authenticates signed
+release metadata and checks the selected release before applying it.
 
-This network command requires GitHub source access. On HTTP 404, stop and
-use an independently authenticated source workflow; do not silently substitute
-a release or bypass source verification.
+> **Original v1.0.0 installations:** follow the
+> [one-time updater preparation and upgrade guide](docs/upgrade-v1.0.0-to-v1.0.1.md)
+> before your first update. Already prepared systems must not repeat the bridge.
 
-It resolves `main` to an exact commit, downloads that commit's source archive,
-and delegates package/system integration, managed deployment, create-once
-initialization, SDDM integration, and validation to their existing
-authoritative stages. This path leaves installed release identity absent and
-is not equivalent to the published stable installation. `install.sh --yes`
-suppresses the single confirmation. `VANHYPRARCH_REF=<tag-or-commit>` selects
-another simple ref; even a release tag remains a development installation when
-used through this ref-based path. See [release engineering](docs/release-engineering.md).
-Reruns select managed `install` or `update` through the deployment authority's
-provenance-aware `reconcile` operation; create-once content remains no-clobber.
+## Documentation
 
-The optional archinstall entry point is not implemented. The installer does
-not select hardware-specific drivers, disk layout, locale, or other base Arch
-choices.
+| Topic | Read more |
+| :--- | :--- |
+| **Installation & customization** | [Installation strategy](docs/installation-strategy.md) · [File ownership](docs/deployment-ownership.md) |
+| **Design & hardware coverage** | [Architecture decisions](docs/decisions.md) · [Compatibility](docs/compatibility.md) |
+| **Optional components** | [Local Dictation](docs/dictation.md) · [Screensaver lifecycle](docs/screensaver-lifecycle.md) |
+| **Development & releases** | [Contributor instructions](AGENTS.md) · [Release workflow](docs/release-workflow.md) · [Release contracts](docs/release-engineering.md) |
 
-The repository now separates managed portable Hyprland configuration from
-create-once machine configuration and a user-owned customization override.
-The controlled live migration has placed that split architecture on the
-current development machine. That migration remains separate from the
-fresh-install bootstrap.
-The tracked BlueZ `main.conf` is also a complete system-file replacement and
-must not overwrite an existing administrator configuration without review and
-rollback. See the
-[deployment ownership contract](docs/deployment-ownership.md),
-[managed-file deployment core](docs/managed-file-deployment.md),
-[installation strategy](docs/installation-strategy.md), and
-[system baseline](docs/system-baseline.md). The accepted DF2 package and
-distribution decisions are summarized in
-[Distribution Foundation 2](docs/distribution-foundation-2.md).
-
-For development, public commands may be symlinked from `bin/` into
-`$HOME/.local/bin`. The managed-file core can install regular executables and
-complete configuration trees atomically into an isolated installed target
-without retaining a source-checkout dependency. The public bootstrap
-calls that core as one step in the larger installation lifecycle.
-
-Dictation is a separate opt-in component, not part of the baseline. Its
-installer, dependencies, exact verification chain, runtime activation, and
-clean-uninstall procedure are documented in
-[Local push-to-talk dictation](docs/dictation.md). The default uses CPU,
-English-only, local/offline transcription: hold F9 to record and release it to
-transcribe and type through `wtype`.
-The independently deployed `vanhyprarch-dictation` manager remains available
-when Voxtype is absent, so Super+Space can report state and offer installation.
-It exposes ten reviewed Whisper models, true Automatic language detection or
-one to three reviewed manual languages, and recording limits of 30, 60, 120,
-or 300 seconds. SuperSpace offers explicit CPU and
-Vulkan GPU choices through the same transactional backend. CPU remains the
-public default, Vulkan is never selected automatically, and a Vulkan change
-succeeds only after verified runtime evidence for the selected vendor.
-Local Dictation uses clean uninstall semantics: removing it deletes Voxtype's
-configuration and every downloaded speech model, but keeps the Vanilla manager
-available so the component can be installed again later.
-
-Zig Screensaver is a sibling of Local Dictation under **Additional system
-components** and is not part of the baseline. Without it, Power & Idle contains
-only Caffeine, Turn Off Display, Suspend, and Automatic Lock choices None,
-Display Off, and Suspend. A validated installation additionally exposes Screen
-Saver Effect, Screensaver, and the Screensaver lock stage. Missing or damaged
-payload never generates a player invocation; its Check status and Repair
-actions remain visible in Additional system components.
-
-## Current limitations
-
-The optional archinstall first-reboot entry point is still pending. User-owned
-files remain protected by their ownership class.
-
-The Appearance foundation and visual Background Picker are integrated with the
-managed deployment path.
-System keyboard synchronization and the supporting
-direct-session lifecycle hardening are live-validated. The development machine
-has no global keyboard fallback: localed is the persistent graphical authority
-and the managed service is its sole global runtime projection into Hyprland.
-The pinned player release is
-x86_64-focused, physical multi-monitor acceptance and parts of the Bluetooth
-hardware/pairing matrix remain pending. See
-[current state](docs/current-state.md).
-
-Architecture decisions, compatibility evidence, and version-specific retest
-conditions are maintained under [`docs/`](docs/). Arch package versions there
-are tested rolling-release snapshots, not dependency locks; explicitly pinned
-external artifacts are the exception.
+Development installs from `main` follow a separate
+[source-install workflow](docs/installation-strategy.md#public-development-bootstrap)
+and do not carry an installed stable release identity.
 
 ## License
 
-Project-authored Vanilla HyprArch material in this repository, including
-historical project-authored revisions, is licensed under GPL-2.0-only. Files or
-material explicitly carrying separate third-party licensing or attribution
-remain under those terms. The external player is an independent GPL-2.0-only
-project with its own license and third-party notices.
+Project-authored material is licensed under **[GPL-2.0-only](LICENSE)**.
+Third-party material retains its own license and attribution notices.
