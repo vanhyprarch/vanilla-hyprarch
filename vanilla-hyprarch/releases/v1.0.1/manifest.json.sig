@@ -1,0 +1,4 @@
+untrusted comment: Vanilla HyprArch distribution signature
+RUR+ayLStZnlvIj0owfpxhakXWQ9unBbXwgZh7rmR0SnIcJ4Q+pditS+fdrDQZ2L640tfUoZUFGreUEJ6Er2fTfrJTFhLt+TfA8=
+trusted comment: Vanilla HyprArch distribution protocol 1
+hcKcMygmHWE5EvIxspb94YNCHw652ykbgem+L4jlqMLX61bHJRpewaUwKmTQWEyfxN0DGZ+Lq2BM9MJXsyuvDQ==
