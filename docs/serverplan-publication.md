@@ -1,11 +1,12 @@
 # Static publication and disposable hosting acceptance
 
 Status: the static publisher and manual FileZilla FTPS workflow are implemented
-and accepted. Production root 1 and Stable sequence 5 authenticate immutable
-v1.0.0 through v1.0.4. HTTPS byte verification and the genuine v1.0.3 ->
-v1.0.4 signed upgrade/reboot passed in release testing. GitHub Release publication
-and asset verification passed; anonymous v1.0.4 page and asset access was verified
-on 2026-10-27. v1.0.5 is in preparation, not published.
+and accepted. Production root 1 and Stable sequence 6 authenticate immutable
+v1.0.0 through v1.0.5. GitHub is the primary source; ServerPlan is the transport
+fallback. Public asset/signature verification, the genuine v1.0.4 -> v1.0.5
+upgrade/reboot, post-upgrade acceptance and already-current discovery passed.
+Real HTTPS tests verified primary/fallback acquisition for Vanilla and Zig Player.
+GitHub Release v1.0.5 is Latest; earlier sequence records below are historical.
 
 Use the [operator runbook](release-workflow.md) for the whole lifecycle and the
 [signed protocol](signed-distribution.md) for trust rules. This document owns

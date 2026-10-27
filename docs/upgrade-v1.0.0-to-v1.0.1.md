@@ -39,8 +39,9 @@ The subsequent normal signed update installs genuine v1.0.1 with zero migrations
 The preparation kit, published guide and checksums are publicly available on
 ServerPlan. They are also preserved in the
 [v1.0.1 GitHub Release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.1),
-whose anonymous access currently returns HTTP 404. The two different archives
-have deliberately different purposes:
+whose anonymous page and preparation-kit access was verified on 2026-10-27;
+the original publication's anonymous HTTP 404 limitation no longer applies.
+The two different archives have deliberately different purposes:
 
 | Download | Purpose |
 | --- | --- |

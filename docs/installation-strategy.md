@@ -9,8 +9,7 @@ the optional archinstall entry point and custom Arch USB ISO are deferred.
 The supported installation path is minimal Arch followed by the existing Vanilla
 installer; the future integration design below is not an available workflow.
 
-The immutable `v1.0.4` Stable release is published and release-test accepted;
-`v1.0.5` Stable is in preparation with accepted system tray rendering fixes;
+The immutable `v1.0.5` Stable release is published and release-test accepted;
 `main` remains a development ref, not an installed release identity. Follow the
 [release workflow](release-workflow.md) for exact-source builds, publication,
 genuine upgrade acceptance and recovery.
@@ -23,11 +22,13 @@ package-pristine adoption and exact rollback contract.
 The initial support target is deliberately narrow: Arch Linux x86_64 on
 a documented fresh-install or archinstall-derived base. It does not promise
 adoption of arbitrary existing Arch desktops or other Hyprland distributions.
-The public acquisition path uses curl to resolve the requested GitHub ref to
-an exact commit and extracts that commit's source archive in a private
-temporary directory. Git is therefore not required merely to obtain Vanilla,
-although the system stage keeps `git` in the permanent build/bootstrap package
-baseline for its approved yay build. Installed runtime files are regular
+Stable installation uses the official GitHub Release assets and pinned checksums
+in the [README](../README.md#install-stable), with vanhyprarch.it as the alternative
+mirror. The separate development acquisition path uses curl to resolve a
+requested GitHub ref to an exact commit and extracts that commit's source archive
+in a private temporary directory. Git is not required for acquisition, although
+the system stage keeps `git` in the permanent build/bootstrap package baseline
+for its approved yay build. Installed runtime files are regular
 copies with no dependency on the temporary source. `install/bootstrap` still
 uses only the Arch base shell to provision and verify Python when absent, then
 stops before the Python-backed system stage. Python is not a manual
@@ -89,8 +90,8 @@ and leave that record absent. They refuse an existing installed release identity
 to avoid a stale claim. The system stage installs the root-owned
 `/usr/local/bin/vanhyprarch-update` command on release and development paths;
 it refuses updates while the installed release identity is absent. Manual
-root-pinned signed discovery with GitHub/ServerPlan transport fallback and verified
-target-driver handoff are implemented. Fresh release installation uses the
+root-pinned signed discovery with GitHub primary, ServerPlan transport fallback
+and verified target-driver handoff are implemented. Fresh release installation uses the
 published version-matching `release.json` and archive through verified local
 bundle mode; the exact
 normal-user commands and checksums are in the [README](../README.md#install-stable).

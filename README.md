@@ -3,12 +3,12 @@
 </h1>
 
 <p align="center">
-  <strong>Stable v1.0.4</strong> · x86_64 · GPL-2.0-only
+  <strong>Stable v1.0.5</strong> · x86_64 · GPL-2.0-only
 </p>
 
 <p align="center">
   <a href="#install-stable">Install</a> ·
-  <a href="https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.4">Release notes</a> ·
+  <a href="https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.5">Release notes</a> ·
   <a href="#documentation">Documentation</a>
 </p>
 
@@ -65,20 +65,19 @@ and a regular user with `sudo` access. Configure the base system and graphics
 drivers for your hardware first. Archinstall integration and a custom USB ISO
 are deferred; use the existing installer after minimal Arch.
 
-**v1.0.4 downloads:**
-[Release archive](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets/vanhyprarch-v1.0.4.tar.gz) ·
-[Release metadata](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets/release.json) ·
-[GitHub release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.4)
+**v1.0.5 downloads:**
+[Release archive](https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.5/vanhyprarch-v1.0.5.tar.gz) ·
+[Release metadata](https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.5/release.json) ·
+[GitHub release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.5)
 
-The direct downloads use the project's ServerPlan mirror. Anonymous GitHub
-release-page and asset access was verified on 2026-10-27.
+GitHub is the primary download source. The alternative vanhyprarch.it mirror
+provides the same [archive](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.5/assets/vanhyprarch-v1.0.5.tar.gz)
+and [metadata](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.5/assets/release.json).
 
-**v1.0.5 Stable is in preparation:** its visually accepted tray changes preserve
-application colors and transparency, theme explicit `-symbolic` icons, and avoid
-fractional-scale cropping. Unnamed monochrome pixmaps may have insufficient
-contrast in Light Mode; see [compatibility](docs/compatibility.md#application-tray-icon-color-boundary).
-The links and pinned installation commands below remain for published v1.0.4
-until v1.0.5 publication is verified.
+**v1.0.5 Stable** preserves application tray colors and transparency, themes
+explicitly named `-symbolic` icons, and corrects fractional-scale cropping.
+Nextcloud's optional unnamed monochrome pixmaps may lack contrast in Light Mode;
+see [compatibility](docs/compatibility.md#application-tray-icon-color-boundary).
 
 <details>
 <summary><strong>Verified installation commands</strong></summary>
@@ -90,24 +89,24 @@ trusted publisher record before executing downloaded code.
 (
   set -e
   sudo pacman -Syu --needed curl
-  bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.4.XXXXXXXX")
+  bundle_dir=$(mktemp -d "$HOME/vanhyprarch-v1.0.5.XXXXXXXX")
   cd "$bundle_dir"
-  download_base='https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets'
+  download_base='https://github.com/vanhyprarch/vanilla-hyprarch/releases/download/v1.0.5'
 
   curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 \
     -o release.json "$download_base/release.json"
   curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 \
-    -o vanhyprarch-v1.0.4.tar.gz "$download_base/vanhyprarch-v1.0.4.tar.gz"
+    -o vanhyprarch-v1.0.5.tar.gz "$download_base/vanhyprarch-v1.0.5.tar.gz"
 
   sha256sum -c <<'SHA256'
-b41625ed6fbb1e8c215539111b30ab7bcbef29e8ba14d921b0a0e252ce60a11a  release.json
-dc6dd35cf6f23361d9b1e51b909130e8779669a8f90ee5275bde99a0766e121e  vanhyprarch-v1.0.4.tar.gz
+3d2dbb86d9c5d33a0e71f2cbdcbbb3af783de068b9394c5bd1bfcda60cbc22a2  release.json
+62fbfea0d2c95f73aa1b00966cb0024720ab1230fc6d26a8773bc40e803bb16d  vanhyprarch-v1.0.5.tar.gz
 SHA256
 
-  tar -xzf vanhyprarch-v1.0.4.tar.gz
-  "$PWD/vanhyprarch-v1.0.4/install.sh" \
+  tar -xzf vanhyprarch-v1.0.5.tar.gz
+  "$PWD/vanhyprarch-v1.0.5/install.sh" \
     --release-metadata "$PWD/release.json" \
-    --release-artifact "$PWD/vanhyprarch-v1.0.4.tar.gz"
+    --release-artifact "$PWD/vanhyprarch-v1.0.5.tar.gz"
 )
 ```
 

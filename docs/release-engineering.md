@@ -16,12 +16,12 @@ changing the published tag or rebuilding the release.
 This file is the contract/recovery reference; historical numbered-phase sections
 are implementation records, not a second current publication procedure.
 
-Current v1.0.4 Stable is published at `b7ee77935cccb4b90accef4ecbbea9dce5f6b373`.
-Exact-commit and strict-tag builds reproduced approved bytes; ServerPlan Stable
-sequence 5, the genuine v1.0.3 dock upgrade/reboot, authority validations, visual
-acceptance and already-current discovery passed. GitHub Release and all three
-asset identities are verified; anonymous page and asset access was rechecked
-on 2026-10-27. v1.0.5 Stable is in preparation with the accepted tray fixes.
+Current v1.0.5 Stable is published at `004df55ed2a2745a95e9e1d6490291b24f74aa8a`.
+Exact-commit and strict-tag builds reproduced approved bytes. Signed Stable
+sequence 6, the genuine v1.0.4 dock upgrade/reboot, post-upgrade acceptance and
+already-current discovery passed. GitHub Release is Latest; its assets and the
+ServerPlan mirror are verified. Real HTTPS tests confirmed GitHub-primary
+acquisition and transport-only ServerPlan fallback for Vanilla and Zig Player.
 Architecture x86_64, protocol 1, compatibility minimums and migration level 1
 remain unchanged; a genuine v1.0.4 installation requires zero migrations.
 The reusable operator-only `release/acceptance.py` consolidates read-only VM

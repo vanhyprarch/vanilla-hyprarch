@@ -5,7 +5,8 @@ Snapshot date: 2026-10-27.
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The subsequent immutable
 `v1.0.1` Stable is published at `83bfeaa627392817c21b29ce73557a32f5ad563e`.
-Current **v1.0.4 Stable** is tagged at `b7ee77935cccb4b90accef4ecbbea9dce5f6b373`.
+Current **v1.0.5 Stable** is tagged at `004df55ed2a2745a95e9e1d6490291b24f74aa8a`.
+The previous v1.0.4 is tagged at `b7ee77935cccb4b90accef4ecbbea9dce5f6b373`.
 The previous v1.0.3 is tagged at `53bd30c402352684befb41bef9f827e19de254d9`.
 The previous v1.0.2 is tagged at `39ee15155e49be0af3d044a0b11b6c89108fddf7`. Immutable
 candidate releases rc1, rc2, and rc3 remain historical.
@@ -42,9 +43,9 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
-## v1.0.5 Stable — ACCEPTED DEVELOPMENT, RELEASE PREPARATION
+## v1.0.5 Stable — PUBLISHED AND ACCEPTED
 
-The declaration is `v1.0.5` Stable, x86_64, with update protocol 1, minimum
+The published release is `v1.0.5` Stable, x86_64, with update protocol 1, minimum
 installed version `v1.0.0-rc1`, minimum migration level 0 and target migration
 level 1 unchanged. A genuine v1.0.4 installation needs zero migrations and no
 updater preparation. The operator accepted original-color/alpha application tray
@@ -54,10 +55,14 @@ Unnamed monochrome pixmap contrast in Light Mode is an accepted limitation.
 The dock background is unchanged; both gray experiments and the outline were
 rejected and reverted. Custom USB ISO and Archinstall integration remain deferred.
 
-Exact-source builds and genuine v1.0.4 VM preflight are release-preparation gates;
-tagging, signing, publication and upgrade acceptance remain later gates. Issue #1
-stays open until verified v1.0.5 publication completes. v1.0.4 remains published
-Stable; development deployment is not an installed release identity.
+Exact-source and strict-tag reproducibility, signed Stable sequence 6, public
+GitHub and ServerPlan bytes, and genuine v1.0.4 -> v1.0.5 VM upgrade/reboot passed.
+Post-upgrade acceptance and ordinary dock Update reporting v1.0.5 up to date
+passed. Real HTTPS transport tests confirmed GitHub-primary acquisition and
+ServerPlan fallback for Vanilla and Zig Player, plus fail-closed integrity and
+rollback handling. The GitHub `distribution-v1` metadata replica is published;
+v1.0.5 is marked Latest. [Issue #1](https://github.com/vanhyprarch/vanilla-hyprarch/issues/1)
+is closed. Development deployment remains distinct from installed release identity.
 
 ## v1.0.4 Stable — PUBLISHED AND ACCEPTED
 
@@ -140,8 +145,9 @@ then confirmed authenticated already-current discovery. Production acceptance
 was also reported complete. No pre-upgrade preference content hashes were
 available for that release, so cross-upgrade byte identity is not claimed.
 Unrelated TPM measurement unit failures were environmental warnings, not Vanilla
-validation failures. Anonymous GitHub page/asset requests remain HTTP 404 despite
-successful authenticated publication. Public identities are recorded in
+validation failures. At v1.0.3 publication, anonymous GitHub page/asset requests
+returned HTTP 404 despite successful authenticated publication. Public identities
+are recorded in
 [ServerPlan publication](serverplan-publication.md#v103-stable-sequence-4--complete).
 
 ## v1.0.2 Stable consolidation — PUBLISHED AND RELEASE-TEST ACCEPTED
@@ -159,9 +165,10 @@ Stable sequence 3, journal cleanup, reboot and subsequent authenticated
 "Installed: v1.0.2 / up to date" check passed in release testing. The official
 annotated tag, exact-commit and strict-tag reproducibility, ServerPlan HTTPS
 bytes and all three authenticated GitHub Release downloads are verified.
-Anonymous GitHub page/asset access still returns HTTP 404. Architecture and
-migration compatibility are unchanged. At v1.0.2 publication, live yay-flow
-acceptance was deferred; the genuine v1.0.2 -> v1.0.3 run subsequently passed.
+At v1.0.2 publication, anonymous GitHub page/asset access returned HTTP 404.
+Architecture and migration compatibility are unchanged. At v1.0.2 publication,
+live yay-flow acceptance was deferred; the genuine v1.0.2 -> v1.0.3 run
+subsequently passed.
 
 The [operator runbook](release-workflow.md) is the canonical lifecycle checklist.
 [Release engineering](release-engineering.md) defines contracts and recovery;
@@ -954,8 +961,8 @@ all 23 managed artifacts; native same-process reload and IPC passed without new
 log diagnostics. The operator physically accepted the final fractional-scale
 correction and tray behavior. Low Light-mode contrast for unnamed monochrome
 pixmaps is accepted for v1.0.5; the rejected outline experiment has been removed.
-[Issue #1](https://github.com/vanhyprarch/vanilla-hyprarch/issues/1) stays open
-until verified v1.0.5 publication; see the
+[Issue #1](https://github.com/vanhyprarch/vanilla-hyprarch/issues/1) is closed for
+the accepted v1.0.5 fix; see the
 [source policy and limits](compatibility.md#application-tray-icon-color-boundary).
 
 Firefox, Foot, and Thunar remain the selected browser, terminal, and file manager.

@@ -1181,8 +1181,8 @@ control; the OpenGL run requires it. The operator physically accepted the final
 development implementation, including the fractional-DPR correction. Retest cold
 Light/Dark startup, both theme transitions, application icon updates and real
 menus/actions after relevant Qt/Quickshell changes. Nextcloud's optional
-monochrome Light contrast is the accepted limitation above. Issue #1 remains
-open until verified v1.0.5 publication is complete.
+monochrome Light contrast is the accepted limitation above. Issue #1 is closed
+for the published and accepted v1.0.5 fix.
 
 ## Quickshell first Flatpak export discovery boundary
 

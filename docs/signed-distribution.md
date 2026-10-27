@@ -1,9 +1,11 @@
 # Signed distribution protocol 1
 
 Status: the protocol, updater and static publisher are implemented. Production
-root 1 and Stable sequence 5 authenticate immutable v1.0.0 through v1.0.4 releases
-on ServerPlan. Genuine signed upgrade/reboot acceptance and exact-target recovery
-have passed in release testing. Follow the [operator runbook](release-workflow.md)
+root 1 and Stable sequence 6 authenticate immutable v1.0.0 through v1.0.5 releases.
+GitHub-primary and ServerPlan-fallback acquisition passed real HTTPS verification
+for Vanilla and Zig Player. Genuine v1.0.4 -> v1.0.5 upgrade/reboot, post-upgrade
+acceptance and already-current discovery passed. Exact-target recovery passed
+earlier release testing. Follow the [operator runbook](release-workflow.md)
 for execution, [release engineering](release-engineering.md) for lifecycle
 contracts, and [ServerPlan publication](serverplan-publication.md) for manual
 publication. Original unprepared v1.0.0 alone needs the historical bridge;
@@ -422,8 +424,9 @@ replica paths are fixed under
 `https://raw.githubusercontent.com/vanhyprarch/vanilla-hyprarch/distribution-v1/vanilla-hyprarch/`;
 GitHub artifacts use the fixed repository's version-derived release asset URLs.
 ServerPlan uses `https://vanhyprarch.it/dist/v1/vanilla-hyprarch/` for all protocol
-files. No metadata branch is created or published by Phase 2. Unsigned indexes,
-remote URLs, and GitHub listing/immutability assertions are not discovery authority.
+files. Phase 2 did not publish a metadata branch; the `distribution-v1` replica
+is now published through Stable sequence 6. Unsigned indexes, remote URLs, and
+GitHub listing/immutability assertions are not discovery authority.
 Official package downloads remain pacman's responsibility.
 
 HTTP 401/403/404/408/429/5xx, connection failure, timeout, TLS unavailability, and
