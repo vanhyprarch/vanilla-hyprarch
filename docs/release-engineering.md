@@ -16,14 +16,14 @@ changing the published tag or rebuilding the release.
 This file is the contract/recovery reference; historical numbered-phase sections
 are implementation records, not a second current publication procedure.
 
-Current v1.0.3 Stable is published at `53bd30c402352684befb41bef9f827e19de254d9`.
+Current v1.0.4 Stable is published at `b7ee77935cccb4b90accef4ecbbea9dce5f6b373`.
 Exact-commit and strict-tag builds reproduced approved bytes; ServerPlan Stable
-sequence 4, the genuine v1.0.2 dock upgrade/reboot with Yay maintenance and
-manual-reboot continuation, all authority validations, visual acceptance and
-authenticated already-current discovery passed. GitHub Release and all three
-authenticated downloads are verified; anonymous GitHub remains 404. Architecture
-x86_64, protocol 1 and migration level 1 are unchanged. Public identities are in
-[ServerPlan publication](serverplan-publication.md#v103-stable-sequence-4--complete).
+sequence 5, the genuine v1.0.3 dock upgrade/reboot, authority validations, visual
+acceptance and already-current discovery passed. GitHub Release and all three
+asset identities are verified; anonymous page and asset access was rechecked
+on 2026-10-27. v1.0.5 Stable is in preparation with the accepted tray fixes.
+Architecture x86_64, protocol 1, compatibility minimums and migration level 1
+remain unchanged; a genuine v1.0.4 installation requires zero migrations.
 The reusable operator-only `release/acceptance.py` consolidates read-only VM
 checks; [runbook sections 4 and 8](release-workflow.md) own its commands. It changes
 no installed updater code, authority, transaction contract or protocol.

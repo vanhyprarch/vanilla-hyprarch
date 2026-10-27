@@ -245,6 +245,7 @@ class ResponsiveShellStaticTests(unittest.TestCase):
             "Bluetooth.qml",
             "Monitor.qml",
             "ShortcutsButton.qml",
+            "SystemTray.qml",
         ):
             source = self.read(f"components/{name}")
             self.assertIn("MouseArea {", source, name)

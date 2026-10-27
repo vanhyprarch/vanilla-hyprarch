@@ -1,0 +1,5 @@
+<!-- Original test artwork: grayscale content with its own background, not symbolic. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+  <rect x="1" y="1" width="20" height="20" rx="5" fill="#222"/>
+  <path d="M6 6h10v4h-6v6H6z" fill="#ddd"/>
+</svg>

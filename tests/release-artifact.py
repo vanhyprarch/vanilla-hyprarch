@@ -150,12 +150,12 @@ class ReleaseContractTests(unittest.TestCase):
 
     def test_authored_declaration_current_values(self) -> None:
         current = RELEASE.parse_declaration((PROJECT / "release/release.toml").read_bytes())
-        self.assertEqual(current["version"], "v1.0.4")
+        self.assertEqual(current["version"], "v1.0.5")
         self.assertEqual(current["channel"], "stable")
         self.assertEqual(current["minimum_installed_version"], "v1.0.0-rc1")
         self.assertEqual(current["minimum_migration_level"], 0)
         self.assertEqual(current["migration_level"], 1)
-        self.assertEqual(current["summary"], "Restore the state-aware Lucide Caffeine icon and streamline release preflight and post-upgrade acceptance.")
+        self.assertEqual(current["summary"], "Preserve application tray colors and transparency, theme explicit symbolic icons, and prevent fractional-scale artwork cropping.")
 
     def test_generated_metadata_exact_fields(self) -> None:
         self.assertEqual(set(self.metadata), RELEASE.METADATA_KEYS)

@@ -544,10 +544,11 @@ curl --silent --show-error --location --proto '=https' --proto-redir '=https' \
   "https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/$VERSION"
 ```
 
-Repeat for each asset URL. Record anonymous HTTP 404 accurately: it is a known
-account-access limitation, not failure of an authenticated, verified publication.
-ServerPlan signed distribution remains independently usable. Never claim an
-anonymous download succeeded merely because gh uploaded/downloaded successfully.
+Repeat for each asset URL and record the actual anonymous HTTP status and byte
+verification. Earlier publications encountered anonymous HTTP 404; v1.0.4 page
+and asset access was verified anonymously on 2026-10-27. ServerPlan signed
+distribution remains independently usable. Never infer anonymous access from
+a successful authenticated upload/download.
 
 ## 10. Preserve continuity and schedule metadata maintenance
 

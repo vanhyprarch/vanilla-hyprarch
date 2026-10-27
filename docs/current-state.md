@@ -1,11 +1,12 @@
 # Current project state
 
-Snapshot date: 2026-10-16.
+Snapshot date: 2026-10-27.
 
 The immutable `v1.0.0` stable release is published at
 `8b450e71ff6e2f698d7d4d2d1891fc64f19d03bb`. The subsequent immutable
 `v1.0.1` Stable is published at `83bfeaa627392817c21b29ce73557a32f5ad563e`.
-Current **v1.0.3 Stable** is tagged at `53bd30c402352684befb41bef9f827e19de254d9`.
+Current **v1.0.4 Stable** is tagged at `b7ee77935cccb4b90accef4ecbbea9dce5f6b373`.
+The previous v1.0.3 is tagged at `53bd30c402352684befb41bef9f827e19de254d9`.
 The previous v1.0.2 is tagged at `39ee15155e49be0af3d044a0b11b6c89108fddf7`. Immutable
 candidate releases rc1, rc2, and rc3 remain historical.
 The offline release contract includes a deterministic exact-commit
@@ -41,14 +42,30 @@ journal/staging cleanup passed.
 This document distinguishes deployed behavior from accepted future work and
 directions that still require validation.
 
-## v1.0.4 Stable — DECLARATION PREPARED, NOT PUBLISHED
+## v1.0.5 Stable — ACCEPTED DEVELOPMENT, RELEASE PREPARATION
 
-The next declaration is `v1.0.4` Stable. It preserves x86_64, update protocol 1,
+The declaration is `v1.0.5` Stable, x86_64, with update protocol 1, minimum
+installed version `v1.0.0-rc1`, minimum migration level 0 and target migration
+level 1 unchanged. A genuine v1.0.4 installation needs zero migrations and no
+updater preparation. The operator accepted original-color/alpha application tray
+rendering, explicit `-symbolic` foreground theming and the fractional-DPR
+aspect-fit correction, including sizing, updates, menus and interactions.
+Unnamed monochrome pixmap contrast in Light Mode is an accepted limitation.
+The dock background is unchanged; both gray experiments and the outline were
+rejected and reverted. Custom USB ISO and Archinstall integration remain deferred.
+
+Exact-source builds and genuine v1.0.4 VM preflight are release-preparation gates;
+tagging, signing, publication and upgrade acceptance remain later gates. Issue #1
+stays open until verified v1.0.5 publication completes. v1.0.4 remains published
+Stable; development deployment is not an installed release identity.
+
+## v1.0.4 Stable — PUBLISHED AND ACCEPTED
+
+The published declaration is `v1.0.4` Stable. It preserves x86_64, update protocol 1,
 minimum installed version `v1.0.0-rc1`, minimum migration level 0 and target
 migration level 1. Genuine v1.0.3 at level 1 requires zero migrations and no
 updater preparation. These changes introduce no persisted-state transition or
-signed distribution protocol change. v1.0.3 remains the published Stable;
-the development declaration is not an installed release identity.
+signed distribution protocol change.
 
 The release contains exactly two accepted development changes since v1.0.3:
 
@@ -73,18 +90,17 @@ field mismatch, now corrected with canonical completed-state fixtures and comple
 isolated post-upgrade coverage. The corrected helper passed real v1.0.3 VM
 post-upgrade acceptance with WARNING and exit status 0: all mandatory checks
 passed, environmental warnings remained non-fatal, and installed/selected user
-state stayed unchanged. Live preflight against a newer release remains untested
-and will be exercised during the normal v1.0.3 -> v1.0.4 VM release preflight.
+state stayed unchanged. Subsequent genuine v1.0.3 -> v1.0.4 preflight and
+post-upgrade acceptance passed with the reusable helper.
 See the [single operator runbook](release-workflow.md).
 
-Canonical release-readiness suites, acceptance-helper tests and read-only payload
-validation passed. These do not replace exact-source builds or live preflight.
-Declaration approval/commit, reproducible exact-source builds and the genuine
-v1.0.3 -> v1.0.4 read-only preflight remain pending. That preflight must use
-`release/acceptance.py prepare` and its operator-executed `preflight` command
-before tag approval. Signing/publication and the later normal-dock upgrade,
-post-upgrade technical checks, visual acceptance and authenticated already-current
-check remain separate gates; no one-off diagnostic wrapper is required.
+Canonical release-readiness suites, acceptance-helper tests, reproducible
+exact-source and strict-tag builds passed. Signed ServerPlan Stable sequence 5,
+HTTPS byte verification, GitHub publication, the genuine v1.0.3 -> v1.0.4
+normal-dock upgrade/reboot, post-upgrade technical checks, visual acceptance and
+already-current discovery passed. Anonymous v1.0.4 GitHub page and asset access
+was independently verified on 2026-10-27. Earlier access failures below remain
+historical evidence.
 
 ## v1.0.3 Stable — PUBLISHED AND ACCEPTED
 
@@ -926,6 +942,21 @@ Quickshell reload passed with no new diagnostics or preference changes.
 The user visually approved the deployed Lucide icons on the development desktop.
 Application, picker, tray, and content icons remain theme-resolved; Papirus is
 still the shell's icon-theme baseline for those external icons.
+
+The application tray now preserves source colors and transparency, tinting only
+explicitly named symbolic icons. Private SNI/DBusMenu rendering and interaction
+tests cover both palettes and dynamic updates. Non-symbolic artwork now uses
+plain aspect-fit `Image` to avoid Qt's fractional-DPR `IconImage` Pad crop; the
+symbolic tint path and tray geometry are unchanged. Focused references cover
+DPR 1, 1.25, 1.5 and 2, including captured application pixmaps. Development
+deployment validated
+all 23 managed artifacts; native same-process reload and IPC passed without new
+log diagnostics. The operator physically accepted the final fractional-scale
+correction and tray behavior. Low Light-mode contrast for unnamed monochrome
+pixmaps is accepted for v1.0.5; the rejected outline experiment has been removed.
+[Issue #1](https://github.com/vanhyprarch/vanilla-hyprarch/issues/1) stays open
+until verified v1.0.5 publication; see the
+[source policy and limits](compatibility.md#application-tray-icon-color-boundary).
 
 Firefox, Foot, and Thunar remain the selected browser, terminal, and file manager.
 The baseline now requires official Arch `gvfs-smb` alongside `gvfs` for standard

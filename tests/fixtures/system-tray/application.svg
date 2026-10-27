@@ -1,0 +1,7 @@
+<!-- Original test artwork: rounded application tile, bright glyph and status badge. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+  <rect x="1" y="1" width="20" height="20" rx="5" fill="#18344c"/>
+  <path d="M6 7h10v3H9v5H6z" fill="#f4eee0"/>
+  <circle cx="16" cy="16" r="3" fill="#e75932"/>
+  <rect x="10" y="11" width="2" height="3" fill="#72d4ae" fill-opacity=".5"/>
+</svg>

@@ -62,15 +62,23 @@ Add optional components from **Additional system components**:
 
 Start with a **fresh, minimal Arch Linux x86_64 installation**, working Internet,
 and a regular user with `sudo` access. Configure the base system and graphics
-drivers for your hardware first; the Archinstall entry point is still planned.
+drivers for your hardware first. Archinstall integration and a custom USB ISO
+are deferred; use the existing installer after minimal Arch.
 
 **v1.0.4 downloads:**
 [Release archive](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets/vanhyprarch-v1.0.4.tar.gz) ·
 [Release metadata](https://vanhyprarch.it/dist/v1/vanilla-hyprarch/releases/v1.0.4/assets/release.json) ·
 [GitHub release](https://github.com/vanhyprarch/vanilla-hyprarch/releases/tag/v1.0.4)
 
-The direct downloads use the project's ServerPlan mirror. Some anonymous GitHub
-requests currently return HTTP 404; those responses do not indicate a missing release.
+The direct downloads use the project's ServerPlan mirror. Anonymous GitHub
+release-page and asset access was verified on 2026-10-27.
+
+**v1.0.5 Stable is in preparation:** its visually accepted tray changes preserve
+application colors and transparency, theme explicit `-symbolic` icons, and avoid
+fractional-scale cropping. Unnamed monochrome pixmaps may have insufficient
+contrast in Light Mode; see [compatibility](docs/compatibility.md#application-tray-icon-color-boundary).
+The links and pinned installation commands below remain for published v1.0.4
+until v1.0.5 publication is verified.
 
 <details>
 <summary><strong>Verified installation commands</strong></summary>

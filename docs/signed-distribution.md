@@ -1,7 +1,7 @@
 # Signed distribution protocol 1
 
 Status: the protocol, updater and static publisher are implemented. Production
-root 1 and Stable sequence 4 authenticate immutable v1.0.0 through v1.0.3 releases
+root 1 and Stable sequence 5 authenticate immutable v1.0.0 through v1.0.4 releases
 on ServerPlan. Genuine signed upgrade/reboot acceptance and exact-target recovery
 have passed in release testing. Follow the [operator runbook](release-workflow.md)
 for execution, [release engineering](release-engineering.md) for lifecycle

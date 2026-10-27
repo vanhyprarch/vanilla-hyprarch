@@ -5,9 +5,12 @@ The pinned Zig Screensaver component manager is implemented; the historical
 `install-zig-player` command is only a compatibility wrapper. DF2 has separate
 managed-file, create-once, accepted system-integration, and SDDM stages. The
 repository-root `install.sh` now provides their thin shared post-install orchestration;
-the optional archinstall entry point does not exist yet.
+the optional archinstall entry point and custom Arch USB ISO are deferred.
+The supported installation path is minimal Arch followed by the existing Vanilla
+installer; the future integration design below is not an available workflow.
 
-The immutable `v1.0.2` Stable release is published and release-test accepted;
+The immutable `v1.0.4` Stable release is published and release-test accepted;
+`v1.0.5` Stable is in preparation with accepted system tray rendering fixes;
 `main` remains a development ref, not an installed release identity. Follow the
 [release workflow](release-workflow.md) for exact-source builds, publication,
 genuine upgrade acceptance and recovery.

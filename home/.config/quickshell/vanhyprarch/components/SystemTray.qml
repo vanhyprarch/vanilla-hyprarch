@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Effects
+import QtQuick.Controls.impl as ControlsImpl
 import Quickshell
 import Quickshell.Services.SystemTray as TrayService
 
@@ -35,6 +35,9 @@ Item {
                 id: trayButton
 
                 required property var modelData
+                // Pixmap/composite handles expose no symbolic metadata.
+                readonly property bool symbolic: /^image:\/\/icon\/[^?]*-symbolic(?:\.(?:svg|png|xpm))?(?:\?|$)/.test(
+                    modelData.icon)
 
                 x: (root.width - width) / 2
                 width: root.buttonSize
@@ -45,25 +48,31 @@ Item {
                         menuAnchor.open()
                 }
 
+                // Plain Image keeps aspect-fit: IconImage can override it with
+                // Pad and crop rounded pixmaps at fractional device scales.
                 Image {
                     id: trayIconSource
 
                     anchors.centerIn: parent
                     width: root.iconSize
                     height: root.iconSize
-                    source: trayButton.modelData.icon
+                    source: trayButton.symbolic ? "" : trayButton.modelData.icon
+                    visible: !trayButton.symbolic
                     sourceSize: Qt.size(root.iconSize, root.iconSize)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
-                    visible: false
                 }
 
-                MultiEffect {
+                ControlsImpl.IconImage {
                     anchors.fill: trayIconSource
-                    source: trayIconSource
-                    colorization: 1.0
-                    colorizationColor: root.iconColor
+                    source: trayButton.symbolic ? trayButton.modelData.icon : ""
+                    visible: trayButton.symbolic
+                    color: root.iconColor
+                    sourceSize: Qt.size(root.iconSize, root.iconSize)
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
 
                 QsMenuAnchor {

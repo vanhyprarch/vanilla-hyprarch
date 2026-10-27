@@ -1080,7 +1080,7 @@ The shared `SystemIcon` renderer instead uses the installed
 `theme.accent` token already used directly by the dock Power/menu glyph. The
 scope is limited to Vanilla's structural SVGs. An offscreen pixel fixture
 checks opaque Dark and Light output against the authoritative theme values;
-application and content icon-theme rendering remains separate.
+application tray rendering follows the source policy below.
 
 The static Lucide replacement preserves this renderer and the original
 24-unit geometry/stroke width 2. On Quickshell 0.3.2 and Qt 6.12.0, the offscreen
@@ -1096,6 +1096,93 @@ fabricated measurement or a disconnected indicator.
 Retest the rendered foreground and the internal icon-image import after a Qt
 upgrade. Replace this boundary when a supported public Qt or Quickshell image
 API provides the same exact monochrome recoloring without luminance retention.
+
+## Application tray icon color boundary
+
+**Validated component:** Quickshell 0.3.2 (`quickshell 0.3.2-1`), Qt 6.12.0.
+
+[Issue #1](https://github.com/vanhyprarch/vanilla-hyprarch/issues/1) reports
+low-contrast ChatGPT/Codex and non-monochrome Nextcloud tray icons in Light
+Mode, including application startup directly in Light Mode. The tray applied
+`MultiEffect.colorization: 1.0` to every source. Its luminance-preserving tint
+discarded original colors and compressed the contrast into the dark theme
+foreground. A rendered control on the installed OpenGL backend turns a dark
+blue tile and bright glyph into `(11,11,11)` and `(54,54,54)` in Light Mode.
+
+Quickshell's [versioned SNI implementation](https://github.com/quickshell-mirror/quickshell/blob/v0.3.2/src/services/status_notifier/item.cpp)
+exposes one reactive `icon` URL, with no public symbolic/mask flag. Named icons
+use `image://icon/NAME` with an optional `?path=` fallback directory. Its
+[icon provider](https://github.com/quickshell-mirror/quickshell/blob/v0.3.2/src/core/iconimageprovider.cpp)
+resolves names through Qt `QIcon::fromTheme`, then the supplied directory.
+Pixmap and composite sources use opaque, versioned `image://qspixmap/` handles;
+`NewIcon` refreshes the properties and changes the handle version. Attention
+icons can select either provider. The live development Nextcloud instance
+advertised an empty `IconName` and supplied a pixmap.
+
+`SystemTray` uses plain `QtQuick.Image` with `Image.PreserveAspectFit` for
+application artwork, preserving its colors, backgrounds and alpha. Only named
+sources explicitly ending in `-symbolic` (also before an optional `.svg`, `.png`
+or `.xpm` extension) use the existing `QtQuick.Controls.impl.IconImage` tint path
+with `iconColor`, normally `theme.accent`. The two paths share the original
+22-pixel frame and five-pixel centering margins in a 32-pixel target at normal
+metrics. Classification follows each source update and ignores the fallback
+directory. It uses neither
+application identities nor pixel-based monochrome detection. Built-in controls
+retain their separate `SystemIcon` renderer.
+
+This separate application path avoids a Qt 6.12.0 fractional-scale crop:
+[`IconImage` internally selects Pad](https://github.com/qt/qtdeclarative/blob/v6.12.0/src/quickcontrolsimpl/qquickiconimage.cpp#L71)
+even when QML requests aspect-fit. At DPR 1.25, a rounded 28-pixel image represents
+22.4 logical pixels, so [Pad trims it](https://github.com/qt/qtdeclarative/blob/v6.12.0/src/quick/items/qquickimage.cpp#L755)
+to the 22-pixel frame at the bottom/right. Named icons and native SNI pixmap URLs
+both work with public `Image`; no frame enlargement, offset or input-area change
+is needed. The explicit symbolic renderer remains unchanged. Retest both source
+paths after Qt or Quickshell upgrades; do not consolidate them onto `IconImage`
+unless it reliably preserves full artwork at fractional DPR.
+
+Unnamed monochrome pixmaps and theme artwork resolved from non-symbolic names
+have no reliable symbolic metadata here; they remain application/theme-owned.
+A symbolic base combined with a colored overlay is likewise preserved as one
+composite. Low contrast from unnamed monochrome artwork is an accepted
+limitation for **v1.0.5**. Nextcloud's colored icons passed physical acceptance
+in both modes; its optional monochrome pixmap remains white and can be difficult
+to see on the Light dock. Nextcloud 35.0.0's
+[Unix tray-background check](https://github.com/nextcloud/desktop/blob/v35.0.0/src/common/utility_unix.cpp#L141)
+always assumes a dark tray. An outline experiment was physically rejected and
+removed; no outlines, shadows, automatic monochrome detection, application
+exceptions or other contrast workarounds are used.
+Retest after Quickshell provider or Qt icon-image changes. Prefer a supported
+public symbolic/mask property if upstream exposes one, and replace the internal
+Qt import when a public API provides the same tint/preserve behavior.
+
+Focused checks:
+
+```bash
+python -B tests/system-tray.py
+# Existing DISPLAY is used only for a hidden offscreen GLX context:
+python -B tests/system-tray.py --opengl
+sh tests/system-icons.sh
+```
+
+The private D-Bus fixture uses the production tray, real SNI and DBusMenu
+objects, original image fixtures, pixel/alpha comparisons, both palettes and
+transitions, source updates, geometry, pointer activation and menu action
+delivery. Both commands run DPR 1, 1.25, 1.5 and 2, comparing application RGBA and
+boundaries exactly with an uncropped aspect-fit reference at the same pixel
+placement. Symbolic output is checked against its retained tint renderer.
+`--dpr VALUE` selects a focused case; `--replay-pixmaps PATH` additionally tests
+operator-captured network-order `icon-WxH.argb` SNI pixmaps. Application captures
+remain outside the repository. Original DPR-1 artwork, transparency and shader
+regression checks are retained. The fixture uses existing Python D-Bus/GI tools;
+it installs nothing. Qt's offscreen platform has no theme search paths, so named
+fixtures use Qt's
+standalone icon fallback directory. The software run skips the old shader
+control; the OpenGL run requires it. The operator physically accepted the final
+development implementation, including the fractional-DPR correction. Retest cold
+Light/Dark startup, both theme transitions, application icon updates and real
+menus/actions after relevant Qt/Quickshell changes. Nextcloud's optional
+monochrome Light contrast is the accepted limitation above. Issue #1 remains
+open until verified v1.0.5 publication is complete.
 
 ## Quickshell first Flatpak export discovery boundary
 
